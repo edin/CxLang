@@ -8,4 +8,5 @@ public sealed record ExternFunctionNode(
     IReadOnlyList<ParameterNode> Parameters,
     IReadOnlyList<AttributeApplicationNode> Attributes,
     bool IsHeaderDeclaration = false,
-    bool IsMacro = false) : TopLevelNode(Location);
+    bool IsMacro = false,
+    TypeNode? ReturnTypeNode = null) : TopLevelNode(Location);

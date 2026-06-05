@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Cx.Compiler.C;
+using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -2829,11 +2830,13 @@ public sealed class CEmitter
                 return null;
             }
 
+            var sourceType = RestoreSourceGenericType(type);
             var iterableRequirement = keyValue ? "KeyValueIterable" : "Iterable";
-            var iterable = _requirementMatcher.Match(type, iterableRequirement);
+            var iterable = _requirementMatcher.Match(sourceType, iterableRequirement);
             if (!iterable.Success || !iterable.TypeBindings.TryGetValue("I", out var iteratorType))
             {
-                return ResolveIteratorIterableFromIteratorMethod(expression, keyValue);
+                return ResolveIteratorIterableFromSpecializedIterator(type, expression, keyValue)
+                    ?? ResolveIteratorIterableFromIteratorMethod(expression, keyValue);
             }
 
             if (keyValue)
@@ -2859,6 +2862,69 @@ public sealed class CEmitter
             return new IteratorIterableInfo(
                 iteratorType,
                 itemType,
+                KeyType: null,
+                BuildIteratorInitializer(expression));
+        }
+
+        private string RestoreSourceGenericType(string type)
+        {
+            var pointerSuffix = "";
+            var normalized = type.Trim();
+            while (normalized.EndsWith("*", StringComparison.Ordinal))
+            {
+                pointerSuffix += "*";
+                normalized = normalized[..^1].TrimEnd();
+            }
+
+            foreach (var call in _genericCalls.Where(call => call.OwnerType is not null))
+            {
+                var concreteName = GenericTypeRewriter.LowerGenericTypeName(call.OwnerType!, call.TypeArguments);
+                if (concreteName == normalized)
+                {
+                    return $"{call.OwnerType}<{string.Join(",", call.TypeArguments)}>{pointerSuffix}";
+                }
+            }
+
+            return type;
+        }
+
+        private IteratorIterableInfo? ResolveIteratorIterableFromSpecializedIterator(
+            string type,
+            ExpressionNode expression,
+            bool keyValue)
+        {
+            var concreteType = RemovePointer(type.Trim());
+            var iterator = _genericCalls.FirstOrDefault(call =>
+                !call.IsStatic
+                && call.Name == "iterator"
+                && MatchesGenericOwner(call, GetGenericBaseName(type), concreteType));
+            if (iterator is null)
+            {
+                return null;
+            }
+
+            if (keyValue)
+            {
+                if (iterator.TypeArguments.Count < 2)
+                {
+                    return null;
+                }
+
+                return new IteratorIterableInfo(
+                    iterator.ReturnType,
+                    iterator.TypeArguments[1],
+                    iterator.TypeArguments[0],
+                    BuildIteratorInitializer(expression));
+            }
+
+            if (iterator.TypeArguments.Count < 1)
+            {
+                return null;
+            }
+
+            return new IteratorIterableInfo(
+                iterator.ReturnType,
+                iterator.TypeArguments[0],
                 KeyType: null,
                 BuildIteratorInitializer(expression));
         }
@@ -3457,9 +3523,10 @@ public sealed class CEmitter
             }
 
             var target = targetName.SourceText;
+            var concreteReceiverType = RemovePointer(targetType);
             foreach (var genericCall in _genericCalls.Where(call =>
                 !call.IsStatic
-                && call.OwnerType == GetGenericBaseName(targetType)
+                && MatchesGenericOwner(call, GetGenericBaseName(targetType), concreteReceiverType)
                 && call.Name == member.MemberName
                 && SameTypeArguments(call.TypeArguments, typeArguments)))
             {
@@ -3502,10 +3569,14 @@ public sealed class CEmitter
                     continue;
                 }
 
-                if (preferredTypeArguments is { Count: > 0 }
-                    && SameTypeArguments(candidate.TypeArguments, preferredTypeArguments))
+                if (preferredTypeArguments is { Count: > 0 })
                 {
-                    return candidate;
+                    if (SameTypeArguments(candidate.TypeArguments, preferredTypeArguments))
+                    {
+                        return candidate;
+                    }
+
+                    continue;
                 }
 
                 var matches = true;
@@ -3526,6 +3597,78 @@ public sealed class CEmitter
             }
 
             return null;
+        }
+
+        private GenericCallInfo? FindInferredGenericMemberCall(
+            string? sourceOwnerType,
+            string concreteOwnerType,
+            string name,
+            IReadOnlyList<ExpressionNode> arguments,
+            bool skipSelf,
+            IReadOnlyList<string>? preferredTypeArguments = null)
+        {
+            var candidates = _genericCalls.Where(call =>
+                !call.IsStatic
+                && MatchesGenericOwner(call, sourceOwnerType, concreteOwnerType)
+                && call.Name == name);
+            if (preferredTypeArguments is { Count: > 0 })
+            {
+                candidates = candidates
+                    .OrderByDescending(call => SameTypeArguments(call.TypeArguments, preferredTypeArguments));
+            }
+
+            foreach (var candidate in candidates)
+            {
+                var parameterTypes = candidate.ParameterTypes
+                    .Skip(skipSelf ? 1 : 0)
+                    .ToList();
+                if (parameterTypes.Count != arguments.Count)
+                {
+                    continue;
+                }
+
+                if (preferredTypeArguments is { Count: > 0 })
+                {
+                    if (SameTypeArguments(candidate.TypeArguments, preferredTypeArguments))
+                    {
+                        return candidate;
+                    }
+
+                    continue;
+                }
+
+                var matches = true;
+                for (var i = 0; i < arguments.Count; i++)
+                {
+                    var argumentType = ResolveExpressionType(arguments[i]);
+                    if (argumentType is null || !CanAssign(parameterTypes[i], argumentType))
+                    {
+                        matches = false;
+                        break;
+                    }
+                }
+
+                if (matches)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool MatchesGenericOwner(
+            GenericCallInfo call,
+            string? sourceOwner,
+            string concreteOwner)
+        {
+            if (string.Equals(call.OwnerType, sourceOwner, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return call.OwnerType is not null
+                && GenericTypeRewriter.LowerGenericTypeName(call.OwnerType, call.TypeArguments) == concreteOwner;
         }
 
         private string? ResolveExpressionType(ExpressionNode expression) => expression switch
@@ -4163,8 +4306,9 @@ public sealed class CEmitter
                 return adapterExposeCall;
             }
 
-            var genericMemberCall = FindInferredGenericCall(
-                GetGenericBaseName(RemovePointer(normalizedType)) ?? RemovePointer(normalizedType),
+            var genericMemberCall = FindInferredGenericMemberCall(
+                GetGenericBaseName(RemovePointer(normalizedType)),
+                RemovePointer(normalizedType),
                 member.MemberName,
                 arguments,
                 skipSelf: true,

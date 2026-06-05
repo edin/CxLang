@@ -251,7 +251,8 @@ public sealed record GlobalVariableNode(
     ExpressionNode? Initializer,
     IReadOnlyList<AttributeApplicationNode> Attributes,
     bool IsHeaderDeclaration = false,
-    bool IsMacro = false) : TopLevelNode(Location);
+    bool IsMacro = false,
+    TypeNode? TypeNode = null) : TopLevelNode(Location);
 
 public sealed record ExtensionNode(
     Location Location,
@@ -275,7 +276,8 @@ public sealed record ExposeMethodNode(
     bool IsStatic,
     string SourceName,
     string ExposedName,
-    string? ReturnType) : SyntaxNode(Location);
+    string? ReturnType,
+    TypeNode? ReturnTypeNode = null) : SyntaxNode(Location);
 
 public sealed record TestNode(
     Location Location,

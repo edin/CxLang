@@ -14,7 +14,9 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     public IEnumerable<GenericFunctionUse> Collect(ProgramNode program)
     {
-        foreach (var expression in EnumerateExpressions(program))
+        foreach (var expression in program.Functions
+            .Where(function => function.TypeParameters.Count == 0)
+            .SelectMany(function => EnumerateExpressions(function.Body)))
         {
             foreach (var use in CollectResolvedUse(expression))
             {

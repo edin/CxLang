@@ -48,6 +48,17 @@ internal static class GenericCallRetargeter
             specialized,
             resolved.TypeArguments,
             resolved.IsInstance);
+
+        if (expression is CallExpressionNode { Callee: MemberExpressionNode member })
+        {
+            member.Semantic.Symbol = expression.Semantic.Symbol;
+            member.Semantic.ResolvedCall = expression.Semantic.ResolvedCall;
+        }
+        else if (expression is GenericCallExpressionNode { Callee: MemberExpressionNode genericMember })
+        {
+            genericMember.Semantic.Symbol = expression.Semantic.Symbol;
+            genericMember.Semantic.ResolvedCall = expression.Semantic.ResolvedCall;
+        }
     }
 
     private static IEnumerable<ExpressionNode> EnumerateExpressions(ProgramNode program)

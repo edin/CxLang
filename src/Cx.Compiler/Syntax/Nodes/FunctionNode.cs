@@ -11,4 +11,5 @@ public sealed record FunctionNode(
     string ReturnType,
     IReadOnlyList<ParameterNode> Parameters,
     IReadOnlyList<StatementNode> Body,
-    IReadOnlyList<AttributeApplicationNode> Attributes) : TopLevelNode(Location);
+    IReadOnlyList<AttributeApplicationNode> Attributes,
+    TypeNode? ReturnTypeNode = null) : TopLevelNode(Location);

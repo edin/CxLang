@@ -46,62 +46,66 @@ internal static class GenericFunctionSpecializer
 
     private static StatementNode SubstituteStatement(
         StatementNode statement,
-        IReadOnlyDictionary<string, string> substitutions) => statement switch
+        IReadOnlyDictionary<string, string> substitutions)
     {
-        LetStatement let => let with
+        return statement switch
         {
-            Type = SubstituteGenericType(let.Type, substitutions),
-            Initializer = SubstituteOptionalExpression(let.Initializer, substitutions),
-        },
-        ReturnStatement ret => ret with { Expression = SubstituteExpression(ret.Expression, substitutions) },
-        CStatement c => c with { Expression = SubstituteExpression(c.Expression, substitutions) },
-        IfStatement ifStatement => ifStatement with
-        {
-            Condition = SubstituteExpression(ifStatement.Condition, substitutions),
-            ThenBody = ifStatement.ThenBody.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-            ElseBranch = ifStatement.ElseBranch is null ? null : SubstituteStatement(ifStatement.ElseBranch, substitutions),
-        },
-        ElseBlockStatement elseBlock => elseBlock with
-        {
-            Body = elseBlock.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-        },
-        WhileStatement whileStatement => whileStatement with
-        {
-            Condition = SubstituteExpression(whileStatement.Condition, substitutions),
-            Body = whileStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-        },
-        ForStatement forStatement => forStatement with
-        {
-            Initializer = SubstituteForInitializer(forStatement.Initializer, substitutions),
-            Condition = SubstituteExpression(forStatement.Condition, substitutions),
-            Increment = SubstituteExpression(forStatement.Increment, substitutions),
-            Body = forStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-        },
-        ForeachStatement foreachStatement => foreachStatement with
-        {
-            IterableExpression = SubstituteExpression(foreachStatement.IterableExpression, substitutions),
-            Body = foreachStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-        },
-        SwitchStatement switchStatement => switchStatement with
-        {
-            Expression = SubstituteExpression(switchStatement.Expression, substitutions),
-            Cases = switchStatement.Cases.Select(switchCase => switchCase with
+            LetStatement let => let with
             {
-                Pattern = SubstituteExpression(switchCase.Pattern, substitutions),
-                Body = switchCase.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-            }).ToList(),
-            DefaultBody = switchStatement.DefaultBody.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-        },
-        MatchStatement matchStatement => matchStatement with
-        {
-            Expression = SubstituteExpression(matchStatement.Expression, substitutions),
-            Arms = matchStatement.Arms.Select(arm => arm with
+                Type = SubstituteGenericType(let.Type, substitutions),
+                TypeNode = let.TypeNode is null ? null : let.TypeNode with { TypeName = SubstituteGenericType(let.TypeNode.TypeName, substitutions) },
+                Initializer = SubstituteOptionalExpression(let.Initializer, substitutions),
+            },
+            ReturnStatement ret => ret with { Expression = SubstituteExpression(ret.Expression, substitutions) },
+            CStatement c => c with { Expression = SubstituteExpression(c.Expression, substitutions) },
+            IfStatement ifStatement => ifStatement with
             {
-                Body = arm.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-            }).ToList(),
-        },
-        _ => statement,
-    };
+                Condition = SubstituteExpression(ifStatement.Condition, substitutions),
+                ThenBody = ifStatement.ThenBody.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                ElseBranch = ifStatement.ElseBranch is null ? null : SubstituteStatement(ifStatement.ElseBranch, substitutions),
+            },
+            ElseBlockStatement elseBlock => elseBlock with
+            {
+                Body = elseBlock.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            },
+            WhileStatement whileStatement => whileStatement with
+            {
+                Condition = SubstituteExpression(whileStatement.Condition, substitutions),
+                Body = whileStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            },
+            ForStatement forStatement => forStatement with
+            {
+                Initializer = SubstituteForInitializer(forStatement.Initializer, substitutions),
+                Condition = SubstituteExpression(forStatement.Condition, substitutions),
+                Increment = SubstituteExpression(forStatement.Increment, substitutions),
+                Body = forStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            },
+            ForeachStatement foreachStatement => foreachStatement with
+            {
+                IterableExpression = SubstituteExpression(foreachStatement.IterableExpression, substitutions),
+                Body = foreachStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            },
+            SwitchStatement switchStatement => switchStatement with
+            {
+                Expression = SubstituteExpression(switchStatement.Expression, substitutions),
+                Cases = switchStatement.Cases.Select(switchCase => switchCase with
+                {
+                    Pattern = SubstituteExpression(switchCase.Pattern, substitutions),
+                    Body = switchCase.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                }).ToList(),
+                DefaultBody = switchStatement.DefaultBody.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            },
+            MatchStatement matchStatement => matchStatement with
+            {
+                Expression = SubstituteExpression(matchStatement.Expression, substitutions),
+                Arms = matchStatement.Arms.Select(arm => arm with
+                {
+                    Body = arm.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                }).ToList(),
+            },
+            _ => statement,
+        };
+    }
 
     private static ExpressionNode? SubstituteOptionalExpression(
         ExpressionNode? expression,
@@ -115,6 +119,7 @@ internal static class GenericFunctionSpecializer
         ForDeclarationInitializerNode declaration => declaration with
         {
             Type = SubstituteGenericType(declaration.Type, substitutions),
+            TypeNode = declaration.TypeNode is null ? null : declaration.TypeNode with { TypeName = SubstituteGenericType(declaration.TypeNode.TypeName, substitutions) },
             Initializer = SubstituteOptionalExpression(declaration.Initializer, substitutions),
         },
         ForExpressionInitializerNode expression => expression with
@@ -238,4 +243,5 @@ internal static class GenericFunctionSpecializer
 
         return type;
     }
+
 }

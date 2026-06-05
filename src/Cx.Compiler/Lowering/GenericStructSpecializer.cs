@@ -13,6 +13,7 @@ internal static class GenericStructSpecializer
             .Where(structNode => !structNode.IsHeaderDeclaration)
             .Where(structNode => structNode.TypeParameters.Count > 0)
             .ToDictionary(structNode => structNode.Name, StringComparer.Ordinal);
+        var openTypeParameterNames = GetOpenTypeParameterNames(program);
         if (genericDefinitions.Count == 0)
         {
             return [];
@@ -93,7 +94,8 @@ internal static class GenericStructSpecializer
         while (pending.TryDequeue(out var use))
         {
             var concreteName = GenericTypeRewriter.LowerGenericTypeName(use.Name, use.Arguments);
-            if (!emitted.Add(concreteName)
+            if (ContainsOpenTypeParameter(use.Arguments, openTypeParameterNames)
+                || !emitted.Add(concreteName)
                 || !genericDefinitions.TryGetValue(use.Name, out var definition)
                 || definition.TypeParameters.Count != use.Arguments.Count)
             {
@@ -259,4 +261,19 @@ internal static class GenericStructSpecializer
 
         return type;
     }
+
+    private static IReadOnlySet<string> GetOpenTypeParameterNames(ProgramNode program) =>
+        program.Structs.SelectMany(structNode => structNode.TypeParameters)
+            .Concat(program.Functions.SelectMany(function => function.TypeParameters))
+            .Concat(program.TypeAdapters.SelectMany(adapter => adapter.TypeParameters))
+            .Concat(program.Extensions.SelectMany(extension => extension.TypeParameters))
+            .Concat(program.Requirements.SelectMany(requirement => requirement.TypeParameters))
+            .Concat(program.ExternFunctions.SelectMany(function => function.TypeParameters))
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static bool ContainsOpenTypeParameter(
+        IReadOnlyList<string> typeArguments,
+        IReadOnlySet<string> openTypeParameterNames) =>
+        typeArguments.Any(argument => openTypeParameterNames.Any(parameter =>
+            Regex.IsMatch(argument, $@"\b{Regex.Escape(parameter)}\b")));
 }

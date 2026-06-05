@@ -5,4 +5,5 @@ public sealed record TypeAliasNode(
     string Name,
     string TargetType,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    bool IsHeaderDeclaration = false) : TopLevelNode(Location);
+    bool IsHeaderDeclaration = false,
+    TypeNode? TargetTypeNode = null) : TopLevelNode(Location);

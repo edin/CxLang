@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Syntax.Nodes;
+using System.Text.RegularExpressions;
 
 namespace Cx.Compiler.Lowering;
 
@@ -25,6 +26,7 @@ internal static class GenericSpecializationPass
         var specializedFunctions = new Dictionary<string, FunctionNode>(StringComparer.Ordinal);
         var pending = new Queue<GenericFunctionUse>();
         var collector = new GenericUseCollector(program);
+        var openTypeParameterNames = GetOpenTypeParameterNames(program);
         foreach (var use in collector.Collect(program))
         {
             pending.Enqueue(use);
@@ -34,7 +36,8 @@ internal static class GenericSpecializationPass
         {
             var key = Key(use.Function, use.TypeArguments);
             if (specializedFunctions.ContainsKey(key)
-                || use.Function.TypeParameters.Count != use.TypeArguments.Count)
+                || use.Function.TypeParameters.Count != use.TypeArguments.Count
+                || !IsClosedTypeArgumentList(use.TypeArguments, openTypeParameterNames))
             {
                 continue;
             }
@@ -95,4 +98,24 @@ internal static class GenericSpecializationPass
 
     private static string Key(FunctionNode function, IReadOnlyList<string> arguments) =>
         $"{(function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}")}<{string.Join(",", arguments)}>";
+
+    private static IReadOnlySet<string> GetOpenTypeParameterNames(ProgramNode program) =>
+        program.Structs.SelectMany(structNode => structNode.TypeParameters)
+            .Concat(program.Functions.SelectMany(function => function.TypeParameters))
+            .Concat(program.TypeAdapters.SelectMany(adapter => adapter.TypeParameters))
+            .Concat(program.Extensions.SelectMany(extension => extension.TypeParameters))
+            .Concat(program.Requirements.SelectMany(requirement => requirement.TypeParameters))
+            .Concat(program.ExternFunctions.SelectMany(function => function.TypeParameters))
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static bool IsClosedTypeArgumentList(
+        IReadOnlyList<string> typeArguments,
+        IReadOnlySet<string> openTypeParameterNames) =>
+        typeArguments.All(argument => !ContainsOpenTypeParameter(argument, openTypeParameterNames));
+
+    private static bool ContainsOpenTypeParameter(
+        string type,
+        IReadOnlySet<string> openTypeParameterNames) =>
+        openTypeParameterNames.Any(parameter =>
+            Regex.IsMatch(type, $@"\b{Regex.Escape(parameter)}\b"));
 }

@@ -5,4 +5,5 @@ public sealed record ParameterNode(
     string Name,
     string Type,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    bool IsVariadic = false) : SyntaxNode(Location);
+    bool IsVariadic = false,
+    TypeNode? TypeNode = null) : SyntaxNode(Location);

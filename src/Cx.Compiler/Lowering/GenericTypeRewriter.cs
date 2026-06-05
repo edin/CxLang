@@ -27,7 +27,6 @@ internal static class GenericTypeRewriter
             TypeAdapters = program.TypeAdapters
                 .Select(adapter => adapter with
                 {
-                    BaseType = RewriteConcreteGenericStructTypes(adapter.BaseType, concreteStructNames),
                     ExposedMethods = adapter.ExposedMethods
                         .Select(method => method with
                         {

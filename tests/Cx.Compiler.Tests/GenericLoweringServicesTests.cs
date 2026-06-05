@@ -38,7 +38,7 @@ public sealed class GenericLoweringServicesTests
                 value: T;
             }
 
-            fn use_box(value: Box<Box<int> >*) -> Box<int> {
+            fn use_box(value: Box<Box<int>>*) -> Box<int> {
                 return value.value;
             }
             """);

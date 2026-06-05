@@ -20,7 +20,8 @@ public sealed record StructFieldNode(
     Location Location,
     string Name,
     string Type,
-    IReadOnlyList<AttributeApplicationNode> Attributes) : SyntaxNode(Location);
+    IReadOnlyList<AttributeApplicationNode> Attributes,
+    TypeNode? TypeNode = null) : SyntaxNode(Location);
 
 public sealed record StructRequirementNode(
     Location Location,
