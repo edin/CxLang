@@ -12,7 +12,17 @@ internal static class GenericSpecializationPass
             return program;
         }
 
-        var specializations = new Dictionary<string, FunctionNode>(StringComparer.Ordinal);
+        var result = BuildSpecializationResult(program);
+        var loweredProgram = RewriteGenericStructTypes(program, result);
+        var loweredSpecializedFunctions = RewriteSpecializedFunctionTypes(result);
+
+        RetargetGenericCalls(loweredProgram, loweredSpecializedFunctions);
+        return AppendSpecializations(loweredProgram, result, loweredSpecializedFunctions);
+    }
+
+    private static GenericSpecializationResult BuildSpecializationResult(ProgramNode program)
+    {
+        var specializedFunctions = new Dictionary<string, FunctionNode>(StringComparer.Ordinal);
         var pending = new Queue<GenericFunctionUse>();
         var collector = new GenericUseCollector(program);
         foreach (var use in collector.Collect(program))
@@ -23,45 +33,63 @@ internal static class GenericSpecializationPass
         while (pending.TryDequeue(out var use))
         {
             var key = Key(use.Function, use.TypeArguments);
-            if (specializations.ContainsKey(key)
+            if (specializedFunctions.ContainsKey(key)
                 || use.Function.TypeParameters.Count != use.TypeArguments.Count)
             {
                 continue;
             }
 
             var specialized = GenericFunctionSpecializer.Specialize(use.Function, use.TypeArguments);
-            specializations.Add(key, specialized);
+            specializedFunctions.Add(key, specialized);
             foreach (var discovered in collector.Collect(specialized))
             {
                 pending.Enqueue(discovered);
             }
         }
 
-        var concreteStructs = GenericStructSpecializer.Specialize(program, specializations.Values);
-        var concreteStructNames = concreteStructs
-            .Select(structNode => structNode.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        var loweredProgram = concreteStructNames.Count == 0
+        return new GenericSpecializationResult(
+            specializedFunctions,
+            GenericStructSpecializer.Specialize(program, specializedFunctions.Values));
+    }
+
+    private static ProgramNode RewriteGenericStructTypes(
+        ProgramNode program,
+        GenericSpecializationResult result) =>
+        result.StructNames.Count == 0
             ? program
-            : GenericTypeRewriter.Rewrite(program, concreteStructNames);
-        var loweredSpecializations = concreteStructNames.Count == 0
-            ? specializations
-            : specializations.ToDictionary(
+            : GenericTypeRewriter.Rewrite(program, result.StructNames);
+
+    private static IReadOnlyDictionary<string, FunctionNode> RewriteSpecializedFunctionTypes(
+        GenericSpecializationResult result) =>
+        result.StructNames.Count == 0
+            ? result.FunctionsByKey
+            : result.FunctionsByKey.ToDictionary(
                 pair => pair.Key,
-                pair => GenericTypeRewriter.Rewrite(pair.Value, concreteStructNames),
+                pair => GenericTypeRewriter.Rewrite(pair.Value, result.StructNames),
                 StringComparer.Ordinal);
 
-        GenericCallRetargeter.Retarget(loweredProgram, loweredSpecializations);
-        GenericCallRetargeter.Retarget(loweredSpecializations.Values, loweredSpecializations);
-        if (specializations.Count == 0 && concreteStructs.Count == 0)
+    private static void RetargetGenericCalls(
+        ProgramNode loweredProgram,
+        IReadOnlyDictionary<string, FunctionNode> loweredSpecializedFunctions)
+    {
+        GenericCallRetargeter.Retarget(loweredProgram, loweredSpecializedFunctions);
+        GenericCallRetargeter.Retarget(loweredSpecializedFunctions.Values, loweredSpecializedFunctions);
+    }
+
+    private static ProgramNode AppendSpecializations(
+        ProgramNode loweredProgram,
+        GenericSpecializationResult result,
+        IReadOnlyDictionary<string, FunctionNode> loweredSpecializedFunctions)
+    {
+        if (result.IsEmpty)
         {
             return loweredProgram;
         }
 
         return loweredProgram with
         {
-            Structs = loweredProgram.Structs.Concat(concreteStructs).ToList(),
-            Functions = loweredProgram.Functions.Concat(loweredSpecializations.Values).ToList(),
+            Structs = loweredProgram.Structs.Concat(result.Structs).ToList(),
+            Functions = loweredProgram.Functions.Concat(loweredSpecializedFunctions.Values).ToList(),
         };
     }
 
