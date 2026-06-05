@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace Cx.Compiler.Lexer;
 
-public sealed record TokenMetadata(TokenType Type, string? Text, TokenClass Class);
+public sealed record TokenMetadata(TokenType Type, string? Text, TokenClass Class, Type? MatcherType);
 
 public static class TokenMetadataProvider
 {
@@ -26,13 +26,18 @@ public static class TokenMetadataProvider
             .OrderByDescending(metadata => metadata.Text!.Length)
             .ToArray();
 
+    public static readonly IReadOnlyList<TokenMetadata> MatcherTokens =
+        All.Where(metadata => metadata.MatcherType is not null)
+            .ToArray();
+
     private static TokenMetadata Read(TokenType type)
     {
         var field = typeof(TokenType).GetField(type.ToString(), BindingFlags.Public | BindingFlags.Static)
             ?? throw new InvalidOperationException($"Token '{type}' does not have a matching enum field.");
         var attribute = field.GetCustomAttribute<TokenAttribute>()
             ?? throw new InvalidOperationException($"Token '{type}' is missing {nameof(TokenAttribute)}.");
+        var matcher = field.GetCustomAttribute<MatcherAttribute>();
 
-        return new TokenMetadata(type, attribute.Text, attribute.Class);
+        return new TokenMetadata(type, attribute.Text, attribute.Class, matcher?.MatcherType);
     }
 }

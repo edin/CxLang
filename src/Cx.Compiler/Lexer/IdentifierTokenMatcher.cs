@@ -4,6 +4,11 @@ public sealed class IdentifierTokenMatcher : ITokenMatcher
 {
     private readonly IReadOnlyDictionary<string, TokenType> _tokenMap;
 
+    public IdentifierTokenMatcher()
+        : this(TokenMetadataProvider.KeywordTypes)
+    {
+    }
+
     public IdentifierTokenMatcher(IReadOnlyDictionary<string, TokenType> tokenMap)
     {
         _tokenMap = tokenMap;

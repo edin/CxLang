@@ -3,12 +3,16 @@ namespace Cx.Compiler.Lexer;
 public enum TokenType
 {
     [Token(TokenClass.Identifier)]
+    [Matcher(typeof(IdentifierTokenMatcher))]
     Identifier,
     [Token(TokenClass.Literal)]
+    [Matcher(typeof(NumberTokenMatcher))]
     Number,
     [Token(TokenClass.Literal)]
+    [Matcher(typeof(StringTokenMatcher))]
     String,
     [Token(TokenClass.Literal)]
+    [Matcher(typeof(CharacterTokenMatcher))]
     Character,
 
     [Token("fn", TokenClass.Keyword)]
@@ -192,8 +196,10 @@ public enum TokenType
     At,
 
     [Token(TokenClass.Trivia)]
+    [Matcher(typeof(CommentTokenMatcher))]
     Comment,
     [Token(TokenClass.Trivia)]
+    [Matcher(typeof(CommentTokenMatcher))]
     MultilineComment,
     [Token(TokenClass.EndOfFile)]
     Eof

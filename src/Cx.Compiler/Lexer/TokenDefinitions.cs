@@ -2,59 +2,37 @@ namespace Cx.Compiler.Lexer;
 
 public static class TokenDefinitions
 {
-    public static readonly IReadOnlyList<ITokenMatcher> All =
-    [
-        new CommentTokenMatcher(),
-        new StringTokenMatcher(),
-        new CharacterTokenMatcher(),
-        new NumberTokenMatcher(),
-        new TextTokenMatcher(TokenType.FatArrow, "=>"),
-        new TextTokenMatcher(TokenType.Arrow, "->"),
-        new TextTokenMatcher(TokenType.EqualEqual, "=="),
-        new TextTokenMatcher(TokenType.BangEqual, "!="),
-        new TextTokenMatcher(TokenType.Spaceship, "<=>"),
-        new TextTokenMatcher(TokenType.LessThanOrEqual, "<="),
-        new TextTokenMatcher(TokenType.GreaterThanOrEqual, ">="),
-        new TextTokenMatcher(TokenType.AmpersandAmpersand, "&&"),
-        new TextTokenMatcher(TokenType.PipePipe, "||"),
-        new TextTokenMatcher(TokenType.PlusPlus, "++"),
-        new TextTokenMatcher(TokenType.MinusMinus, "--"),
-        new TextTokenMatcher(TokenType.PlusEquals, "+="),
-        new TextTokenMatcher(TokenType.MinusEquals, "-="),
-        new TextTokenMatcher(TokenType.StarEquals, "*="),
-        new TextTokenMatcher(TokenType.SlashEquals, "/="),
-        new TextTokenMatcher(TokenType.PercentEquals, "%="),
-        new TextTokenMatcher(TokenType.LessThanLessThan, "<<"),
-        new TextTokenMatcher(TokenType.GreaterThanGreaterThan, ">>"),
-        new IdentifierTokenMatcher(KeywordDefinitions.TokenTypes),
+    public static readonly IReadOnlyList<ITokenMatcher> All = Build().ToArray();
 
-        new TextTokenMatcher(TokenType.LBrace, "{"),
-        new TextTokenMatcher(TokenType.RBrace, "}"),
-        new TextTokenMatcher(TokenType.LParen, "("),
-        new TextTokenMatcher(TokenType.RParen, ")"),
-        new TextTokenMatcher(TokenType.LBracket, "["),
-        new TextTokenMatcher(TokenType.RBracket, "]"),
+    private static IEnumerable<ITokenMatcher> Build()
+    {
+        foreach (var metadata in TokenMetadataProvider.MatcherTokens
+            .Where(metadata => metadata.Type != TokenType.Identifier)
+            .GroupBy(metadata => metadata.MatcherType)
+            .Select(group => group.First())
+            .OrderBy(MatcherPriority))
+        {
+            yield return CreateMatcher(metadata.MatcherType!);
+        }
 
-        new TextTokenMatcher(TokenType.Star, "*"),
-        new TextTokenMatcher(TokenType.Plus, "+"),
-        new TextTokenMatcher(TokenType.Minus, "-"),
-        new TextTokenMatcher(TokenType.Slash, "/"),
-        new TextTokenMatcher(TokenType.Percent, "%"),
-        new TextTokenMatcher(TokenType.Bang, "!"),
-        new TextTokenMatcher(TokenType.Ampersand, "&"),
-        new TextTokenMatcher(TokenType.Pipe, "|"),
-        new TextTokenMatcher(TokenType.Caret, "^"),
-        new TextTokenMatcher(TokenType.Tilde, "~"),
-        new TextTokenMatcher(TokenType.LessThan, "<"),
-        new TextTokenMatcher(TokenType.GreaterThan, ">"),
-        new TextTokenMatcher(TokenType.QuestionMark, "?"),
-        new TextTokenMatcher(TokenType.At, "@"),
-        new TextTokenMatcher(TokenType.Equals, "="),
-        new TextTokenMatcher(TokenType.Colon, ":"),
-        new TextTokenMatcher(TokenType.Semicolon, ";"),
-        new TextTokenMatcher(TokenType.Comma, ","),
-        new TextTokenMatcher(TokenType.Ellipsis, "..."),
-        new TextTokenMatcher(TokenType.DotDot, ".."),
-        new TextTokenMatcher(TokenType.Dot, "."),
-    ];
+        foreach (var metadata in TokenMetadataProvider.SymbolsByLength)
+        {
+            yield return new TextTokenMatcher(metadata.Type, metadata.Text!);
+        }
+
+        yield return new IdentifierTokenMatcher(TokenMetadataProvider.KeywordTypes);
+    }
+
+    private static int MatcherPriority(TokenMetadata metadata) =>
+        metadata.Class switch
+        {
+            TokenClass.Trivia => 0,
+            TokenClass.Literal => 1,
+            _ => 2
+        };
+
+    private static ITokenMatcher CreateMatcher(Type matcherType) =>
+        Activator.CreateInstance(matcherType) as ITokenMatcher
+            ?? throw new InvalidOperationException(
+                $"Could not create token matcher '{matcherType.FullName}'.");
 }

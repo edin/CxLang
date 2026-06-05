@@ -38,4 +38,29 @@ public sealed class TokenMetadataTests
 
         Assert.Equal(symbolLengths.OrderByDescending(length => length), symbolLengths);
     }
+
+    [Fact]
+    public void TokenMetadata_MatcherTokensExposeMatcherTypes()
+    {
+        var matcherTypes = TokenMetadataProvider.MatcherTokens
+            .ToDictionary(metadata => metadata.Type, metadata => metadata.MatcherType);
+
+        Assert.Equal(typeof(IdentifierTokenMatcher), matcherTypes[TokenType.Identifier]);
+        Assert.Equal(typeof(NumberTokenMatcher), matcherTypes[TokenType.Number]);
+        Assert.Equal(typeof(StringTokenMatcher), matcherTypes[TokenType.String]);
+        Assert.Equal(typeof(CharacterTokenMatcher), matcherTypes[TokenType.Character]);
+        Assert.Equal(typeof(CommentTokenMatcher), matcherTypes[TokenType.Comment]);
+        Assert.Equal(typeof(CommentTokenMatcher), matcherTypes[TokenType.MultilineComment]);
+    }
+
+    [Fact]
+    public void TokenMetadata_MatcherTypesImplementTokenMatcher()
+    {
+        foreach (var metadata in TokenMetadataProvider.MatcherTokens)
+        {
+            Assert.True(
+                typeof(ITokenMatcher).IsAssignableFrom(metadata.MatcherType),
+                $"{metadata.MatcherType?.FullName} must implement {nameof(ITokenMatcher)}.");
+        }
+    }
 }
