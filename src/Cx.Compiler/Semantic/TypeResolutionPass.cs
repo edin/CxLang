@@ -4,7 +4,7 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
 
-internal sealed class TypeResolutionPass(DiagnosticBag diagnostics, SemanticModel model)
+internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
 {
     private TypeRefParser? _parser;
 
@@ -319,7 +319,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics, SemanticMode
 
     private void ResolveType(SyntaxNode node, string? type)
     {
-        model.SetType(node, ResolveType(type));
+        node.Semantic.Type = ResolveType(type);
     }
 
     private TypeRef ResolveType(string? type)

@@ -23,14 +23,12 @@ public sealed class TypeResolutionPassTests
                 return 0;
             }
             """));
-        var model = new SemanticModel();
 
-        new TypeResolutionPass(diagnostics, model).Resolve(program);
+        new TypeResolutionPass(diagnostics).Resolve(program);
 
         var local = program.Functions.Single().Body.OfType<LetStatement>().Single();
         Assert.Equal("IntVec", local.Type);
-        Assert.True(model.TryGetType(local, out var resolvedType));
-        var named = Assert.IsType<TypeRef.Named>(resolvedType);
+        var named = Assert.IsType<TypeRef.Named>(local.Semantic.Type);
         Assert.Equal("Vec", named.Name);
         var argument = Assert.IsType<TypeRef.Named>(Assert.Single(named.Arguments));
         Assert.Equal("int", argument.Name);

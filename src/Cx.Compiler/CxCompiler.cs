@@ -117,7 +117,7 @@ public sealed class CxCompiler
             return (null, diagnostics);
         }
 
-        new TypeResolutionPass(diagnostics, semanticModel).Resolve(mergedProgram);
+        new TypeResolutionPass(diagnostics).Resolve(mergedProgram);
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -159,7 +159,7 @@ public sealed class CxCompiler
                 return (null, diagnostics);
             }
 
-            new TypeResolutionPass(diagnostics, semanticModel).Resolve(mergedProgram);
+            new TypeResolutionPass(diagnostics).Resolve(mergedProgram);
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
