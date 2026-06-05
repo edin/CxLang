@@ -46,6 +46,32 @@ public sealed class GenericSpecializationPassTests
     }
 
     [Fact]
+    public void Apply_AddsConcreteFunctionForInferredGenericCall()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn identity<T>(value: T) -> T {
+                return value;
+            }
+
+            fn main() -> int {
+                return identity(10);
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var diagnostics = new DiagnosticBag();
+        var lowered = GenericSpecializationPass.Apply(program, diagnostics);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var identity = Assert.Single(lowered.Functions, function => function.Name == "identity" && function.TypeArguments.Count > 0);
+
+        Assert.Equal(["int"], identity.TypeArguments);
+        Assert.Equal("int", identity.ReturnType);
+        Assert.Equal("int", Assert.Single(identity.Parameters).Type);
+    }
+
+    [Fact]
     public void Apply_AddsConcreteStructForUsedGenericStruct()
     {
         var program = CompilerTestHelpers.Parse(
