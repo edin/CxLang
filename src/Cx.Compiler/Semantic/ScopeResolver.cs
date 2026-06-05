@@ -6,8 +6,11 @@ namespace Cx.Compiler.Semantic;
 
 internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel model)
 {
+    private IReadOnlyList<FunctionNode> _functions = [];
+
     public void Resolve(ProgramNode program)
     {
+        _functions = GetAllFunctions(program);
         DeclareTopLevelSymbols(program);
 
         foreach (var function in program.Functions)
@@ -79,9 +82,14 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             DeclareTopLevel(externFunction.Name, SymbolKind.Function, externFunction.ReturnType, externFunction.Location, externFunction);
         }
 
-        foreach (var function in program.Functions.Where(function => function.OwnerType is null))
+        foreach (var function in _functions)
         {
-            DeclareTopLevel(function.Name, SymbolKind.Function, function.ReturnType, function.Location, function);
+            var symbol = new Symbol(function.Name, SymbolKind.Function, function.ReturnType, function.Location, function);
+            function.Semantic.Symbol = symbol;
+            if (function.OwnerType is null)
+            {
+                model.RootScope.TryDeclare(symbol);
+            }
         }
     }
 
@@ -294,6 +302,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                     ResolveExpression(argument, scope);
                 }
 
+                BindCall(call, scope);
                 break;
             case GenericCallExpressionNode call:
                 ResolveExpression(call.Callee, scope);
@@ -302,9 +311,11 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                     ResolveExpression(argument, scope);
                 }
 
+                BindGenericCall(call, scope);
                 break;
             case MemberExpressionNode member:
                 ResolveExpression(member.Target, scope);
+                BindMemberReference(member, scope);
                 break;
             case IndexExpressionNode index:
                 ResolveExpression(index.Target, scope);
@@ -315,7 +326,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private Symbol? Declare(Scope scope, string name, SymbolKind kind, string? type, Location location, SyntaxNode? node = null)
     {
-        var symbol = new Symbol(name, kind, type, location);
+        var symbol = new Symbol(name, kind, type, location, node);
         if (scope.TryDeclare(symbol))
         {
             if (node is not null)
@@ -332,11 +343,268 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private void DeclareTopLevel(string name, SymbolKind kind, string? type, Location location, SyntaxNode node)
     {
-        var symbol = new Symbol(name, kind, type, location);
+        var symbol = new Symbol(name, kind, type, location, node);
         if (model.RootScope.TryDeclare(symbol))
         {
             node.Semantic.Symbol = symbol;
         }
+    }
+
+    private void BindCall(CallExpressionNode call, Scope scope)
+    {
+        if (call.Callee is NameExpressionNode name
+            && scope.TryResolve(name.SourceText, out var symbol)
+            && symbol.Kind == SymbolKind.Function)
+        {
+            call.Semantic.Symbol = symbol;
+            name.Semantic.Symbol = symbol;
+            if (symbol.Node is FunctionNode function)
+            {
+                call.Semantic.ResolvedCall = new ResolvedCallInfo(function, [], IsInstance: false);
+            }
+
+            return;
+        }
+
+        if (call.Callee is MemberExpressionNode member
+            && ResolveMemberFunction(member, scope, typeArguments: []) is { } resolved)
+        {
+            var functionSymbol = FunctionSymbol(resolved.Function);
+            call.Semantic.Symbol = functionSymbol;
+            call.Semantic.ResolvedCall = new ResolvedCallInfo(resolved.Function, resolved.TypeArguments, resolved.IsInstance);
+            member.Semantic.Symbol = functionSymbol;
+            member.Semantic.ResolvedCall = call.Semantic.ResolvedCall;
+        }
+    }
+
+    private void BindGenericCall(GenericCallExpressionNode call, Scope scope)
+    {
+        if (call.Callee is NameExpressionNode name
+            && FindFreeFunction(name.SourceText, call.TypeArguments) is { } function)
+        {
+            var symbol = FunctionSymbol(function);
+            call.Semantic.Symbol = symbol;
+            call.Semantic.ResolvedCall = new ResolvedCallInfo(function, call.TypeArguments, IsInstance: false);
+            name.Semantic.Symbol = symbol;
+            return;
+        }
+
+        if (call.Callee is MemberExpressionNode member
+            && ResolveMemberFunction(member, scope, call.TypeArguments) is { } resolved)
+        {
+            var functionSymbol = FunctionSymbol(resolved.Function);
+            call.Semantic.Symbol = functionSymbol;
+            call.Semantic.ResolvedCall = new ResolvedCallInfo(resolved.Function, resolved.TypeArguments, resolved.IsInstance);
+            member.Semantic.Symbol = functionSymbol;
+            member.Semantic.ResolvedCall = call.Semantic.ResolvedCall;
+        }
+    }
+
+    private void BindMemberReference(MemberExpressionNode member, Scope scope)
+    {
+        if (ResolveMemberFunction(member, scope, typeArguments: []) is { } resolved)
+        {
+            var functionSymbol = FunctionSymbol(resolved.Function);
+            member.Semantic.Symbol = functionSymbol;
+            member.Semantic.ResolvedCall = new ResolvedCallInfo(resolved.Function, resolved.TypeArguments, resolved.IsInstance);
+        }
+    }
+
+    private ResolvedFunction? ResolveMemberFunction(
+        MemberExpressionNode member,
+        Scope scope,
+        IReadOnlyList<string> typeArguments)
+    {
+        if (GetQualifiedName(member.Target) is { } targetName
+            && FindStaticFunction(targetName, member.MemberName, typeArguments) is { } staticFunction)
+        {
+            return new ResolvedFunction(staticFunction, ResolveFunctionTypeArguments(staticFunction, typeArguments), IsInstance: false);
+        }
+
+        if (member.Target is NameExpressionNode receiver
+            && scope.TryResolve(receiver.SourceText, out var receiverSymbol)
+            && !string.IsNullOrWhiteSpace(receiverSymbol.Type)
+            && FindInstanceFunction(receiverSymbol.Type, member.MemberName, typeArguments) is { } instanceFunction)
+        {
+            return new ResolvedFunction(
+                instanceFunction,
+                ResolveFunctionTypeArguments(instanceFunction, typeArguments, receiverSymbol.Type),
+                IsInstance: true);
+        }
+
+        return null;
+    }
+
+    private FunctionNode? FindFreeFunction(string name, IReadOnlyList<string> typeArguments) =>
+        _functions.FirstOrDefault(function =>
+            function.OwnerType is null
+            && string.Equals(function.Name, name, StringComparison.Ordinal)
+            && MatchesTypeArguments(function, typeArguments));
+
+    private FunctionNode? FindStaticFunction(string ownerType, string name, IReadOnlyList<string> typeArguments) =>
+        _functions.FirstOrDefault(function =>
+            function.IsStatic
+            && function.OwnerType is not null
+            && string.Equals(function.OwnerType, ownerType, StringComparison.Ordinal)
+            && string.Equals(function.Name, name, StringComparison.Ordinal)
+            && MatchesTypeArguments(function, typeArguments));
+
+    private FunctionNode? FindInstanceFunction(string receiverType, string name, IReadOnlyList<string> typeArguments)
+    {
+        var ownerType = GetGenericBaseName(StripPointer(receiverType));
+        return _functions.FirstOrDefault(function =>
+            !function.IsStatic
+            && function.OwnerType is not null
+            && string.Equals(function.OwnerType, ownerType, StringComparison.Ordinal)
+            && string.Equals(function.Name, name, StringComparison.Ordinal)
+            && MatchesTypeArguments(function, typeArguments, receiverType));
+    }
+
+    private static bool MatchesTypeArguments(
+        FunctionNode function,
+        IReadOnlyList<string> typeArguments,
+        string? receiverType = null)
+    {
+        if (function.TypeParameters.Count == 0)
+        {
+            return typeArguments.Count == 0;
+        }
+
+        if (typeArguments.Count > 0)
+        {
+            return typeArguments.Count == function.TypeParameters.Count;
+        }
+
+        return receiverType is not null
+            && TryParseGenericUse(StripPointer(receiverType), out _, out var receiverArguments)
+            && receiverArguments.Count == function.TypeParameters.Count;
+    }
+
+    private static IReadOnlyList<string> ResolveFunctionTypeArguments(
+        FunctionNode function,
+        IReadOnlyList<string> explicitTypeArguments,
+        string? receiverType = null)
+    {
+        if (function.TypeParameters.Count == 0)
+        {
+            return [];
+        }
+
+        if (explicitTypeArguments.Count > 0)
+        {
+            return explicitTypeArguments;
+        }
+
+        return receiverType is not null
+            && TryParseGenericUse(StripPointer(receiverType), out _, out var receiverArguments)
+            && receiverArguments.Count == function.TypeParameters.Count
+                ? receiverArguments
+                : [];
+    }
+
+    private static Symbol FunctionSymbol(FunctionNode function)
+    {
+        if (function.Semantic.Symbol is { Kind: SymbolKind.Function } symbol)
+        {
+            return symbol;
+        }
+
+        symbol = new Symbol(function.Name, SymbolKind.Function, function.ReturnType, function.Location, function);
+        function.Semantic.Symbol = symbol;
+        return symbol;
+    }
+
+    private static IReadOnlyList<FunctionNode> GetAllFunctions(ProgramNode program) =>
+        program.Functions
+            .Concat(program.Structs.SelectMany(structNode => structNode.Methods))
+            .Concat(program.TaggedUnions.SelectMany(union => union.Methods))
+            .Distinct()
+            .ToList();
+
+    private sealed record ResolvedFunction(
+        FunctionNode Function,
+        IReadOnlyList<string> TypeArguments,
+        bool IsInstance);
+
+    private static string StripPointer(string type)
+    {
+        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
+        {
+            type = type.TrimEnd()[..^1];
+        }
+
+        return type.TrimEnd();
+    }
+
+    private static string GetGenericBaseName(string type)
+    {
+        type = type.Trim();
+        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
+        return genericStart < 0
+            ? type
+            : type[..genericStart].Trim();
+    }
+
+    private static string? GetQualifiedName(ExpressionNode expression) => expression switch
+    {
+        NameExpressionNode name => name.SourceText,
+        ParenthesizedExpressionNode parenthesized => GetQualifiedName(parenthesized.Expression),
+        MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
+        _ => null,
+    };
+
+    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
+    {
+        name = string.Empty;
+        arguments = [];
+        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
+        var genericEnd = type.LastIndexOf('>');
+        if (genericStart <= 0 || genericEnd < genericStart)
+        {
+            return false;
+        }
+
+        name = type[..genericStart];
+        arguments = SplitGenericArguments(type[(genericStart + 1)..genericEnd]);
+        return true;
+    }
+
+    private static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsText))
+        {
+            return [];
+        }
+
+        var arguments = new List<string>();
+        var start = 0;
+        var angleDepth = 0;
+        var parenDepth = 0;
+        var bracketDepth = 0;
+
+        for (var i = 0; i < argumentsText.Length; i++)
+        {
+            switch (argumentsText[i])
+            {
+                case '<': angleDepth++; break;
+                case '>': angleDepth--; break;
+                case '(': parenDepth++; break;
+                case ')': parenDepth--; break;
+                case '[': bracketDepth++; break;
+                case ']': bracketDepth--; break;
+            }
+
+            if (argumentsText[i] != ',' || angleDepth != 0 || parenDepth != 0 || bracketDepth != 0)
+            {
+                continue;
+            }
+
+            arguments.Add(argumentsText[start..i].Trim());
+            start = i + 1;
+        }
+
+        arguments.Add(argumentsText[start..].Trim());
+        return arguments;
     }
 
     private static string Describe(SymbolKind kind) =>

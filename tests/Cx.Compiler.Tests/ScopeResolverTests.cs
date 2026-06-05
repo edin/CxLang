@@ -1,8 +1,5 @@
-using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
-using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
-using CxParser = Cx.Compiler.Parser.Parser;
 
 namespace Cx.Compiler.Tests;
 
@@ -11,78 +8,60 @@ public sealed class ScopeResolverTests
     [Fact]
     public void CompileToC_DuplicateLocalInSameScopeReportsDiagnostic()
     {
-        var result = new CxCompiler().CompileToC(
-        [
-            Source(
-                "main.cx",
-                """
-                fn main() -> int {
-                    let value: int = 1;
-                    let value: int = 2;
-                    return value;
-                }
-                """),
-        ]);
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let value: int = 1;
+                let value: int = 2;
+                return value;
+            }
+            """);
 
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("Duplicate local 'value'", StringComparison.Ordinal));
+        CompilerTestHelpers.AssertDiagnosticContains(result, "Duplicate local 'value'");
     }
 
     [Fact]
     public void CompileToC_DuplicateParameterReportsDiagnostic()
     {
-        var result = new CxCompiler().CompileToC(
-        [
-            Source(
-                "main.cx",
-                """
-                fn add(value: int, value: int) -> int {
-                    return value;
-                }
-                """),
-        ]);
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn add(value: int, value: int) -> int {
+                return value;
+            }
+            """);
 
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("Duplicate parameter 'value'", StringComparison.Ordinal));
+        CompilerTestHelpers.AssertDiagnosticContains(result, "Duplicate parameter 'value'");
     }
 
     [Fact]
     public void CompileToC_LocalCanShadowOuterLocalInNestedScope()
     {
-        var result = new CxCompiler().CompileToC(
-        [
-            Source(
-                "main.cx",
-                """
-                fn main() -> int {
-                    let value: int = 1;
-                    if (true) {
-                        let value: int = 2;
-                    }
-
-                    return value;
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let value: int = 1;
+                if (true) {
+                    let value: int = 2;
                 }
-                """),
-        ]);
 
-        Assert.True(
-            result.Success,
-            string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.ToString())));
+                return value;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
     }
 
     [Fact]
     public void Resolve_AttachesLocalSymbolToNameExpression()
     {
-        var program = Parse(
+        var program = CompilerTestHelpers.Parse(
             """
             fn main() -> int {
                 let value: int = 10;
                 return value;
             }
             """);
-        var model = Resolve(program);
+        var model = CompilerTestHelpers.Resolve(program);
 
         var local = program.Functions.Single().Body.OfType<LetStatement>().Single();
         var ret = program.Functions.Single().Body.OfType<ReturnStatement>().Single();
@@ -96,13 +75,13 @@ public sealed class ScopeResolverTests
     [Fact]
     public void Resolve_AttachesParameterSymbolToNameExpression()
     {
-        var program = Parse(
+        var program = CompilerTestHelpers.Parse(
             """
             fn identity(value: int) -> int {
                 return value;
             }
             """);
-        Resolve(program);
+        CompilerTestHelpers.Resolve(program);
 
         var function = program.Functions.Single();
         var parameter = function.Parameters.Single();
@@ -116,7 +95,7 @@ public sealed class ScopeResolverTests
     [Fact]
     public void Resolve_InnerLocalShadowsOuterLocal()
     {
-        var program = Parse(
+        var program = CompilerTestHelpers.Parse(
             """
             fn main() -> int {
                 let value: int = 1;
@@ -128,7 +107,7 @@ public sealed class ScopeResolverTests
                 return value;
             }
             """);
-        Resolve(program);
+        CompilerTestHelpers.Resolve(program);
 
         var function = program.Functions.Single();
         var outer = function.Body.OfType<LetStatement>().Single();
@@ -146,7 +125,7 @@ public sealed class ScopeResolverTests
     [Fact]
     public void Resolve_AttachesGlobalSymbolWhenNoLocalShadowsIt()
     {
-        var program = Parse(
+        var program = CompilerTestHelpers.Parse(
             """
             let value: int = 10;
 
@@ -154,7 +133,7 @@ public sealed class ScopeResolverTests
                 return value;
             }
             """);
-        Resolve(program);
+        CompilerTestHelpers.Resolve(program);
 
         var global = program.GlobalVariables.Single();
         var ret = program.Functions.Single().Body.OfType<ReturnStatement>().Single();
@@ -164,26 +143,153 @@ public sealed class ScopeResolverTests
         Assert.Equal(SymbolKind.Global, name.Semantic.Symbol?.Kind);
     }
 
-    private static SourceFile Source(string path, string text) => new(path, text);
-
-    private static ProgramNode Parse(string source)
+    [Fact]
+    public void Resolve_AttachesFunctionSymbolToStaticCall()
     {
-        var diagnostics = new DiagnosticBag();
-        var program = new CxParser(diagnostics).Parse(new SourceFile("main.cx", source));
-        Assert.False(
-            diagnostics.HasErrors,
-            string.Join(Environment.NewLine, diagnostics.Diagnostics.Select(diagnostic => diagnostic.ToString())));
-        return program;
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box {
+                value: int;
+
+                static fn create(value: int) -> Box {
+                    return Box(value);
+                }
+            }
+
+            fn main() -> int {
+                let box: Box = Box.create(10);
+                return box.value;
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var create = program.Structs.Single().Methods.Single();
+        var main = program.Functions.Single(function => function.Name == "main");
+        var local = main.Body.OfType<LetStatement>().Single();
+        var call = Assert.IsType<CallExpressionNode>(local.Initializer);
+
+        Assert.Same(create.Semantic.Symbol, call.Semantic.Symbol);
+        Assert.Equal(SymbolKind.Function, call.Semantic.Symbol?.Kind);
+        Assert.NotNull(call.Semantic.ResolvedCall);
+        Assert.False(call.Semantic.ResolvedCall.IsInstance);
     }
 
-    private static SemanticModel Resolve(ProgramNode program)
+    [Fact]
+    public void Resolve_AttachesFunctionSymbolToInstanceCall()
     {
-        var diagnostics = new DiagnosticBag();
-        var model = new SemanticModel();
-        new ScopeResolver(diagnostics, model).Resolve(program);
-        Assert.False(
-            diagnostics.HasErrors,
-            string.Join(Environment.NewLine, diagnostics.Diagnostics.Select(diagnostic => diagnostic.ToString())));
-        return model;
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box {
+                value: int;
+
+                fn get() -> int {
+                    return self.value;
+                }
+            }
+
+            fn main() -> int {
+                let box: Box = Box(10);
+                return box.get();
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var get = program.Structs.Single().Methods.Single();
+        var main = program.Functions.Single(function => function.Name == "main");
+        var ret = main.Body.OfType<ReturnStatement>().Single();
+        var call = Assert.IsType<CallExpressionNode>(ret.Expression);
+
+        Assert.Same(get.Semantic.Symbol, call.Semantic.Symbol);
+        Assert.Equal(SymbolKind.Function, call.Semantic.Symbol?.Kind);
+        Assert.NotNull(call.Semantic.ResolvedCall);
+        Assert.True(call.Semantic.ResolvedCall.IsInstance);
     }
+
+    [Fact]
+    public void Resolve_AttachesResolvedCallInfoToGenericInstanceCall()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                value: T;
+
+                fn get() -> T {
+                    return self.value;
+                }
+            }
+
+            fn main() -> int {
+                let box: Box<int> = Box<int> { value: 10 };
+                return box.get();
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var get = program.Structs.Single().Methods.Single();
+        var main = program.Functions.Single(function => function.Name == "main");
+        var ret = main.Body.OfType<ReturnStatement>().Single();
+        var call = Assert.IsType<CallExpressionNode>(ret.Expression);
+
+        Assert.Same(get.Semantic.Symbol, call.Semantic.Symbol);
+        Assert.NotNull(call.Semantic.ResolvedCall);
+        Assert.True(call.Semantic.ResolvedCall.IsInstance);
+        Assert.Equal(["int"], call.Semantic.ResolvedCall.TypeArguments);
+    }
+
+    [Fact]
+    public void Resolve_AttachesFunctionSymbolToDirectFunctionReference()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn add(left: int, right: int) -> int {
+                return left + right;
+            }
+
+            fn main() -> int {
+                let op: fn(int, int) -> int = add;
+                return op(1, 2);
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var add = program.Functions.Single(function => function.Name == "add");
+        var main = program.Functions.Single(function => function.Name == "main");
+        var local = main.Body.OfType<LetStatement>().Single();
+        var name = Assert.IsType<NameExpressionNode>(local.Initializer);
+
+        Assert.Same(add.Semantic.Symbol, name.Semantic.Symbol);
+        Assert.Equal(SymbolKind.Function, name.Semantic.Symbol?.Kind);
+    }
+
+    [Fact]
+    public void Resolve_AttachesFunctionSymbolToStaticMemberReference()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box {
+                value: int;
+
+                static fn create(value: int) -> Box {
+                    return Box(value);
+                }
+            }
+
+            fn main() -> int {
+                let make: fn(int) -> Box = Box.create;
+                let box: Box = make(10);
+                return box.value;
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var create = program.Structs.Single().Methods.Single();
+        var main = program.Functions.Single(function => function.Name == "main");
+        var local = main.Body.OfType<LetStatement>().First();
+        var member = Assert.IsType<MemberExpressionNode>(local.Initializer);
+
+        Assert.Same(create.Semantic.Symbol, member.Semantic.Symbol);
+        Assert.Equal(SymbolKind.Function, member.Semantic.Symbol?.Kind);
+        Assert.NotNull(member.Semantic.ResolvedCall);
+    }
+
 }

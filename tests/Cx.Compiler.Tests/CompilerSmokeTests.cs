@@ -1,5 +1,3 @@
-using Cx.Compiler.Syntax;
-
 namespace Cx.Compiler.Tests;
 
 public sealed class CompilerSmokeTests
@@ -7,20 +5,68 @@ public sealed class CompilerSmokeTests
     [Fact]
     public void CompileToC_AcceptsCxSourceFile()
     {
-        var result = new CxCompiler().CompileToC(
-        [
-            Source(
-                "main.cx",
-                """
-                fn main() -> int {
-                    return 0;
-                }
-                """),
-        ]);
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                return 0;
+            }
+            """);
 
-        AssertSuccess(result);
+        CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("int main()", result.Output);
         Assert.Contains("return 0;", result.Output);
+    }
+
+    [Fact]
+    public void CompileToC_NamedModuleDoesNotPrefixCNamesYet()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            module app.main;
+
+            fn helper() -> int {
+                return 1;
+            }
+
+            fn main() -> int {
+                return helper();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int helper()", result.Output);
+        Assert.Contains("return helper();", result.Output);
+        Assert.DoesNotContain("app_main_helper", result.Output);
+    }
+
+    [Fact]
+    public void CompileToC_LowersDirectFunctionReferences()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn add(left: int, right: int) -> int {
+                return left + right;
+            }
+
+            struct Box {
+                value: int;
+
+                static fn create(value: int) -> Box {
+                    return Box(value);
+                }
+            }
+
+            fn main() -> int {
+                let op: fn(int, int) -> int = add;
+                let make: fn(int) -> Box = Box.create;
+                let box: Box = make(op(1, 2));
+                return box.value;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("(*op)(int, int) = add;", result.Output);
+        Assert.Contains("(*make)(int) = Box_create;", result.Output);
     }
 
     [Fact]
@@ -28,16 +74,16 @@ public sealed class CompilerSmokeTests
     {
         var result = new CxCompiler().CompileTestsToC(
         [
-            Source(
-                "sample.cx",
+            CompilerTestHelpers.Source(
                 """
                 test "math works" {
                     expect_eq_int(42, 40 + 2);
                 }
-                """),
+                """,
+                "sample.cx"),
         ]);
 
-        AssertSuccess(result);
+        CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("TestRunner runner = TestRunner_create();", result.Output);
         Assert.Contains("TestRunner_begin(&runner, \"math works\");", result.Output);
         Assert.Contains("TestRunner_expect_int(runner, 42, 40 + 2", result.Output);
@@ -49,7 +95,7 @@ public sealed class CompilerSmokeTests
     {
         var result = new CxCompiler().CompileTestsToC([], "std.core");
 
-        AssertSuccess(result);
+        CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("TestRunner_begin(&runner, \"string view trim\");", result.Output);
         Assert.Contains("TestRunner_begin(&runner, \"vec push get and pop\");", result.Output);
         Assert.Contains("return TestRunner_result(&runner);", result.Output);
@@ -58,31 +104,14 @@ public sealed class CompilerSmokeTests
     [Fact]
     public void CompileToC_UnknownCFunctionSuggestsImport()
     {
-        var result = new CxCompiler().CompileToC(
-        [
-            Source(
-                "main.cx",
-                """
-                fn main() -> int {
-                    clock();
-                    return 0;
-                }
-                """),
-        ]);
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                clock();
+                return 0;
+            }
+            """);
 
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("Unknown function 'clock'", StringComparison.Ordinal)
-            && diagnostic.Message.Contains("import c.time", StringComparison.Ordinal));
-    }
-
-    private static SourceFile Source(string path, string text) => new(path, text);
-
-    private static void AssertSuccess(CompilationResult result)
-    {
-        Assert.True(
-            result.Success,
-            string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.ToString())));
-        Assert.NotNull(result.Output);
+        CompilerTestHelpers.AssertDiagnosticContains(result, "Unknown function 'clock'", "import c.time");
     }
 }

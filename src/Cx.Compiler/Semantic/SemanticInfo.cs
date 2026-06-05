@@ -9,4 +9,8 @@ internal sealed class SemanticInfo
     public Symbol? Symbol { get; set; }
 
     public SyntaxNode? Origin { get; set; }
+
+    public string? ModuleName { get; set; }
+
+    public ResolvedCallInfo? ResolvedCall { get; set; }
 }

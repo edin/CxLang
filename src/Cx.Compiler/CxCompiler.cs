@@ -109,7 +109,11 @@ public sealed class CxCompiler
 
         var preSemanticLowering = new CxPreSemanticLoweringPipeline(diagnostics);
         var postSemanticLowering = new CxPostSemanticLoweringPipeline(diagnostics);
+        var moduleNamesByPath = inputPrograms
+            .GroupBy(program => program.Location.File.Path, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => GetModuleName(group.Last()), StringComparer.Ordinal);
         var mergedProgram = preSemanticLowering.Lower(MergePrograms(inputPrograms, rootProgram));
+        AnnotateModuleNames(mergedProgram, moduleNamesByPath);
         var semanticModel = new SemanticModel();
         new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram);
         if (diagnostics.HasErrors)
@@ -735,6 +739,58 @@ public sealed class CxCompiler
 
     private static string GetModuleName(ProgramNode program) =>
         program.Module?.Name ?? string.Empty;
+
+    private static void AnnotateModuleNames(
+        ProgramNode program,
+        IReadOnlyDictionary<string, string> moduleNamesByPath)
+    {
+        foreach (var declaration in program.Declarations)
+        {
+            AnnotateModuleName(declaration, moduleNamesByPath);
+        }
+    }
+
+    private static void AnnotateModuleName(
+        SyntaxNode node,
+        IReadOnlyDictionary<string, string> moduleNamesByPath)
+    {
+        if (moduleNamesByPath.TryGetValue(node.Location.File.Path, out var moduleName))
+        {
+            node.Semantic.ModuleName = moduleName;
+        }
+
+        switch (node)
+        {
+            case StructNode structNode:
+                foreach (var method in structNode.Methods)
+                {
+                    AnnotateModuleName(method, moduleNamesByPath);
+                }
+
+                break;
+            case TaggedUnionNode union:
+                foreach (var method in union.Methods)
+                {
+                    AnnotateModuleName(method, moduleNamesByPath);
+                }
+
+                break;
+            case TypeAdapterNode adapter:
+                foreach (var method in adapter.Methods)
+                {
+                    AnnotateModuleName(method, moduleNamesByPath);
+                }
+
+                break;
+            case ExtensionNode extension:
+                foreach (var method in extension.Methods)
+                {
+                    AnnotateModuleName(method, moduleNamesByPath);
+                }
+
+                break;
+        }
+    }
 
     private static IReadOnlyDictionary<string, string> GetImportAliasMap(
         IReadOnlyList<ProgramNode> programs,

@@ -6,4 +6,5 @@ internal sealed record Symbol(
     string Name,
     SymbolKind Kind,
     string? Type,
-    Location Location);
+    Location Location,
+    SyntaxNode? Node = null);

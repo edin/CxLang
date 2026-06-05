@@ -42,10 +42,40 @@ public sealed class CNameManglerTests
         Assert.Equal("printf", mangler.SymbolName(new Symbol("printf", SymbolKind.Function, "int", Location())));
     }
 
-    private static CNameMangler CreateMangler() =>
+    [Fact]
+    public void FunctionName_WhenModulePrefixesAreEnabledPrefixesNamedModuleFunction()
+    {
+        var mangler = CreateMangler(new CNameManglerOptions(UseModulePrefixes: true));
+        var function = Function(ownerType: "Vec", name: "add");
+        function.Semantic.ModuleName = "std.core";
+
+        Assert.Equal("std_core_Vec_add", mangler.FunctionName(function));
+    }
+
+    [Fact]
+    public void FunctionName_WhenModulePrefixesAreEnabledPreservesUnnamedModuleFunction()
+    {
+        var mangler = CreateMangler(new CNameManglerOptions(UseModulePrefixes: true));
+        var function = Function(ownerType: null, name: "add");
+
+        Assert.Equal("add", mangler.FunctionName(function));
+    }
+
+    [Fact]
+    public void FunctionName_WhenModulePrefixesAreEnabledPreservesMain()
+    {
+        var mangler = CreateMangler(new CNameManglerOptions(UseModulePrefixes: true));
+        var function = Function(ownerType: null, name: "main");
+        function.Semantic.ModuleName = "app.main";
+
+        Assert.Equal("main", mangler.FunctionName(function));
+    }
+
+    private static CNameMangler CreateMangler(CNameManglerOptions? options = null) =>
         new(
             type => type.Replace("<", "_").Replace(">", string.Empty),
-            type => type.Replace("*", "_ptr"));
+            type => type.Replace("*", "_ptr"),
+            options);
 
     private static FunctionNode Function(string? ownerType, string name, IReadOnlyList<string>? typeArguments = null) =>
         new(
