@@ -9,26 +9,49 @@ const sections = [
     intro: "Modules, imports, aliases, and C declarations describe what a CX file sees.",
     features: [
       {
-        name: "Hello CX",
-        code: `import c.stdio;
+        name: "Point Distance",
+        code: `module app.main;
+
+import std.core;
+import c.stdio as io;
+from c.math import sqrt;
+
+struct Point {
+    x: double;
+    y: double;
+}
+
+extension Point {
+    fn distance(other: Point) -> double {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        return sqrt(dx * dx + dy * dy);
+    }
+}
 
 fn main() -> int {
-    let program: char* = "+ + * s - /";
-    let accumulator: int = 0;
+    let points = Vec<Point>.create();
+    points.add(Point(0, 0));
+    points.add(Point(3, 4));
 
-    foreach token in StringView.from_cstr(program) {
-        switch (token) {
-            case '+': accumulator += 1;
-            case '-': accumulator -= 1;
-            case '*': accumulator *= 2;
-            case '/': accumulator /= 2;
-            case 's': accumulator *= accumulator;
-            default: { }
-        }
+    foreach index, point in points {
+        let zero = Point(0, 0);
+        let d = point.distance(zero);
+        io.printf(
+            "point %d = %.2f\\n",
+            index,
+            d
+        );
     }
 
-    printf("program \\"%s\\" => %d\\n", program, accumulator);
+    points.free();
     return 0;
+}
+
+test "point distance" {
+    let a = Point(0, 0);
+    let b = Point(3, 4);
+    expect(a.distance(b) == 5);
 }`
       },
       {
