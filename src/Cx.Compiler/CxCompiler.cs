@@ -110,6 +110,19 @@ public sealed class CxCompiler
         var preSemanticLowering = new CxPreSemanticLoweringPipeline(diagnostics);
         var postSemanticLowering = new CxPostSemanticLoweringPipeline(diagnostics);
         var mergedProgram = preSemanticLowering.Lower(MergePrograms(inputPrograms, rootProgram));
+        var semanticModel = new SemanticModel();
+        new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram);
+        if (diagnostics.HasErrors)
+        {
+            return (null, diagnostics);
+        }
+
+        new TypeResolutionPass(diagnostics, semanticModel).Resolve(mergedProgram);
+        if (diagnostics.HasErrors)
+        {
+            return (null, diagnostics);
+        }
+
         mergedProgram = new TypeInferencePass(diagnostics).Apply(mergedProgram);
         if (diagnostics.HasErrors)
         {
@@ -139,6 +152,19 @@ public sealed class CxCompiler
             }
 
             mergedProgram = preSemanticLowering.Lower(MergePrograms(inputPrograms.Append(generatedProgram), rootProgram));
+            semanticModel = new SemanticModel();
+            new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram);
+            if (diagnostics.HasErrors)
+            {
+                return (null, diagnostics);
+            }
+
+            new TypeResolutionPass(diagnostics, semanticModel).Resolve(mergedProgram);
+            if (diagnostics.HasErrors)
+            {
+                return (null, diagnostics);
+            }
+
             mergedProgram = new TypeInferencePass(diagnostics).Apply(mergedProgram);
             if (diagnostics.HasErrors)
             {
