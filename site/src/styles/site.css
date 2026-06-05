@@ -566,6 +566,72 @@ code {
   color: #dce7ef;
 }
 
+.status-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(340px, 1.28fr);
+  gap: clamp(28px, 5vw, 72px);
+  align-items: start;
+}
+
+.status-summary p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.status-grid-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.status-card {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.status-card.positive {
+  border-top: 4px solid var(--green);
+}
+
+.status-card.caution {
+  border-top: 4px solid var(--accent);
+}
+
+.status-card h2 {
+  font-size: 28px;
+}
+
+.status-card ul {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+}
+
+.status-card li {
+  position: relative;
+  padding-left: 18px;
+  line-height: 1.45;
+}
+
+.status-card li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.63em;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--blue);
+}
+
 @media (max-width: 900px) {
   .site-header {
     position: absolute;
@@ -584,7 +650,8 @@ code {
   .quickstart,
   .split,
   .core-showcase,
-  .code-compare {
+  .code-compare,
+  .status-summary {
     grid-template-columns: 1fr;
   }
 
@@ -595,7 +662,8 @@ code {
 
   .feature-grid,
   .example-grid,
-  .feature-sample-grid {
+  .feature-sample-grid,
+  .status-grid-section {
     grid-template-columns: 1fr;
   }
 

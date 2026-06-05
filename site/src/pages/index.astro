@@ -134,8 +134,8 @@ fn main() -> int {
 ---
 
 <BaseLayout
-  title="CX Language - C Power, Better Syntax"
-  description="CX is a C-like language and CLI that transpiles to readable C while adding generics, tagged unions, interfaces, tests, and a small useful standard library."
+  title="CX Language Experiment"
+  description="CX is an experimental C-like language and CLI prototype that transpiles to readable C."
 >
   <header class="site-header">
     <a class="brand" href="#top" aria-label="CX home">
@@ -144,6 +144,7 @@ fn main() -> int {
     <nav aria-label="Primary navigation">
       <a href="#examples">Examples</a>
       <a href="/features">Features</a>
+      <a href="/status">Status</a>
       <a href="#stdlib">Stdlib</a>
       <a href="#cli">CLI</a>
       <a href="https://github.com/edin/cxlang">GitHub</a>
@@ -153,11 +154,12 @@ fn main() -> int {
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-content">
-        <p class="eyebrow">C output. Modern syntax. No mandatory runtime.</p>
+        <p class="eyebrow">Experimental language prototype</p>
         <h1 id="hero-title">CX Language</h1>
         <p class="hero-copy">
-          A small C-like language and toolchain for writing native C programs with
-          generics, tagged unions, interfaces, tests, and readable generated C.
+          CX is an experiment in building a friendlier C-like language and toolchain
+          that transpiles to readable C. It works for examples and small programs,
+          but the language and standard library are still changing.
         </p>
         <div class="hero-actions" aria-label="Primary actions">
           <a href="#cli" class="button primary">Start with the CLI</a>
@@ -262,9 +264,9 @@ fn main() -> int {
         <p class="eyebrow">Current shape</p>
         <h2 id="closing-title">A native-code playground that can grow into a serious tool</h2>
         <p>
-          CX is especially interesting for small native tools, C library wrappers,
-          language experiments, extension modules, graphics demos, and codebases
-          where C compatibility matters but writing raw C is the least fun part.
+          CX is not a finished language yet. It is a working prototype for exploring
+          better C ergonomics: native output, explicit memory, generics, tagged
+          unions, interfaces, and a small standard library.
         </p>
       </div>
       <a href="https://github.com/edin/cxlang" class="button primary">View source on GitHub</a>

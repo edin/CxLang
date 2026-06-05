@@ -1,0 +1,119 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const working = [
+  "Functions, structs, extensions, methods, and static methods",
+  "Generics, type wrappers, and constrained extensions",
+  "Tagged unions with match",
+  "Interfaces lowered to C-friendly vtables",
+  "Structural requirements and generic where clauses",
+  "Core containers: Vec, Stack, Queue, HashMap, HashSet",
+  "StringView, StringBuilder, Option, Result, File, Path, JSON writer",
+  "C declaration wrappers for common headers",
+  "CLI commands: init, run, build, check, test",
+  "Embedded std.core tests and project test discovery"
+];
+
+const experimental = [
+  "Language syntax may still change",
+  "Standard library APIs are not stable",
+  "Router is experimental and intentionally small",
+  "Error messages are useful but not yet polished like a mature compiler",
+  "Some C interop still relies on declaration wrappers or direct C-like expressions",
+  "Generated C is readable, but the backend model is still evolving"
+];
+
+const missing = [
+  "Full type inference across the whole language",
+  "Formatter",
+  "Language server and editor tooling",
+  "Package manager or dependency story",
+  "Full C header parser",
+  "Stable stdlib versioning policy",
+  "Cross-platform release/install flow beyond the current script",
+  "Production-grade web/router framework"
+];
+
+const roadmap = [
+  "Tighten semantic diagnostics and source spans",
+  "Continue moving lowering toward a complete C AST backend",
+  "Polish allocator patterns across std containers",
+  "Grow std.core tests and .NET compiler tests together",
+  "Add formatter and LSP foundation",
+  "Document C interop declarations and wrapper patterns",
+  "Prepare small downloadable CLI releases"
+];
+---
+
+<BaseLayout
+  title="CX Status"
+  description="CX is an experimental language prototype. This page explains what works, what is unstable, and what is missing."
+>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="CX home">
+      <span>CX Lang</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="/">Home</a>
+      <a href="/features">Features</a>
+      <a href="/status">Status</a>
+      <a href="/#cli">CLI</a>
+      <a href="https://github.com/edin/cxlang">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-hero feature-page-hero" aria-labelledby="status-title">
+      <p class="eyebrow">Project status</p>
+      <h1 id="status-title">CX Is an Experiment</h1>
+      <p>
+        CX can compile and run real examples, but it is not a production-ready
+        language. The syntax, compiler internals, standard library, and tooling are
+        all expected to change as the experiment gets sharper.
+      </p>
+    </section>
+
+    <section class="status-summary section-band light" aria-labelledby="today-title">
+      <div>
+        <p class="eyebrow">Today</p>
+        <h2 id="today-title">Good for exploring ideas, not for betting production on it</h2>
+      </div>
+      <p>
+        The compiler parses CX source, performs semantic checks, lowers the program
+        to C, compiles through a local C compiler, and runs tests. Today, CX is best
+        used for learning, experiments, small demos, native-code prototypes, and
+        exploring how a better C-facing language could feel.
+      </p>
+    </section>
+
+    <section class="status-grid-section section-band" aria-label="Status details">
+      <article class="status-card positive">
+        <h2>Working</h2>
+        <ul>
+          {working.map((item) => <li>{item}</li>)}
+        </ul>
+      </article>
+
+      <article class="status-card caution">
+        <h2>Experimental</h2>
+        <ul>
+          {experimental.map((item) => <li>{item}</li>)}
+        </ul>
+      </article>
+
+      <article class="status-card">
+        <h2>Not Yet</h2>
+        <ul>
+          {missing.map((item) => <li>{item}</li>)}
+        </ul>
+      </article>
+
+      <article class="status-card">
+        <h2>Roadmap</h2>
+        <ul>
+          {roadmap.map((item) => <li>{item}</li>)}
+        </ul>
+      </article>
+    </section>
+  </main>
+</BaseLayout>
