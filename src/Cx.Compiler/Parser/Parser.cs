@@ -1227,12 +1227,12 @@ public sealed class Parser
         ValidateVariadicParameter(parameters);
         Expect(TokenType.RParen, "Expected ')' after interface method parameters.");
         Expect(TokenType.Arrow, "Expected '->' before interface method return type.");
-        var returnType = ParseType();
+        var returnTypeNode = ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after interface method.");
 
         return fnToken is null
             ? null
-            : new InterfaceMethodNode(fnToken.Location, nameToken?.Value ?? string.Empty, returnType, parameters);
+            : new InterfaceMethodNode(fnToken.Location, nameToken?.Value ?? string.Empty, returnTypeNode.TypeName, parameters, returnTypeNode);
     }
 
     private EnumNode? ParseEnum(
@@ -1327,6 +1327,7 @@ public sealed class Parser
     {
         var nameToken = Expect(TokenType.Identifier, "Expected requirement name.");
         var typeArguments = new List<string>();
+        var typeArgumentNodes = new List<TypeNode>();
 
         if (ConsumeOptional(TokenType.LessThan))
         {
@@ -1334,7 +1335,9 @@ public sealed class Parser
             {
                 do
                 {
-                    typeArguments.Add(ParseTypeNode().TypeName);
+                    var typeArgumentNode = ParseTypeNode();
+                    typeArgumentNodes.Add(typeArgumentNode);
+                    typeArguments.Add(typeArgumentNode.TypeName);
                 }
                 while (ConsumeOptional(TokenType.Comma));
             }
@@ -1344,7 +1347,7 @@ public sealed class Parser
 
         return nameToken is null
             ? null
-            : new StructRequirementNode(nameToken.Location, nameToken.Value, typeArguments);
+            : new StructRequirementNode(nameToken.Location, nameToken.Value, typeArguments, typeArgumentNodes);
     }
 
     private IReadOnlyList<string> ParseOptionalTypeParameters()
@@ -1434,7 +1437,7 @@ public sealed class Parser
         ValidateVariadicParameter(parameters);
         Expect(TokenType.RParen, "Expected ')' after requirement function parameters.");
         Expect(TokenType.Arrow, "Expected '->' before requirement function return type.");
-        var returnType = ParseType();
+        var returnTypeNode = ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after requirement function.");
 
         return fnToken is null
@@ -1443,20 +1446,21 @@ public sealed class Parser
                 staticToken?.Location ?? fnToken.Location,
                 staticToken is not null,
                 nameToken?.Value ?? string.Empty,
-                returnType,
-                parameters);
+                returnTypeNode.TypeName,
+                parameters,
+                returnTypeNode);
     }
 
     private RequirementFieldNode? ParseRequirementField()
     {
         var fieldToken = Expect(TokenType.Identifier, "Expected requirement field name.");
         Expect(TokenType.Colon, "Expected ':' after requirement field name.");
-        var type = ParseType();
+        var typeNode = ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after requirement field.");
 
         return fieldToken is null
             ? null
-            : new RequirementFieldNode(fieldToken.Location, fieldToken.Value, type);
+            : new RequirementFieldNode(fieldToken.Location, fieldToken.Value, typeNode.TypeName, typeNode);
     }
 
     private TaggedUnionNode? ParseTaggedUnion(
@@ -1497,12 +1501,12 @@ public sealed class Parser
 
             var variantToken = Expect(TokenType.Identifier, "Expected union variant name.");
             Expect(TokenType.Colon, "Expected ':' after union variant name.");
-            var type = ParseType();
+            var typeNode = ParseTypeNode();
             Expect(TokenType.Semicolon, "Expected ';' after union variant.");
 
             if (variantToken is not null)
             {
-                variants.Add(new TaggedUnionVariantNode(variantToken.Location, variantToken.Value, type, memberAttributes));
+                variants.Add(new TaggedUnionVariantNode(variantToken.Location, variantToken.Value, typeNode.TypeName, memberAttributes, typeNode));
             }
         }
 
@@ -2124,7 +2128,7 @@ public sealed class Parser
         scan = closeParameters + 1;
         SkipWhitespace(text, ref scan);
 
-        string? returnType = null;
+        TypeNode? returnTypeNode = null;
         if (scan + 1 < text.Length && text[scan] == '-' && text[scan + 1] == '>')
         {
             scan += 2;
@@ -2138,12 +2142,12 @@ public sealed class Parser
 
             if (blockOpen >= 0 && (fatArrow < 0 || blockOpen < fatArrow))
             {
-                returnType = text[returnTypeStart..blockOpen].Trim();
+                returnTypeNode = CreateInlineTypeNode(location, text[returnTypeStart..blockOpen]);
                 scan = blockOpen;
             }
             else
             {
-                returnType = text[returnTypeStart..fatArrow].Trim();
+                returnTypeNode = CreateInlineTypeNode(location, text[returnTypeStart..fatArrow]);
                 scan = fatArrow;
             }
         }
@@ -2161,13 +2165,14 @@ public sealed class Parser
                 location,
                 text,
                 parameters,
-                string.IsNullOrWhiteSpace(returnType) ? null : returnType,
+                returnTypeNode?.TypeName,
                 ExpressionBody: null,
                 BlockBody: ParseFunctionExpressionBlock(
                     location,
                     parameters,
-                    string.IsNullOrWhiteSpace(returnType) ? "int" : returnType,
-                    text[(scan + 1)..closeBody]));
+                    returnTypeNode?.TypeName ?? "int",
+                    text[(scan + 1)..closeBody]),
+                ReturnTypeNode: returnTypeNode);
             return true;
         }
 
@@ -2186,9 +2191,10 @@ public sealed class Parser
             location,
             text,
             parameters,
-            string.IsNullOrWhiteSpace(returnType) ? null : returnType,
+            returnTypeNode?.TypeName,
             ParseExpressionText(location, body),
-            BlockBody: null);
+            BlockBody: null,
+            ReturnTypeNode: returnTypeNode);
         return true;
     }
 
@@ -2230,16 +2236,49 @@ public sealed class Parser
                 continue;
             }
 
-            parameters.Add(new ParameterNode(location, name, NormalizeFunctionExpressionType(type), []));
+            var typeNode = CreateInlineTypeNode(location, type);
+            parameters.Add(new ParameterNode(location, name, typeNode.TypeName, [], TypeNode: typeNode));
         }
 
         return parameters;
     }
 
     private static string NormalizeFunctionExpressionType(string type) =>
-        type
-            .Replace(" ", "", StringComparison.Ordinal)
-            .Replace("\t", "", StringComparison.Ordinal);
+        NormalizeTypePunctuationSpacing(type.Trim());
+
+    private static string NormalizeTypePunctuationSpacing(string type)
+    {
+        string previous;
+        do
+        {
+            previous = type;
+            type = type
+                .Replace("\t", " ", StringComparison.Ordinal)
+                .Replace("  ", " ", StringComparison.Ordinal)
+                .Replace(" <", "<", StringComparison.Ordinal)
+                .Replace("< ", "<", StringComparison.Ordinal)
+                .Replace(" >", ">", StringComparison.Ordinal)
+                .Replace("> ", ">", StringComparison.Ordinal)
+                .Replace(" ,", ",", StringComparison.Ordinal)
+                .Replace(", ", ",", StringComparison.Ordinal)
+                .Replace(" *", "*", StringComparison.Ordinal)
+                .Replace("* ", "*", StringComparison.Ordinal)
+                .Replace(" [", "[", StringComparison.Ordinal)
+                .Replace("[ ", "[", StringComparison.Ordinal)
+                .Replace(" ]", "]", StringComparison.Ordinal)
+                .Replace("] ", "]", StringComparison.Ordinal)
+                .Trim();
+        }
+        while (!string.Equals(previous, type, StringComparison.Ordinal));
+
+        return type;
+    }
+
+    private static TypeNode CreateInlineTypeNode(Location location, string type) =>
+        new(location, NormalizeFunctionExpressionType(type.Trim()));
+
+    private static IReadOnlyList<TypeNode> CreateInlineTypeNodes(Location location, IReadOnlyList<string> types) =>
+        types.Select(type => CreateInlineTypeNode(location, type)).ToList();
 
     private bool TryParseInitializerExpression(Location location, string text, out ExpressionNode expression)
     {
@@ -2268,10 +2307,12 @@ public sealed class Parser
             return false;
         }
 
+        var typeNameNode = typeName is null ? null : CreateInlineTypeNode(location, typeName);
+        typeName = typeNameNode?.TypeName;
         var body = text[(openBrace + 1)..^1].Trim();
         if (body.Length == 0)
         {
-            expression = new InitializerExpressionNode(location, text, typeName, [], []);
+            expression = new InitializerExpressionNode(location, text, typeName, [], [], typeNameNode);
             return true;
         }
 
@@ -2291,7 +2332,7 @@ public sealed class Parser
             values.Add(ParseExpressionText(location, item));
         }
 
-        expression = new InitializerExpressionNode(location, text, typeName, fields, values);
+        expression = new InitializerExpressionNode(location, text, typeName, fields, values, typeNameNode);
         return true;
     }
 
@@ -2479,11 +2520,13 @@ public sealed class Parser
             return false;
         }
 
+        var typeNode = CreateInlineTypeNode(location, typeText);
         expression = new CastExpressionNode(
             location,
             text,
-            typeText,
-            ParseExpressionText(location, operandText));
+            typeNode.TypeName,
+            ParseExpressionText(location, operandText),
+            typeNode);
         return true;
     }
 
@@ -2519,8 +2562,11 @@ public sealed class Parser
             return false;
         }
 
-        expression = IsLikelySizeOfType(operandText)
-            ? new SizeOfExpressionNode(location, text, operandText, ExpressionOperand: null)
+        var operandTypeNode = IsLikelySizeOfType(operandText)
+            ? CreateInlineTypeNode(location, operandText)
+            : null;
+        expression = operandTypeNode is not null
+            ? new SizeOfExpressionNode(location, text, operandTypeNode.TypeName, ExpressionOperand: null, operandTypeNode)
             : new SizeOfExpressionNode(location, text, TypeOperand: null, ParseExpressionText(location, operandText));
         return true;
     }
@@ -2585,23 +2631,27 @@ public sealed class Parser
 
         if (TrySplitGenericOwnerMemberCallee(calleeText, out var genericOwnerTargetText, out var ownerTypeArguments))
         {
+            var ownerTypeArgumentNodes = CreateInlineTypeNodes(location, ownerTypeArguments);
             expression = new GenericCallExpressionNode(
                 location,
                 text,
                 ParseExpressionText(location, genericOwnerTargetText),
-                ownerTypeArguments,
-                arguments);
+                ownerTypeArgumentNodes.Select(node => node.TypeName).ToList(),
+                arguments,
+                ownerTypeArgumentNodes);
             return true;
         }
 
         if (TrySplitGenericCallee(calleeText, out var genericTargetText, out var typeArguments))
         {
+            var typeArgumentNodes = CreateInlineTypeNodes(location, typeArguments);
             expression = new GenericCallExpressionNode(
                 location,
                 text,
                 ParseExpressionText(location, genericTargetText),
-                typeArguments,
-                arguments);
+                typeArgumentNodes.Select(node => node.TypeName).ToList(),
+                arguments,
+                typeArgumentNodes);
             return true;
         }
 

@@ -13,4 +13,14 @@ internal sealed class SemanticInfo
     public string? ModuleName { get; set; }
 
     public ResolvedCallInfo? ResolvedCall { get; set; }
+
+    public SemanticInfo Clone() =>
+        new()
+        {
+            Type = Type,
+            Symbol = Symbol,
+            Origin = Origin,
+            ModuleName = ModuleName,
+            ResolvedCall = ResolvedCall,
+        };
 }

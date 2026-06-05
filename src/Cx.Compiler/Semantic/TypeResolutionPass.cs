@@ -14,30 +14,31 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
 
         foreach (var typeAlias in program.TypeAliases)
         {
-            ResolveType(typeAlias, typeAlias.TargetType);
+            ResolveType(typeAlias, typeAlias.TargetTypeNode, typeAlias.TargetType);
         }
 
         foreach (var externFunction in program.ExternFunctions)
         {
-            ResolveFunctionSignature(externFunction.ReturnType, externFunction.Parameters);
+            ResolveFunctionSignature(externFunction, externFunction.ReturnTypeNode, externFunction.ReturnType, externFunction.Parameters);
         }
 
         foreach (var global in program.GlobalVariables)
         {
-            ResolveType(global, global.Type);
+            ResolveType(global, global.TypeNode, global.Type);
         }
 
         foreach (var requirement in program.Requirements)
         {
+            ResolveGenericConstraints(requirement.GenericConstraints);
             foreach (var member in requirement.Members)
             {
                 if (member is RequirementFunctionNode function)
                 {
-                    ResolveFunctionSignature(function.ReturnType, function.Parameters);
+                    ResolveFunctionSignature(function, function.ReturnTypeNode, function.ReturnType, function.Parameters);
                 }
                 else if (member is RequirementFieldNode field)
                 {
-                    ResolveType(field, field.Type);
+                    ResolveType(field, field.TypeNode, field.Type);
                 }
             }
         }
@@ -52,9 +53,11 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
 
         foreach (var structNode in program.Structs)
         {
+            ResolveGenericConstraints(structNode.GenericConstraints);
+            ResolveStructRequirements(structNode.Requirements);
             foreach (var field in structNode.Fields)
             {
-                ResolveType(field, field.Type);
+                ResolveType(field, field.TypeNode, field.Type);
             }
 
             foreach (var method in structNode.Methods)
@@ -76,7 +79,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
         {
             foreach (var variant in union.Variants)
             {
-                ResolveType(variant, variant.Type);
+                ResolveType(variant, variant.TypeNode, variant.Type);
             }
 
             foreach (var method in union.Methods)
@@ -93,23 +96,56 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
 
     private void ResolveFunction(FunctionNode function)
     {
-        ResolveType(function, function.ReturnType);
-        ResolveFunctionSignature(function.ReturnType, function.Parameters);
+        ResolveGenericConstraints(function.GenericConstraints);
+        ResolveFunctionSignature(function, function.ReturnTypeNode, function.ReturnType, function.Parameters);
         ResolveStatements(function.Body);
+    }
+
+    private void ResolveGenericConstraints(IReadOnlyList<GenericConstraintNode> constraints)
+    {
+        foreach (var constraint in constraints)
+        {
+            ResolveStructRequirements(constraint.Requirements);
+        }
+    }
+
+    private void ResolveStructRequirements(IReadOnlyList<StructRequirementNode> requirements)
+    {
+        foreach (var requirement in requirements)
+        {
+            for (var i = 0; i < requirement.TypeArguments.Count; i++)
+            {
+                var fallback = requirement.TypeArguments[i];
+                var typeNode = i < requirement.TypeArgumentNodes.Count
+                    ? requirement.TypeArgumentNodes[i]
+                    : null;
+                if (typeNode is not null)
+                {
+                    ResolveType(typeNode, typeNode, fallback);
+                }
+                else
+                {
+                    _ = ResolveType(fallback);
+                }
+            }
+        }
     }
 
     private void ResolveInterfaceMethod(InterfaceMethodNode method)
     {
-        ResolveType(method, method.ReturnType);
-        ResolveFunctionSignature(method.ReturnType, method.Parameters);
+        ResolveFunctionSignature(method, method.ReturnTypeNode, method.ReturnType, method.Parameters);
     }
 
-    private void ResolveFunctionSignature(string returnType, IReadOnlyList<ParameterNode> parameters)
+    private void ResolveFunctionSignature(
+        SyntaxNode node,
+        TypeNode? typeNode,
+        string returnType,
+        IReadOnlyList<ParameterNode> parameters)
     {
-        _ = ResolveType(returnType);
+        ResolveType(node, typeNode, returnType);
         foreach (var parameter in parameters.Where(parameter => !parameter.IsVariadic))
         {
-            ResolveType(parameter, parameter.Type);
+            ResolveType(parameter, parameter.TypeNode, parameter.Type);
         }
     }
 
@@ -126,7 +162,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
         switch (statement)
         {
             case LetStatement let:
-                ResolveType(let, let.Type);
+                ResolveType(let, let.TypeNode, let.Type);
                 ResolveExpression(let.Initializer);
                 break;
             case ReturnStatement ret:
@@ -190,7 +226,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
         switch (initializer)
         {
             case ForDeclarationInitializerNode declaration:
-                ResolveType(declaration, declaration.Type);
+                ResolveType(declaration, declaration.TypeNode, declaration.Type);
                 ResolveExpression(declaration.Initializer);
                 break;
             case ForExpressionInitializerNode expression:
@@ -203,7 +239,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
     {
         if (binding is not null)
         {
-            ResolveType(binding, binding.Type);
+            ResolveType(binding, binding.TypeNode, binding.Type);
         }
     }
 
@@ -217,7 +253,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
                 ResolveExpression(parenthesized.Expression);
                 break;
             case CastExpressionNode cast:
-                ResolveType(cast, cast.TargetType);
+                ResolveType(cast, cast.TargetTypeNode, cast.TargetType);
                 ResolveExpression(cast.Expression);
                 break;
             case UnaryExpressionNode unary:
@@ -229,7 +265,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             case SizeOfExpressionNode sizeOf:
                 if (sizeOf.TypeOperand is not null)
                 {
-                    ResolveType(sizeOf, sizeOf.TypeOperand);
+                    ResolveType(sizeOf, sizeOf.TypeOperandNode, sizeOf.TypeOperand);
                 }
 
                 ResolveExpression(sizeOf.ExpressionOperand);
@@ -250,7 +286,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             case InitializerExpressionNode initializer:
                 if (initializer.TypeName is not null)
                 {
-                    ResolveType(initializer, initializer.TypeName);
+                    ResolveType(initializer, initializer.TypeNameNode, initializer.TypeName);
                 }
 
                 foreach (var field in initializer.Fields)
@@ -267,12 +303,12 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             case FunctionExpressionNode function:
                 if (function.ReturnType is not null)
                 {
-                    ResolveType(function, function.ReturnType);
+                    ResolveType(function, function.ReturnTypeNode, function.ReturnType);
                 }
 
                 foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
                 {
-                    ResolveType(parameter, parameter.Type);
+                    ResolveType(parameter, parameter.TypeNode, parameter.Type);
                 }
 
                 ResolveExpression(function.ExpressionBody);
@@ -296,9 +332,20 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
                 break;
             case GenericCallExpressionNode call:
                 ResolveExpression(call.Callee);
-                foreach (var typeArgument in call.TypeArguments)
+                for (var i = 0; i < call.TypeArguments.Count; i++)
                 {
-                    _ = ResolveType(typeArgument);
+                    var fallback = call.TypeArguments[i];
+                    var typeNode = i < call.TypeArgumentNodes.Count
+                        ? call.TypeArgumentNodes[i]
+                        : null;
+                    if (typeNode is not null)
+                    {
+                        ResolveType(typeNode, typeNode, fallback);
+                    }
+                    else
+                    {
+                        _ = ResolveType(fallback);
+                    }
                 }
 
                 foreach (var argument in call.Arguments)
@@ -320,6 +367,16 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
     private void ResolveType(SyntaxNode node, string? type)
     {
         node.Semantic.Type = ResolveType(type);
+    }
+
+    private void ResolveType(SyntaxNode node, TypeNode? typeNode, string? fallbackType)
+    {
+        var resolvedType = ResolveType(typeNode?.TypeName ?? fallbackType);
+        node.Semantic.Type = resolvedType;
+        if (typeNode is not null)
+        {
+            typeNode.Semantic.Type = resolvedType;
+        }
     }
 
     private TypeRef ResolveType(string? type)

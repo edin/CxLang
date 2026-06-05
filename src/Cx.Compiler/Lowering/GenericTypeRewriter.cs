@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -15,11 +16,38 @@ internal static class GenericTypeRewriter
                 .Select(function => function with
                 {
                     ReturnType = RewriteConcreteGenericStructTypes(function.ReturnType, concreteStructNames),
+                    ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, concreteStructNames),
                     Parameters = RewriteParameters(function.Parameters, concreteStructNames),
                 })
                 .ToList(),
             TypeAliases = program.TypeAliases
-                .Select(alias => alias with { TargetType = RewriteConcreteGenericStructTypes(alias.TargetType, concreteStructNames) })
+                .Select(alias => alias with
+                {
+                    TargetType = RewriteConcreteGenericStructTypes(alias.TargetType, concreteStructNames),
+                    TargetTypeNode = RewriteTypeNode(alias.TargetTypeNode, concreteStructNames),
+                })
+                .ToList(),
+            Requirements = program.Requirements
+                .Select(requirement => requirement with
+                {
+                    GenericConstraints = RewriteGenericConstraints(requirement.GenericConstraints, concreteStructNames),
+                    Members = requirement.Members
+                        .Select(member => RewriteRequirementMember(member, concreteStructNames))
+                        .ToList(),
+                })
+                .ToList(),
+            Interfaces = program.Interfaces
+                .Select(interfaceNode => interfaceNode with
+                {
+                    Methods = interfaceNode.Methods
+                        .Select(method => method with
+                        {
+                            ReturnType = RewriteConcreteGenericStructTypes(method.ReturnType, concreteStructNames),
+                            ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, concreteStructNames),
+                            Parameters = RewriteParameters(method.Parameters, concreteStructNames),
+                        })
+                        .ToList(),
+                })
                 .ToList(),
             Structs = program.Structs
                 .Select(structNode => RewriteStruct(structNode, concreteStructNames))
@@ -33,6 +61,7 @@ internal static class GenericTypeRewriter
                             ReturnType = method.ReturnType is null
                                 ? null
                                 : RewriteConcreteGenericStructTypes(method.ReturnType, concreteStructNames),
+                            ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, concreteStructNames),
                         })
                         .ToList(),
                     Methods = adapter.Methods
@@ -56,6 +85,7 @@ internal static class GenericTypeRewriter
                         .Select(variant => variant with
                         {
                             Type = RewriteConcreteGenericStructTypes(variant.Type, concreteStructNames),
+                            TypeNode = RewriteTypeNode(variant.TypeNode, concreteStructNames),
                         })
                         .ToList(),
                     Methods = taggedUnion.Methods
@@ -67,6 +97,7 @@ internal static class GenericTypeRewriter
                 .Select(global => global with
                 {
                     Type = RewriteConcreteGenericStructTypes(global.Type, concreteStructNames),
+                    TypeNode = RewriteTypeNode(global.TypeNode, concreteStructNames),
                     Initializer = global.Initializer is null
                         ? null
                         : RewriteExpression(global.Initializer, concreteStructNames),
@@ -92,7 +123,11 @@ internal static class GenericTypeRewriter
         {
             Requirements = RewriteStructRequirements(structNode.Requirements, concreteStructNames),
             Fields = structNode.Fields
-                .Select(field => field with { Type = RewriteConcreteGenericStructTypes(field.Type, concreteStructNames) })
+                .Select(field => field with
+                {
+                    Type = RewriteConcreteGenericStructTypes(field.Type, concreteStructNames),
+                    TypeNode = RewriteTypeNode(field.TypeNode, concreteStructNames),
+                })
                 .ToList(),
             Methods = structNode.Methods
                 .Select(method => Rewrite(method, concreteStructNames))
@@ -110,6 +145,7 @@ internal static class GenericTypeRewriter
                 : RewriteConcreteGenericStructTypes(function.OwnerType, concreteStructNames),
             GenericConstraints = RewriteGenericConstraints(function.GenericConstraints, concreteStructNames),
             ReturnType = RewriteConcreteGenericStructTypes(function.ReturnType, concreteStructNames),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, concreteStructNames),
             Parameters = RewriteParameters(function.Parameters, concreteStructNames),
             Body = function.Body
                 .Select(statement => RewriteStatement(statement, concreteStructNames))
@@ -176,7 +212,11 @@ internal static class GenericTypeRewriter
         parameters
             .Select(parameter => parameter.IsVariadic
                 ? parameter
-                : parameter with { Type = RewriteConcreteGenericStructTypes(parameter.Type, concreteStructNames) })
+                : parameter with
+                {
+                    Type = RewriteConcreteGenericStructTypes(parameter.Type, concreteStructNames),
+                    TypeNode = RewriteTypeNode(parameter.TypeNode, concreteStructNames),
+                })
             .ToList();
 
     private static IReadOnlyList<GenericConstraintNode> RewriteGenericConstraints(
@@ -198,8 +238,30 @@ internal static class GenericTypeRewriter
                 TypeArguments = requirement.TypeArguments
                     .Select(argument => RewriteConcreteGenericStructTypes(argument, concreteStructNames))
                     .ToList(),
+                TypeArgumentNodes = requirement.TypeArgumentNodes
+                    .Select(typeNode => RewriteTypeNode(typeNode, concreteStructNames)!)
+                    .ToList(),
             })
             .ToList();
+
+    private static RequirementMemberNode RewriteRequirementMember(
+        RequirementMemberNode member,
+        IReadOnlySet<string> concreteStructNames) =>
+        member switch
+        {
+            RequirementFieldNode field => field with
+            {
+                Type = RewriteConcreteGenericStructTypes(field.Type, concreteStructNames),
+                TypeNode = RewriteTypeNode(field.TypeNode, concreteStructNames),
+            },
+            RequirementFunctionNode function => function with
+            {
+                ReturnType = RewriteConcreteGenericStructTypes(function.ReturnType, concreteStructNames),
+                ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, concreteStructNames),
+                Parameters = RewriteParameters(function.Parameters, concreteStructNames),
+            },
+            _ => member,
+        };
 
     private static StatementNode RewriteStatement(
         StatementNode statement,
@@ -210,6 +272,7 @@ internal static class GenericTypeRewriter
             LetStatement let => let with
             {
                 Type = RewriteConcreteGenericStructTypes(let.Type, concreteStructNames),
+                TypeNode = RewriteTypeNode(let.TypeNode, concreteStructNames),
                 Initializer = RewriteOptionalExpression(let.Initializer, concreteStructNames),
             },
             ReturnStatement ret => ret with
@@ -309,6 +372,7 @@ internal static class GenericTypeRewriter
             ForDeclarationInitializerNode declaration => declaration with
             {
                 Type = RewriteConcreteGenericStructTypes(declaration.Type, concreteStructNames),
+                TypeNode = RewriteTypeNode(declaration.TypeNode, concreteStructNames),
                 Initializer = RewriteOptionalExpression(declaration.Initializer, concreteStructNames),
             },
             ForExpressionInitializerNode expression => expression with
@@ -326,6 +390,7 @@ internal static class GenericTypeRewriter
         CopySemantic(binding, binding with
         {
             Type = RewriteConcreteGenericStructTypes(binding.Type, concreteStructNames),
+            TypeNode = RewriteTypeNode(binding.TypeNode, concreteStructNames),
         });
 
     private static ExpressionNode? RewriteOptionalExpression(
@@ -346,6 +411,7 @@ internal static class GenericTypeRewriter
             CastExpressionNode cast => cast with
             {
                 TargetType = RewriteConcreteGenericStructTypes(cast.TargetType, concreteStructNames),
+                TargetTypeNode = RewriteTypeNode(cast.TargetTypeNode, concreteStructNames),
                 Expression = RewriteExpression(cast.Expression, concreteStructNames),
             },
             UnaryExpressionNode unary => unary with
@@ -361,6 +427,7 @@ internal static class GenericTypeRewriter
                 TypeOperand = sizeOf.TypeOperand is null
                     ? null
                     : RewriteConcreteGenericStructTypes(sizeOf.TypeOperand, concreteStructNames),
+                TypeOperandNode = RewriteTypeNode(sizeOf.TypeOperandNode, concreteStructNames),
                 ExpressionOperand = RewriteOptionalExpression(sizeOf.ExpressionOperand, concreteStructNames),
             },
             BinaryExpressionNode binary => binary with
@@ -384,6 +451,7 @@ internal static class GenericTypeRewriter
                 TypeName = initializer.TypeName is null
                     ? null
                     : RewriteConcreteGenericStructTypes(initializer.TypeName, concreteStructNames),
+                TypeNameNode = RewriteTypeNode(initializer.TypeNameNode, concreteStructNames),
                 Fields = initializer.Fields
                     .Select(field => field with
                     {
@@ -400,6 +468,7 @@ internal static class GenericTypeRewriter
                 ReturnType = functionExpression.ReturnType is null
                     ? null
                     : RewriteConcreteGenericStructTypes(functionExpression.ReturnType, concreteStructNames),
+                ReturnTypeNode = RewriteTypeNode(functionExpression.ReturnTypeNode, concreteStructNames),
                 ExpressionBody = RewriteOptionalExpression(functionExpression.ExpressionBody, concreteStructNames),
                 BlockBody = functionExpression.BlockBody?
                     .Select(statement => RewriteStatement(statement, concreteStructNames))
@@ -422,6 +491,9 @@ internal static class GenericTypeRewriter
                 Callee = RewriteExpression(call.Callee, concreteStructNames),
                 TypeArguments = call.TypeArguments
                     .Select(argument => RewriteConcreteGenericStructTypes(argument, concreteStructNames))
+                    .ToList(),
+                TypeArgumentNodes = call.TypeArgumentNodes
+                    .Select(typeNode => RewriteTypeNode(typeNode, concreteStructNames)!)
                     .ToList(),
                 Arguments = call.Arguments
                     .Select(argument => RewriteExpression(argument, concreteStructNames))
@@ -473,6 +545,73 @@ internal static class GenericTypeRewriter
 
         return type;
     }
+
+    private static TypeNode? RewriteTypeNode(
+        TypeNode? typeNode,
+        IReadOnlySet<string> concreteStructNames)
+    {
+        if (typeNode is null)
+        {
+            return null;
+        }
+
+        var rewritten = typeNode with
+        {
+            TypeName = RewriteConcreteGenericStructTypes(typeNode.TypeName, concreteStructNames),
+        };
+        SyntaxNode.CloneSemantic(typeNode, rewritten);
+        if (typeNode.Semantic.Type is not null)
+        {
+            rewritten.Semantic.Type = RewriteTypeRef(typeNode.Semantic.Type, concreteStructNames);
+        }
+
+        return rewritten;
+    }
+
+    private static TypeRef RewriteTypeRef(
+        TypeRef type,
+        IReadOnlySet<string> concreteStructNames) =>
+        type switch
+        {
+            TypeRef.Named named => RewriteNamedTypeRef(named, concreteStructNames),
+            TypeRef.Pointer pointer => new TypeRef.Pointer(RewriteTypeRef(pointer.Element, concreteStructNames)),
+            TypeRef.FixedArray array => new TypeRef.FixedArray(RewriteTypeRef(array.Element, concreteStructNames), array.Length),
+            TypeRef.Function function => new TypeRef.Function(
+                function.Parameters.Select(parameter => RewriteTypeRef(parameter, concreteStructNames)).ToList(),
+                RewriteTypeRef(function.ReturnType, concreteStructNames)),
+            _ => type,
+        };
+
+    private static TypeRef RewriteNamedTypeRef(
+        TypeRef.Named named,
+        IReadOnlySet<string> concreteStructNames)
+    {
+        var arguments = named.Arguments
+            .Select(argument => RewriteTypeRef(argument, concreteStructNames))
+            .ToList();
+        if (arguments.Count == 0)
+        {
+            return named;
+        }
+
+        var concreteName = LowerGenericTypeName(named.Name, arguments.Select(FormatTypeRef).ToList());
+        return concreteStructNames.Contains(concreteName)
+            ? new TypeRef.Named(concreteName, [])
+            : new TypeRef.Named(named.Name, arguments);
+    }
+
+    private static string FormatTypeRef(TypeRef type) =>
+        type switch
+        {
+            TypeRef.Unknown => "unknown",
+            TypeRef.Null => "null",
+            TypeRef.Named named when named.Arguments.Count == 0 => named.Name,
+            TypeRef.Named named => $"{named.Name}<{string.Join(",", named.Arguments.Select(FormatTypeRef))}>",
+            TypeRef.Pointer pointer => FormatTypeRef(pointer.Element) + "*",
+            TypeRef.FixedArray array => $"{FormatTypeRef(array.Element)}[{array.Length}]",
+            TypeRef.Function function => $"fn({string.Join(",", function.Parameters.Select(FormatTypeRef))})->{FormatTypeRef(function.ReturnType)}",
+            _ => type.ToString() ?? "unknown",
+        };
 
     private static string SanitizeTypeName(string type) =>
         Regex.Replace(type, "[^A-Za-z0-9_]", "_");
@@ -545,14 +684,7 @@ internal static class GenericTypeRewriter
 
     private static T CopySemantic<T>(SyntaxNode source, T target)
         where T : SyntaxNode
-    {
-        target.Semantic.Type = source.Semantic.Type;
-        target.Semantic.Symbol = source.Semantic.Symbol;
-        target.Semantic.Origin = source.Semantic.Origin;
-        target.Semantic.ModuleName = source.Semantic.ModuleName;
-        target.Semantic.ResolvedCall = source.Semantic.ResolvedCall;
-        return target;
-    }
+        => SyntaxNode.CloneSemantic(source, target);
 }
 
 internal sealed record GenericStructUse(string Name, IReadOnlyList<string> Arguments, string SourceText);

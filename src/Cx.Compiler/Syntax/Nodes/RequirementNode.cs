@@ -12,11 +12,13 @@ public abstract record RequirementMemberNode(Location Location) : SyntaxNode(Loc
 public sealed record RequirementFieldNode(
     Location Location,
     string Name,
-    string Type) : RequirementMemberNode(Location);
+    string Type,
+    TypeNode? TypeNode = null) : RequirementMemberNode(Location);
 
 public sealed record RequirementFunctionNode(
     Location Location,
     bool IsStatic,
     string Name,
     string ReturnType,
-    IReadOnlyList<ParameterNode> Parameters) : RequirementMemberNode(Location);
+    IReadOnlyList<ParameterNode> Parameters,
+    TypeNode? ReturnTypeNode = null) : RequirementMemberNode(Location);

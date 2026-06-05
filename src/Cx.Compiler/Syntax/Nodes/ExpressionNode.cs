@@ -23,7 +23,8 @@ public sealed record CastExpressionNode(
     Location Location,
     string SourceText,
     string TargetType,
-    ExpressionNode Expression) : ExpressionNode(Location, SourceText);
+    ExpressionNode Expression,
+    TypeNode? TargetTypeNode = null) : ExpressionNode(Location, SourceText);
 
 public sealed record UnaryExpressionNode(
     Location Location,
@@ -41,7 +42,8 @@ public sealed record SizeOfExpressionNode(
     Location Location,
     string SourceText,
     string? TypeOperand,
-    ExpressionNode? ExpressionOperand) : ExpressionNode(Location, SourceText);
+    ExpressionNode? ExpressionOperand,
+    TypeNode? TypeOperandNode = null) : ExpressionNode(Location, SourceText);
 
 public sealed record BinaryExpressionNode(
     Location Location,
@@ -69,7 +71,8 @@ public sealed record InitializerExpressionNode(
     string SourceText,
     string? TypeName,
     IReadOnlyList<InitializerFieldNode> Fields,
-    IReadOnlyList<ExpressionNode> Values) : ExpressionNode(Location, SourceText);
+    IReadOnlyList<ExpressionNode> Values,
+    TypeNode? TypeNameNode = null) : ExpressionNode(Location, SourceText);
 
 public sealed record InitializerFieldNode(
     string Name,
@@ -81,7 +84,8 @@ public sealed record FunctionExpressionNode(
     IReadOnlyList<ParameterNode> Parameters,
     string? ReturnType,
     ExpressionNode? ExpressionBody,
-    IReadOnlyList<StatementNode>? BlockBody) : ExpressionNode(Location, SourceText);
+    IReadOnlyList<StatementNode>? BlockBody,
+    TypeNode? ReturnTypeNode = null) : ExpressionNode(Location, SourceText);
 
 public sealed record AssignmentExpressionNode(
     Location Location,
@@ -101,7 +105,19 @@ public sealed record GenericCallExpressionNode(
     string SourceText,
     ExpressionNode Callee,
     IReadOnlyList<string> TypeArguments,
-    IReadOnlyList<ExpressionNode> Arguments) : ExpressionNode(Location, SourceText);
+    IReadOnlyList<ExpressionNode> Arguments,
+    IReadOnlyList<TypeNode> TypeArgumentNodes) : ExpressionNode(Location, SourceText)
+{
+    public GenericCallExpressionNode(
+        Location Location,
+        string SourceText,
+        ExpressionNode Callee,
+        IReadOnlyList<string> TypeArguments,
+        IReadOnlyList<ExpressionNode> Arguments)
+        : this(Location, SourceText, Callee, TypeArguments, Arguments, [])
+    {
+    }
+}
 
 public sealed record MemberExpressionNode(
     Location Location,

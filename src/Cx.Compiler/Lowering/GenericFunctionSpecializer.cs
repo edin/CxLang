@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Lowering;
@@ -19,8 +20,13 @@ internal static class GenericFunctionSpecializer
             TypeParameters = [],
             TypeArguments = arguments,
             ReturnType = SubstituteSelfType(SubstituteGenericType(function.ReturnType, substitutions), selfType),
+            ReturnTypeNode = SubstituteTypeNode(function.ReturnTypeNode, substitutions, selfType),
             Parameters = function.Parameters
-                .Select(parameter => parameter with { Type = SubstituteSelfType(SubstituteGenericType(parameter.Type, substitutions), selfType) })
+                .Select(parameter => parameter with
+                {
+                    Type = SubstituteSelfType(SubstituteGenericType(parameter.Type, substitutions), selfType),
+                    TypeNode = SubstituteTypeNode(parameter.TypeNode, substitutions, selfType),
+                })
                 .ToList(),
             Body = function.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
         };
@@ -53,7 +59,7 @@ internal static class GenericFunctionSpecializer
             LetStatement let => let with
             {
                 Type = SubstituteGenericType(let.Type, substitutions),
-                TypeNode = let.TypeNode is null ? null : let.TypeNode with { TypeName = SubstituteGenericType(let.TypeNode.TypeName, substitutions) },
+                TypeNode = SubstituteTypeNode(let.TypeNode, substitutions),
                 Initializer = SubstituteOptionalExpression(let.Initializer, substitutions),
             },
             ReturnStatement ret => ret with { Expression = SubstituteExpression(ret.Expression, substitutions) },
@@ -82,6 +88,9 @@ internal static class GenericFunctionSpecializer
             },
             ForeachStatement foreachStatement => foreachStatement with
             {
+                IndexBinding = SubstituteForeachBinding(foreachStatement.IndexBinding, substitutions),
+                KeyBinding = SubstituteForeachBinding(foreachStatement.KeyBinding, substitutions),
+                ValueBinding = SubstituteForeachBinding(foreachStatement.ValueBinding, substitutions)!,
                 IterableExpression = SubstituteExpression(foreachStatement.IterableExpression, substitutions),
                 Body = foreachStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
             },
@@ -119,7 +128,7 @@ internal static class GenericFunctionSpecializer
         ForDeclarationInitializerNode declaration => declaration with
         {
             Type = SubstituteGenericType(declaration.Type, substitutions),
-            TypeNode = declaration.TypeNode is null ? null : declaration.TypeNode with { TypeName = SubstituteGenericType(declaration.TypeNode.TypeName, substitutions) },
+            TypeNode = SubstituteTypeNode(declaration.TypeNode, substitutions),
             Initializer = SubstituteOptionalExpression(declaration.Initializer, substitutions),
         },
         ForExpressionInitializerNode expression => expression with
@@ -128,6 +137,17 @@ internal static class GenericFunctionSpecializer
         },
         _ => initializer,
     };
+
+    private static ForeachBinding? SubstituteForeachBinding(
+        ForeachBinding? binding,
+        IReadOnlyDictionary<string, string> substitutions) =>
+        binding is null
+            ? null
+            : binding with
+            {
+                Type = SubstituteGenericType(binding.Type, substitutions),
+                TypeNode = SubstituteTypeNode(binding.TypeNode, substitutions),
+            };
 
     private static ExpressionNode SubstituteExpression(
         ExpressionNode expression,
@@ -145,6 +165,7 @@ internal static class GenericFunctionSpecializer
             {
                 SourceText = sourceText,
                 TargetType = SubstituteGenericType(cast.TargetType, substitutions),
+                TargetTypeNode = SubstituteTypeNode(cast.TargetTypeNode, substitutions),
                 Expression = SubstituteExpression(cast.Expression, substitutions),
             },
             UnaryExpressionNode unary => unary with
@@ -161,6 +182,7 @@ internal static class GenericFunctionSpecializer
             {
                 SourceText = sourceText,
                 TypeOperand = sizeOf.TypeOperand is null ? null : SubstituteGenericType(sizeOf.TypeOperand, substitutions),
+                TypeOperandNode = SubstituteTypeNode(sizeOf.TypeOperandNode, substitutions),
                 ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, substitutions),
             },
             BinaryExpressionNode binary => binary with
@@ -186,12 +208,22 @@ internal static class GenericFunctionSpecializer
             {
                 SourceText = sourceText,
                 TypeName = initializer.TypeName is null ? null : SubstituteGenericType(initializer.TypeName, substitutions),
+                TypeNameNode = SubstituteTypeNode(initializer.TypeNameNode, substitutions),
                 Fields = initializer.Fields.Select(field => field with { Value = SubstituteExpression(field.Value, substitutions) }).ToList(),
                 Values = initializer.Values.Select(value => SubstituteExpression(value, substitutions)).ToList(),
             },
             FunctionExpressionNode functionExpression => functionExpression with
             {
                 SourceText = sourceText,
+                Parameters = functionExpression.Parameters
+                    .Select(parameter => parameter with
+                    {
+                        Type = SubstituteGenericType(parameter.Type, substitutions),
+                        TypeNode = SubstituteTypeNode(parameter.TypeNode, substitutions),
+                    })
+                    .ToList(),
+                ReturnType = functionExpression.ReturnType is null ? null : SubstituteGenericType(functionExpression.ReturnType, substitutions),
+                ReturnTypeNode = SubstituteTypeNode(functionExpression.ReturnTypeNode, substitutions),
                 ExpressionBody = SubstituteOptionalExpression(functionExpression.ExpressionBody, substitutions),
                 BlockBody = functionExpression.BlockBody?.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
             },
@@ -212,6 +244,9 @@ internal static class GenericFunctionSpecializer
                 SourceText = sourceText,
                 Callee = SubstituteExpression(call.Callee, substitutions),
                 TypeArguments = call.TypeArguments.Select(argument => SubstituteGenericType(argument, substitutions)).ToList(),
+                TypeArgumentNodes = call.TypeArgumentNodes
+                    .Select(typeNode => SubstituteTypeNode(typeNode, substitutions)!)
+                    .ToList(),
                 Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions)).ToList(),
             },
             MemberExpressionNode member => member with
@@ -242,6 +277,29 @@ internal static class GenericFunctionSpecializer
         }
 
         return type;
+    }
+
+    private static TypeNode? SubstituteTypeNode(
+        TypeNode? typeNode,
+        IReadOnlyDictionary<string, string> substitutions,
+        string? selfType = null)
+    {
+        if (typeNode is null)
+        {
+            return null;
+        }
+
+        var rewritten = typeNode with
+        {
+            TypeName = SubstituteSelfType(SubstituteGenericType(typeNode.TypeName, substitutions), selfType),
+        };
+        SyntaxNode.CloneSemantic(typeNode, rewritten);
+        if (!string.Equals(typeNode.TypeName, rewritten.TypeName, StringComparison.Ordinal))
+        {
+            rewritten.Semantic.Type = null;
+        }
+
+        return rewritten;
     }
 
 }

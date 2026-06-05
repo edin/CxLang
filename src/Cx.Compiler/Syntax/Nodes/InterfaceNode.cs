@@ -10,4 +10,5 @@ public sealed record InterfaceMethodNode(
     Location Location,
     string Name,
     string ReturnType,
-    IReadOnlyList<ParameterNode> Parameters) : SyntaxNode(Location);
+    IReadOnlyList<ParameterNode> Parameters,
+    TypeNode? ReturnTypeNode = null) : SyntaxNode(Location);

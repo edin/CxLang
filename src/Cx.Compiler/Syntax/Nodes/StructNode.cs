@@ -26,4 +26,14 @@ public sealed record StructFieldNode(
 public sealed record StructRequirementNode(
     Location Location,
     string Name,
-    IReadOnlyList<string> TypeArguments) : SyntaxNode(Location);
+    IReadOnlyList<string> TypeArguments,
+    IReadOnlyList<TypeNode> TypeArgumentNodes) : SyntaxNode(Location)
+{
+    public StructRequirementNode(
+        Location Location,
+        string Name,
+        IReadOnlyList<string> TypeArguments)
+        : this(Location, Name, TypeArguments, [])
+    {
+    }
+}
