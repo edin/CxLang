@@ -4405,13 +4405,13 @@ public sealed class CEmitter
 
         private string? LowerCall(CallExpressionNode call)
         {
+            if (TryLowerResolvedStaticCallExpression(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
+            {
+                return _expressionEmitter.Emit(resolvedCall);
+            }
+
             if (call.Callee is MemberExpressionNode member)
             {
-                if (TryLowerResolvedStaticCallExpression(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedStaticCall)
-                {
-                    return _expressionEmitter.Emit(resolvedStaticCall);
-                }
-
                 return LowerMemberCall(member, call.Arguments);
             }
 
@@ -4501,13 +4501,13 @@ public sealed class CEmitter
 
         private CExpression? LowerGenericCallExpression(GenericCallExpressionNode call)
         {
+            if (TryLowerResolvedStaticCallExpression(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
+            {
+                return resolvedCall;
+            }
+
             if (call.Callee is MemberExpressionNode member)
             {
-                if (TryLowerResolvedStaticCallExpression(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedStaticCall)
-                {
-                    return resolvedStaticCall;
-                }
-
                 var memberCall = LowerGenericMemberCallExpression(member, call.TypeArguments, call.Arguments);
                 if (memberCall is not null)
                 {
@@ -5057,16 +5057,16 @@ public sealed class CEmitter
 
         private CExpression? LowerCallExpression(CallExpressionNode call)
         {
+            if (TryLowerResolvedStaticCallExpression(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
+            {
+                return resolvedCall;
+            }
+
             if (call.Callee is MemberExpressionNode member)
             {
                 if (TryLowerTaggedUnionConstructorExpression(member, call.Arguments) is { } taggedUnionConstructor)
                 {
                     return taggedUnionConstructor;
-                }
-
-                if (TryLowerResolvedStaticCallExpression(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedStaticCall)
-                {
-                    return resolvedStaticCall;
                 }
 
                 return LowerMemberCallExpression(member, call.Arguments);

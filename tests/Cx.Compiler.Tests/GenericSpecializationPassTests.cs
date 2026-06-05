@@ -33,11 +33,15 @@ public sealed class GenericSpecializationPassTests
             .Where(function => function.TypeParameters.Count == 0 && function.TypeArguments.Count > 0)
             .ToList();
         var identity = Assert.Single(specializations);
+        var main = lowered.Functions.Single(function => function.Name == "main");
+        var ret = main.Body.OfType<ReturnStatement>().Single();
+        var call = Assert.IsType<GenericCallExpressionNode>(ret.Expression);
 
         Assert.Equal("identity", identity.Name);
         Assert.Equal(["int"], identity.TypeArguments);
         Assert.Equal("int", identity.ReturnType);
         Assert.Equal("int", Assert.Single(identity.Parameters).Type);
+        Assert.Same(identity, call.Semantic.ResolvedCall?.Function);
         Assert.DoesNotContain(lowered.Functions, function => function.Name == "unused" && function.TypeArguments.Count > 0);
     }
 }

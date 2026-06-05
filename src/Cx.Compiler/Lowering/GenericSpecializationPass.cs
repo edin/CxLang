@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Lowering;
@@ -38,6 +40,7 @@ internal static class GenericSpecializationPass
             }
         }
 
+        RetargetResolvedGenericCalls(program, specializations);
         if (specializations.Count == 0)
         {
             return program;
@@ -56,6 +59,43 @@ internal static class GenericSpecializationPass
         {
             pending.Enqueue(new GenericFunctionUse(resolved.Function, resolved.TypeArguments));
         }
+    }
+
+    private static void RetargetResolvedGenericCalls(
+        ProgramNode program,
+        IReadOnlyDictionary<string, FunctionNode> specializations)
+    {
+        foreach (var expression in EnumerateExpressions(program))
+        {
+            if (expression.Semantic.ResolvedCall is not { Function.TypeParameters.Count: > 0 } resolved
+                || resolved.TypeArguments.Count != resolved.Function.TypeParameters.Count
+                || !specializations.TryGetValue(Key(resolved.Function, resolved.TypeArguments), out var specialized))
+            {
+                continue;
+            }
+
+            EnsureFunctionSymbol(specialized);
+            expression.Semantic.Symbol = specialized.Semantic.Symbol;
+            expression.Semantic.ResolvedCall = new ResolvedCallInfo(
+                specialized,
+                resolved.TypeArguments,
+                resolved.IsInstance);
+        }
+    }
+
+    private static void EnsureFunctionSymbol(FunctionNode function)
+    {
+        if (function.Semantic.Symbol is { Kind: SymbolKind.Function })
+        {
+            return;
+        }
+
+        function.Semantic.Symbol = new Symbol(
+            function.Name,
+            SymbolKind.Function,
+            function.ReturnType,
+            function.Location,
+            function);
     }
 
     private static FunctionNode InstantiateFunction(FunctionNode function, IReadOnlyList<string> arguments)
@@ -77,6 +117,7 @@ internal static class GenericSpecializationPass
             Body = function.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
         };
         specialized.Semantic.ModuleName = function.Semantic.ModuleName;
+        EnsureFunctionSymbol(specialized);
         return specialized;
     }
 
