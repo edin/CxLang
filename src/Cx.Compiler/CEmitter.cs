@@ -11,7 +11,10 @@ public sealed class CEmitter
     private static IReadOnlyList<TypeAdapterNode> s_typeAdapters = [];
 
     public string Emit(ProgramNode program) =>
-        new CTranslationUnitEmitter().Emit(LowerToC(program));
+        Emit(LowerToC(program));
+
+    internal string Emit(CTranslationUnit unit) =>
+        new CTranslationUnitEmitter().Emit(unit);
 
     internal CTranslationUnit LowerToC(ProgramNode program)
     {

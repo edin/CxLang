@@ -26,7 +26,9 @@ public sealed class CxCompiler
             return CompilationResult.Failed(diagnostics.Diagnostics);
         }
 
-        var c = new CEmitter().Emit(program);
+        var cEmitter = new CEmitter();
+        var cUnit = cEmitter.LowerToC(program);
+        var c = cEmitter.Emit(cUnit);
         return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));
     }
 
@@ -38,7 +40,9 @@ public sealed class CxCompiler
             return CompilationResult.Failed(diagnostics.Diagnostics);
         }
 
-        var c = new CEmitter().Emit(program);
+        var cEmitter = new CEmitter();
+        var cUnit = cEmitter.LowerToC(program);
+        var c = cEmitter.Emit(cUnit);
         return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));
     }
 
@@ -103,17 +107,23 @@ public sealed class CxCompiler
             return (null, diagnostics);
         }
 
-        var mergedProgram = TypeAdapterLoweringPass.Apply(MergePrograms(inputPrograms, rootProgram), diagnostics);
-        mergedProgram = ExtensionMergePass.Apply(mergedProgram, diagnostics);
-        mergedProgram = InferTypes(mergedProgram, diagnostics);
+        var preSemanticLowering = new CxPreSemanticLoweringPipeline(diagnostics);
+        var postSemanticLowering = new CxPostSemanticLoweringPipeline(diagnostics);
+        var mergedProgram = preSemanticLowering.Lower(MergePrograms(inputPrograms, rootProgram));
+        mergedProgram = new TypeInferencePass(diagnostics).Apply(mergedProgram);
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
         }
 
-        mergedProgram = LambdaLowerer.Lower(mergedProgram, diagnostics);
         new SemanticAnalyzer(diagnostics, inputPrograms).Analyze(mergedProgram);
 
+        if (diagnostics.HasErrors)
+        {
+            return (null, diagnostics);
+        }
+
+        mergedProgram = postSemanticLowering.Lower(mergedProgram);
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -128,17 +138,21 @@ public sealed class CxCompiler
                 return (null, diagnostics);
             }
 
-            mergedProgram = TypeAdapterLoweringPass.Apply(MergePrograms(inputPrograms.Append(generatedProgram), rootProgram), diagnostics);
-            mergedProgram = ExtensionMergePass.Apply(mergedProgram, diagnostics);
-            mergedProgram = InferTypes(mergedProgram, diagnostics);
+            mergedProgram = preSemanticLowering.Lower(MergePrograms(inputPrograms.Append(generatedProgram), rootProgram));
+            mergedProgram = new TypeInferencePass(diagnostics).Apply(mergedProgram);
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
             }
 
-            mergedProgram = LambdaLowerer.Lower(mergedProgram, diagnostics);
             new SemanticAnalyzer(diagnostics, inputPrograms.Append(generatedProgram).ToList()).Analyze(mergedProgram);
 
+            if (diagnostics.HasErrors)
+            {
+                return (null, diagnostics);
+            }
+
+            mergedProgram = postSemanticLowering.Lower(mergedProgram);
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
@@ -563,9 +577,6 @@ public sealed class CxCompiler
             .Distinct(StringComparer.Ordinal)
             .ToList();
     }
-
-    private static ProgramNode InferTypes(ProgramNode program, DiagnosticBag diagnostics) =>
-        new TypeInferencePass(diagnostics).Apply(program);
 
     private static string GetCurrentPlatform()
     {
