@@ -1,3 +1,5 @@
+using Cx.Compiler.C;
+
 namespace Cx.Compiler.Tests;
 
 public sealed class CompilerSmokeTests
@@ -37,6 +39,49 @@ public sealed class CompilerSmokeTests
         Assert.Contains("int helper()", result.Output);
         Assert.Contains("return helper();", result.Output);
         Assert.DoesNotContain("app_main_helper", result.Output);
+    }
+
+    [Fact]
+    public void CompileToC_WithModulePrefixesCanDisambiguateModuleFunctions()
+    {
+        var result = CompilerTestHelpers.Compile(
+        [
+            CompilerTestHelpers.Source(
+                """
+                module app.main;
+
+                import lib.a;
+                import lib.b;
+
+                fn main() -> int {
+                    return lib.a.helper() + lib.b.helper();
+                }
+                """),
+            CompilerTestHelpers.Source(
+                """
+                module lib.a;
+
+                fn helper() -> int {
+                    return 1;
+                }
+                """,
+                "lib-a.cx"),
+            CompilerTestHelpers.Source(
+                """
+                module lib.b;
+
+                fn helper() -> int {
+                    return 2;
+                }
+                """,
+                "lib-b.cx"),
+        ],
+        new CNameManglerOptions(UseModulePrefixes: true));
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int lib_a_helper()", result.Output);
+        Assert.Contains("int lib_b_helper()", result.Output);
+        Assert.Contains("return lib_a_helper() + lib_b_helper();", result.Output);
     }
 
     [Fact]

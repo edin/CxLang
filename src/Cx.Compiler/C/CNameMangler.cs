@@ -12,6 +12,8 @@ internal sealed class CNameMangler(
 {
     private readonly CNameManglerOptions _options = options ?? new();
 
+    public CNameManglerOptions Options => _options;
+
     public string FunctionName(FunctionNode function) =>
         ModulePrefix(function) +
         (function.OwnerType is null ? function.Name : $"{function.OwnerType}_{function.Name}") +

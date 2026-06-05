@@ -12,6 +12,7 @@ internal sealed class CxPostSemanticLoweringPipeline(DiagnosticBag diagnostics)
             return program;
         }
 
-        return LambdaLowerer.Lower(program, diagnostics);
+        var lowered = LambdaLowerer.Lower(program, diagnostics);
+        return GenericSpecializationPass.Apply(lowered, diagnostics);
     }
 }

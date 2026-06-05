@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.C;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
@@ -13,6 +14,11 @@ internal static class CompilerTestHelpers
 
     public static CompilationResult Compile(string source, string path = "main.cx") =>
         new CxCompiler().CompileToC([Source(source, path)]);
+
+    public static CompilationResult Compile(
+        IEnumerable<SourceFile> sources,
+        CNameManglerOptions? nameManglerOptions = null) =>
+        new CxCompiler().CompileToC(sources, nameManglerOptions);
 
     public static ProgramNode Parse(string source, string path = "main.cx")
     {

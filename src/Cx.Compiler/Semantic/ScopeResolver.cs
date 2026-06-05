@@ -415,7 +415,14 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         Scope scope,
         IReadOnlyList<string> typeArguments)
     {
-        if (GetQualifiedName(member.Target) is { } targetName
+        var targetName = GetQualifiedName(member.Target);
+        if (targetName is not null
+            && FindModuleFunction(targetName, member.MemberName, typeArguments) is { } moduleFunction)
+        {
+            return new ResolvedFunction(moduleFunction, ResolveFunctionTypeArguments(moduleFunction, typeArguments), IsInstance: false);
+        }
+
+        if (targetName is not null
             && FindStaticFunction(targetName, member.MemberName, typeArguments) is { } staticFunction)
         {
             return new ResolvedFunction(staticFunction, ResolveFunctionTypeArguments(staticFunction, typeArguments), IsInstance: false);
@@ -446,6 +453,13 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             function.IsStatic
             && function.OwnerType is not null
             && string.Equals(function.OwnerType, ownerType, StringComparison.Ordinal)
+            && string.Equals(function.Name, name, StringComparison.Ordinal)
+            && MatchesTypeArguments(function, typeArguments));
+
+    private FunctionNode? FindModuleFunction(string moduleName, string name, IReadOnlyList<string> typeArguments) =>
+        _functions.FirstOrDefault(function =>
+            function.OwnerType is null
+            && string.Equals(function.Semantic.ModuleName, moduleName, StringComparison.Ordinal)
             && string.Equals(function.Name, name, StringComparison.Ordinal)
             && MatchesTypeArguments(function, typeArguments));
 

@@ -1,0 +1,449 @@
+using System.Text.RegularExpressions;
+using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Syntax.Nodes;
+
+namespace Cx.Compiler.Lowering;
+
+internal static class GenericSpecializationPass
+{
+    public static ProgramNode Apply(ProgramNode program, DiagnosticBag diagnostics)
+    {
+        if (diagnostics.HasErrors)
+        {
+            return program;
+        }
+
+        var specializations = new Dictionary<string, FunctionNode>(StringComparer.Ordinal);
+        var pending = new Queue<GenericFunctionUse>();
+
+        foreach (var expression in EnumerateExpressions(program))
+        {
+            EnqueueResolvedUse(expression, pending);
+        }
+
+        while (pending.TryDequeue(out var use))
+        {
+            var key = Key(use.Function, use.TypeArguments);
+            if (specializations.ContainsKey(key)
+                || use.Function.TypeParameters.Count != use.TypeArguments.Count)
+            {
+                continue;
+            }
+
+            var specialized = InstantiateFunction(use.Function, use.TypeArguments);
+            specializations.Add(key, specialized);
+            foreach (var expression in EnumerateExpressions(specialized.Body))
+            {
+                EnqueueResolvedUse(expression, pending);
+            }
+        }
+
+        if (specializations.Count == 0)
+        {
+            return program;
+        }
+
+        return program with
+        {
+            Functions = program.Functions.Concat(specializations.Values).ToList(),
+        };
+    }
+
+    private static void EnqueueResolvedUse(ExpressionNode expression, Queue<GenericFunctionUse> pending)
+    {
+        if (expression.Semantic.ResolvedCall is { Function.TypeParameters.Count: > 0 } resolved
+            && resolved.TypeArguments.Count == resolved.Function.TypeParameters.Count)
+        {
+            pending.Enqueue(new GenericFunctionUse(resolved.Function, resolved.TypeArguments));
+        }
+    }
+
+    private static FunctionNode InstantiateFunction(FunctionNode function, IReadOnlyList<string> arguments)
+    {
+        var substitutions = function.TypeParameters
+            .Zip(arguments)
+            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+        var selfType = function.OwnerType is not null && arguments.Count > 0
+            ? $"{function.OwnerType}<{string.Join(",", arguments)}>"
+            : function.OwnerType;
+        var specialized = function with
+        {
+            TypeParameters = [],
+            TypeArguments = arguments,
+            ReturnType = SubstituteSelfType(SubstituteGenericType(function.ReturnType, substitutions), selfType),
+            Parameters = function.Parameters
+                .Select(parameter => parameter with { Type = SubstituteSelfType(SubstituteGenericType(parameter.Type, substitutions), selfType) })
+                .ToList(),
+            Body = function.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+        };
+        specialized.Semantic.ModuleName = function.Semantic.ModuleName;
+        return specialized;
+    }
+
+    private static StatementNode SubstituteStatement(
+        StatementNode statement,
+        IReadOnlyDictionary<string, string> substitutions) => statement switch
+    {
+        LetStatement let => let with
+        {
+            Type = SubstituteGenericType(let.Type, substitutions),
+            Initializer = SubstituteOptionalExpression(let.Initializer, substitutions),
+        },
+        ReturnStatement ret => ret with { Expression = SubstituteExpression(ret.Expression, substitutions) },
+        CStatement c => c with { Expression = SubstituteExpression(c.Expression, substitutions) },
+        IfStatement ifStatement => ifStatement with
+        {
+            Condition = SubstituteExpression(ifStatement.Condition, substitutions),
+            ThenBody = ifStatement.ThenBody.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            ElseBranch = ifStatement.ElseBranch is null ? null : SubstituteStatement(ifStatement.ElseBranch, substitutions),
+        },
+        ElseBlockStatement elseBlock => elseBlock with
+        {
+            Body = elseBlock.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+        },
+        WhileStatement whileStatement => whileStatement with
+        {
+            Condition = SubstituteExpression(whileStatement.Condition, substitutions),
+            Body = whileStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+        },
+        ForStatement forStatement => forStatement with
+        {
+            Initializer = SubstituteForInitializer(forStatement.Initializer, substitutions),
+            Condition = SubstituteExpression(forStatement.Condition, substitutions),
+            Increment = SubstituteExpression(forStatement.Increment, substitutions),
+            Body = forStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+        },
+        ForeachStatement foreachStatement => foreachStatement with
+        {
+            IterableExpression = SubstituteExpression(foreachStatement.IterableExpression, substitutions),
+            Body = foreachStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+        },
+        SwitchStatement switchStatement => switchStatement with
+        {
+            Expression = SubstituteExpression(switchStatement.Expression, substitutions),
+            Cases = switchStatement.Cases.Select(switchCase => switchCase with
+            {
+                Pattern = SubstituteExpression(switchCase.Pattern, substitutions),
+                Body = switchCase.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            }).ToList(),
+            DefaultBody = switchStatement.DefaultBody.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+        },
+        MatchStatement matchStatement => matchStatement with
+        {
+            Expression = SubstituteExpression(matchStatement.Expression, substitutions),
+            Arms = matchStatement.Arms.Select(arm => arm with
+            {
+                Body = arm.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            }).ToList(),
+        },
+        _ => statement,
+    };
+
+    private static ExpressionNode? SubstituteOptionalExpression(
+        ExpressionNode? expression,
+        IReadOnlyDictionary<string, string> substitutions) =>
+        expression is null ? null : SubstituteExpression(expression, substitutions);
+
+    private static ForInitializerNode SubstituteForInitializer(
+        ForInitializerNode initializer,
+        IReadOnlyDictionary<string, string> substitutions) => initializer switch
+    {
+        ForDeclarationInitializerNode declaration => declaration with
+        {
+            Type = SubstituteGenericType(declaration.Type, substitutions),
+            Initializer = SubstituteOptionalExpression(declaration.Initializer, substitutions),
+        },
+        ForExpressionInitializerNode expression => expression with
+        {
+            Expression = SubstituteExpression(expression.Expression, substitutions),
+        },
+        _ => initializer,
+    };
+
+    private static ExpressionNode SubstituteExpression(
+        ExpressionNode expression,
+        IReadOnlyDictionary<string, string> substitutions)
+    {
+        var sourceText = SubstituteGenericType(expression.SourceText, substitutions);
+        return expression switch
+        {
+            ParenthesizedExpressionNode parenthesized => parenthesized with
+            {
+                SourceText = sourceText,
+                Expression = SubstituteExpression(parenthesized.Expression, substitutions),
+            },
+            CastExpressionNode cast => cast with
+            {
+                SourceText = sourceText,
+                TargetType = SubstituteGenericType(cast.TargetType, substitutions),
+                Expression = SubstituteExpression(cast.Expression, substitutions),
+            },
+            UnaryExpressionNode unary => unary with
+            {
+                SourceText = sourceText,
+                Operand = SubstituteExpression(unary.Operand, substitutions),
+            },
+            PostfixExpressionNode postfix => postfix with
+            {
+                SourceText = sourceText,
+                Operand = SubstituteExpression(postfix.Operand, substitutions),
+            },
+            SizeOfExpressionNode sizeOf => sizeOf with
+            {
+                SourceText = sourceText,
+                TypeOperand = sizeOf.TypeOperand is null ? null : SubstituteGenericType(sizeOf.TypeOperand, substitutions),
+                ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, substitutions),
+            },
+            BinaryExpressionNode binary => binary with
+            {
+                SourceText = sourceText,
+                Left = SubstituteExpression(binary.Left, substitutions),
+                Right = SubstituteExpression(binary.Right, substitutions),
+            },
+            ScalarRangeExpressionNode range => range with
+            {
+                SourceText = sourceText,
+                Start = SubstituteExpression(range.Start, substitutions),
+                End = SubstituteExpression(range.End, substitutions),
+            },
+            ConditionalExpressionNode conditional => conditional with
+            {
+                SourceText = sourceText,
+                Condition = SubstituteExpression(conditional.Condition, substitutions),
+                WhenTrue = SubstituteExpression(conditional.WhenTrue, substitutions),
+                WhenFalse = SubstituteExpression(conditional.WhenFalse, substitutions),
+            },
+            InitializerExpressionNode initializer => initializer with
+            {
+                SourceText = sourceText,
+                TypeName = initializer.TypeName is null ? null : SubstituteGenericType(initializer.TypeName, substitutions),
+                Fields = initializer.Fields.Select(field => field with { Value = SubstituteExpression(field.Value, substitutions) }).ToList(),
+                Values = initializer.Values.Select(value => SubstituteExpression(value, substitutions)).ToList(),
+            },
+            FunctionExpressionNode functionExpression => functionExpression with
+            {
+                SourceText = sourceText,
+                ExpressionBody = SubstituteOptionalExpression(functionExpression.ExpressionBody, substitutions),
+                BlockBody = functionExpression.BlockBody?.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            },
+            AssignmentExpressionNode assignment => assignment with
+            {
+                SourceText = sourceText,
+                Target = SubstituteExpression(assignment.Target, substitutions),
+                Value = SubstituteExpression(assignment.Value, substitutions),
+            },
+            CallExpressionNode call => call with
+            {
+                SourceText = sourceText,
+                Callee = SubstituteExpression(call.Callee, substitutions),
+                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions)).ToList(),
+            },
+            GenericCallExpressionNode call => call with
+            {
+                SourceText = sourceText,
+                Callee = SubstituteExpression(call.Callee, substitutions),
+                TypeArguments = call.TypeArguments.Select(argument => SubstituteGenericType(argument, substitutions)).ToList(),
+                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions)).ToList(),
+            },
+            MemberExpressionNode member => member with
+            {
+                SourceText = sourceText,
+                Target = SubstituteExpression(member.Target, substitutions),
+            },
+            IndexExpressionNode index => index with
+            {
+                SourceText = sourceText,
+                Target = SubstituteExpression(index.Target, substitutions),
+                Index = SubstituteExpression(index.Index, substitutions),
+            },
+            _ => expression with { SourceText = sourceText },
+        };
+    }
+
+    private static IEnumerable<ExpressionNode> EnumerateExpressions(ProgramNode program)
+    {
+        foreach (var global in program.GlobalVariables.Where(global => global.Initializer is not null))
+        {
+            foreach (var expression in EnumerateExpressions(global.Initializer!))
+            {
+                yield return expression;
+            }
+        }
+
+        foreach (var function in program.Functions)
+        {
+            foreach (var expression in EnumerateExpressions(function.Body))
+            {
+                yield return expression;
+            }
+        }
+    }
+
+    private static IEnumerable<ExpressionNode> EnumerateExpressions(IEnumerable<StatementNode> statements)
+    {
+        foreach (var statement in statements)
+        {
+            switch (statement)
+            {
+                case LetStatement { Initializer: not null } let:
+                    foreach (var expression in EnumerateExpressions(let.Initializer)) yield return expression;
+                    break;
+                case ReturnStatement ret:
+                    foreach (var expression in EnumerateExpressions(ret.Expression)) yield return expression;
+                    break;
+                case CStatement c:
+                    foreach (var expression in EnumerateExpressions(c.Expression)) yield return expression;
+                    break;
+                case IfStatement ifStatement:
+                    foreach (var expression in EnumerateExpressions(ifStatement.Condition)) yield return expression;
+                    foreach (var expression in EnumerateExpressions(ifStatement.ThenBody)) yield return expression;
+                    if (ifStatement.ElseBranch is not null)
+                    {
+                        foreach (var expression in EnumerateExpressions([ifStatement.ElseBranch])) yield return expression;
+                    }
+                    break;
+                case ElseBlockStatement elseBlock:
+                    foreach (var expression in EnumerateExpressions(elseBlock.Body)) yield return expression;
+                    break;
+                case WhileStatement whileStatement:
+                    foreach (var expression in EnumerateExpressions(whileStatement.Condition)) yield return expression;
+                    foreach (var expression in EnumerateExpressions(whileStatement.Body)) yield return expression;
+                    break;
+                case ForStatement forStatement:
+                    foreach (var expression in EnumerateForInitializerExpressions(forStatement.Initializer)) yield return expression;
+                    foreach (var expression in EnumerateExpressions(forStatement.Condition)) yield return expression;
+                    foreach (var expression in EnumerateExpressions(forStatement.Increment)) yield return expression;
+                    foreach (var expression in EnumerateExpressions(forStatement.Body)) yield return expression;
+                    break;
+                case ForeachStatement foreachStatement:
+                    foreach (var expression in EnumerateExpressions(foreachStatement.IterableExpression)) yield return expression;
+                    foreach (var expression in EnumerateExpressions(foreachStatement.Body)) yield return expression;
+                    break;
+                case SwitchStatement switchStatement:
+                    foreach (var expression in EnumerateExpressions(switchStatement.Expression)) yield return expression;
+                    foreach (var switchCase in switchStatement.Cases)
+                    {
+                        foreach (var expression in EnumerateExpressions(switchCase.Pattern)) yield return expression;
+                        foreach (var expression in EnumerateExpressions(switchCase.Body)) yield return expression;
+                    }
+                    foreach (var expression in EnumerateExpressions(switchStatement.DefaultBody)) yield return expression;
+                    break;
+                case MatchStatement matchStatement:
+                    foreach (var expression in EnumerateExpressions(matchStatement.Expression)) yield return expression;
+                    foreach (var arm in matchStatement.Arms)
+                    {
+                        foreach (var expression in EnumerateExpressions(arm.Body)) yield return expression;
+                    }
+                    break;
+            }
+        }
+    }
+
+    private static IEnumerable<ExpressionNode> EnumerateForInitializerExpressions(ForInitializerNode initializer) => initializer switch
+    {
+        ForDeclarationInitializerNode { Initializer: not null } declaration => EnumerateExpressions(declaration.Initializer),
+        ForExpressionInitializerNode expression => EnumerateExpressions(expression.Expression),
+        _ => [],
+    };
+
+    private static IEnumerable<ExpressionNode> EnumerateExpressions(ExpressionNode expression)
+    {
+        yield return expression;
+        switch (expression)
+        {
+            case ParenthesizedExpressionNode parenthesized:
+                foreach (var child in EnumerateExpressions(parenthesized.Expression)) yield return child;
+                break;
+            case CastExpressionNode cast:
+                foreach (var child in EnumerateExpressions(cast.Expression)) yield return child;
+                break;
+            case UnaryExpressionNode unary:
+                foreach (var child in EnumerateExpressions(unary.Operand)) yield return child;
+                break;
+            case PostfixExpressionNode postfix:
+                foreach (var child in EnumerateExpressions(postfix.Operand)) yield return child;
+                break;
+            case SizeOfExpressionNode { ExpressionOperand: not null } sizeOf:
+                foreach (var child in EnumerateExpressions(sizeOf.ExpressionOperand)) yield return child;
+                break;
+            case BinaryExpressionNode binary:
+                foreach (var child in EnumerateExpressions(binary.Left)) yield return child;
+                foreach (var child in EnumerateExpressions(binary.Right)) yield return child;
+                break;
+            case ScalarRangeExpressionNode range:
+                foreach (var child in EnumerateExpressions(range.Start)) yield return child;
+                foreach (var child in EnumerateExpressions(range.End)) yield return child;
+                break;
+            case ConditionalExpressionNode conditional:
+                foreach (var child in EnumerateExpressions(conditional.Condition)) yield return child;
+                foreach (var child in EnumerateExpressions(conditional.WhenTrue)) yield return child;
+                foreach (var child in EnumerateExpressions(conditional.WhenFalse)) yield return child;
+                break;
+            case InitializerExpressionNode initializer:
+                foreach (var field in initializer.Fields)
+                {
+                    foreach (var child in EnumerateExpressions(field.Value)) yield return child;
+                }
+                foreach (var value in initializer.Values)
+                {
+                    foreach (var child in EnumerateExpressions(value)) yield return child;
+                }
+                break;
+            case FunctionExpressionNode function:
+                if (function.ExpressionBody is not null)
+                {
+                    foreach (var child in EnumerateExpressions(function.ExpressionBody)) yield return child;
+                }
+                if (function.BlockBody is not null)
+                {
+                    foreach (var child in EnumerateExpressions(function.BlockBody)) yield return child;
+                }
+                break;
+            case AssignmentExpressionNode assignment:
+                foreach (var child in EnumerateExpressions(assignment.Target)) yield return child;
+                foreach (var child in EnumerateExpressions(assignment.Value)) yield return child;
+                break;
+            case CallExpressionNode call:
+                foreach (var child in EnumerateExpressions(call.Callee)) yield return child;
+                foreach (var argument in call.Arguments)
+                {
+                    foreach (var child in EnumerateExpressions(argument)) yield return child;
+                }
+                break;
+            case GenericCallExpressionNode call:
+                foreach (var child in EnumerateExpressions(call.Callee)) yield return child;
+                foreach (var argument in call.Arguments)
+                {
+                    foreach (var child in EnumerateExpressions(argument)) yield return child;
+                }
+                break;
+            case MemberExpressionNode member:
+                foreach (var child in EnumerateExpressions(member.Target)) yield return child;
+                break;
+            case IndexExpressionNode index:
+                foreach (var child in EnumerateExpressions(index.Target)) yield return child;
+                foreach (var child in EnumerateExpressions(index.Index)) yield return child;
+                break;
+        }
+    }
+
+    private static string SubstituteSelfType(string type, string? selfType) =>
+        selfType is null
+            ? type
+            : Regex.Replace(type, @"\bSelf\b", selfType);
+
+    private static string SubstituteGenericType(string type, IReadOnlyDictionary<string, string> substitutions)
+    {
+        foreach (var (name, value) in substitutions.OrderByDescending(pair => pair.Key.Length))
+        {
+            type = Regex.Replace(type, $@"\b{Regex.Escape(name)}\b", value);
+        }
+
+        return type;
+    }
+
+    private static string Key(FunctionNode function, IReadOnlyList<string> arguments) =>
+        $"{(function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}")}<{string.Join(",", arguments)}>";
+
+    private sealed record GenericFunctionUse(FunctionNode Function, IReadOnlyList<string> TypeArguments);
+}

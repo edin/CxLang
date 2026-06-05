@@ -20,13 +20,20 @@ public sealed class CxCompiler
 
     public CompilationResult CompileToC(IEnumerable<SourceFile> sources)
     {
+        return CompileToC(sources, nameManglerOptions: null);
+    }
+
+    internal CompilationResult CompileToC(
+        IEnumerable<SourceFile> sources,
+        CNameManglerOptions? nameManglerOptions)
+    {
         var (program, diagnostics) = CompileProgram(sources, BuildTests: false);
         if (program is null)
         {
             return CompilationResult.Failed(diagnostics.Diagnostics);
         }
 
-        var cEmitter = new CEmitter();
+        var cEmitter = new CEmitter(nameManglerOptions);
         var cUnit = cEmitter.LowerToC(program);
         var c = cEmitter.Emit(cUnit);
         return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));

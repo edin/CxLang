@@ -9,9 +9,17 @@ namespace Cx.Compiler;
 public sealed class CEmitter
 {
     private static IReadOnlyList<TypeAdapterNode> s_typeAdapters = [];
-    private static readonly CNameMangler s_nameMangler = new(
-        type => LowerType(type),
-        SanitizeTypeName);
+    private static CNameMangler s_nameMangler = CreateNameMangler();
+
+    public CEmitter()
+        : this(null)
+    {
+    }
+
+    internal CEmitter(CNameManglerOptions? nameManglerOptions)
+    {
+        s_nameMangler = CreateNameMangler(nameManglerOptions);
+    }
 
     public string Emit(ProgramNode program) =>
         Emit(LowerToC(program));
@@ -21,6 +29,7 @@ public sealed class CEmitter
 
     internal CTranslationUnit LowerToC(ProgramNode program)
     {
+        s_nameMangler = CreateNameMangler(s_nameMangler.Options);
         s_typeAdapters = program.TypeAdapters;
         var items = new List<CTranslationUnitItem>
         {
@@ -211,6 +220,12 @@ public sealed class CEmitter
 
         return new CTranslationUnit(items);
     }
+
+    private static CNameMangler CreateNameMangler(CNameManglerOptions? options = null) =>
+        new(
+            type => LowerType(type),
+            SanitizeTypeName,
+            options);
 
     private static void AddRaw(ICollection<CTranslationUnitItem> items, Action<StringBuilder> render)
     {
@@ -1282,6 +1297,11 @@ public sealed class CEmitter
             .Where(function => function.TypeParameters.Count > 0)
             .ToList();
         var emitted = new Dictionary<string, FunctionNode>(StringComparer.Ordinal);
+        foreach (var function in concreteFunctions.Where(function => function.TypeArguments.Count > 0))
+        {
+            emitted.TryAdd(GenericFunctionKey(function, function.TypeArguments), function);
+        }
+
         var queue = new Queue<GenericFunctionUse>();
         var resolver = new ExpressionTypeResolver(program);
 
@@ -1294,7 +1314,7 @@ public sealed class CEmitter
 
         while (queue.TryDequeue(out var use))
         {
-            var key = $"{GetFunctionKey(use.Function)}<{string.Join(",", use.Arguments)}>";
+            var key = GenericFunctionKey(use.Function, use.Arguments);
             if (emitted.ContainsKey(key))
             {
                 continue;
@@ -2753,6 +2773,9 @@ public sealed class CEmitter
 
     private static string GetFunctionKey(FunctionNode function) =>
         function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}";
+
+    private static string GenericFunctionKey(FunctionNode function, IReadOnlyList<string> arguments) =>
+        $"{GetFunctionKey(function)}<{string.Join(",", arguments)}>";
 
     private static string? GetConcreteFunctionOwnerName(FunctionNode function) =>
         function.OwnerType is null
@@ -5028,10 +5051,9 @@ public sealed class CEmitter
         }
 
         private string? TryLowerFunctionReferenceMember(MemberExpressionNode member) =>
-            member.Semantic.Symbol is { Kind: SymbolKind.Function } symbol
-                && symbol.Node is FunctionNode { IsStatic: true }
-                    ? s_nameMangler.SymbolName(symbol)
-                    : null;
+            member.Semantic is { Symbol: { Kind: SymbolKind.Function } symbol, ResolvedCall.IsInstance: false }
+                ? s_nameMangler.SymbolName(symbol)
+                : null;
 
         private CExpression? LowerCallExpression(CallExpressionNode call)
         {
@@ -5323,7 +5345,7 @@ public sealed class CEmitter
             ResolvedCallInfo? resolvedCall,
             IReadOnlyList<ExpressionNode> arguments)
         {
-            if (resolvedCall is not { IsInstance: false, Function: { IsStatic: true, OwnerType: not null } function })
+            if (resolvedCall is not { IsInstance: false })
             {
                 return null;
             }
