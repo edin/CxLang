@@ -9,6 +9,9 @@ namespace Cx.Compiler;
 public sealed class CEmitter
 {
     private static IReadOnlyList<TypeAdapterNode> s_typeAdapters = [];
+    private static readonly CNameMangler s_nameMangler = new(
+        type => LowerType(type),
+        SanitizeTypeName);
 
     public string Emit(ProgramNode program) =>
         Emit(LowerToC(program));
@@ -2746,7 +2749,7 @@ public sealed class CEmitter
     }
 
     private static string GetCFunctionName(FunctionNode function) =>
-        (function.OwnerType is null ? function.Name : $"{function.OwnerType}_{function.Name}") + GetTypeArgumentSuffix(function.TypeArguments);
+        s_nameMangler.FunctionName(function);
 
     private static string GetFunctionKey(FunctionNode function) =>
         function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}";
@@ -2757,11 +2760,6 @@ public sealed class CEmitter
             : function.TypeArguments.Count == 0
                 ? function.OwnerType
                 : LowerType($"{function.OwnerType}<{string.Join(",", function.TypeArguments)}>");
-
-    private static string GetTypeArgumentSuffix(IReadOnlyList<string> arguments) =>
-        arguments.Count == 0
-            ? string.Empty
-            : "_" + string.Join("_", arguments.Select(argument => LowerType(argument)).Select(SanitizeTypeName));
 
     private static string? GetGenericBaseName(string type)
     {
@@ -4339,6 +4337,11 @@ public sealed class CEmitter
             return name;
         }
 
+        private string LowerFunctionReferenceName(NameExpressionNode name) =>
+            name.Semantic.Symbol is { Kind: SymbolKind.Function } symbol
+                ? s_nameMangler.SymbolName(symbol)
+                : LowerName(name.SourceText);
+
         private CExpression LowerNameExpression(string name)
         {
             var loweredName = LowerName(name);
@@ -4404,7 +4407,7 @@ public sealed class CEmitter
                         call.Arguments);
                 }
 
-                return EmitCallExpression(new CFunctionName(LowerName(name.SourceText)), call.Arguments);
+                return EmitCallExpression(new CFunctionName(LowerFunctionReferenceName(name)), call.Arguments);
             }
 
             return null;
@@ -5032,7 +5035,7 @@ public sealed class CEmitter
                 }
 
                 return new CCallExpression(
-                    new CFunctionName(LowerName(name.SourceText)),
+                    new CFunctionName(LowerFunctionReferenceName(name)),
                     call.Arguments.Select(LowerExpression).ToList());
             }
 
