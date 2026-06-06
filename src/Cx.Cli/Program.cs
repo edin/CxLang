@@ -237,6 +237,10 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
         [Description("Report raw C escapes remaining in the lowered C AST.")]
         public bool CRawAudit { get; init; }
 
+        [CommandOption("--generic-raw-audit")]
+        [Description("Report generic specializations still discovered through text fallback.")]
+        public bool GenericRawAudit { get; init; }
+
         [CommandOption("--include-std")]
         [Description("Include embedded standard library files in --ast-audit.")]
         public bool IncludeStandardLibrary { get; init; }
@@ -257,7 +261,9 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
             return 2;
         }
 
-        var result = settings.CRawAudit
+        var result = settings.GenericRawAudit
+            ? CliServices.AuditRawGenericUses(plan.Value.SourceFiles)
+            : settings.CRawAudit
             ? CliServices.AuditRawC(plan.Value.SourceFiles)
             : settings.AstAudit
                 ? CliServices.AuditAst(plan.Value.SourceFiles, settings.IncludeStandardLibrary)
@@ -269,7 +275,7 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
         }
 
         CliServices.PrintDiagnostics(result);
-        if (settings.CRawAudit)
+        if (settings.CRawAudit || settings.GenericRawAudit)
         {
             AnsiConsole.WriteLine(result.Output ?? string.Empty);
             return 0;
@@ -560,6 +566,9 @@ internal static class CliServices
 
     public static CompilationResult AuditRawC(IReadOnlyList<SourceFile> sourceFiles) =>
         new CxCompiler().AuditRawC(sourceFiles);
+
+    public static CompilationResult AuditRawGenericUses(IReadOnlyList<SourceFile> sourceFiles) =>
+        new CxCompiler().AuditRawGenericUses(sourceFiles);
 
     public static int BuildNative(
         ResolvedBuildPlan plan,

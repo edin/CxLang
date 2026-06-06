@@ -1,5 +1,5 @@
-using Cx.Compiler.Lowering;
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -23,12 +23,176 @@ public sealed class GenericLoweringServicesTests
             """);
         CompilerTestHelpers.Resolve(program);
 
-        var uses = new GenericUseCollector(program)
+        var collector = new GenericUseCollector(program);
+        var uses = collector
             .Collect(program)
             .Select(use => $"{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("identity<int>", uses);
+        Assert.Empty(collector.RawGenericUseAuditEntries);
+    }
+
+    [Fact]
+    public void RawGenericUseCollector_ReportsOnlyUsesNotAlreadyKnown()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn identity<T>(value: T) -> T {
+                return value;
+            }
+            """);
+        var generic = Assert.Single(program.Functions);
+        var knownUses = new HashSet<GenericFunctionUseKey>
+        {
+            GenericFunctionUseKey.Create(generic, ["int"]),
+        };
+        var collector = new RawGenericUseCollector([generic]);
+
+        Assert.Empty(collector.Collect("identity<int>(10)", new Dictionary<string, string>(), "raw test", knownUses));
+        Assert.Empty(collector.AuditEntries);
+
+        var uses = collector.Collect("identity<float>(1.0)", new Dictionary<string, string>(), "raw test", knownUses).ToList();
+
+        var use = Assert.Single(uses);
+        Assert.Equal(generic, use.Function);
+        Assert.Equal(["float"], use.TypeArguments);
+        var rawUse = Assert.Single(collector.AuditEntries);
+        Assert.Equal("raw test", rawUse.Context);
+        Assert.Equal("identity", rawUse.FunctionName);
+        Assert.Equal(["float"], rawUse.TypeArguments);
+        Assert.Equal("explicit type argument call", rawUse.Reason);
+    }
+
+    [Fact]
+    public void GenericUseCollector_UsesCallResolverForNormalGenericCalls()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                value: T;
+
+                static fn make(value: T) -> Box<T> {
+                    return Box<T> { value: value };
+                }
+
+                fn replace(value: T) -> bool {
+                    self.value = value;
+                    return true;
+                }
+            }
+
+            fn identity<T>(value: T) -> T {
+                return value;
+            }
+
+            fn main() -> int {
+                let box: Box<int> = Box<int>.make(10);
+                box.replace(20);
+                return identity(box.value);
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var uses = new GenericUseCollector(program)
+            .Collect(program)
+            .Select(use => $"{(use.Function.OwnerType is null ? "" : use.Function.OwnerType + ".")}{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("Box.make<int>", uses);
+        Assert.Contains("Box.replace<int>", uses);
+        Assert.Contains("identity<int>", uses);
+    }
+
+    [Fact]
+    public void GenericUseCollector_UsesResolvedAdapterExposedCalls()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            type u8 = unsigned char;
+            type usize = unsigned long long;
+
+            struct MiniVec<T> {
+                static fn with_capacity(capacity: usize) -> MiniVec<T> {
+                    return MiniVec<T> {};
+                }
+
+                fn add(value: T) -> bool {
+                    return true;
+                }
+            }
+
+            type MiniByteBuffer using MiniVec<u8> {
+                expose static with_capacity -> Self;
+                expose add as write_u8;
+            }
+
+            type MiniStringBuilder using MiniByteBuffer {
+                expose static with_capacity -> Self;
+                expose write_u8;
+            }
+
+            fn main() -> int {
+                let builder: MiniStringBuilder = MiniStringBuilder.with_capacity(8);
+                builder.write_u8(65);
+                return 0;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        program = TypeAdapterLoweringPass.Apply(program, diagnostics);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        CompilerTestHelpers.Resolve(program);
+
+        var uses = new GenericUseCollector(program)
+            .Collect(program)
+            .Select(use => $"{use.Function.OwnerType}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("MiniVec.with_capacity<u8>", uses);
+        Assert.Contains("MiniVec.add<u8>", uses);
+    }
+
+    [Fact]
+    public void GenericUseCollector_UsesCallResolverForAdapterSelfApiCalls()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            type u8 = unsigned char;
+
+            struct MiniVec<T> {
+                fn add(value: T) -> bool {
+                    return true;
+                }
+            }
+
+            type MiniByteBuffer using MiniVec<u8> {
+                expose add as write_u8;
+            }
+
+            type MiniStringBuilder using MiniByteBuffer {
+                expose write_u8;
+
+                fn append_byte(value: u8) -> bool {
+                    return self.write_u8(value);
+                }
+            }
+
+            fn main() -> int {
+                let builder: MiniStringBuilder = MiniStringBuilder {};
+                return builder.append_byte((u8)65) ? 0 : 1;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        program = TypeAdapterLoweringPass.Apply(program, diagnostics);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        CompilerTestHelpers.Resolve(program);
+
+        var uses = new GenericUseCollector(program)
+            .Collect(program)
+            .Select(use => $"{use.Function.OwnerType}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("MiniVec.add<u8>", uses);
     }
 
     [Fact]

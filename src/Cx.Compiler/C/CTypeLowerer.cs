@@ -169,41 +169,17 @@ internal static class CTypeLowerer
 
     public static string NormalizeType(string type) => type.TrimEnd('*').TrimEnd();
 
-    public static string RemovePointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
+    public static string RemovePointer(string type) =>
+        TypeSyntaxFacts.RemovePointer(type);
 
-        return type.TrimEnd();
-    }
-
-    public static string? GetGenericBaseName(string type)
-    {
-        type = type.TrimEnd('*').TrimEnd();
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        return genericStart < 0 ? null : type[..genericStart];
-    }
+    public static string? GetGenericBaseName(string type) =>
+        TypeSyntaxFacts.GetGenericBaseName(type);
 
     public static bool TryParseGenericUse(
         string type,
         out string name,
-        out IReadOnlyList<string> arguments)
-    {
-        name = string.Empty;
-        arguments = [];
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        var genericEnd = type.LastIndexOf('>');
-        if (genericStart <= 0 || genericEnd < genericStart)
-        {
-            return false;
-        }
-
-        name = type[..genericStart].Trim();
-        arguments = SplitGenericArguments(type[(genericStart + 1)..genericEnd]);
-        return true;
-    }
+        out IReadOnlyList<string> arguments) =>
+        TypeSyntaxFacts.TryParseGenericUse(type, out name, out arguments);
 
     public static bool TryParseFixedArrayType(
         string type,
@@ -285,55 +261,8 @@ internal static class CTypeLowerer
         return !string.IsNullOrWhiteSpace(returnType);
     }
 
-    public static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsText))
-        {
-            return [];
-        }
-
-        var arguments = new List<string>();
-        var start = 0;
-        var angleDepth = 0;
-        var parenDepth = 0;
-        var bracketDepth = 0;
-
-        for (var i = 0; i < argumentsText.Length; i++)
-        {
-            switch (argumentsText[i])
-            {
-                case '<':
-                    angleDepth++;
-                    break;
-                case '>':
-                    angleDepth--;
-                    break;
-                case '(':
-                    parenDepth++;
-                    break;
-                case ')':
-                    parenDepth--;
-                    break;
-                case '[':
-                    bracketDepth++;
-                    break;
-                case ']':
-                    bracketDepth--;
-                    break;
-            }
-
-            if (argumentsText[i] != ',' || angleDepth != 0 || parenDepth != 0 || bracketDepth != 0)
-            {
-                continue;
-            }
-
-            arguments.Add(argumentsText[start..i].Trim());
-            start = i + 1;
-        }
-
-        arguments.Add(argumentsText[start..].Trim());
-        return arguments;
-    }
+    public static IReadOnlyList<string> SplitGenericArguments(string argumentsText) =>
+        TypeSyntaxFacts.SplitGenericArguments(argumentsText);
 
     private static string LowerFunctionTypeParameter(
         string parameter,

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Lowering;
@@ -12,6 +13,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
     private readonly IReadOnlyList<TypeAdapterNode> _typeAdapters = program.TypeAdapters;
     private readonly ExpressionTypeResolver _resolver = new(program);
 
+    public IReadOnlyList<RawGenericUseAuditEntry> RawGenericUseAuditEntries => [];
     public IEnumerable<GenericFunctionUse> Collect(ProgramNode program)
     {
         foreach (var expression in program.Functions
@@ -40,14 +42,6 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     public IEnumerable<GenericFunctionUse> Collect(FunctionNode function)
     {
-        foreach (var expression in EnumerateExpressions(function.Body))
-        {
-            foreach (var use in CollectResolvedUse(expression))
-            {
-                yield return use;
-            }
-        }
-
         var selfType = ResolveSelfType(function);
         var selfApiType = ResolveSelfApiType(function);
         var variables = function.Parameters
@@ -59,25 +53,24 @@ internal sealed class GenericUseCollector(ProgramNode program)
             .GroupBy(item => item.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal);
 
-        foreach (var expression in EnumerateExpressionTexts(function.Body))
-        {
-            foreach (var use in FindGenericFunctionUses(expression, variables))
-            {
-                yield return use;
-            }
-        }
-
+        var knownUses = new HashSet<GenericFunctionUseKey>();
         foreach (var expression in EnumerateExpressions(function.Body))
         {
-            foreach (var use in FindGenericFunctionUses(expression, variables, selfApiType))
+            foreach (var use in CollectExpressionGenericUses(expression, variables, selfApiType))
             {
-                yield return use;
+                if (TryRemember(use, knownUses))
+                {
+                    yield return use;
+                }
             }
         }
 
         foreach (var use in FindForeachIteratorGenericUses(function.Body, variables))
         {
-            yield return use;
+            if (TryRemember(use, knownUses))
+            {
+                yield return use;
+            }
         }
     }
 
@@ -88,17 +81,33 @@ internal sealed class GenericUseCollector(ProgramNode program)
             .GroupBy(global => global.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal);
 
+        var knownUses = new HashSet<GenericFunctionUseKey>();
         foreach (var global in program.GlobalVariables.Where(global => global.Initializer is not null))
         {
-            foreach (var use in FindGenericFunctionUses(global.Initializer!.SourceText, variables))
+            foreach (var use in CollectExpressionGenericUses(global.Initializer!, variables))
             {
-                yield return use;
+                if (TryRemember(use, knownUses))
+                {
+                    yield return use;
+                }
             }
 
-            foreach (var use in FindGenericFunctionUses(global.Initializer!, variables))
-            {
-                yield return use;
-            }
+        }
+    }
+
+    public IEnumerable<GenericFunctionUse> CollectExpressionGenericUses(
+        ExpressionNode expression,
+        IReadOnlyDictionary<string, string> variables,
+        string? selfApiType = null)
+    {
+        foreach (var use in CollectResolvedUse(expression))
+        {
+            yield return use;
+        }
+
+        foreach (var use in FindGenericFunctionUses(expression, variables, selfApiType))
+        {
+            yield return use;
         }
     }
 
@@ -111,6 +120,9 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
+    private static bool TryRemember(GenericFunctionUse use, ISet<GenericFunctionUseKey> knownUses) =>
+        knownUses.Add(GenericFunctionUseKey.Create(use.Function, use.TypeArguments));
+
     private IEnumerable<GenericFunctionUse> FindForeachIteratorGenericUses(
         IEnumerable<StatementNode> statements,
         IReadOnlyDictionary<string, string> variables)
@@ -122,7 +134,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 case ForeachStatement foreachStatement:
                     if (foreachStatement.IterableExpression is NameExpressionNode name
                         && variables.TryGetValue(name.SourceText, out var iterableType)
-                        && TryParseGenericUse(iterableType, out var ownerName, out var ownerArguments))
+                        && TypeSyntaxFacts.TryParseGenericUse(iterableType, out var ownerName, out var ownerArguments))
                     {
                         foreach (var iteratorFunction in _genericFunctions.Where(function =>
                             function.OwnerType == ownerName
@@ -135,7 +147,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                                 .Zip(ownerArguments)
                                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
                             var iteratorType = GenericTypeStringRewriter.Substitute(iteratorFunction.ReturnType, substitutions);
-                            if (TryParseGenericUse(iteratorType, out var iteratorOwner, out var iteratorArguments))
+                            if (TypeSyntaxFacts.TryParseGenericUse(iteratorType, out var iteratorOwner, out var iteratorArguments))
                             {
                                 foreach (var iteratorMember in _genericFunctions.Where(function =>
                                     function.OwnerType == iteratorOwner
@@ -213,52 +225,6 @@ internal sealed class GenericUseCollector(ProgramNode program)
     }
 
     private IEnumerable<GenericFunctionUse> FindGenericFunctionUses(
-        string expression,
-        IReadOnlyDictionary<string, string> variables)
-    {
-        foreach (var function in _genericFunctions)
-        {
-            var staticCallee = function.OwnerType is null
-                ? function.Name
-                : $"{function.OwnerType}.{function.Name}";
-            foreach (var arguments in FindExplicitTypeArgumentCalls(expression, staticCallee))
-            {
-                if (arguments.Count == function.TypeParameters.Count)
-                {
-                    yield return new GenericFunctionUse(function, arguments);
-                }
-            }
-        }
-
-        foreach (var (variable, variableType) in variables)
-        {
-            var owner = GetGenericBaseName(variableType);
-            if (owner is null)
-            {
-                continue;
-            }
-
-            foreach (var function in _genericFunctions.Where(function => function.OwnerType == owner && !function.IsStatic))
-            {
-                var inferredCallPattern = $@"\b{Regex.Escape(variable)}\s*\.\s*{Regex.Escape(function.Name)}\s*\(";
-                if (function.TypeParameters.Count == (TryParseGenericUse(variableType, out _, out var receiverArguments) ? receiverArguments.Count : 0)
-                    && Regex.IsMatch(expression, inferredCallPattern))
-                {
-                    yield return new GenericFunctionUse(function, receiverArguments);
-                }
-
-                foreach (var arguments in FindExplicitTypeArgumentCalls(expression, $"{variable}.{function.Name}"))
-                {
-                    if (arguments.Count == function.TypeParameters.Count)
-                    {
-                        yield return new GenericFunctionUse(function, arguments);
-                    }
-                }
-            }
-        }
-    }
-
-    private IEnumerable<GenericFunctionUse> FindGenericFunctionUses(
         ExpressionNode expression,
         IReadOnlyDictionary<string, string> variables,
         string? selfApiType = null)
@@ -266,17 +232,65 @@ internal sealed class GenericUseCollector(ProgramNode program)
         switch (expression)
         {
             case CallExpressionNode call:
+                var resolvedInferredUses = FindResolvedGenericFunctionUses(call.Callee, [], call.Arguments, variables, selfApiType).ToList();
+                if (resolvedInferredUses.Count > 0)
+                {
+                    foreach (var use in resolvedInferredUses)
+                    {
+                        yield return use;
+                    }
+
+                    yield break;
+                }
+
                 foreach (var use in FindInferredGenericFunctionUses(call, variables, selfApiType))
                 {
                     yield return use;
                 }
                 break;
             case GenericCallExpressionNode call:
+                var resolvedExplicitUses = FindResolvedGenericFunctionUses(call.Callee, call.TypeArguments, call.Arguments, variables, selfApiType).ToList();
+                if (resolvedExplicitUses.Count > 0)
+                {
+                    foreach (var use in resolvedExplicitUses)
+                    {
+                        yield return use;
+                    }
+
+                    yield break;
+                }
+
                 foreach (var use in FindExplicitGenericFunctionUses(call, variables, selfApiType))
                 {
                     yield return use;
                 }
                 break;
+        }
+    }
+
+    private IEnumerable<GenericFunctionUse> FindResolvedGenericFunctionUses(
+        ExpressionNode callee,
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        IReadOnlyDictionary<string, string> variables,
+        string? selfApiType)
+    {
+        IReadOnlyDictionary<string, string> resolverVariables = variables;
+        if (selfApiType is not null && variables.ContainsKey("self"))
+        {
+            var mappedVariables = variables
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            mappedVariables["self"] = selfApiType;
+            resolverVariables = mappedVariables;
+        }
+
+        var resolved = new CallResolver(program, _resolver.Resolve)
+            .Resolve(callee, typeArguments, arguments, resolverVariables);
+        if (resolved?.Function is { TypeParameters.Count: > 0 } function
+            && resolved.TypeArguments is { } resolvedTypeArguments
+            && resolvedTypeArguments.Count == function.TypeParameters.Count)
+        {
+            yield return new GenericFunctionUse(function, resolvedTypeArguments);
         }
     }
 
@@ -313,24 +327,6 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
         if (!variables.TryGetValue(targetName, out var targetType))
         {
-            if (FindAdapterExpose(targetName, member.MemberName) is { Expose.IsStatic: true } staticExpose)
-            {
-                var resolvedExpose = ResolveAdapterExpose(staticExpose.Adapter, staticExpose.Expose, []);
-                foreach (var function in _genericFunctions.Where(function =>
-                    function.IsStatic
-                    && function.OwnerType == resolvedExpose.BaseOwner
-                    && function.Name == resolvedExpose.SourceName))
-                {
-                    var arguments = resolvedExpose.TypeArguments.Count == function.TypeParameters.Count
-                        ? resolvedExpose.TypeArguments
-                        : _resolver.InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: false, resolvedExpose.TypeArguments);
-                    if (arguments is not null)
-                    {
-                        yield return new GenericFunctionUse(function, arguments);
-                    }
-                }
-            }
-
             foreach (var function in _genericFunctions.Where(function =>
                 function.IsStatic
                 && function.OwnerType == targetName
@@ -345,53 +341,11 @@ internal sealed class GenericUseCollector(ProgramNode program)
             yield break;
         }
 
-        var normalizedType = RemovePointer(targetType);
-        var receiverArguments = TryParseGenericUse(normalizedType, out _, out var parsedReceiverArguments)
+        var normalizedType = TypeSyntaxFacts.RemovePointer(targetType);
+        var receiverArguments = TypeSyntaxFacts.TryParseGenericUse(normalizedType, out _, out var parsedReceiverArguments)
             ? parsedReceiverArguments
             : [];
-        var ownerType = GetGenericBaseName(normalizedType) ?? normalizedType;
-        var apiType = targetName == "self" && selfApiType is not null
-            ? selfApiType
-            : normalizedType;
-        var apiReceiverArguments = TryParseGenericUse(apiType, out _, out var parsedApiReceiverArguments)
-            ? parsedApiReceiverArguments
-            : [];
-        var apiOwnerType = GetGenericBaseName(apiType) ?? apiType;
-        if (FindAdapterExpose(apiOwnerType, member.MemberName) is { } apiExpose)
-        {
-            var resolvedExpose = ResolveAdapterExpose(apiExpose.Adapter, apiExpose.Expose, apiReceiverArguments);
-            foreach (var function in _genericFunctions.Where(function =>
-                !function.IsStatic
-                && function.OwnerType == resolvedExpose.BaseOwner
-                && function.Name == resolvedExpose.SourceName))
-            {
-                var arguments = resolvedExpose.TypeArguments.Count == function.TypeParameters.Count
-                    ? resolvedExpose.TypeArguments
-                    : _resolver.InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: true, resolvedExpose.TypeArguments);
-                if (arguments is not null)
-                {
-                    yield return new GenericFunctionUse(function, arguments);
-                }
-            }
-        }
-
-        if (FindAdapterExpose(ownerType, member.MemberName) is { } expose)
-        {
-            var resolvedExpose = ResolveAdapterExpose(expose.Adapter, expose.Expose, receiverArguments);
-            foreach (var function in _genericFunctions.Where(function =>
-                !function.IsStatic
-                && function.OwnerType == resolvedExpose.BaseOwner
-                && function.Name == resolvedExpose.SourceName))
-            {
-                var arguments = resolvedExpose.TypeArguments.Count == function.TypeParameters.Count
-                    ? resolvedExpose.TypeArguments
-                    : _resolver.InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: true, resolvedExpose.TypeArguments);
-                if (arguments is not null)
-                {
-                    yield return new GenericFunctionUse(function, arguments);
-                }
-            }
-        }
+        var ownerType = TypeSyntaxFacts.GetGenericBaseName(normalizedType) ?? normalizedType;
 
         foreach (var function in _genericFunctions.Where(function =>
             !function.IsStatic
@@ -440,20 +394,6 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
         if (!variables.TryGetValue(targetName, out var targetType))
         {
-            if (FindAdapterExpose(targetName, member.MemberName) is { Expose.IsStatic: true } expose)
-            {
-                var resolvedExpose = ResolveAdapterExpose(expose.Adapter, expose.Expose, call.TypeArguments);
-                var exposedStatic = _genericFunctions.FirstOrDefault(function =>
-                    function.IsStatic
-                    && function.OwnerType == resolvedExpose.BaseOwner
-                    && function.Name == resolvedExpose.SourceName
-                    && function.TypeParameters.Count == resolvedExpose.TypeArguments.Count);
-                if (exposedStatic is not null)
-                {
-                    yield return new GenericFunctionUse(exposedStatic, resolvedExpose.TypeArguments);
-                }
-            }
-
             var staticFunction = _genericFunctions.FirstOrDefault(function =>
                 function.IsStatic
                 && function.OwnerType == targetName
@@ -467,7 +407,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             yield break;
         }
 
-        var ownerType = GetGenericBaseName(RemovePointer(targetType));
+        var ownerType = TypeSyntaxFacts.GetGenericBaseName(TypeSyntaxFacts.RemovePointer(targetType));
         var matchedMethod = _genericFunctions.FirstOrDefault(candidate =>
             !candidate.IsStatic
             && candidate.OwnerType == ownerType
@@ -477,107 +417,6 @@ internal sealed class GenericUseCollector(ProgramNode program)
         {
             yield return new GenericFunctionUse(matchedMethod, call.TypeArguments);
         }
-    }
-
-    private static IReadOnlyList<IReadOnlyList<string>> FindExplicitTypeArgumentCalls(string expression, string callee)
-    {
-        var uses = new List<IReadOnlyList<string>>();
-        var pattern = Regex.Escape(callee).Replace("\\.", @"\s*\.\s*") + @"\s*<";
-
-        foreach (Match match in Regex.Matches(expression, pattern))
-        {
-            var openIndex = expression.IndexOf('<', match.Index + match.Length - 1);
-            if (openIndex < 0)
-            {
-                continue;
-            }
-
-            var closeIndex = FindMatchingGenericClose(expression, openIndex);
-            if (closeIndex < 0)
-            {
-                continue;
-            }
-
-            var after = expression[(closeIndex + 1)..];
-            if (!Regex.IsMatch(after, @"^\s*\("))
-            {
-                continue;
-            }
-
-            uses.Add(SplitGenericArguments(expression[(openIndex + 1)..closeIndex]));
-        }
-
-        return uses;
-    }
-
-    private AdapterExposeMatch? FindAdapterExpose(string? adapterName, string exposedName)
-    {
-        if (adapterName is null)
-        {
-            return null;
-        }
-
-        foreach (var adapter in _typeAdapters.Where(adapter => adapter.Name == adapterName))
-        {
-            var expose = adapter.ExposedMethods.FirstOrDefault(expose => expose.ExposedName == exposedName);
-            if (expose is not null)
-            {
-                return new AdapterExposeMatch(adapter, expose);
-            }
-        }
-
-        return null;
-    }
-
-    private ResolvedAdapterExpose ResolveAdapterExpose(
-        TypeAdapterNode adapter,
-        ExposeMethodNode expose,
-        IReadOnlyList<string> receiverArguments)
-    {
-        var currentAdapter = adapter;
-        var currentExpose = expose;
-        var currentArguments = receiverArguments;
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        while (true)
-        {
-            var baseType = SubstituteAdapterBaseType(currentAdapter, currentArguments);
-            var baseOwner = GetGenericBaseName(baseType) ?? baseType;
-            var baseArguments = TryParseGenericUse(baseType, out _, out var parsedBaseArguments)
-                ? parsedBaseArguments
-                : [];
-            var key = $"{currentAdapter.Name}.{currentExpose.ExposedName}";
-            if (!seen.Add(key))
-            {
-                return new ResolvedAdapterExpose(baseType, baseOwner, currentExpose.SourceName, baseArguments);
-            }
-
-            var nextAdapter = _typeAdapters.FirstOrDefault(adapter => adapter.Name == baseOwner);
-            var nextExpose = nextAdapter?.ExposedMethods.FirstOrDefault(expose =>
-                expose.IsStatic == currentExpose.IsStatic
-                && expose.ExposedName == currentExpose.SourceName);
-            if (nextAdapter is null || nextExpose is null)
-            {
-                return new ResolvedAdapterExpose(baseType, baseOwner, currentExpose.SourceName, baseArguments);
-            }
-
-            currentAdapter = nextAdapter;
-            currentExpose = nextExpose;
-            currentArguments = baseArguments;
-        }
-    }
-
-    private static string SubstituteAdapterBaseType(TypeAdapterNode adapter, IReadOnlyList<string> receiverArguments)
-    {
-        if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
-        {
-            return adapter.BaseType;
-        }
-
-        var substitutions = adapter.TypeParameters
-            .Zip(receiverArguments)
-            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return GenericTypeStringRewriter.Substitute(adapter.BaseType, substitutions);
     }
 
     private static IEnumerable<ExpressionNode> EnumerateExpressions(ProgramNode program)
@@ -949,7 +788,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
         if (selfParameter is not null && !Regex.IsMatch(selfParameter.Type, @"\bSelf\b"))
         {
-            return RemovePointer(selfParameter.Type);
+            return TypeSyntaxFacts.RemovePointer(selfParameter.Type);
         }
 
         return ResolveAdapterStorageType(function.OwnerType);
@@ -983,7 +822,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             type = type[..^1].TrimEnd();
         }
 
-        var adapterName = GetGenericBaseName(type) ?? type;
+        var adapterName = TypeSyntaxFacts.GetGenericBaseName(type) ?? type;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         while (true)
         {
@@ -993,22 +832,25 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 return prefix + type + pointerSuffix;
             }
 
-            var receiverArguments = TryParseGenericUse(type, out _, out var parsedArguments)
+            var receiverArguments = TypeSyntaxFacts.TryParseGenericUse(type, out _, out var parsedArguments)
                 ? parsedArguments
                 : [];
             type = SubstituteAdapterBaseType(adapter, receiverArguments);
-            adapterName = GetGenericBaseName(type) ?? type;
+            adapterName = TypeSyntaxFacts.GetGenericBaseName(type) ?? type;
         }
     }
 
-    private static string RemovePointer(string type)
+    private static string SubstituteAdapterBaseType(TypeAdapterNode adapter, IReadOnlyList<string> receiverArguments)
     {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
+        if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
         {
-            type = type.TrimEnd()[..^1];
+            return adapter.BaseType;
         }
 
-        return type.TrimEnd();
+        var substitutions = adapter.TypeParameters
+            .Zip(receiverArguments)
+            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+        return GenericTypeStringRewriter.Substitute(adapter.BaseType, substitutions);
     }
 
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch
@@ -1019,96 +861,14 @@ internal sealed class GenericUseCollector(ProgramNode program)
         _ => null,
     };
 
-    private static string? GetGenericBaseName(string type)
-    {
-        type = type.TrimEnd('*').TrimEnd();
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        return genericStart < 0 ? null : type[..genericStart].Trim();
-    }
-
-    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
-    {
-        name = string.Empty;
-        arguments = [];
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        var genericEnd = type.LastIndexOf('>');
-        if (genericStart <= 0 || genericEnd < genericStart)
-        {
-            return false;
-        }
-
-        name = type[..genericStart].Trim();
-        arguments = SplitGenericArguments(type[(genericStart + 1)..genericEnd]);
-        return true;
-    }
-
-    private static int FindMatchingGenericClose(string type, int openIndex)
-    {
-        var depth = 0;
-        for (var i = openIndex; i < type.Length; i++)
-        {
-            if (type[i] == '<')
-            {
-                depth++;
-            }
-            else if (type[i] == '>')
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return i;
-                }
-            }
-        }
-
-        return -1;
-    }
-
-    private static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsText))
-        {
-            return [];
-        }
-
-        var arguments = new List<string>();
-        var start = 0;
-        var angleDepth = 0;
-        var parenDepth = 0;
-        var bracketDepth = 0;
-
-        for (var i = 0; i < argumentsText.Length; i++)
-        {
-            switch (argumentsText[i])
-            {
-                case '<': angleDepth++; break;
-                case '>': angleDepth--; break;
-                case '(': parenDepth++; break;
-                case ')': parenDepth--; break;
-                case '[': bracketDepth++; break;
-                case ']': bracketDepth--; break;
-            }
-
-            if (argumentsText[i] != ',' || angleDepth != 0 || parenDepth != 0 || bracketDepth != 0)
-            {
-                continue;
-            }
-
-            arguments.Add(argumentsText[start..i].Trim());
-            start = i + 1;
-        }
-
-        arguments.Add(argumentsText[start..].Trim());
-        return arguments;
-    }
-
-    private sealed record AdapterExposeMatch(TypeAdapterNode Adapter, ExposeMethodNode Expose);
-
-    private sealed record ResolvedAdapterExpose(
-        string BaseType,
-        string BaseOwner,
-        string SourceName,
-        IReadOnlyList<string> TypeArguments);
 }
 
 internal sealed record GenericFunctionUse(FunctionNode Function, IReadOnlyList<string> TypeArguments);
+
+internal readonly record struct GenericFunctionUseKey(string FunctionName, string TypeArguments)
+{
+    public static GenericFunctionUseKey Create(FunctionNode function, IReadOnlyList<string> typeArguments) =>
+        new(
+            function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}",
+            string.Join(",", typeArguments));
+}

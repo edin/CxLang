@@ -66,6 +66,19 @@ public sealed class CxCompiler
         return CompilationResult.Succeeded(FormatRawAuditReport(report), diagnostics.Diagnostics);
     }
 
+    public CompilationResult AuditRawGenericUses(IEnumerable<SourceFile> sources)
+    {
+        var (program, diagnostics) = CompileProgram(sources, BuildTests: false);
+        if (program is null)
+        {
+            return CompilationResult.Failed(diagnostics.Diagnostics);
+        }
+
+        var collector = new GenericUseCollector(program);
+        _ = collector.Collect(program).ToList();
+        return CompilationResult.Succeeded(FormatRawGenericUseAuditReport(collector.RawGenericUseAuditEntries), diagnostics.Diagnostics);
+    }
+
     private static (ProgramNode? Program, DiagnosticBag Diagnostics) CompileProgram(
         IEnumerable<SourceFile> sources,
         bool BuildTests,
@@ -577,6 +590,25 @@ public sealed class CxCompiler
         {
             builder.AppendLine($"{entry.Kind} {entry.Category} at {entry.Path}");
             builder.AppendLine($"  {entry.Text}");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string FormatRawGenericUseAuditReport(IReadOnlyList<RawGenericUseAuditEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return "No raw generic use fallback found.";
+        }
+
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine($"Raw generic use fallback: {entries.Count}");
+        foreach (var entry in entries)
+        {
+            builder.AppendLine($"- {entry.Context}: {entry.FunctionName}<{string.Join(", ", entry.TypeArguments)}>");
+            builder.AppendLine($"  reason: {entry.Reason}");
+            builder.AppendLine($"  expression: {entry.Expression}");
         }
 
         return builder.ToString();
