@@ -74,6 +74,44 @@ public sealed class CallResolverTests
         Assert.Equal(["int"], resolved.ParameterTypes.Select(TypeRefFormatter.ToCxString).ToArray());
     }
 
+    [Fact]
+    public void Resolve_ResolvesStaticAdapterExposedMethodToBaseFunction()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            struct Vec<T> {
+                static fn create() -> Vec<T> {
+                    return Vec<T> {};
+                }
+            }
+
+            type IntStack using Vec<int> {
+                expose static create -> Self;
+            }
+
+            fn main() -> int {
+                let stack: IntStack = IntStack.create();
+                return 0;
+            }
+            """);
+        var local = Assert.IsType<LetStatement>(program.Functions.Single(function => function.Name == "main").Body[0]);
+        var call = Assert.IsType<CallExpressionNode>(local.Initializer);
+        var resolver = CreateResolver(program);
+
+        var resolved = resolver.Resolve(
+            call.Callee,
+            [],
+            call.Arguments,
+            new Dictionary<string, string>(StringComparer.Ordinal));
+
+        Assert.NotNull(resolved);
+        Assert.NotNull(resolved.Function);
+        Assert.Equal("create", resolved.Function.Name);
+        Assert.Equal("Vec", resolved.Function.OwnerType);
+        Assert.False(resolved.IsInstance);
+        Assert.Equal(["int"], resolved.TypeArguments);
+    }
+
     private static ProgramNode ParseAndResolveTypes(string source)
     {
         var program = CompilerTestHelpers.Parse(source);

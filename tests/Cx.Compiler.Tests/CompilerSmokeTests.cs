@@ -139,6 +139,140 @@ public sealed class CompilerSmokeTests
     }
 
     [Fact]
+    public void CompileToC_LowersAdapterExposedInstanceCallsThroughResolvedCallInfo()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            type usize = unsigned long long;
+
+            struct MiniVec<T> {
+                data: T*;
+
+                fn add(value: T) -> bool {
+                    return true;
+                }
+            }
+
+            type MiniStack<T> using MiniVec<T> {
+                expose add as push;
+            }
+
+            fn main() -> int {
+                let stack: MiniStack<int> = MiniStack<int> {};
+                stack.push(10);
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("MiniVec_int stack = (MiniVec_int){ 0 };", result.Output);
+        Assert.Contains("MiniVec_add_int(&stack, 10);", result.Output);
+        Assert.DoesNotContain("MiniVec_add(stack", result.Output);
+    }
+
+    [Fact]
+    public void CompileToC_LowersChainedAdapterExposedInstanceCallsThroughResolvedCallInfo()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            type usize = unsigned long long;
+            type u8 = unsigned char;
+
+            struct MiniVec<T> {
+                data: T*;
+
+                fn add(value: T) -> bool {
+                    return true;
+                }
+            }
+
+            type MiniByteBuffer using MiniVec<u8> {
+                expose add as write_u8;
+            }
+
+            type MiniStringBuilder using MiniByteBuffer {
+                expose write_u8;
+            }
+
+            fn main() -> int {
+                let builder: MiniStringBuilder = MiniStringBuilder {};
+                builder.write_u8(65);
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("MiniVec_u8 builder = (MiniVec_u8){ 0 };", result.Output);
+        Assert.Contains("MiniVec_add_u8(&builder, 65);", result.Output);
+        Assert.DoesNotContain("MiniVec_add(builder", result.Output);
+    }
+
+    [Fact]
+    public void CompileToC_LowersStaticAdapterExposedCallsThroughResolvedCallInfo()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            type usize = unsigned long long;
+
+            struct MiniVec<T> {
+                data: T*;
+
+                static fn create() -> MiniVec<T> {
+                    return MiniVec<T> {};
+                }
+            }
+
+            type MiniIntStack using MiniVec<int> {
+                expose static create -> Self;
+            }
+
+            fn main() -> int {
+                let stack: MiniIntStack = MiniIntStack.create();
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("MiniVec_int stack = MiniVec_create_int();", result.Output);
+        Assert.DoesNotContain("MiniIntStack.create", result.Output);
+    }
+
+    [Fact]
+    public void CompileToC_LowersChainedStaticAdapterExposedCallsThroughResolvedCallInfo()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            type usize = unsigned long long;
+            type u8 = unsigned char;
+
+            struct MiniVec<T> {
+                data: T*;
+
+                static fn with_capacity(capacity: usize) -> MiniVec<T> {
+                    return MiniVec<T> {};
+                }
+            }
+
+            type MiniByteBuffer using MiniVec<u8> {
+                expose static with_capacity -> Self;
+            }
+
+            type MiniStringBuilder using MiniByteBuffer {
+                expose static with_capacity -> Self;
+            }
+
+            fn main() -> int {
+                let builder: MiniStringBuilder = MiniStringBuilder.with_capacity(8);
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("MiniVec_u8 builder = MiniVec_with_capacity_u8(8);", result.Output);
+        Assert.DoesNotContain("MiniStringBuilder.with_capacity", result.Output);
+    }
+
+    [Fact]
     public void CompileTestsToC_GeneratesRunnerForTestBlock()
     {
         var result = new CxCompiler().CompileTestsToC(

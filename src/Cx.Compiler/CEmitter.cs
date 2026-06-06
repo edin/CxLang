@@ -4082,32 +4082,6 @@ public sealed class CEmitter
             var target = targetName.SourceText;
             if (!_variables.TryGetValue(target, out var targetType))
             {
-                if (_adapterExposes.TryGetValue($"{target}.{member.MemberName}", out var staticExpose)
-                    && staticExpose.IsStatic)
-                {
-                    var resolvedExpose = ResolveAdapterExpose(staticExpose, []);
-                    var staticGenericExpose = FindInferredGenericCall(
-                        resolvedExpose.BaseOwner,
-                        resolvedExpose.SourceName,
-                        arguments,
-                        skipSelf: false,
-                        preferredTypeArguments: resolvedExpose.TypeArguments);
-                    if (staticGenericExpose is not null)
-                    {
-                        return new CCallExpression(
-                            new CResolvedFunction(ModuleName: GetFunctionModule(staticGenericExpose.OwnerType, staticGenericExpose.Name), staticGenericExpose.CName),
-                            arguments.Select(LowerExpression).ToList());
-                    }
-
-                    var staticBaseMethodKey = $"{resolvedExpose.BaseOwner}.{resolvedExpose.SourceName}";
-                    if (_methodNames.TryGetValue(staticBaseMethodKey, out var staticBaseCName))
-                    {
-                        return new CCallExpression(
-                            new CResolvedFunction(GetFunctionModule(resolvedExpose.BaseOwner, resolvedExpose.SourceName) ?? resolvedExpose.BaseOwner, staticBaseCName),
-                            arguments.Select(LowerExpression).ToList());
-                    }
-                }
-
                 var staticGenericCall = FindInferredGenericCall(target, member.MemberName, arguments, skipSelf: false);
                 if (staticGenericCall is not null)
                 {
@@ -4154,26 +4128,6 @@ public sealed class CEmitter
             var receiverArguments = TryParseGenericUse(RemovePointer(normalizedType), out _, out var parsedReceiverArguments)
                 ? parsedReceiverArguments
                 : [];
-            var adapterName = GetGenericBaseName(RemovePointer(normalizedType)) ?? RemovePointer(normalizedType);
-            var receiverApiType = target == "self" && SelfApiType is not null
-                ? SelfApiType
-                : RemovePointer(normalizedType);
-            var receiverApiArguments = TryParseGenericUse(receiverApiType, out _, out var parsedReceiverApiArguments)
-                ? parsedReceiverApiArguments
-                : [];
-            var receiverApiName = GetGenericBaseName(receiverApiType) ?? receiverApiType;
-            if (_adapterExposes.TryGetValue($"{receiverApiName}.{member.MemberName}", out var apiSelfAdapterExpose)
-                && LowerAdapterExposeCall(apiSelfAdapterExpose, receiverApiArguments, arguments, target, isPointer) is { } apiSelfExposeCall)
-            {
-                return apiSelfExposeCall;
-            }
-
-            if (_adapterExposes.TryGetValue($"{adapterName}.{member.MemberName}", out var adapterExpose)
-                && LowerAdapterExposeCall(adapterExpose, receiverArguments, arguments, target, isPointer) is { } adapterExposeCall)
-            {
-                return adapterExposeCall;
-            }
-
             var genericMemberCall = FindInferredGenericMemberCall(
                 GetGenericBaseName(RemovePointer(normalizedType)),
                 RemovePointer(normalizedType),
@@ -4212,11 +4166,6 @@ public sealed class CEmitter
                 return new CCallExpression(
                     new CResolvedFunction(NormalizeType(targetType), cName),
                     loweredArguments);
-            }
-
-            if (TryFindAdapterExpose(adapterName, RemovePointer(normalizedType), receiverArguments, member.MemberName) is { } fallbackAdapterExpose)
-            {
-                return LowerAdapterExposeCall(fallbackAdapterExpose, receiverArguments, arguments, target, isPointer);
             }
 
             return null;
@@ -5257,34 +5206,6 @@ public sealed class CEmitter
                 current = next;
                 currentArguments = baseArguments;
             }
-        }
-
-        private AdapterExposeInfo? TryFindAdapterExpose(
-            string adapterName,
-            string storageType,
-            IReadOnlyList<string> receiverArguments,
-            string exposedName)
-        {
-            if (_adapterExposes.TryGetValue($"{adapterName}.{exposedName}", out var direct))
-            {
-                return direct;
-            }
-
-            foreach (var expose in _adapterExposes.Values)
-            {
-                if (expose.ExposedName != exposedName || expose.IsStatic)
-                {
-                    continue;
-                }
-
-                var baseType = SubstituteAdapterBaseType(expose, receiverArguments);
-                if (LowerType(baseType) == LowerType(storageType))
-                {
-                    return expose;
-                }
-            }
-
-            return null;
         }
 
         public sealed record MatchInfo(
