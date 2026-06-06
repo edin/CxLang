@@ -562,56 +562,14 @@ internal static class GenericTypeRewriter
         SyntaxNode.CloneSemantic(typeNode, rewritten);
         if (typeNode.Semantic.Type is not null)
         {
-            rewritten.Semantic.Type = RewriteTypeRef(typeNode.Semantic.Type, concreteStructNames);
+            rewritten.Semantic.Type = TypeRefRewriter.RewriteConcreteGenericNames(
+                typeNode.Semantic.Type,
+                LowerGenericTypeName,
+                concreteStructNames);
         }
 
         return rewritten;
     }
-
-    private static TypeRef RewriteTypeRef(
-        TypeRef type,
-        IReadOnlySet<string> concreteStructNames) =>
-        type switch
-        {
-            TypeRef.Named named => RewriteNamedTypeRef(named, concreteStructNames),
-            TypeRef.Pointer pointer => new TypeRef.Pointer(RewriteTypeRef(pointer.Element, concreteStructNames)),
-            TypeRef.FixedArray array => new TypeRef.FixedArray(RewriteTypeRef(array.Element, concreteStructNames), array.Length),
-            TypeRef.Function function => new TypeRef.Function(
-                function.Parameters.Select(parameter => RewriteTypeRef(parameter, concreteStructNames)).ToList(),
-                RewriteTypeRef(function.ReturnType, concreteStructNames)),
-            _ => type,
-        };
-
-    private static TypeRef RewriteNamedTypeRef(
-        TypeRef.Named named,
-        IReadOnlySet<string> concreteStructNames)
-    {
-        var arguments = named.Arguments
-            .Select(argument => RewriteTypeRef(argument, concreteStructNames))
-            .ToList();
-        if (arguments.Count == 0)
-        {
-            return named;
-        }
-
-        var concreteName = LowerGenericTypeName(named.Name, arguments.Select(FormatTypeRef).ToList());
-        return concreteStructNames.Contains(concreteName)
-            ? new TypeRef.Named(concreteName, [])
-            : new TypeRef.Named(named.Name, arguments);
-    }
-
-    private static string FormatTypeRef(TypeRef type) =>
-        type switch
-        {
-            TypeRef.Unknown => "unknown",
-            TypeRef.Null => "null",
-            TypeRef.Named named when named.Arguments.Count == 0 => named.Name,
-            TypeRef.Named named => $"{named.Name}<{string.Join(",", named.Arguments.Select(FormatTypeRef))}>",
-            TypeRef.Pointer pointer => FormatTypeRef(pointer.Element) + "*",
-            TypeRef.FixedArray array => $"{FormatTypeRef(array.Element)}[{array.Length}]",
-            TypeRef.Function function => $"fn({string.Join(",", function.Parameters.Select(FormatTypeRef))})->{FormatTypeRef(function.ReturnType)}",
-            _ => type.ToString() ?? "unknown",
-        };
 
     private static string SanitizeTypeName(string type) =>
         Regex.Replace(type, "[^A-Za-z0-9_]", "_");

@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Lowering;
@@ -118,21 +120,29 @@ internal static class GenericStructSpecializer
         var substitutions = definition.TypeParameters
             .Zip(arguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+        var typeSubstitutions = GenericTypeSubstitutionBuilder.Build(substitutions);
         var fields = definition.Fields
             .Select(field =>
             {
-                var fieldType = SubstituteGenericType(field.Type, substitutions);
+                var fieldType = GenericTypeStringRewriter.Substitute(field.Type, substitutions);
                 collectFromType(fieldType);
-                return new StructFieldNode(field.Location, field.Name, fieldType, field.Attributes);
+                return CopySemantic(field, field with
+                {
+                    Type = fieldType,
+                    TypeNode = SubstituteTypeNode(field.TypeNode, substitutions, typeSubstitutions),
+                });
             })
             .ToList();
         var requirements = definition.Requirements
-            .Select(requirement => new StructRequirementNode(
-                requirement.Location,
-                requirement.Name,
-                requirement.TypeArguments
-                    .Select(argument => SubstituteGenericType(argument, substitutions))
-                    .ToList()))
+            .Select(requirement => CopySemantic(requirement, requirement with
+            {
+                TypeArguments = requirement.TypeArguments
+                    .Select(argument => GenericTypeStringRewriter.Substitute(argument, substitutions))
+                    .ToList(),
+                TypeArgumentNodes = requirement.TypeArgumentNodes
+                    .Select(typeNode => SubstituteTypeNode(typeNode, substitutions, typeSubstitutions)!)
+                    .ToList(),
+            }))
             .ToList();
         var specialized = new StructNode(
             definition.Location,
@@ -252,15 +262,14 @@ internal static class GenericStructSpecializer
         }
     }
 
-    private static string SubstituteGenericType(string type, IReadOnlyDictionary<string, string> substitutions)
-    {
-        foreach (var (name, value) in substitutions.OrderByDescending(pair => pair.Key.Length))
-        {
-            type = Regex.Replace(type, $@"\b{Regex.Escape(name)}\b", value);
-        }
-
-        return type;
-    }
+    private static TypeNode? SubstituteTypeNode(
+        TypeNode? typeNode,
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
+        TypeNodeRewriter.Rewrite(
+            typeNode,
+            typeName => GenericTypeStringRewriter.Substitute(typeName, substitutions),
+            typeSubstitutions);
 
     private static IReadOnlySet<string> GetOpenTypeParameterNames(ProgramNode program) =>
         program.Structs.SelectMany(structNode => structNode.TypeParameters)
@@ -276,4 +285,8 @@ internal static class GenericStructSpecializer
         IReadOnlySet<string> openTypeParameterNames) =>
         typeArguments.Any(argument => openTypeParameterNames.Any(parameter =>
             Regex.IsMatch(argument, $@"\b{Regex.Escape(parameter)}\b")));
+
+    private static T CopySemantic<T>(SyntaxNode source, T target)
+        where T : SyntaxNode
+        => SyntaxNode.CloneSemantic(source, target);
 }

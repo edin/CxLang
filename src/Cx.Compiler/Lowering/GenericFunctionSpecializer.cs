@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
@@ -12,23 +11,25 @@ internal static class GenericFunctionSpecializer
         var substitutions = function.TypeParameters
             .Zip(arguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+        var typeSubstitutions = GenericTypeSubstitutionBuilder.Build(substitutions);
         var selfType = function.OwnerType is not null && arguments.Count > 0
             ? $"{function.OwnerType}<{string.Join(",", arguments)}>"
             : function.OwnerType;
+        var selfTypeRef = GenericTypeSubstitutionBuilder.ParseType(selfType);
         var specialized = function with
         {
             TypeParameters = [],
             TypeArguments = arguments,
-            ReturnType = SubstituteSelfType(SubstituteGenericType(function.ReturnType, substitutions), selfType),
-            ReturnTypeNode = SubstituteTypeNode(function.ReturnTypeNode, substitutions, selfType),
+            ReturnType = GenericTypeStringRewriter.SubstituteAndSelf(function.ReturnType, substitutions, selfType),
+            ReturnTypeNode = SubstituteTypeNode(function.ReturnTypeNode, substitutions, typeSubstitutions, selfType, selfTypeRef),
             Parameters = function.Parameters
                 .Select(parameter => parameter with
                 {
-                    Type = SubstituteSelfType(SubstituteGenericType(parameter.Type, substitutions), selfType),
-                    TypeNode = SubstituteTypeNode(parameter.TypeNode, substitutions, selfType),
+                    Type = GenericTypeStringRewriter.SubstituteAndSelf(parameter.Type, substitutions, selfType),
+                    TypeNode = SubstituteTypeNode(parameter.TypeNode, substitutions, typeSubstitutions, selfType, selfTypeRef),
                 })
                 .ToList(),
-            Body = function.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+            Body = function.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
         };
         specialized.Semantic.ModuleName = function.Semantic.ModuleName;
         EnsureFunctionSymbol(specialized);
@@ -52,64 +53,65 @@ internal static class GenericFunctionSpecializer
 
     private static StatementNode SubstituteStatement(
         StatementNode statement,
-        IReadOnlyDictionary<string, string> substitutions)
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions)
     {
         return statement switch
         {
             LetStatement let => let with
             {
-                Type = SubstituteGenericType(let.Type, substitutions),
-                TypeNode = SubstituteTypeNode(let.TypeNode, substitutions),
-                Initializer = SubstituteOptionalExpression(let.Initializer, substitutions),
+                Type = GenericTypeStringRewriter.Substitute(let.Type, substitutions),
+                TypeNode = SubstituteTypeNode(let.TypeNode, substitutions, typeSubstitutions),
+                Initializer = SubstituteOptionalExpression(let.Initializer, substitutions, typeSubstitutions),
             },
-            ReturnStatement ret => ret with { Expression = SubstituteExpression(ret.Expression, substitutions) },
-            CStatement c => c with { Expression = SubstituteExpression(c.Expression, substitutions) },
+            ReturnStatement ret => ret with { Expression = SubstituteExpression(ret.Expression, substitutions, typeSubstitutions) },
+            CStatement c => c with { Expression = SubstituteExpression(c.Expression, substitutions, typeSubstitutions) },
             IfStatement ifStatement => ifStatement with
             {
-                Condition = SubstituteExpression(ifStatement.Condition, substitutions),
-                ThenBody = ifStatement.ThenBody.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
-                ElseBranch = ifStatement.ElseBranch is null ? null : SubstituteStatement(ifStatement.ElseBranch, substitutions),
+                Condition = SubstituteExpression(ifStatement.Condition, substitutions, typeSubstitutions),
+                ThenBody = ifStatement.ThenBody.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                ElseBranch = ifStatement.ElseBranch is null ? null : SubstituteStatement(ifStatement.ElseBranch, substitutions, typeSubstitutions),
             },
             ElseBlockStatement elseBlock => elseBlock with
             {
-                Body = elseBlock.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                Body = elseBlock.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
             },
             WhileStatement whileStatement => whileStatement with
             {
-                Condition = SubstituteExpression(whileStatement.Condition, substitutions),
-                Body = whileStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                Condition = SubstituteExpression(whileStatement.Condition, substitutions, typeSubstitutions),
+                Body = whileStatement.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
             },
             ForStatement forStatement => forStatement with
             {
-                Initializer = SubstituteForInitializer(forStatement.Initializer, substitutions),
-                Condition = SubstituteExpression(forStatement.Condition, substitutions),
-                Increment = SubstituteExpression(forStatement.Increment, substitutions),
-                Body = forStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                Initializer = SubstituteForInitializer(forStatement.Initializer, substitutions, typeSubstitutions),
+                Condition = SubstituteExpression(forStatement.Condition, substitutions, typeSubstitutions),
+                Increment = SubstituteExpression(forStatement.Increment, substitutions, typeSubstitutions),
+                Body = forStatement.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
             },
             ForeachStatement foreachStatement => foreachStatement with
             {
-                IndexBinding = SubstituteForeachBinding(foreachStatement.IndexBinding, substitutions),
-                KeyBinding = SubstituteForeachBinding(foreachStatement.KeyBinding, substitutions),
-                ValueBinding = SubstituteForeachBinding(foreachStatement.ValueBinding, substitutions)!,
-                IterableExpression = SubstituteExpression(foreachStatement.IterableExpression, substitutions),
-                Body = foreachStatement.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                IndexBinding = SubstituteForeachBinding(foreachStatement.IndexBinding, substitutions, typeSubstitutions),
+                KeyBinding = SubstituteForeachBinding(foreachStatement.KeyBinding, substitutions, typeSubstitutions),
+                ValueBinding = SubstituteForeachBinding(foreachStatement.ValueBinding, substitutions, typeSubstitutions)!,
+                IterableExpression = SubstituteExpression(foreachStatement.IterableExpression, substitutions, typeSubstitutions),
+                Body = foreachStatement.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
             },
             SwitchStatement switchStatement => switchStatement with
             {
-                Expression = SubstituteExpression(switchStatement.Expression, substitutions),
+                Expression = SubstituteExpression(switchStatement.Expression, substitutions, typeSubstitutions),
                 Cases = switchStatement.Cases.Select(switchCase => switchCase with
                 {
-                    Pattern = SubstituteExpression(switchCase.Pattern, substitutions),
-                    Body = switchCase.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                    Pattern = SubstituteExpression(switchCase.Pattern, substitutions, typeSubstitutions),
+                    Body = switchCase.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
                 }).ToList(),
-                DefaultBody = switchStatement.DefaultBody.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                DefaultBody = switchStatement.DefaultBody.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
             },
             MatchStatement matchStatement => matchStatement with
             {
-                Expression = SubstituteExpression(matchStatement.Expression, substitutions),
+                Expression = SubstituteExpression(matchStatement.Expression, substitutions, typeSubstitutions),
                 Arms = matchStatement.Arms.Select(arm => arm with
                 {
-                    Body = arm.Body.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                    Body = arm.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
                 }).ToList(),
             },
             _ => statement,
@@ -118,99 +120,103 @@ internal static class GenericFunctionSpecializer
 
     private static ExpressionNode? SubstituteOptionalExpression(
         ExpressionNode? expression,
-        IReadOnlyDictionary<string, string> substitutions) =>
-        expression is null ? null : SubstituteExpression(expression, substitutions);
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
+        expression is null ? null : SubstituteExpression(expression, substitutions, typeSubstitutions);
 
     private static ForInitializerNode SubstituteForInitializer(
         ForInitializerNode initializer,
-        IReadOnlyDictionary<string, string> substitutions) => initializer switch
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions) => initializer switch
     {
         ForDeclarationInitializerNode declaration => declaration with
         {
-            Type = SubstituteGenericType(declaration.Type, substitutions),
-            TypeNode = SubstituteTypeNode(declaration.TypeNode, substitutions),
-            Initializer = SubstituteOptionalExpression(declaration.Initializer, substitutions),
+            Type = GenericTypeStringRewriter.Substitute(declaration.Type, substitutions),
+            TypeNode = SubstituteTypeNode(declaration.TypeNode, substitutions, typeSubstitutions),
+            Initializer = SubstituteOptionalExpression(declaration.Initializer, substitutions, typeSubstitutions),
         },
         ForExpressionInitializerNode expression => expression with
         {
-            Expression = SubstituteExpression(expression.Expression, substitutions),
+            Expression = SubstituteExpression(expression.Expression, substitutions, typeSubstitutions),
         },
         _ => initializer,
     };
 
     private static ForeachBinding? SubstituteForeachBinding(
         ForeachBinding? binding,
-        IReadOnlyDictionary<string, string> substitutions) =>
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
         binding is null
             ? null
             : binding with
             {
-                Type = SubstituteGenericType(binding.Type, substitutions),
-                TypeNode = SubstituteTypeNode(binding.TypeNode, substitutions),
+                Type = GenericTypeStringRewriter.Substitute(binding.Type, substitutions),
+                TypeNode = SubstituteTypeNode(binding.TypeNode, substitutions, typeSubstitutions),
             };
 
     private static ExpressionNode SubstituteExpression(
         ExpressionNode expression,
-        IReadOnlyDictionary<string, string> substitutions)
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions)
     {
-        var sourceText = SubstituteGenericType(expression.SourceText, substitutions);
+        var sourceText = GenericTypeStringRewriter.Substitute(expression.SourceText, substitutions);
         return expression switch
         {
             ParenthesizedExpressionNode parenthesized => parenthesized with
             {
                 SourceText = sourceText,
-                Expression = SubstituteExpression(parenthesized.Expression, substitutions),
+                Expression = SubstituteExpression(parenthesized.Expression, substitutions, typeSubstitutions),
             },
             CastExpressionNode cast => cast with
             {
                 SourceText = sourceText,
-                TargetType = SubstituteGenericType(cast.TargetType, substitutions),
-                TargetTypeNode = SubstituteTypeNode(cast.TargetTypeNode, substitutions),
-                Expression = SubstituteExpression(cast.Expression, substitutions),
+                TargetType = GenericTypeStringRewriter.Substitute(cast.TargetType, substitutions),
+                TargetTypeNode = SubstituteTypeNode(cast.TargetTypeNode, substitutions, typeSubstitutions),
+                Expression = SubstituteExpression(cast.Expression, substitutions, typeSubstitutions),
             },
             UnaryExpressionNode unary => unary with
             {
                 SourceText = sourceText,
-                Operand = SubstituteExpression(unary.Operand, substitutions),
+                Operand = SubstituteExpression(unary.Operand, substitutions, typeSubstitutions),
             },
             PostfixExpressionNode postfix => postfix with
             {
                 SourceText = sourceText,
-                Operand = SubstituteExpression(postfix.Operand, substitutions),
+                Operand = SubstituteExpression(postfix.Operand, substitutions, typeSubstitutions),
             },
             SizeOfExpressionNode sizeOf => sizeOf with
             {
                 SourceText = sourceText,
-                TypeOperand = sizeOf.TypeOperand is null ? null : SubstituteGenericType(sizeOf.TypeOperand, substitutions),
-                TypeOperandNode = SubstituteTypeNode(sizeOf.TypeOperandNode, substitutions),
-                ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, substitutions),
+                TypeOperand = sizeOf.TypeOperand is null ? null : GenericTypeStringRewriter.Substitute(sizeOf.TypeOperand, substitutions),
+                TypeOperandNode = SubstituteTypeNode(sizeOf.TypeOperandNode, substitutions, typeSubstitutions),
+                ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, substitutions, typeSubstitutions),
             },
             BinaryExpressionNode binary => binary with
             {
                 SourceText = sourceText,
-                Left = SubstituteExpression(binary.Left, substitutions),
-                Right = SubstituteExpression(binary.Right, substitutions),
+                Left = SubstituteExpression(binary.Left, substitutions, typeSubstitutions),
+                Right = SubstituteExpression(binary.Right, substitutions, typeSubstitutions),
             },
             ScalarRangeExpressionNode range => range with
             {
                 SourceText = sourceText,
-                Start = SubstituteExpression(range.Start, substitutions),
-                End = SubstituteExpression(range.End, substitutions),
+                Start = SubstituteExpression(range.Start, substitutions, typeSubstitutions),
+                End = SubstituteExpression(range.End, substitutions, typeSubstitutions),
             },
             ConditionalExpressionNode conditional => conditional with
             {
                 SourceText = sourceText,
-                Condition = SubstituteExpression(conditional.Condition, substitutions),
-                WhenTrue = SubstituteExpression(conditional.WhenTrue, substitutions),
-                WhenFalse = SubstituteExpression(conditional.WhenFalse, substitutions),
+                Condition = SubstituteExpression(conditional.Condition, substitutions, typeSubstitutions),
+                WhenTrue = SubstituteExpression(conditional.WhenTrue, substitutions, typeSubstitutions),
+                WhenFalse = SubstituteExpression(conditional.WhenFalse, substitutions, typeSubstitutions),
             },
             InitializerExpressionNode initializer => initializer with
             {
                 SourceText = sourceText,
-                TypeName = initializer.TypeName is null ? null : SubstituteGenericType(initializer.TypeName, substitutions),
-                TypeNameNode = SubstituteTypeNode(initializer.TypeNameNode, substitutions),
-                Fields = initializer.Fields.Select(field => field with { Value = SubstituteExpression(field.Value, substitutions) }).ToList(),
-                Values = initializer.Values.Select(value => SubstituteExpression(value, substitutions)).ToList(),
+                TypeName = initializer.TypeName is null ? null : GenericTypeStringRewriter.Substitute(initializer.TypeName, substitutions),
+                TypeNameNode = SubstituteTypeNode(initializer.TypeNameNode, substitutions, typeSubstitutions),
+                Fields = initializer.Fields.Select(field => field with { Value = SubstituteExpression(field.Value, substitutions, typeSubstitutions) }).ToList(),
+                Values = initializer.Values.Select(value => SubstituteExpression(value, substitutions, typeSubstitutions)).ToList(),
             },
             FunctionExpressionNode functionExpression => functionExpression with
             {
@@ -218,88 +224,62 @@ internal static class GenericFunctionSpecializer
                 Parameters = functionExpression.Parameters
                     .Select(parameter => parameter with
                     {
-                        Type = SubstituteGenericType(parameter.Type, substitutions),
-                        TypeNode = SubstituteTypeNode(parameter.TypeNode, substitutions),
+                        Type = GenericTypeStringRewriter.Substitute(parameter.Type, substitutions),
+                        TypeNode = SubstituteTypeNode(parameter.TypeNode, substitutions, typeSubstitutions),
                     })
                     .ToList(),
-                ReturnType = functionExpression.ReturnType is null ? null : SubstituteGenericType(functionExpression.ReturnType, substitutions),
-                ReturnTypeNode = SubstituteTypeNode(functionExpression.ReturnTypeNode, substitutions),
-                ExpressionBody = SubstituteOptionalExpression(functionExpression.ExpressionBody, substitutions),
-                BlockBody = functionExpression.BlockBody?.Select(statement => SubstituteStatement(statement, substitutions)).ToList(),
+                ReturnType = functionExpression.ReturnType is null ? null : GenericTypeStringRewriter.Substitute(functionExpression.ReturnType, substitutions),
+                ReturnTypeNode = SubstituteTypeNode(functionExpression.ReturnTypeNode, substitutions, typeSubstitutions),
+                ExpressionBody = SubstituteOptionalExpression(functionExpression.ExpressionBody, substitutions, typeSubstitutions),
+                BlockBody = functionExpression.BlockBody?.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
             },
             AssignmentExpressionNode assignment => assignment with
             {
                 SourceText = sourceText,
-                Target = SubstituteExpression(assignment.Target, substitutions),
-                Value = SubstituteExpression(assignment.Value, substitutions),
+                Target = SubstituteExpression(assignment.Target, substitutions, typeSubstitutions),
+                Value = SubstituteExpression(assignment.Value, substitutions, typeSubstitutions),
             },
             CallExpressionNode call => call with
             {
                 SourceText = sourceText,
-                Callee = SubstituteExpression(call.Callee, substitutions),
-                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions)).ToList(),
+                Callee = SubstituteExpression(call.Callee, substitutions, typeSubstitutions),
+                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions, typeSubstitutions)).ToList(),
             },
             GenericCallExpressionNode call => call with
             {
                 SourceText = sourceText,
-                Callee = SubstituteExpression(call.Callee, substitutions),
-                TypeArguments = call.TypeArguments.Select(argument => SubstituteGenericType(argument, substitutions)).ToList(),
+                Callee = SubstituteExpression(call.Callee, substitutions, typeSubstitutions),
+                TypeArguments = call.TypeArguments.Select(argument => GenericTypeStringRewriter.Substitute(argument, substitutions)).ToList(),
                 TypeArgumentNodes = call.TypeArgumentNodes
-                    .Select(typeNode => SubstituteTypeNode(typeNode, substitutions)!)
+                    .Select(typeNode => SubstituteTypeNode(typeNode, substitutions, typeSubstitutions)!)
                     .ToList(),
-                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions)).ToList(),
+                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions, typeSubstitutions)).ToList(),
             },
             MemberExpressionNode member => member with
             {
                 SourceText = sourceText,
-                Target = SubstituteExpression(member.Target, substitutions),
+                Target = SubstituteExpression(member.Target, substitutions, typeSubstitutions),
             },
             IndexExpressionNode index => index with
             {
                 SourceText = sourceText,
-                Target = SubstituteExpression(index.Target, substitutions),
-                Index = SubstituteExpression(index.Index, substitutions),
+                Target = SubstituteExpression(index.Target, substitutions, typeSubstitutions),
+                Index = SubstituteExpression(index.Index, substitutions, typeSubstitutions),
             },
             _ => expression with { SourceText = sourceText },
         };
     }
 
-    private static string SubstituteSelfType(string type, string? selfType) =>
-        selfType is null
-            ? type
-            : Regex.Replace(type, @"\bSelf\b", selfType);
-
-    private static string SubstituteGenericType(string type, IReadOnlyDictionary<string, string> substitutions)
-    {
-        foreach (var (name, value) in substitutions.OrderByDescending(pair => pair.Key.Length))
-        {
-            type = Regex.Replace(type, $@"\b{Regex.Escape(name)}\b", value);
-        }
-
-        return type;
-    }
-
     private static TypeNode? SubstituteTypeNode(
         TypeNode? typeNode,
         IReadOnlyDictionary<string, string> substitutions,
-        string? selfType = null)
-    {
-        if (typeNode is null)
-        {
-            return null;
-        }
-
-        var rewritten = typeNode with
-        {
-            TypeName = SubstituteSelfType(SubstituteGenericType(typeNode.TypeName, substitutions), selfType),
-        };
-        SyntaxNode.CloneSemantic(typeNode, rewritten);
-        if (!string.Equals(typeNode.TypeName, rewritten.TypeName, StringComparison.Ordinal))
-        {
-            rewritten.Semantic.Type = null;
-        }
-
-        return rewritten;
-    }
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions,
+        string? selfType = null,
+        TypeRef? selfTypeRef = null) =>
+        TypeNodeRewriter.Rewrite(
+            typeNode,
+            typeName => GenericTypeStringRewriter.SubstituteAndSelf(typeName, substitutions, selfType),
+            typeSubstitutions,
+            selfTypeRef);
 
 }

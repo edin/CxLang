@@ -89,6 +89,35 @@ public sealed class GenericLoweringServicesTests
     }
 
     [Fact]
+    public void GenericFunctionSpecializer_RewritesSemanticTypeRefsOnTypeNodes()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                value: T;
+            }
+
+            fn identity<T>(value: Box<T>*) -> Box<T>* {
+                let local: Box<T>* = value;
+                return local;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var generic = program.Functions.Single();
+
+        var specialized = GenericFunctionSpecializer.Specialize(generic, ["int"]);
+        var parameter = Assert.Single(specialized.Parameters);
+        var local = Assert.IsType<LetStatement>(specialized.Body[0]);
+
+        Assert.Equal("Box<int>*", parameter.Type);
+        Assert.Equal(parameter.Type, TypeRefFormatter.ToCxString(parameter.TypeNode!.Semantic.Type!));
+        Assert.Equal("Box<int>*", local.Type);
+        Assert.Equal(local.Type, TypeRefFormatter.ToCxString(local.TypeNode!.Semantic.Type!));
+    }
+
+    [Fact]
     public void GenericTypeRewriter_RewritesExpressionTypeNodes()
     {
         var program = CompilerTestHelpers.Parse(
@@ -212,5 +241,36 @@ public sealed class GenericLoweringServicesTests
         var field = Assert.Single(box.Fields);
         Assert.Equal("Box_int", box.Name);
         Assert.Equal("int", field.Type);
+    }
+
+    [Fact]
+    public void GenericStructSpecializer_RewritesTypeNodesAndSemanticTypeRefs()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                value: T;
+                next: Box<T>*;
+            }
+
+            struct Holder {
+                box: Box<int>;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var structs = GenericStructSpecializer.Specialize(program, []);
+        var box = Assert.Single(structs);
+        var value = box.Fields.Single(field => field.Name == "value");
+        var next = box.Fields.Single(field => field.Name == "next");
+
+        Assert.Equal("int", value.Type);
+        Assert.Equal(value.Type, value.TypeNode?.TypeName);
+        Assert.Equal(value.Type, TypeRefFormatter.ToCxString(value.TypeNode!.Semantic.Type!));
+        Assert.Equal("Box<int>*", next.Type);
+        Assert.Equal(next.Type, next.TypeNode?.TypeName);
+        Assert.Equal(next.Type, TypeRefFormatter.ToCxString(next.TypeNode!.Semantic.Type!));
     }
 }

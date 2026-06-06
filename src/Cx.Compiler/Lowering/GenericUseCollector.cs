@@ -52,9 +52,9 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var selfApiType = ResolveSelfApiType(function);
         var variables = function.Parameters
             .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => (parameter.Name, Type: SubstituteSelfType(parameter.Type, selfType)))
+            .Select(parameter => (parameter.Name, Type: GenericTypeStringRewriter.SubstituteSelf(parameter.Type, selfType)))
             .Concat(CollectLocalVariables(function.Body)
-                .Select(local => (local.Name, Type: SubstituteSelfType(local.Type, selfType))))
+                .Select(local => (local.Name, Type: GenericTypeStringRewriter.SubstituteSelf(local.Type, selfType))))
             .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !string.IsNullOrWhiteSpace(item.Type))
             .GroupBy(item => item.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal);
@@ -134,7 +134,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                             var substitutions = iteratorFunction.TypeParameters
                                 .Zip(ownerArguments)
                                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-                            var iteratorType = SubstituteGenericType(iteratorFunction.ReturnType, substitutions);
+                            var iteratorType = GenericTypeStringRewriter.Substitute(iteratorFunction.ReturnType, substitutions);
                             if (TryParseGenericUse(iteratorType, out var iteratorOwner, out var iteratorArguments))
                             {
                                 foreach (var iteratorMember in _genericFunctions.Where(function =>
@@ -577,7 +577,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var substitutions = adapter.TypeParameters
             .Zip(receiverArguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return SubstituteGenericType(adapter.BaseType, substitutions);
+        return GenericTypeStringRewriter.Substitute(adapter.BaseType, substitutions);
     }
 
     private static IEnumerable<ExpressionNode> EnumerateExpressions(ProgramNode program)
@@ -999,21 +999,6 @@ internal sealed class GenericUseCollector(ProgramNode program)
             type = SubstituteAdapterBaseType(adapter, receiverArguments);
             adapterName = GetGenericBaseName(type) ?? type;
         }
-    }
-
-    private static string SubstituteSelfType(string type, string? selfType) =>
-        string.IsNullOrWhiteSpace(selfType)
-            ? type
-            : Regex.Replace(type, @"\bSelf\b", selfType);
-
-    private static string SubstituteGenericType(string type, IReadOnlyDictionary<string, string> substitutions)
-    {
-        foreach (var (parameter, argument) in substitutions)
-        {
-            type = Regex.Replace(type, $@"\b{Regex.Escape(parameter)}\b", argument);
-        }
-
-        return type;
     }
 
     private static string RemovePointer(string type)

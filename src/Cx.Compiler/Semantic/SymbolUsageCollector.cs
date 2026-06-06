@@ -368,7 +368,7 @@ internal sealed class SymbolUsageReportBuilder
     public void AddType(string? type) => Add(_typeReferences, type);
 
     public void AddResolvedType(TypeRef type) =>
-        Add(_resolvedTypeReferences, FormatType(type));
+        Add(_resolvedTypeReferences, TypeRefFormatter.ToCxString(type));
 
     public SymbolUsageReport Build() =>
         new(
@@ -386,16 +386,4 @@ internal sealed class SymbolUsageReportBuilder
         }
     }
 
-    private static string FormatType(TypeRef type) =>
-        type switch
-        {
-            TypeRef.Unknown => "unknown",
-            TypeRef.Null => "null",
-            TypeRef.Named named when named.Arguments.Count == 0 => named.Name,
-            TypeRef.Named named => $"{named.Name}<{string.Join(",", named.Arguments.Select(FormatType))}>",
-            TypeRef.Pointer pointer => FormatType(pointer.Element) + "*",
-            TypeRef.FixedArray array => $"{FormatType(array.Element)}[{array.Length}]",
-            TypeRef.Function function => $"fn({string.Join(",", function.Parameters.Select(FormatType))})->{FormatType(function.ReturnType)}",
-            _ => type.ToString() ?? "unknown",
-        };
 }

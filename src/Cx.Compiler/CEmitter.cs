@@ -2301,7 +2301,7 @@ public sealed class CEmitter
         string? KeyType,
         CExpression IteratorInitializer);
 
-    private sealed class ImportedNameLowerer
+    private sealed class ImportedNameLowerer : ICExpressionLoweringContext
     {
         private readonly IReadOnlyDictionary<string, string> _symbolAliases;
         private readonly IReadOnlyList<string> _moduleQualifiers;
@@ -2324,6 +2324,7 @@ public sealed class CEmitter
         private readonly IReadOnlyDictionary<string, string> _variables;
         private readonly IReadOnlyDictionary<string, ImplicitReferenceLocal> _implicitReferenceLocals;
         private readonly CExpressionEmitter _expressionEmitter = new();
+        private readonly CExpressionLowerer _expressionLowerer;
         public string? SelfType { get; }
         private string? SelfApiType { get; }
 
@@ -2476,6 +2477,7 @@ public sealed class CEmitter
             _implicitReferenceLocals = implicitReferenceLocals;
             SelfType = selfType;
             SelfApiType = selfApiType;
+            _expressionLowerer = new CExpressionLowerer(this);
         }
 
         public ImportedNameLowerer ForFunction(FunctionNode function)
@@ -2871,7 +2873,7 @@ public sealed class CEmitter
         public CExpression LowerInitializerExpression(string targetType, ExpressionNode expression)
         {
             var direct = expression is InitializerExpressionNode initializer
-                ? LowerInitializerExpressionNode(initializer, targetType)
+                ? _expressionLowerer.LowerInitializer(initializer, targetType)
                 : LowerExpression(expression);
             if (TryBuildInterfaceValueExpression(targetType, expression.SourceText) is { } interfaceInitializer)
             {
@@ -2938,67 +2940,50 @@ public sealed class CEmitter
 
         public CExpression LowerExpression(ExpressionNode expression) => expression switch
         {
-            LiteralExpressionNode literal => new CLiteralExpression(LowerLiteral(literal.SourceText)),
-            NameExpressionNode name => LowerNameExpression(name),
-            ParenthesizedExpressionNode parenthesized => new CParenthesizedExpression(LowerExpression(parenthesized.Expression)),
-            CastExpressionNode cast => new CCastExpression(LowerType(cast.TargetType, SelfType), LowerExpression(cast.Expression)),
-            UnaryExpressionNode { Operator: "&" } unary => LowerAddressOfExpression(unary.Operand),
-            UnaryExpressionNode { Operator: "*" } unary => new CUnaryExpression(
-                unary.Operator,
-                LowerExpression(unary.Operand)),
-            UnaryExpressionNode unary => ShouldUseRawLowering(unary.SourceText)
-                ? new CRawExpression(Lower(unary.SourceText))
-                : new CUnaryExpression(unary.Operator, LowerExpression(unary.Operand)),
-            PostfixExpressionNode postfix => new CPostfixExpression(LowerExpression(postfix.Operand), postfix.Operator),
-            SizeOfExpressionNode sizeOf => LowerSizeOfExpression(sizeOf),
-            BinaryExpressionNode binary => LowerBinaryExpression(binary),
-            ConditionalExpressionNode conditional => LowerConditionalExpression(conditional),
-            ScalarRangeExpressionNode range => new CRawExpression(Lower(range.SourceText)),
-            InitializerExpressionNode initializer => LowerInitializerExpressionNode(initializer),
+            LiteralExpressionNode
+                or NameExpressionNode
+                or ParenthesizedExpressionNode
+                or CastExpressionNode
+                or UnaryExpressionNode
+                or PostfixExpressionNode
+                or SizeOfExpressionNode
+                or BinaryExpressionNode
+                or ConditionalExpressionNode
+                or InitializerExpressionNode
+                or AssignmentExpressionNode
+                or MemberExpressionNode
+                or ScalarRangeExpressionNode
+                or IndexExpressionNode => _expressionLowerer.LowerSimple(expression),
             FunctionExpressionNode functionExpression => new CRawExpression(Lower(functionExpression.SourceText)),
-            AssignmentExpressionNode assignment => LowerAssignmentExpression(assignment),
             CallExpressionNode call => LowerCallExpression(call) is { } loweredCall
                 ? loweredCall
                 : new CRawExpression(Lower(call.SourceText)),
             GenericCallExpressionNode call => LowerGenericCallExpression(call) is { } loweredGenericCall
                 ? loweredGenericCall
                 : new CRawExpression(Lower(call.SourceText)),
-            MemberExpressionNode member => ShouldUseRawLowering(member.SourceText)
-                ? new CRawExpression(Lower(member.SourceText))
-                : LowerMemberExpression(member),
-            IndexExpressionNode index => ShouldUseRawLowering(index.SourceText)
-                ? new CRawExpression(Lower(index.SourceText))
-                : new CIndexExpression(LowerExpression(index.Target), LowerExpression(index.Index)),
             RawExpressionNode raw => TryLowerRawExpression(raw.SourceText) ?? new CRawExpression(Lower(raw.SourceText)),
             _ => new CRawExpression(Lower(expression.SourceText)),
         };
 
         public string Lower(ExpressionNode expression) => expression switch
         {
-            LiteralExpressionNode literal => LowerLiteral(literal.SourceText),
-            NameExpressionNode name => LowerNameForValue(name),
-            ParenthesizedExpressionNode parenthesized => $"({Lower(parenthesized.Expression)})",
-            CastExpressionNode cast => $"({LowerType(cast.TargetType, SelfType)}) {Lower(cast.Expression)}",
-            UnaryExpressionNode { Operator: "&" } unary => LowerAddressOf(unary.Operand),
-            UnaryExpressionNode unary => ShouldUseRawLowering(unary.SourceText)
-                ? Lower(unary.SourceText)
-                : unary.Operator + Lower(unary.Operand),
-            PostfixExpressionNode postfix => $"{Lower(postfix.Operand)}{postfix.Operator}",
-            SizeOfExpressionNode sizeOf => LowerSizeOf(sizeOf),
-            BinaryExpressionNode binary => LowerBinary(binary),
-            ConditionalExpressionNode conditional => LowerConditional(conditional),
-            ScalarRangeExpressionNode range => Lower(range.SourceText),
-            InitializerExpressionNode initializer => LowerInitializerExpression(initializer),
+            LiteralExpressionNode
+                or NameExpressionNode
+                or ParenthesizedExpressionNode
+                or CastExpressionNode
+                or UnaryExpressionNode
+                or PostfixExpressionNode
+                or SizeOfExpressionNode
+                or BinaryExpressionNode
+                or ConditionalExpressionNode
+                or InitializerExpressionNode
+                or AssignmentExpressionNode
+                or MemberExpressionNode
+                or ScalarRangeExpressionNode
+                or IndexExpressionNode => _expressionLowerer.LowerSimpleText(expression, _expressionEmitter),
             FunctionExpressionNode functionExpression => Lower(functionExpression.SourceText),
-            AssignmentExpressionNode assignment => LowerAssignment(assignment),
             CallExpressionNode call => LowerCall(call) ?? Lower(call.SourceText),
             GenericCallExpressionNode call => LowerGenericCall(call) ?? Lower(call.SourceText),
-            MemberExpressionNode member => ShouldUseRawLowering(member.SourceText)
-                ? Lower(member.SourceText)
-                : LowerMember(member),
-            IndexExpressionNode index => ShouldUseRawLowering(index.SourceText)
-                ? Lower(index.SourceText)
-                : $"{Lower(index.Target)}[{Lower(index.Index)}]",
             RawExpressionNode raw => Lower(raw.SourceText),
             _ => Lower(expression.SourceText),
         };
@@ -3041,12 +3026,7 @@ public sealed class CEmitter
         }
 
         private CExpression LowerInitializerExpressionNode(InitializerExpressionNode initializer, string? targetType = null) =>
-            new CInitializerExpression(
-                initializer.TypeName is null ? null : LowerType(initializer.TypeName, SelfType),
-                initializer.Fields
-                    .Select(field => new CInitializerField(field.Name, LowerExpression(field.Value)))
-                    .ToList(),
-                initializer.Values.Select(LowerExpression).ToList());
+            _expressionLowerer.LowerInitializer(initializer, targetType);
 
         private CExpression? TryLowerRawExpression(string expression)
         {
@@ -3140,6 +3120,57 @@ public sealed class CEmitter
             return new CUnaryExpression("&", LowerExpression(operand));
         }
 
+        CExpression ICExpressionLoweringContext.LowerNameExpression(NameExpressionNode name) =>
+            LowerNameExpression(name);
+
+        CExpression ICExpressionLoweringContext.LowerAddressOfExpression(ExpressionNode operand) =>
+            LowerAddressOfExpression(operand);
+
+        string ICExpressionLoweringContext.LowerRawText(string text) =>
+            Lower(text);
+
+        string ICExpressionLoweringContext.LowerType(string type) =>
+            LowerType(type, SelfType);
+
+        bool ICExpressionLoweringContext.ShouldUseRawLowering(string text) =>
+            ShouldUseRawLowering(text);
+
+        bool ICExpressionLoweringContext.ShouldUseRawAssignmentLowering(string text) =>
+            ShouldUseRawLowering(text, allowAssignment: true);
+
+        CExpression? ICExpressionLoweringContext.TryWrapAssignmentValue(
+            AssignmentExpressionNode assignment,
+            CExpression value)
+        {
+            return assignment.Operator == "="
+                && assignment.Target is NameExpressionNode targetName
+                && _variables.TryGetValue(targetName.SourceText, out var targetType)
+                ? TryWrapTaggedUnionValueExpression(targetType, assignment.Value.SourceText, value)
+                : null;
+        }
+
+        string? ICExpressionLoweringContext.TryWrapAssignmentValueText(
+            AssignmentExpressionNode assignment,
+            string loweredValue)
+        {
+            return assignment.Operator == "="
+                && assignment.Target is NameExpressionNode targetName
+                && _variables.TryGetValue(targetName.SourceText, out var targetType)
+                ? TryWrapTaggedUnionValue(targetType, assignment.Value.SourceText, loweredValue)
+                : null;
+        }
+
+        CExpression? ICExpressionLoweringContext.TryRepairAssignmentTarget(CExpression target) =>
+            target is CRawExpression rawTarget && TryLowerRawExpression(rawTarget.Text) is { } loweredTarget
+                ? loweredTarget
+                : null;
+
+        CExpression? ICExpressionLoweringContext.TryLowerMemberExpression(MemberExpressionNode member) =>
+            LowerMemberExpression(member);
+
+        string? ICExpressionLoweringContext.TryLowerMemberText(MemberExpressionNode member) =>
+            LowerMember(member);
+
         private string LowerAddressOf(ExpressionNode operand)
         {
             if (operand is NameExpressionNode name
@@ -3227,19 +3258,7 @@ public sealed class CEmitter
         }
 
         private string LowerInitializerExpression(InitializerExpressionNode initializer, string? targetType = null)
-        {
-            var fields = initializer.Fields.Select(field => $".{field.Name} = {Lower(field.Value)}");
-            var values = initializer.Values.Select(Lower);
-            var body = string.Join(", ", fields.Concat(values));
-            if (string.IsNullOrWhiteSpace(body))
-            {
-                body = "0";
-            }
-
-            return initializer.TypeName is null
-                ? "{ " + body + " }"
-                : $"({LowerType(initializer.TypeName, SelfType)}){{ {body} }}";
-        }
+            => _expressionLowerer.LowerInitializerText(initializer, _expressionEmitter, targetType);
 
         private string? LowerGenericCall(GenericCallExpressionNode call)
         {
