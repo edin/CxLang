@@ -10,6 +10,7 @@ public sealed class SemanticAnalyzer(
 {
     private RequirementMatcher? _requirementMatcher;
     private TypeSystem? _typeSystem;
+    private MethodCallResolver? _methodCallResolver;
     private ExpressionTypeResolver? _expressionTypeResolver;
     private TypeCompatibility? _typeCompatibility;
     private TypeRefParser? _typeRefParser;
@@ -32,6 +33,7 @@ public sealed class SemanticAnalyzer(
         _program = program;
         _requirementMatcher = new RequirementMatcher(program);
         _typeSystem = new TypeSystem(program);
+        _methodCallResolver = new MethodCallResolver(program, _typeSystem);
         _expressionTypeResolver = new ExpressionTypeResolver(program);
         _typeRefParser = new TypeRefParser(program);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
@@ -1571,7 +1573,7 @@ public sealed class SemanticAnalyzer(
             return;
         }
 
-        if (targetTypeText is not null && IsInterfaceBindingAssignment(targetTypeText, sourceTypeText))
+        if (IsInterfaceBindingAssignment(targetType, sourceType))
         {
             return;
         }
@@ -1591,30 +1593,20 @@ public sealed class SemanticAnalyzer(
         string.Equals(sourceType?.Trim(), "Self*", StringComparison.Ordinal)
         && targetType.TrimEnd().EndsWith("*", StringComparison.Ordinal);
 
-    private bool IsInterfaceBindingAssignment(string targetType, string? sourceType)
+    private bool IsInterfaceBindingAssignment(TypeRef targetType, TypeRef? sourceType)
     {
-        if (string.IsNullOrWhiteSpace(sourceType) || _program is null)
+        if (sourceType is null || _typeSystem is null)
         {
             return false;
         }
 
-        var interfaceNode = _program.Interfaces.FirstOrDefault(interfaceNode =>
-            string.Equals(interfaceNode.Name, targetType, StringComparison.Ordinal));
-        if (interfaceNode is null)
+        var target = _typeSystem.ResolveDefinition(targetType);
+        if (target.Symbol is not TypeSymbol.Interface interfaceSymbol)
         {
             return false;
         }
 
-        var sourceBaseType = GetGenericBaseName(StripPointer(ResolveAlias(sourceType)));
-        var structNode = _program.Structs.FirstOrDefault(structNode =>
-            string.Equals(structNode.Name, sourceBaseType, StringComparison.Ordinal));
-        if (structNode?.Requirements.Any(requirement =>
-            string.Equals(requirement.Name, interfaceNode.Name, StringComparison.Ordinal)) == true)
-        {
-            return true;
-        }
-
-        return _requirementMatcher?.Match(sourceType, interfaceNode.Name) is { Success: true };
+        return _typeSystem.SatisfiesRequirement(sourceType, interfaceSymbol.Name) is { Success: true };
     }
 
     private void CheckCompoundAssignmentCompatibility(
@@ -2234,6 +2226,11 @@ public sealed class SemanticAnalyzer(
                 return requirementSignature;
             }
 
+            if (_methodCallResolver?.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: false } staticCall)
+            {
+                return BuildSignature(staticCall.DisplayName, staticCall.Method, staticCall.SkipSelf);
+            }
+
             var staticFunction = _program.Functions.FirstOrDefault(function =>
                 function.IsStatic
                 && function.OwnerType is not null
@@ -2253,6 +2250,11 @@ public sealed class SemanticAnalyzer(
                         ? typeArguments
                         : _expressionTypeResolver?.InferFunctionTypeArguments(staticFunction.TypeParameters, staticFunction.Parameters, arguments, variables, skipSelf: false) ?? [],
                     skipSelf: false);
+        }
+
+        if (_methodCallResolver?.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: true } instanceCall)
+        {
+            return BuildSignature(instanceCall.DisplayName, instanceCall.Method, instanceCall.SkipSelf);
         }
 
         var normalizedType = GetGenericBaseName(StripPointer(ResolveAlias(targetType)));
@@ -2412,6 +2414,17 @@ public sealed class SemanticAnalyzer(
             .Select(ParseTypeRef)
             .ToList();
         return new CallSignature(name, parameterTypes, isVariadic);
+    }
+
+    private static CallSignature BuildSignature(
+        string name,
+        ResolvedMethod method,
+        bool skipSelf)
+    {
+        var parameterTypes = method.ParameterTypes
+            .Skip(skipSelf ? 1 : 0)
+            .ToList();
+        return new CallSignature(name, parameterTypes, IsVariadic: false);
     }
 
     private void CheckCallArguments(

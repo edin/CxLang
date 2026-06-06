@@ -194,6 +194,150 @@ public sealed class TypeSystemTests
         Assert.Equal("double", valueType);
     }
 
+    [Fact]
+    public void FindMethod_ReturnsSubstitutedInstanceMethod()
+    {
+        var program = ResolveTypes(
+            """
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T> {
+                fn get() -> T {
+                    return self.value;
+                }
+            }
+            """);
+        var typeSystem = new TypeSystem(program);
+
+        var method = typeSystem.FindMethod("Box<int>", "get", isStatic: false, argumentCount: 0);
+
+        Assert.NotNull(method);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(method.ReturnType));
+    }
+
+    [Fact]
+    public void FindMethod_ReturnsSubstitutedStaticMethod()
+    {
+        var program = ResolveTypes(
+            """
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T> {
+                static fn create(value: T) -> Box<T> {
+                    return Box<T> { value: value };
+                }
+            }
+            """);
+        var typeSystem = new TypeSystem(program);
+
+        var method = typeSystem.FindMethod("Box<int>", "create", isStatic: true, argumentCount: 1);
+
+        Assert.NotNull(method);
+        Assert.Equal("Box<int>", TypeRefFormatter.ToCxString(method.ReturnType));
+        Assert.Equal("int", TypeRefFormatter.ToCxString(Assert.Single(method.ParameterTypes)));
+    }
+
+    [Fact]
+    public void FindMethod_ReturnsAdapterExposedInstanceMethod()
+    {
+        var program = ResolveTypes(
+            """
+            struct Vec<T> {
+                value: T;
+            }
+
+            extension Vec<T> {
+                fn add(value: T) -> bool {
+                    self.value = value;
+                    return true;
+                }
+            }
+
+            type Stack<T> using Vec<T> {
+                expose add as push;
+            }
+            """);
+        var typeSystem = new TypeSystem(program);
+
+        var method = typeSystem.FindMethod("Stack<int>", "push", isStatic: false, argumentCount: 1);
+
+        Assert.NotNull(method);
+        Assert.Equal("bool", TypeRefFormatter.ToCxString(method.ReturnType));
+        Assert.Equal("Stack<int>*", TypeRefFormatter.ToCxString(method.ParameterTypes[0]));
+        Assert.Equal("int", TypeRefFormatter.ToCxString(method.ParameterTypes[1]));
+    }
+
+    [Fact]
+    public void FindMethod_ReturnsAdapterExposedStaticMethodWithSelfReturn()
+    {
+        var program = ResolveTypes(
+            """
+            struct Vec<T> {
+                value: T;
+            }
+
+            extension Vec<T> {
+                static fn with_value(value: T) -> Vec<T> {
+                    return Vec<T> { value: value };
+                }
+            }
+
+            type Stack<T> using Vec<T> {
+                expose static with_value -> Self;
+            }
+            """);
+        var typeSystem = new TypeSystem(program);
+
+        var method = typeSystem.FindMethod("Stack<int>", "with_value", isStatic: true, argumentCount: 1);
+
+        Assert.NotNull(method);
+        Assert.Equal("Stack<int>", TypeRefFormatter.ToCxString(method.ReturnType));
+        Assert.Equal("int", TypeRefFormatter.ToCxString(Assert.Single(method.ParameterTypes)));
+    }
+
+    [Fact]
+    public void GetMethods_FiltersConstrainedExtensions()
+    {
+        var program = ResolveTypes(
+            """
+            requires Disposable<T> {
+                fn free(self: Self*) -> void;
+            }
+
+            struct File: Disposable<File> {
+                handle: void*;
+            }
+
+            extension File {
+                fn free() -> void {
+                }
+            }
+
+            struct Plain {
+                value: int;
+            }
+
+            struct Option<T> {
+                has_value: bool;
+                value: T;
+            }
+
+            extension Option<T>
+            where T: Disposable<T> {
+                fn free() -> void {
+                }
+            }
+            """);
+        var typeSystem = new TypeSystem(program);
+
+        Assert.NotNull(typeSystem.FindMethod("Option<File>", "free", isStatic: false, argumentCount: 0));
+        Assert.Null(typeSystem.FindMethod("Option<Plain>", "free", isStatic: false, argumentCount: 0));
+    }
+
     private static Cx.Compiler.Syntax.Nodes.ProgramNode ResolveTypes(string source)
     {
         var program = CompilerTestHelpers.Parse(source);

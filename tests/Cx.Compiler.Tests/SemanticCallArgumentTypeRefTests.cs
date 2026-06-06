@@ -59,4 +59,53 @@ public sealed class SemanticCallArgumentTypeRefTests
 
         CompilerTestHelpers.AssertDiagnosticContains(result, "Argument 1 for call to 'op'", "cannot assign 'int' to 'Bytes'");
     }
+
+    [Fact]
+    public void Compile_ChecksInstanceMethodArgumentsThroughTypeSystemSignature()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T> {
+                fn set(value: T) -> void {
+                    self.value = value;
+                }
+            }
+
+            fn main() -> int {
+                let box: Box<int> = Box<int> { value: 1 };
+                box.set("bad");
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(result, "Argument 1 for call to 'Box<int>.set'", "cannot assign 'char*' to 'int'");
+    }
+
+    [Fact]
+    public void Compile_ChecksStaticMethodArgumentsThroughTypeSystemSignature()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T> {
+                static fn create(value: T) -> Box<T> {
+                    return Box<T> { value: value };
+                }
+            }
+
+            fn main() -> int {
+                let box: Box<int> = Box<int>.create("bad");
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(result, "Argument 1 for call to 'Box<int>.create'", "cannot assign 'char*' to 'int'");
+    }
 }

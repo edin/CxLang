@@ -69,6 +69,14 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
         foreach (var adapter in program.TypeAdapters)
         {
             ResolveType(adapter, adapter.BaseType);
+            foreach (var expose in adapter.ExposedMethods)
+            {
+                if (expose.ReturnType is not null)
+                {
+                    ResolveType(expose, expose.ReturnTypeNode, expose.ReturnType);
+                }
+            }
+
             foreach (var method in adapter.Methods)
             {
                 ResolveFunction(method);

@@ -88,4 +88,39 @@ public sealed class ExpressionTypeResolverTypeRefTests
         Assert.IsType<TypeRef.Alias>(Assert.Single(function.Parameters));
         Assert.IsType<TypeRef.Alias>(function.ReturnType);
     }
+
+    [Fact]
+    public void ResolveTypeRef_UsesTypeSystemMethodLookupForMemberCallReturnType()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T> {
+                fn get() -> T {
+                    return self.value;
+                }
+            }
+
+            fn main() -> int {
+                let box: Box<int> = Box<int> { value: 10 };
+                return box.get();
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var resolver = new ExpressionTypeResolver(program);
+        var ret = Assert.IsType<ReturnStatement>(Assert.Single(program.Functions.Single(function => function.Name == "main").Body.OfType<ReturnStatement>()));
+
+        var resolved = resolver.ResolveTypeRef(ret.Expression, new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["box"] = "Box<int>",
+        });
+
+        Assert.NotNull(resolved);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(resolved));
+    }
 }

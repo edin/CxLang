@@ -11,6 +11,8 @@ internal sealed class ExpressionTypeResolver(
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
     private readonly TypeRefParser _typeRefParser = new(program);
+    private readonly TypeSystem _typeSystem = new(program, currentTypeParameters);
+    private readonly MethodCallResolver _methodCallResolver = new(program, new TypeSystem(program, currentTypeParameters));
     private readonly IReadOnlyDictionary<string, string> _typeAliases = program.TypeAliases
         .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.First().TargetType, StringComparer.Ordinal);
@@ -569,6 +571,11 @@ internal sealed class ExpressionTypeResolver(
                 return requirementReturnType;
             }
 
+            if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { } staticCall)
+            {
+                return TypeRefFormatter.ToCxString(staticCall.Method.ReturnType);
+            }
+
             var staticFunction = program.Functions.FirstOrDefault(function =>
                 function.IsStatic
                 && function.OwnerType is not null
@@ -594,31 +601,9 @@ internal sealed class ExpressionTypeResolver(
             ? parsedReceiverArguments
             : [];
         var receiverBaseType = GetGenericBaseName(normalizedType);
-        if (FindAdapterExpose(receiverBaseType, member.MemberName) is { } adapterExpose)
+        if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { } instanceCall)
         {
-            var baseType = SubstituteAdapterBaseType(adapterExpose.Adapter, receiverTypeArguments);
-            var baseTypeArguments = TryParseGenericUse(baseType, out _, out var parsedBaseArguments)
-                ? parsedBaseArguments
-                : [];
-            var baseOwnerType = GetGenericBaseName(baseType);
-            var exposedFunction = program.Functions.FirstOrDefault(function =>
-                function.OwnerType is not null
-                && !function.IsStatic
-                && function.Name == adapterExpose.Expose.SourceName
-                && SameType(function.OwnerType, baseOwnerType)
-                && (MatchesGenericArguments(function, typeArguments, baseTypeArguments)
-                    || (typeArguments.Count == 0
-                        && function.TypeParameters.Count > 0
-                        && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: true, baseTypeArguments) is not null)));
-            if (exposedFunction is not null)
-            {
-                var exposedArguments = typeArguments.Count > 0
-                    ? typeArguments
-                    : baseTypeArguments.Count == exposedFunction.TypeParameters.Count
-                        ? baseTypeArguments
-                        : InferFunctionTypeArguments(exposedFunction.TypeParameters, exposedFunction.Parameters, arguments, variables, skipSelf: true, baseTypeArguments) ?? [];
-                return ResolveFunctionReturnType(exposedFunction, exposedArguments);
-            }
+            return TypeRefFormatter.ToCxString(instanceCall.Method.ReturnType);
         }
 
         var instanceFunction = program.Functions.FirstOrDefault(function =>
@@ -689,40 +674,6 @@ internal sealed class ExpressionTypeResolver(
         }
 
         return null;
-    }
-
-    private sealed record AdapterExposeMatch(TypeAdapterNode Adapter, ExposeMethodNode Expose);
-
-    private AdapterExposeMatch? FindAdapterExpose(string? adapterName, string exposedName)
-    {
-        if (adapterName is null)
-        {
-            return null;
-        }
-
-        foreach (var adapter in program.TypeAdapters.Where(adapter => adapter.Name == adapterName))
-        {
-            var expose = adapter.ExposedMethods.FirstOrDefault(expose => expose.ExposedName == exposedName);
-            if (expose is not null)
-            {
-                return new AdapterExposeMatch(adapter, expose);
-            }
-        }
-
-        return null;
-    }
-
-    private static string SubstituteAdapterBaseType(TypeAdapterNode adapter, IReadOnlyList<string> receiverArguments)
-    {
-        if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
-        {
-            return adapter.BaseType;
-        }
-
-        var substitutions = adapter.TypeParameters
-            .Zip(receiverArguments)
-            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return GenericTypeStringRewriter.Substitute(adapter.BaseType, substitutions);
     }
 
     public IReadOnlyList<string>? InferFunctionTypeArguments(

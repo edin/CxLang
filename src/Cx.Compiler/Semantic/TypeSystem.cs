@@ -55,6 +55,24 @@ internal sealed class TypeSystem
     public IReadOnlyList<ResolvedMethod> GetMethods(ResolvedType type) =>
         _memberResolver.GetMethods(type);
 
+    public ResolvedMethod? FindMethod(
+        string receiverType,
+        string name,
+        bool isStatic,
+        int argumentCount) =>
+        FindMethod(Parse(receiverType), name, isStatic, argumentCount);
+
+    public ResolvedMethod? FindMethod(
+        TypeRef receiverType,
+        string name,
+        bool isStatic,
+        int argumentCount) =>
+        GetMethods(receiverType)
+            .FirstOrDefault(method =>
+                string.Equals(method.Name, name, StringComparison.Ordinal)
+                && method.Declaration.IsStatic == isStatic
+                && GetCallableParameterCount(method, isStatic) == argumentCount);
+
     public RequirementMatch SatisfiesRequirement(
         string concreteType,
         string requirementName,
@@ -140,4 +158,9 @@ internal sealed class TypeSystem
         elementType = TypeRefFormatter.ToCxString(fixedArray.Element);
         return true;
     }
+
+    private static int GetCallableParameterCount(ResolvedMethod method, bool isStatic) =>
+        isStatic
+            ? method.ParameterTypes.Count
+            : Math.Max(0, method.ParameterTypes.Count - 1);
 }
