@@ -9,6 +9,7 @@ public sealed class SemanticAnalyzer(
     IReadOnlyList<ProgramNode>? availablePrograms = null)
 {
     private RequirementMatcher? _requirementMatcher;
+    private TypeSystem? _typeSystem;
     private ExpressionTypeResolver? _expressionTypeResolver;
     private TypeCompatibility? _typeCompatibility;
     private TypeRefParser? _typeRefParser;
@@ -30,6 +31,7 @@ public sealed class SemanticAnalyzer(
     {
         _program = program;
         _requirementMatcher = new RequirementMatcher(program);
+        _typeSystem = new TypeSystem(program);
         _expressionTypeResolver = new ExpressionTypeResolver(program);
         _typeRefParser = new TypeRefParser(program);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
@@ -536,7 +538,7 @@ public sealed class SemanticAnalyzer(
                 }
                 else if (foreachStatement.KeyBinding is not null)
                 {
-                    if (TryResolveIteratorForeachTypes(
+                    if (TryResolveForeachTypes(
                         iterableType,
                         keyValue: true,
                         out var keyValueElementType,
@@ -557,14 +559,14 @@ public sealed class SemanticAnalyzer(
                         ReportForeachRequirementFailure(
                             foreachStatement,
                             iterableType,
-                            _requirementMatcher?.Match(iterableType, "Contiguous") ?? RequirementMatch.Failed(iterableType, "Contiguous", []));
+                            SatisfiesRequirement(iterableType, "Contiguous"));
                     }
                 }
                 else if (TryParseFixedArrayType(iterableType, out var arrayElementType, out _))
                 {
                     AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, arrayElementType);
                 }
-                else if (TryResolveIteratorForeachTypes(
+                else if (TryResolveForeachTypes(
                     iterableType,
                     keyValue: false,
                     out var iteratorElementType,
@@ -572,17 +574,17 @@ public sealed class SemanticAnalyzer(
                 {
                     AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, iteratorElementType);
                 }
-                else if (_requirementMatcher?.Match(iterableType, "Contiguous") is { Success: true } contiguous
+                else if (SatisfiesRequirement(iterableType, "Contiguous") is { Success: true } contiguous
                     && contiguous.TypeBindings.TryGetValue("T", out var contiguousElementType))
                 {
                     AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, contiguousElementType);
                 }
-                else if (_requirementMatcher?.Match(iterableType, "ContiguousRange") is { Success: true } range
+                else if (SatisfiesRequirement(iterableType, "ContiguousRange") is { Success: true } range
                     && range.TypeBindings.TryGetValue("T", out var rangeElementType))
                 {
                     AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, rangeElementType);
                 }
-                else if (_requirementMatcher?.Match(iterableType, "Contiguous") is { } match && !match.Success)
+                else if (SatisfiesRequirement(iterableType, "Contiguous") is { } match && !match.Success)
                 {
                     ReportForeachRequirementFailure(foreachStatement, iterableType, match);
                 }
@@ -849,7 +851,7 @@ public sealed class SemanticAnalyzer(
             : LocalMutability.Mutable;
     }
 
-    private bool TryResolveIteratorForeachTypes(
+    private bool TryResolveForeachTypes(
         string iterableType,
         bool keyValue,
         out string valueType,
@@ -857,38 +859,7 @@ public sealed class SemanticAnalyzer(
     {
         valueType = string.Empty;
         keyType = null;
-        if (_requirementMatcher is null)
-        {
-            return false;
-        }
-
-        var iterableRequirement = keyValue ? "KeyValueIterable" : "Iterable";
-        var iterableMatch = _requirementMatcher.Match(iterableType, iterableRequirement);
-        if (!iterableMatch.Success || !iterableMatch.TypeBindings.ContainsKey("I"))
-        {
-            return false;
-        }
-
-        if (keyValue)
-        {
-            if (!iterableMatch.TypeBindings.TryGetValue("K", out var matchedKeyType)
-                || !iterableMatch.TypeBindings.TryGetValue("V", out var matchedValueType))
-            {
-                return false;
-            }
-
-            keyType = matchedKeyType;
-            valueType = matchedValueType;
-            return true;
-        }
-
-        if (!iterableMatch.TypeBindings.TryGetValue("T", out var matchedItemType))
-        {
-            return false;
-        }
-
-        valueType = matchedItemType;
-        return true;
+        return _typeSystem?.TryResolveForeachTypes(iterableType, keyValue, out valueType, out keyType) == true;
     }
 
     private void ReportForeachRequirementFailure(
@@ -896,7 +867,7 @@ public sealed class SemanticAnalyzer(
         string iterableType,
         RequirementMatch contiguousMatch)
     {
-        if (_requirementMatcher is null)
+        if (_typeSystem is null)
         {
             diagnostics.Report(
                 foreachStatement.Location,
@@ -908,8 +879,8 @@ public sealed class SemanticAnalyzer(
         var iterableRequirementName = keyValue ? "KeyValueIterable" : "Iterable";
         var iteratorRequirementName = keyValue ? "KeyValueIterator" : "Iterator";
         var iterableRequirementDisplay = keyValue ? "KeyValueIterable<K, V, I>" : "Iterable<T, I>";
-        var rangeMatch = _requirementMatcher.Match(iterableType, "ContiguousRange");
-        var iteratorMatch = _requirementMatcher.Match(iterableType, iterableRequirementName);
+        var rangeMatch = SatisfiesRequirement(iterableType, "ContiguousRange");
+        var iteratorMatch = SatisfiesRequirement(iterableType, iterableRequirementName);
         var parts = new List<string>
         {
             $"Type '{iterableType}' cannot be used in foreach.",
@@ -928,7 +899,7 @@ public sealed class SemanticAnalyzer(
         }
         else
         {
-            var concreteIteratorMatch = _requirementMatcher.Match(iteratorType, iteratorRequirementName);
+            var concreteIteratorMatch = SatisfiesRequirement(iteratorType, iteratorRequirementName);
             if (!concreteIteratorMatch.Success)
             {
                 parts.Add($"{iteratorType} must satisfy {iteratorRequirementName}: {FormatRequirementFailures(concreteIteratorMatch.Failures)}");
@@ -961,6 +932,13 @@ public sealed class SemanticAnalyzer(
         requirement.TypeArguments.Count == 0
             ? requirement.Name
             : $"{requirement.Name}<{string.Join(", ", requirement.TypeArguments)}>";
+
+    private RequirementMatch SatisfiesRequirement(
+        string concreteType,
+        string requirementName,
+        IReadOnlyList<string>? requirementArguments = null) =>
+        _typeSystem?.SatisfiesRequirement(concreteType, requirementName, requirementArguments)
+        ?? RequirementMatch.Failed(concreteType, requirementName, []);
 
     private static string GetFunctionDisplayName(FunctionNode function) =>
         function.OwnerType is null
@@ -1070,8 +1048,8 @@ public sealed class SemanticAnalyzer(
             return;
         }
 
-        var leftType = _expressionTypeResolver.Resolve(new RawExpressionNode(location, left), variables);
-        var rightType = _expressionTypeResolver.Resolve(new RawExpressionNode(location, right), variables);
+        var leftType = _expressionTypeResolver.ResolveTypeRef(new RawExpressionNode(location, left), variables);
+        var rightType = _expressionTypeResolver.ResolveTypeRef(new RawExpressionNode(location, right), variables);
         if (leftType is null || rightType is null)
         {
             return;
@@ -1081,22 +1059,26 @@ public sealed class SemanticAnalyzer(
     }
 
     private void AnalyzeSpaceshipTypes(
-        string leftType,
-        string rightType,
+        TypeRef leftType,
+        TypeRef rightType,
         Cx.Compiler.Syntax.Location location)
     {
-        if (!SameTypeName(leftType, rightType))
+        var leftTypeText = FormatTypeRef(leftType)!;
+        var rightTypeText = FormatTypeRef(rightType)!;
+        if (_typeCompatibility is not null
+            && (!_typeCompatibility.CanAssign(leftType, rightType, out _)
+                || !_typeCompatibility.CanAssign(rightType, leftType, out _)))
         {
-            diagnostics.Report(location, $"Cannot compare '{leftType}' and '{rightType}' with '<=>'.");
+            diagnostics.Report(location, $"Cannot compare '{leftTypeText}' and '{rightTypeText}' with '<=>'.");
             return;
         }
 
-        var match = _requirementMatcher?.Match(leftType, "Compare", [leftType]);
+        var match = SatisfiesRequirement(leftTypeText, "Compare", [leftTypeText]);
         if (match is { Success: false })
         {
             diagnostics.Report(
                 location,
-                $"Type '{leftType}' does not satisfy requirement 'Compare': {string.Join(" ", match.Failures)}");
+                $"Type '{leftTypeText}' does not satisfy requirement 'Compare': {string.Join(" ", match.Failures)}");
         }
     }
 
@@ -1722,8 +1704,8 @@ public sealed class SemanticAnalyzer(
             diagnostics.Report(location, "Cannot use null in arithmetic expressions.");
         }
 
-        var leftType = _expressionTypeResolver.Resolve(binary.Left, variables);
-        var rightType = _expressionTypeResolver.Resolve(binary.Right, variables);
+        var leftType = _expressionTypeResolver.ResolveTypeRef(binary.Left, variables);
+        var rightType = _expressionTypeResolver.ResolveTypeRef(binary.Right, variables);
         if (leftType is not null && rightType is not null)
         {
             AnalyzeSpaceshipTypes(leftType, rightType, location);

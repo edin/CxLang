@@ -5,12 +5,18 @@ namespace Cx.Compiler.Semantic;
 public sealed class RequirementMatcher
 {
     private readonly ProgramNode _program;
+    private readonly TypeRefParser _typeRefParser;
+    private readonly TypeResolver _typeResolver;
+    private readonly ResolvedTypeMemberResolver _memberResolver;
     private readonly IReadOnlyDictionary<string, StructNode> _concreteStructs;
     private readonly IReadOnlyDictionary<string, string> _typeAliases;
 
     public RequirementMatcher(ProgramNode program, IReadOnlyList<StructNode>? concreteStructs = null)
     {
         _program = program;
+        _typeRefParser = new TypeRefParser(program);
+        _typeResolver = new TypeResolver(program);
+        _memberResolver = new ResolvedTypeMemberResolver(program);
         _concreteStructs = (concreteStructs ?? [])
             .Concat(program.Structs.Where(structNode => structNode.TypeParameters.Count == 0))
             .GroupBy(structNode => structNode.Name, StringComparer.Ordinal)
@@ -46,7 +52,7 @@ public sealed class RequirementMatcher
 
         var bindings = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["Self"] = StripPointer(ResolveAlias(concreteType)),
+            ["Self"] = NormalizeSelfType(concreteType),
         };
         var matchKey = $"{bindings["Self"]}:{requirementName}<{string.Join(",", requirementArguments ?? [])}>";
         if (!activeMatches.Add(matchKey))
@@ -67,7 +73,7 @@ public sealed class RequirementMatcher
         }
 
         var hasStructMembers = requirement.Members.Any(member => member is RequirementFieldNode);
-        var hasStructType = TryResolveStruct(concreteType, out var structNode);
+        var hasStructType = TryResolveStructMembers(concreteType, out var fields);
         if (hasStructMembers && !hasStructType)
         {
             activeMatches.Remove(matchKey);
@@ -89,7 +95,7 @@ public sealed class RequirementMatcher
                         break;
                     }
 
-                    MatchField(field, structNode, bindings, failures);
+                    MatchField(field, fields, bindings, failures);
                     break;
                 case RequirementFunctionNode function:
                     MatchFunction(function, bindings, failures);
@@ -124,7 +130,7 @@ public sealed class RequirementMatcher
 
         var bindings = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["Self"] = StripPointer(ResolveAlias(concreteType)),
+            ["Self"] = NormalizeSelfType(concreteType),
         };
         var failures = new List<string>();
 
@@ -145,11 +151,11 @@ public sealed class RequirementMatcher
     {
         var ownerType = bindings["Self"];
         var expectedParameterCount = interfaceMethod.Parameters.Count + 1;
-        var method = _program.Functions.FirstOrDefault(candidate =>
-            IsCandidateOwner(candidate, ownerType)
-            && !candidate.IsStatic
-            && candidate.Name == interfaceMethod.Name
-            && candidate.Parameters.Count == expectedParameterCount);
+        var method = ResolveMethods(ownerType)
+            .FirstOrDefault(candidate =>
+                !candidate.Declaration.IsStatic
+                && candidate.Name == interfaceMethod.Name
+                && candidate.ParameterTypes.Count == expectedParameterCount);
 
         if (method is null)
         {
@@ -157,29 +163,29 @@ public sealed class RequirementMatcher
             return;
         }
 
-        var candidateBindings = BuildCandidateBindings(method, ownerType, bindings);
-        var receiver = method.Parameters[0];
-        if (!Unify("Self*", receiver.Type, candidateBindings))
+        var candidateBindings = new Dictionary<string, string>(bindings, StringComparer.Ordinal);
+        var receiver = method.ParameterTypes[0];
+        if (!Unify("Self*", TypeRefFormatter.ToCxString(receiver), candidateBindings))
         {
             failures.Add(
-                $"Method '{interfaceMethod.Name}' receiver has type '{Substitute(receiver.Type, candidateBindings)}', expected '{Substitute("Self*", bindings)}'.");
+                $"Method '{interfaceMethod.Name}' receiver has type '{TypeRefFormatter.ToCxString(receiver)}', expected '{Substitute("Self*", bindings)}'.");
         }
 
         for (var i = 0; i < interfaceMethod.Parameters.Count; i++)
         {
             var expected = interfaceMethod.Parameters[i];
-            var actual = method.Parameters[i + 1];
-            if (!Unify(expected.Type, actual.Type, candidateBindings))
+            var actual = method.ParameterTypes[i + 1];
+            if (!Unify(expected.Type, TypeRefFormatter.ToCxString(actual), candidateBindings))
             {
                 failures.Add(
-                    $"Method '{interfaceMethod.Name}' parameter {i + 1} has type '{Substitute(actual.Type, candidateBindings)}', expected '{Substitute(expected.Type, bindings)}'.");
+                    $"Method '{interfaceMethod.Name}' parameter {i + 1} has type '{TypeRefFormatter.ToCxString(actual)}', expected '{Substitute(expected.Type, bindings)}'.");
             }
         }
 
-        if (!Unify(interfaceMethod.ReturnType, method.ReturnType, candidateBindings))
+        if (!Unify(interfaceMethod.ReturnType, TypeRefFormatter.ToCxString(method.ReturnType), candidateBindings))
         {
             failures.Add(
-                $"Method '{interfaceMethod.Name}' returns '{Substitute(method.ReturnType, candidateBindings)}', expected '{Substitute(interfaceMethod.ReturnType, bindings)}'.");
+                $"Method '{interfaceMethod.Name}' returns '{TypeRefFormatter.ToCxString(method.ReturnType)}', expected '{Substitute(interfaceMethod.ReturnType, bindings)}'.");
         }
     }
 
@@ -241,21 +247,21 @@ public sealed class RequirementMatcher
 
     private void MatchField(
         RequirementFieldNode field,
-        StructNode structNode,
+        IReadOnlyList<ResolvedField> fields,
         Dictionary<string, string> bindings,
         List<string> failures)
     {
-        var actualField = structNode.Fields.FirstOrDefault(candidate => candidate.Name == field.Name);
+        var actualField = fields.FirstOrDefault(candidate => candidate.Name == field.Name);
         if (actualField is null)
         {
             failures.Add($"Missing field '{field.Name}: {Substitute(field.Type, bindings)}'.");
             return;
         }
 
-        if (!Unify(field.Type, actualField.Type, bindings))
+        if (!Unify(field.Type, TypeRefFormatter.ToCxString(actualField.Type), bindings))
         {
             failures.Add(
-                $"Field '{field.Name}' has type '{actualField.Type}', expected '{Substitute(field.Type, bindings)}'.");
+                $"Field '{field.Name}' has type '{TypeRefFormatter.ToCxString(actualField.Type)}', expected '{Substitute(field.Type, bindings)}'.");
         }
     }
 
@@ -271,11 +277,11 @@ public sealed class RequirementMatcher
         }
 
         var ownerType = bindings["Self"];
-        var method = _program.Functions.FirstOrDefault(candidate =>
-            IsCandidateOwner(candidate, ownerType)
-            && !candidate.IsStatic
-            && candidate.Name == function.Name
-            && candidate.Parameters.Count == function.Parameters.Count);
+        var method = ResolveMethods(ownerType)
+            .FirstOrDefault(candidate =>
+                !candidate.Declaration.IsStatic
+                && candidate.Name == function.Name
+                && candidate.ParameterTypes.Count == function.Parameters.Count);
 
         if (method is null)
         {
@@ -294,21 +300,23 @@ public sealed class RequirementMatcher
             return;
         }
 
-        var candidateBindings = BuildCandidateBindings(method, ownerType, bindings);
+        var candidateBindings = new Dictionary<string, string>(bindings, StringComparer.Ordinal);
         var failureStart = failures.Count;
         for (var i = 0; i < function.Parameters.Count; i++)
         {
-            if (!Unify(function.Parameters[i].Type, method.Parameters[i].Type, candidateBindings))
+            var actualType = TypeRefFormatter.ToCxString(method.ParameterTypes[i]);
+            if (!Unify(function.Parameters[i].Type, actualType, candidateBindings))
             {
                 failures.Add(
-                    $"Method '{function.Name}' parameter {i + 1} has type '{Substitute(method.Parameters[i].Type, candidateBindings)}', expected '{Substitute(function.Parameters[i].Type, bindings)}'.");
+                    $"Method '{function.Name}' parameter {i + 1} has type '{actualType}', expected '{Substitute(function.Parameters[i].Type, bindings)}'.");
             }
         }
 
-        if (!Unify(function.ReturnType, method.ReturnType, candidateBindings))
+        var actualReturnType = TypeRefFormatter.ToCxString(method.ReturnType);
+        if (!Unify(function.ReturnType, actualReturnType, candidateBindings))
         {
             failures.Add(
-                $"Method '{function.Name}' returns '{Substitute(method.ReturnType, candidateBindings)}', expected '{Substitute(function.ReturnType, bindings)}'.");
+                $"Method '{function.Name}' returns '{actualReturnType}', expected '{Substitute(function.ReturnType, bindings)}'.");
         }
 
         if (failures.Count == failureStart)
@@ -323,11 +331,11 @@ public sealed class RequirementMatcher
         List<string> failures)
     {
         var ownerType = bindings["Self"];
-        var method = _program.Functions.FirstOrDefault(candidate =>
-            IsCandidateOwner(candidate, ownerType)
-            && candidate.IsStatic
-            && candidate.Name == function.Name
-            && candidate.Parameters.Count == function.Parameters.Count);
+        var method = ResolveMethods(ownerType)
+            .FirstOrDefault(candidate =>
+                candidate.Declaration.IsStatic
+                && candidate.Name == function.Name
+                && candidate.ParameterTypes.Count == function.Parameters.Count);
 
         if (method is null)
         {
@@ -335,21 +343,23 @@ public sealed class RequirementMatcher
             return;
         }
 
-        var candidateBindings = BuildCandidateBindings(method, ownerType, bindings);
+        var candidateBindings = new Dictionary<string, string>(bindings, StringComparer.Ordinal);
         var failureStart = failures.Count;
         for (var i = 0; i < function.Parameters.Count; i++)
         {
-            if (!Unify(function.Parameters[i].Type, method.Parameters[i].Type, candidateBindings))
+            var actualType = TypeRefFormatter.ToCxString(method.ParameterTypes[i]);
+            if (!Unify(function.Parameters[i].Type, actualType, candidateBindings))
             {
                 failures.Add(
-                    $"Static method '{function.Name}' parameter {i + 1} has type '{Substitute(method.Parameters[i].Type, candidateBindings)}', expected '{Substitute(function.Parameters[i].Type, bindings)}'.");
+                    $"Static method '{function.Name}' parameter {i + 1} has type '{actualType}', expected '{Substitute(function.Parameters[i].Type, bindings)}'.");
             }
         }
 
-        if (!Unify(function.ReturnType, method.ReturnType, candidateBindings))
+        var actualReturnType = TypeRefFormatter.ToCxString(method.ReturnType);
+        if (!Unify(function.ReturnType, actualReturnType, candidateBindings))
         {
             failures.Add(
-                $"Static method '{function.Name}' returns '{Substitute(method.ReturnType, candidateBindings)}', expected '{Substitute(function.ReturnType, bindings)}'.");
+                $"Static method '{function.Name}' returns '{actualReturnType}', expected '{Substitute(function.ReturnType, bindings)}'.");
         }
 
         if (failures.Count == failureStart)
@@ -459,6 +469,66 @@ public sealed class RequirementMatcher
 
         structNode = new StructNode(definition.Location, LowerType(resolvedType), [], [], [], fields, [], definition.Attributes);
         return true;
+    }
+
+    private bool TryResolveStructMembers(string type, out IReadOnlyList<ResolvedField> fields)
+    {
+        var resolvedType = ResolveConcreteDefinition(type);
+        if (resolvedType.Symbol is TypeSymbol.Struct)
+        {
+            fields = _memberResolver.GetFields(resolvedType);
+            return true;
+        }
+
+        if (TryResolveStruct(type, out var structNode))
+        {
+            fields = structNode.Fields
+                .Select(field => new ResolvedField(field.Name, field.TypeNode?.Semantic.Type ?? _typeRefParser.Parse(field.Type), field))
+                .ToList();
+            return true;
+        }
+
+        fields = [];
+        return false;
+    }
+
+    private ResolvedType ResolveConcreteDefinition(string type)
+    {
+        var pointerDepth = 0;
+        type = type.Trim();
+        while (type.EndsWith("*", StringComparison.Ordinal))
+        {
+            pointerDepth++;
+            type = type[..^1].TrimEnd();
+        }
+
+        var resolved = _typeResolver.ResolveDefinition(_typeRefParser.Parse(type));
+        for (var i = 0; i < pointerDepth; i++)
+        {
+            resolved = resolved with { Type = new TypeRef.Pointer(resolved.Type), Symbol = null, Substitutions = new Dictionary<string, TypeRef>(StringComparer.Ordinal) };
+        }
+
+        return resolved;
+    }
+
+    private IReadOnlyList<ResolvedMethod> ResolveMethods(string type)
+    {
+        var resolvedType = ResolveConcreteDefinition(type);
+        return _memberResolver.GetMethods(resolvedType);
+    }
+
+    private string NormalizeSelfType(string type)
+    {
+        var pointerSuffix = "";
+        type = type.Trim();
+        while (type.EndsWith("*", StringComparison.Ordinal))
+        {
+            pointerSuffix += "*";
+            type = type[..^1].TrimEnd();
+        }
+
+        var resolved = _typeResolver.ResolveDefinition(_typeRefParser.Parse(type));
+        return TypeRefFormatter.ToCxString(resolved.Type) + pointerSuffix;
     }
 
     private bool Unify(string expectedPattern, string actualType, Dictionary<string, string> bindings)

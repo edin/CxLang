@@ -6,7 +6,7 @@ namespace Cx.Compiler.Semantic;
 internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 {
     private ExpressionTypeResolver? _resolver;
-    private RequirementMatcher? _requirementMatcher;
+    private TypeSystem? _typeSystem;
     private ProgramNode? _program;
     private IReadOnlyDictionary<string, string> _globals = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -18,7 +18,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         var programWithGlobals = program with { GlobalVariables = globalVariables };
         _program = programWithGlobals;
         _resolver = new ExpressionTypeResolver(programWithGlobals);
-        _requirementMatcher = new RequirementMatcher(programWithGlobals);
+        _typeSystem = new TypeSystem(programWithGlobals);
         _globals = globalVariables
             .Where(global => !string.IsNullOrWhiteSpace(global.Type))
             .GroupBy(global => global.Name, StringComparer.Ordinal)
@@ -300,48 +300,11 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         elementType = string.Empty;
         keyType = null;
 
-        if (foreachStatement.KeyBinding is not null)
-        {
-            if (_requirementMatcher?.Match(iterableType, "KeyValueIterable") is not { Success: true } keyValueMatch
-                || !keyValueMatch.TypeBindings.TryGetValue("K", out var matchedKeyType)
-                || !keyValueMatch.TypeBindings.TryGetValue("V", out var matchedValueType))
-            {
-                return false;
-            }
-
-            keyType = matchedKeyType;
-            elementType = matchedValueType;
-            return true;
-        }
-
-        if (TryParseFixedArrayType(iterableType, out var arrayElementType, out _))
-        {
-            elementType = arrayElementType;
-            return true;
-        }
-
-        if (_requirementMatcher?.Match(iterableType, "Iterable") is { Success: true } iterable
-            && iterable.TypeBindings.TryGetValue("T", out var iterableElementType))
-        {
-            elementType = iterableElementType;
-            return true;
-        }
-
-        if (_requirementMatcher?.Match(iterableType, "Contiguous") is { Success: true } contiguous
-            && contiguous.TypeBindings.TryGetValue("T", out var contiguousElementType))
-        {
-            elementType = contiguousElementType;
-            return true;
-        }
-
-        if (_requirementMatcher?.Match(iterableType, "ContiguousRange") is { Success: true } range
-            && range.TypeBindings.TryGetValue("T", out var rangeElementType))
-        {
-            elementType = rangeElementType;
-            return true;
-        }
-
-        return false;
+        return _typeSystem?.TryResolveForeachTypes(
+            iterableType,
+            keyValue: foreachStatement.KeyBinding is not null,
+            out elementType,
+            out keyType) == true;
     }
 
     private string InferVariableType(
@@ -628,24 +591,4 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     private static Dictionary<string, string> CopyVariables(IReadOnlyDictionary<string, string> variables) =>
         new(variables, StringComparer.Ordinal);
 
-    private static bool TryParseFixedArrayType(string type, out string elementType, out string length)
-    {
-        elementType = string.Empty;
-        length = string.Empty;
-        type = type.Trim();
-        if (!type.EndsWith("]", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var openBracket = type.LastIndexOf('[');
-        if (openBracket < 0)
-        {
-            return false;
-        }
-
-        elementType = type[..openBracket].Trim();
-        length = type[(openBracket + 1)..^1].Trim();
-        return !string.IsNullOrWhiteSpace(elementType) && !string.IsNullOrWhiteSpace(length);
-    }
 }

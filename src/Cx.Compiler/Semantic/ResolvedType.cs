@@ -1,0 +1,335 @@
+using Cx.Compiler.Syntax.Nodes;
+
+namespace Cx.Compiler.Semantic;
+
+internal abstract record TypeSymbol(string Name)
+{
+    public sealed record Builtin(string Name) : TypeSymbol(Name);
+
+    public sealed record GenericParameter(string Name) : TypeSymbol(Name);
+
+    public sealed record Alias(string Name, TypeAliasNode Declaration) : TypeSymbol(Name);
+
+    public sealed record Struct(string Name, StructNode Declaration) : TypeSymbol(Name);
+
+    public sealed record Adapter(string Name, TypeAdapterNode Declaration) : TypeSymbol(Name);
+
+    public sealed record Interface(string Name, InterfaceNode Declaration) : TypeSymbol(Name);
+
+    public sealed record Enum(string Name, EnumNode Declaration) : TypeSymbol(Name);
+
+    public sealed record TaggedUnion(string Name, TaggedUnionNode Declaration) : TypeSymbol(Name);
+}
+
+internal sealed record ResolvedType(
+    TypeRef Type,
+    TypeSymbol? Symbol,
+    IReadOnlyDictionary<string, TypeRef> Substitutions)
+{
+    public string DisplayName => TypeRefFormatter.ToCxString(Type);
+
+    public bool IsUnknown => Type is TypeRef.Unknown;
+}
+
+internal sealed record ResolvedField(
+    string Name,
+    TypeRef Type,
+    StructFieldNode Declaration);
+
+internal sealed record ResolvedMethod(
+    string Name,
+    TypeRef ReturnType,
+    IReadOnlyList<TypeRef> ParameterTypes,
+    FunctionNode Declaration);
+
+internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
+{
+    private readonly TypeRefParser _parser = new(program);
+
+    public IReadOnlyList<ResolvedField> GetFields(ResolvedType type) =>
+        type.Symbol switch
+        {
+            TypeSymbol.Struct structSymbol => ResolveFields(structSymbol.Declaration, type.Substitutions),
+            _ => [],
+        };
+
+    public IReadOnlyList<ResolvedMethod> GetMethods(ResolvedType type) =>
+        type.Symbol switch
+        {
+            TypeSymbol.Struct structSymbol => ResolveStructMethods(structSymbol.Declaration, type),
+            TypeSymbol.Adapter adapterSymbol => ResolveAdapterMethods(adapterSymbol.Declaration, type),
+            TypeSymbol.Builtin or TypeSymbol.Enum or TypeSymbol.Interface or TypeSymbol.TaggedUnion or null => ResolveOwnerFunctions(type),
+            _ => [],
+        };
+
+    private IReadOnlyList<ResolvedField> ResolveFields(
+        StructNode declaration,
+        IReadOnlyDictionary<string, TypeRef> substitutions) =>
+        declaration.Fields
+            .Select(field =>
+            {
+                var fieldType = field.TypeNode?.Semantic.Type ?? _parser.Parse(field.Type);
+                return new ResolvedField(
+                    field.Name,
+                    TypeRefRewriter.Substitute(fieldType, substitutions),
+                    field);
+            })
+            .ToList();
+
+    private IReadOnlyList<ResolvedMethod> ResolveStructMethods(
+        StructNode declaration,
+        ResolvedType type)
+    {
+        var methods = declaration.Methods
+            .Concat(program.Extensions
+                .Where(extension => string.Equals(extension.TargetType, declaration.Name, StringComparison.Ordinal))
+                .SelectMany(extension => extension.Methods))
+            .Concat(program.Functions.Where(function =>
+                function.OwnerType is not null
+                && string.Equals(function.OwnerType, declaration.Name, StringComparison.Ordinal)));
+        return methods
+            .Select(method => ResolveMethod(method, type.Substitutions))
+            .ToList();
+    }
+
+    private IReadOnlyList<ResolvedMethod> ResolveOwnerFunctions(ResolvedType type)
+    {
+        var ownerName = GetOwnerName(type.Type);
+        if (ownerName is null)
+        {
+            return [];
+        }
+
+        return program.Functions
+            .Where(function =>
+                function.OwnerType is not null
+                && string.Equals(function.OwnerType, ownerName, StringComparison.Ordinal))
+            .Select(method => ResolveMethod(method, type.Substitutions))
+            .ToList();
+    }
+
+    private IReadOnlyList<ResolvedMethod> ResolveAdapterMethods(
+        TypeAdapterNode declaration,
+        ResolvedType type) =>
+        declaration.Methods
+            .Select(method => ResolveMethod(method, type.Substitutions))
+            .ToList();
+
+    private ResolvedMethod ResolveMethod(
+        FunctionNode method,
+        IReadOnlyDictionary<string, TypeRef> substitutions)
+    {
+        var returnType = method.ReturnTypeNode?.Semantic.Type ?? _parser.Parse(method.ReturnType);
+        var parameterTypes = method.Parameters
+            .Where(parameter => !parameter.IsVariadic)
+            .Select(parameter => parameter.TypeNode?.Semantic.Type ?? _parser.Parse(parameter.Type))
+            .Select(parameterType => TypeRefRewriter.Substitute(parameterType, substitutions))
+            .ToList();
+        return new ResolvedMethod(
+            method.Name,
+            TypeRefRewriter.Substitute(returnType, substitutions),
+            parameterTypes,
+            method);
+    }
+
+    private static string? GetOwnerName(TypeRef type) =>
+        type switch
+        {
+            TypeRef.Alias alias => GetOwnerName(alias.Target),
+            TypeRef.Named named => named.Name,
+            _ => null,
+        };
+}
+
+internal sealed class TypeResolver(
+    ProgramNode program,
+    IReadOnlyList<string>? genericParameters = null)
+{
+    private static readonly IReadOnlySet<string> BuiltinTypes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "void",
+        "bool",
+        "char",
+        "signed char",
+        "unsigned char",
+        "short",
+        "unsigned short",
+        "int",
+        "unsigned int",
+        "long",
+        "unsigned long",
+        "long long",
+        "unsigned long long",
+        "float",
+        "double",
+        "long double",
+        "size_t",
+        "usize",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "int8_t",
+        "uint8_t",
+        "int16_t",
+        "uint16_t",
+        "int32_t",
+        "uint32_t",
+        "int64_t",
+        "uint64_t",
+        "clock_t",
+        "FILE",
+    };
+
+    private readonly IReadOnlySet<string> _genericParameters = (genericParameters ?? [])
+        .ToHashSet(StringComparer.Ordinal);
+
+    public ResolvedType Resolve(string? type)
+    {
+        var parser = new TypeRefParser(program);
+        return Resolve(parser.Parse(type));
+    }
+
+    public ResolvedType Resolve(TypeRef type) =>
+        type switch
+        {
+            TypeRef.Alias alias => ResolveAlias(alias),
+            TypeRef.Named named => ResolveNamed(named),
+            TypeRef.Pointer pointer => ResolveContainer(pointer),
+            TypeRef.FixedArray fixedArray => ResolveContainer(fixedArray),
+            TypeRef.Function function => ResolveContainer(function),
+            TypeRef.Null or TypeRef.Unknown => new ResolvedType(type, Symbol: null, Substitutions: EmptySubstitutions()),
+            _ => new ResolvedType(type, Symbol: null, Substitutions: EmptySubstitutions()),
+        };
+
+    public ResolvedType ResolveDefinition(TypeRef type)
+    {
+        var resolved = Resolve(type);
+        return resolved.Symbol is TypeSymbol.Alias && type is TypeRef.Alias alias
+            ? ResolveDefinition(alias.Target)
+            : resolved;
+    }
+
+    private ResolvedType ResolveAlias(TypeRef.Alias alias)
+    {
+        var declaration = FindTypeAlias(alias.Name);
+        var symbol = declaration is null
+            ? null
+            : new TypeSymbol.Alias(alias.Name, declaration);
+        return new ResolvedType(alias, symbol, EmptySubstitutions());
+    }
+
+    private ResolvedType ResolveNamed(TypeRef.Named named)
+    {
+        if (_genericParameters.Contains(named.Name))
+        {
+            return new ResolvedType(named, new TypeSymbol.GenericParameter(named.Name), EmptySubstitutions());
+        }
+
+        if (FindStruct(named.Name) is { } structNode)
+        {
+            return new ResolvedType(
+                named,
+                new TypeSymbol.Struct(named.Name, structNode),
+                BuildSubstitutions(structNode.TypeParameters, named.Arguments));
+        }
+
+        if (FindTypeAdapter(named.Name) is { } adapter)
+        {
+            return new ResolvedType(
+                named,
+                new TypeSymbol.Adapter(named.Name, adapter),
+                BuildSubstitutions(adapter.TypeParameters, named.Arguments));
+        }
+
+        if (FindInterface(named.Name) is { } interfaceNode)
+        {
+            return new ResolvedType(named, new TypeSymbol.Interface(named.Name, interfaceNode), EmptySubstitutions());
+        }
+
+        if (FindTaggedUnion(named.Name) is { } taggedUnion)
+        {
+            return new ResolvedType(named, new TypeSymbol.TaggedUnion(named.Name, taggedUnion), EmptySubstitutions());
+        }
+
+        if (FindEnum(named.Name) is { } enumNode)
+        {
+            return new ResolvedType(named, new TypeSymbol.Enum(named.Name, enumNode), EmptySubstitutions());
+        }
+
+        if (FindTypeAlias(named.Name) is { } alias)
+        {
+            return new ResolvedType(named, new TypeSymbol.Alias(named.Name, alias), EmptySubstitutions());
+        }
+
+        return new ResolvedType(
+            named,
+            IsBuiltin(named.Name) ? new TypeSymbol.Builtin(named.Name) : null,
+            EmptySubstitutions());
+    }
+
+    private static ResolvedType ResolveContainer(TypeRef type) =>
+        new(type, Symbol: null, Substitutions: EmptySubstitutions());
+
+    private TypeAliasNode? FindTypeAlias(string name) =>
+        program.TypeAliases.FirstOrDefault(alias => string.Equals(alias.Name, name, StringComparison.Ordinal))
+        ?? program.CDeclarations
+            .SelectMany(declaration => declaration.TypeAliases)
+            .FirstOrDefault(alias => string.Equals(alias.Name, name, StringComparison.Ordinal));
+
+    private StructNode? FindStruct(string name) =>
+        program.Structs.FirstOrDefault(structNode => string.Equals(structNode.Name, name, StringComparison.Ordinal))
+        ?? program.CDeclarations
+            .SelectMany(declaration => declaration.Structs)
+            .FirstOrDefault(structNode => string.Equals(structNode.Name, name, StringComparison.Ordinal));
+
+    private TypeAdapterNode? FindTypeAdapter(string name) =>
+        program.TypeAdapters.FirstOrDefault(adapter => string.Equals(adapter.Name, name, StringComparison.Ordinal));
+
+    private InterfaceNode? FindInterface(string name) =>
+        program.Interfaces.FirstOrDefault(interfaceNode => string.Equals(interfaceNode.Name, name, StringComparison.Ordinal));
+
+    private TaggedUnionNode? FindTaggedUnion(string name) =>
+        program.TaggedUnions.FirstOrDefault(union => string.Equals(union.Name, name, StringComparison.Ordinal))
+        ?? program.CDeclarations
+            .SelectMany(declaration => declaration.Unions)
+            .FirstOrDefault(union => string.Equals(union.Name, name, StringComparison.Ordinal));
+
+    private EnumNode? FindEnum(string name) =>
+        program.Enums.FirstOrDefault(enumNode => string.Equals(enumNode.Name, name, StringComparison.Ordinal))
+        ?? program.CDeclarations
+            .SelectMany(declaration => declaration.Enums)
+            .FirstOrDefault(enumNode => string.Equals(enumNode.Name, name, StringComparison.Ordinal));
+
+    private static IReadOnlyDictionary<string, TypeRef> BuildSubstitutions(
+        IReadOnlyList<string> parameters,
+        IReadOnlyList<TypeRef> arguments)
+    {
+        if (parameters.Count == 0 || parameters.Count != arguments.Count)
+        {
+            return EmptySubstitutions();
+        }
+
+        return parameters
+            .Zip(arguments)
+            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+    }
+
+    private static bool IsBuiltin(string name)
+    {
+        name = name.Trim();
+        if (name.StartsWith("const ", StringComparison.Ordinal))
+        {
+            name = name["const ".Length..].TrimStart();
+        }
+
+        return BuiltinTypes.Contains(name);
+    }
+
+    private static IReadOnlyDictionary<string, TypeRef> EmptySubstitutions() =>
+        new Dictionary<string, TypeRef>(StringComparer.Ordinal);
+}
