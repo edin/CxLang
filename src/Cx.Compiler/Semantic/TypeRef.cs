@@ -297,8 +297,22 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
             return true;
         }
 
-        var target = parser.Parse(targetType);
-        var source = parser.Parse(sourceType);
+        return CanAssign(parser.Parse(targetType), parser.Parse(sourceType), out reason);
+    }
+
+    public bool CanAssign(string targetType, TypeRef? sourceType, out string reason) =>
+        CanAssign(parser.Parse(targetType), sourceType, out reason);
+
+    public bool CanAssign(TypeRef targetType, TypeRef? sourceType, out string reason)
+    {
+        reason = string.Empty;
+        if (sourceType is null)
+        {
+            return true;
+        }
+
+        var target = targetType;
+        var source = sourceType;
         if (IsUnknown(target) || IsUnknown(source))
         {
             return true;

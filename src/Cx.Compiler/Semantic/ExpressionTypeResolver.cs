@@ -10,6 +10,7 @@ internal sealed class ExpressionTypeResolver(
 {
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
+    private readonly TypeRefParser _typeRefParser = new(program);
     private readonly IReadOnlyDictionary<string, string> _typeAliases = program.TypeAliases
         .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.First().TargetType, StringComparer.Ordinal);
@@ -42,6 +43,48 @@ internal sealed class ExpressionTypeResolver(
             IndexExpressionNode index => ResolveIndex(index, variables),
             RawExpressionNode raw => ResolveRaw(raw.SourceText, variables),
             _ => null,
+        };
+    }
+
+    public TypeRef? ResolveTypeRef(ExpressionNode? expression, IReadOnlyDictionary<string, string> variables)
+    {
+        if (expression is null)
+        {
+            return null;
+        }
+
+        if (expression is SizeOfExpressionNode)
+        {
+            return ParseResolvedType("usize");
+        }
+
+        if (expression is FunctionExpressionNode functionLiteral)
+        {
+            return ResolveFunctionExpressionTypeRef(functionLiteral);
+        }
+
+        if (expression.Semantic.Type is { } semanticType)
+        {
+            return semanticType;
+        }
+
+        return expression switch
+        {
+            LiteralExpressionNode literal => ParseResolvedType(ResolveLiteral(literal.SourceText)),
+            NameExpressionNode name => ResolveNameTypeRef(name.SourceText, variables),
+            ParenthesizedExpressionNode parenthesized => ResolveTypeRef(parenthesized.Expression, variables),
+            CastExpressionNode cast => ResolveTypeNode(cast.TargetTypeNode, cast.TargetType),
+            UnaryExpressionNode unary => ResolveUnaryTypeRef(unary, variables),
+            PostfixExpressionNode postfix => ResolveTypeRef(postfix.Operand, variables),
+            SizeOfExpressionNode => ParseResolvedType("usize"),
+            BinaryExpressionNode binary => ResolveBinaryTypeRef(binary, variables),
+            ScalarRangeExpressionNode range => ResolveRangeTypeRef(range, variables),
+            ConditionalExpressionNode conditional => ResolveConditionalTypeRef(conditional, variables),
+            InitializerExpressionNode initializer => ResolveInitializerTypeRef(initializer, variables),
+            FunctionExpressionNode functionExpression => ResolveFunctionExpressionTypeRef(functionExpression),
+            AssignmentExpressionNode assignment => ResolveTypeRef(assignment.Target, variables),
+            IndexExpressionNode index => ResolveIndexTypeRef(index, variables),
+            _ => ParseResolvedType(Resolve(expression, variables)),
         };
     }
 
@@ -105,6 +148,19 @@ internal sealed class ExpressionTypeResolver(
         return null;
     }
 
+    private TypeRef? ResolveNameTypeRef(string name, IReadOnlyDictionary<string, string> variables) =>
+        variables.TryGetValue(name, out var type)
+            ? ParseResolvedType(type)
+            : ParseResolvedType(ResolveName(name, variables));
+
+    private TypeRef? ResolveTypeNode(TypeNode? typeNode, string? fallbackType) =>
+        typeNode?.Semantic.Type ?? ParseResolvedType(fallbackType);
+
+    private TypeRef? ParseResolvedType(string? type) =>
+        string.IsNullOrWhiteSpace(type)
+            ? null
+            : _typeRefParser.Parse(type);
+
     private string? ResolveUnary(UnaryExpressionNode unary, IReadOnlyDictionary<string, string> variables)
     {
         var operandType = Resolve(unary.Operand, variables);
@@ -118,6 +174,25 @@ internal sealed class ExpressionTypeResolver(
             "&" => operandType + "*",
             "*" => UnwrapPointer(operandType),
             "!" => "bool",
+            "+" => operandType,
+            "-" => operandType,
+            _ => null,
+        };
+    }
+
+    private TypeRef? ResolveUnaryTypeRef(UnaryExpressionNode unary, IReadOnlyDictionary<string, string> variables)
+    {
+        var operandType = ResolveTypeRef(unary.Operand, variables);
+        if (operandType is null)
+        {
+            return null;
+        }
+
+        return unary.Operator switch
+        {
+            "&" => new TypeRef.Pointer(operandType),
+            "*" => UnwrapPointer(operandType),
+            "!" => ParseResolvedType("bool"),
             "+" => operandType,
             "-" => operandType,
             _ => null,
@@ -141,10 +216,34 @@ internal sealed class ExpressionTypeResolver(
         return SameType(left, right) ? left : left ?? right;
     }
 
+    private TypeRef? ResolveBinaryTypeRef(BinaryExpressionNode binary, IReadOnlyDictionary<string, string> variables)
+    {
+        if (binary.Operator is "==" or "!=" or "<" or "<=" or ">" or ">=" or "&&" or "||")
+        {
+            return ParseResolvedType("bool");
+        }
+
+        if (binary.Operator == "<=>")
+        {
+            return ParseResolvedType("int");
+        }
+
+        var left = ResolveTypeRef(binary.Left, variables);
+        var right = ResolveTypeRef(binary.Right, variables);
+        return SameType(left, right) ? left : left ?? right;
+    }
+
     private string? ResolveConditional(ConditionalExpressionNode conditional, IReadOnlyDictionary<string, string> variables)
     {
         var whenTrue = Resolve(conditional.WhenTrue, variables);
         var whenFalse = Resolve(conditional.WhenFalse, variables);
+        return SameType(whenTrue, whenFalse) ? whenTrue : whenTrue ?? whenFalse;
+    }
+
+    private TypeRef? ResolveConditionalTypeRef(ConditionalExpressionNode conditional, IReadOnlyDictionary<string, string> variables)
+    {
+        var whenTrue = ResolveTypeRef(conditional.WhenTrue, variables);
+        var whenFalse = ResolveTypeRef(conditional.WhenFalse, variables);
         return SameType(whenTrue, whenFalse) ? whenTrue : whenTrue ?? whenFalse;
     }
 
@@ -169,6 +268,9 @@ internal sealed class ExpressionTypeResolver(
 
         return SameType(start, end) ? start : start ?? end;
     }
+
+    private TypeRef? ResolveRangeTypeRef(ScalarRangeExpressionNode range, IReadOnlyDictionary<string, string> variables) =>
+        ParseResolvedType(ResolveRange(range, variables));
 
     private static bool IsIntegerLiteral(ExpressionNode expression) =>
         expression is LiteralExpressionNode literal
@@ -195,12 +297,44 @@ internal sealed class ExpressionTypeResolver(
             : null;
     }
 
+    private TypeRef? ResolveInitializerTypeRef(InitializerExpressionNode initializer, IReadOnlyDictionary<string, string> variables)
+    {
+        if (!string.IsNullOrWhiteSpace(initializer.TypeName))
+        {
+            return ResolveTypeNode(initializer.TypeNameNode, initializer.TypeName);
+        }
+
+        if (initializer.Values.Count == 0)
+        {
+            return null;
+        }
+
+        var firstType = ResolveTypeRef(initializer.Values[0], variables);
+        return initializer.Values
+            .Skip(1)
+            .Select(value => ResolveTypeRef(value, variables))
+            .All(type => SameType(firstType, type))
+            ? firstType
+            : null;
+    }
+
     private static string ResolveFunctionExpression(FunctionExpressionNode functionExpression)
     {
         var returnType = string.IsNullOrWhiteSpace(functionExpression.ReturnType)
             ? "int"
             : functionExpression.ReturnType;
         return GetFunctionType(functionExpression.Parameters, returnType);
+    }
+
+    private TypeRef ResolveFunctionExpressionTypeRef(FunctionExpressionNode functionExpression)
+    {
+        var parameters = functionExpression.Parameters
+            .Select(parameter => parameter.TypeNode?.Semantic.Type ?? ParseResolvedType(parameter.Type) ?? new TypeRef.Unknown())
+            .ToList();
+        var returnType = functionExpression.ReturnTypeNode?.Semantic.Type
+            ?? ParseResolvedType(string.IsNullOrWhiteSpace(functionExpression.ReturnType) ? "int" : functionExpression.ReturnType)
+            ?? new TypeRef.Unknown();
+        return new TypeRef.Function(parameters, returnType);
     }
 
     private static string GetFunctionType(IReadOnlyList<ParameterNode> parameters, string returnType) =>
@@ -294,6 +428,26 @@ internal sealed class ExpressionTypeResolver(
 
         return UnwrapPointer(targetType);
     }
+
+    private TypeRef? ResolveIndexTypeRef(IndexExpressionNode index, IReadOnlyDictionary<string, string> variables)
+    {
+        var targetType = ResolveTypeRef(index.Target, variables);
+        return targetType switch
+        {
+            TypeRef.FixedArray fixedArray => fixedArray.Element,
+            TypeRef.Pointer pointer => pointer.Element,
+            TypeRef.Alias alias => ResolveIndexTypeRef(alias.Target),
+            _ => ParseResolvedType(ResolveIndex(index, variables)),
+        };
+    }
+
+    private static TypeRef? ResolveIndexTypeRef(TypeRef targetType) => targetType switch
+    {
+        TypeRef.FixedArray fixedArray => fixedArray.Element,
+        TypeRef.Pointer pointer => pointer.Element,
+        TypeRef.Alias alias => ResolveIndexTypeRef(alias.Target),
+        _ => null,
+    };
 
     private string? ResolveCall(CallExpressionNode call, IReadOnlyDictionary<string, string> variables)
     {
@@ -815,6 +969,13 @@ internal sealed class ExpressionTypeResolver(
             : null;
     }
 
+    private static TypeRef? UnwrapPointer(TypeRef type) => type switch
+    {
+        TypeRef.Pointer pointer => pointer.Element,
+        TypeRef.Alias alias => UnwrapPointer(alias.Target),
+        _ => null,
+    };
+
     private static string StripPointer(string type)
     {
         while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
@@ -838,6 +999,14 @@ internal sealed class ExpressionTypeResolver(
         left is not null
         && right is not null
         && string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
+
+    private static bool SameType(TypeRef? left, TypeRef? right) =>
+        left is not null
+        && right is not null
+        && string.Equals(
+            TypeRefFormatter.ToCxString(left),
+            TypeRefFormatter.ToCxString(right),
+            StringComparison.Ordinal);
 
     private static bool SameTypeArguments(IReadOnlyList<string> left, IReadOnlyList<string> right) =>
         left.Count == right.Count

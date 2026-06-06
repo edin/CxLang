@@ -11,6 +11,7 @@ public sealed class SemanticAnalyzer(
     private RequirementMatcher? _requirementMatcher;
     private ExpressionTypeResolver? _expressionTypeResolver;
     private TypeCompatibility? _typeCompatibility;
+    private TypeRefParser? _typeRefParser;
     private ProgramNode? _program;
     private IReadOnlyList<string> _currentTypeParameters = [];
     private IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = [];
@@ -30,7 +31,8 @@ public sealed class SemanticAnalyzer(
         _program = program;
         _requirementMatcher = new RequirementMatcher(program);
         _expressionTypeResolver = new ExpressionTypeResolver(program);
-        _typeCompatibility = new TypeCompatibility(new TypeRefParser(program));
+        _typeRefParser = new TypeRefParser(program);
+        _typeCompatibility = new TypeCompatibility(_typeRefParser);
         AnalyzeAttributes(program);
 
         foreach (var structNode in program.Structs)
@@ -54,7 +56,7 @@ public sealed class SemanticAnalyzer(
         {
             AnalyzeType(global.Type, global.Location, program, []);
             AnalyzeExpression(global.Initializer, global.Location, globalVariables);
-            if (global.Initializer is not null && IsBareNull(global.Initializer) && !IsNullableType(global.Type))
+            if (global.Initializer is not null && IsBareNull(global.Initializer) && !IsNullableType(ParseTypeRef(global.Type)))
             {
                 diagnostics.Report(global.Location, $"Cannot assign null to non-pointer global '{global.Name}' of type '{global.Type}'.");
             }
@@ -417,7 +419,7 @@ public sealed class SemanticAnalyzer(
             case LetStatement let:
                 AnalyzeType(let.Type, let.Location, program, inScopeTypeParameters);
                 AnalyzeExpression(let.Initializer, let.Location, variables, mutability);
-                if (let.Initializer is not null && IsBareNull(let.Initializer) && !IsNullableType(let.Type))
+                if (let.Initializer is not null && IsBareNull(let.Initializer) && !IsNullableType(ParseTypeRef(let.Type)))
                 {
                     diagnostics.Report(let.Location, $"Cannot assign null to non-pointer type '{let.Type}'.");
                 }
@@ -446,7 +448,7 @@ public sealed class SemanticAnalyzer(
                 }
 
                 AnalyzeExpression(ret.Expression, ret.Location, variables, mutability);
-                if (IsBareNull(ret.Expression) && !IsNullableType(returnType))
+                if (IsBareNull(ret.Expression) && !IsNullableType(ParseTypeRef(returnType)))
                 {
                     diagnostics.Report(ret.Location, $"Cannot return null from function returning non-pointer type '{returnType}'.");
                 }
@@ -1479,25 +1481,27 @@ public sealed class SemanticAnalyzer(
 
         AnalyzeAssignmentMutability(assignment, mutability);
 
-        var targetType = _expressionTypeResolver.Resolve(assignment.Target, variables);
-        if (targetType is null)
+        var targetTypeRef = _expressionTypeResolver.ResolveTypeRef(assignment.Target, variables);
+        if (targetTypeRef is null)
         {
             return;
         }
 
+        var targetType = FormatTypeRef(targetTypeRef)!;
+
         if (assignment.Operator == "=")
         {
-            if (IsBareNull(assignment.Value) && !IsNullableType(targetType))
+            if (IsBareNull(assignment.Value) && !IsNullableType(targetTypeRef))
             {
                 diagnostics.Report(assignment.Location, $"Cannot assign null to non-pointer type '{targetType}'.");
                 return;
             }
 
-            CheckAssignmentCompatibility(assignment.Location, targetType, assignment.Value, variables, "assignment");
+            CheckAssignmentCompatibility(assignment.Location, targetTypeRef, assignment.Value, variables, "assignment");
             return;
         }
 
-        CheckCompoundAssignmentCompatibility(assignment.Location, targetType, assignment.Operator, assignment.Value, variables);
+        CheckCompoundAssignmentCompatibility(assignment.Location, targetTypeRef, assignment.Operator, assignment.Value, variables);
     }
 
     private void AnalyzeAssignmentMutability(
@@ -1553,9 +1557,17 @@ public sealed class SemanticAnalyzer(
         string targetType,
         ExpressionNode? sourceExpression,
         IReadOnlyDictionary<string, string> variables,
+        string subject) =>
+        CheckAssignmentCompatibility(location, ParseTypeRef(targetType), sourceExpression, variables, subject);
+
+    private void CheckAssignmentCompatibility(
+        Cx.Compiler.Syntax.Location location,
+        TypeRef? targetType,
+        ExpressionNode? sourceExpression,
+        IReadOnlyDictionary<string, string> variables,
         string subject)
     {
-        if (sourceExpression is null || _expressionTypeResolver is null || _typeCompatibility is null)
+        if (targetType is null || sourceExpression is null || _expressionTypeResolver is null || _typeCompatibility is null)
         {
             return;
         }
@@ -1565,18 +1577,20 @@ public sealed class SemanticAnalyzer(
             return;
         }
 
-        var sourceType = _expressionTypeResolver.Resolve(sourceExpression, variables);
-        if (IsTaggedUnionVariantAssignment(targetType, sourceType))
+        var sourceType = _expressionTypeResolver.ResolveTypeRef(sourceExpression, variables);
+        var targetTypeText = FormatTypeRef(targetType);
+        var sourceTypeText = FormatTypeRef(sourceType);
+        if (targetTypeText is not null && IsTaggedUnionVariantAssignment(targetTypeText, sourceTypeText))
         {
             return;
         }
 
-        if (IsInterfaceBindingAssignment(targetType, sourceType))
+        if (targetTypeText is not null && IsInterfaceBindingAssignment(targetTypeText, sourceTypeText))
         {
             return;
         }
 
-        if (IsSelfPointerAssignment(targetType, sourceType))
+        if (targetTypeText is not null && IsSelfPointerAssignment(targetTypeText, sourceTypeText))
         {
             return;
         }
@@ -1619,7 +1633,7 @@ public sealed class SemanticAnalyzer(
 
     private void CheckCompoundAssignmentCompatibility(
         Cx.Compiler.Syntax.Location location,
-        string targetType,
+        TypeRef targetType,
         string assignmentOperator,
         ExpressionNode value,
         IReadOnlyDictionary<string, string> variables)
@@ -1629,7 +1643,7 @@ public sealed class SemanticAnalyzer(
             return;
         }
 
-        var valueType = _expressionTypeResolver.Resolve(value, variables);
+        var valueType = _expressionTypeResolver.ResolveTypeRef(value, variables);
         if (valueType is null)
         {
             return;
@@ -1656,7 +1670,7 @@ public sealed class SemanticAnalyzer(
 
         diagnostics.Report(
             location,
-            $"Type mismatch for compound assignment: cannot apply '{assignmentOperator}' to '{targetType}' and '{valueType}'.");
+            $"Type mismatch for compound assignment: cannot apply '{assignmentOperator}' to '{FormatTypeRef(targetType)}' and '{FormatTypeRef(valueType)}'.");
     }
 
     private bool IsTaggedUnionVariantAssignment(string targetType, string? sourceType)
@@ -2465,8 +2479,14 @@ public sealed class SemanticAnalyzer(
     private static bool IsNullableType(string type) =>
         type.TrimEnd().EndsWith("*", StringComparison.Ordinal);
 
+    private static bool IsNullableType(TypeRef? type) =>
+        UnwrapAlias(type) is TypeRef.Pointer;
+
     private static bool IsPointerType(string type) =>
         type.TrimEnd().EndsWith("*", StringComparison.Ordinal);
+
+    private static bool IsPointerType(TypeRef type) =>
+        UnwrapAlias(type) is TypeRef.Pointer;
 
     private bool IsNumericLikeType(string type)
     {
@@ -2503,6 +2523,29 @@ public sealed class SemanticAnalyzer(
             "clock_t" or
             "bool";
     }
+
+    private bool IsNumericLikeType(TypeRef type)
+    {
+        var unwrapped = UnwrapAlias(type);
+        return unwrapped is TypeRef.Named named
+            && IsNumericLikeType(named.Name);
+    }
+
+    private TypeRef ParseTypeRef(string type) =>
+        _typeRefParser?.Parse(type) ?? new TypeRef.Unknown();
+
+    private static TypeRef? UnwrapAlias(TypeRef? type)
+    {
+        while (type is TypeRef.Alias alias)
+        {
+            type = alias.Target;
+        }
+
+        return type;
+    }
+
+    private static string? FormatTypeRef(TypeRef? type) =>
+        type is null ? null : TypeRefFormatter.ToCxString(type);
 
     private static string StripConst(string type) =>
         type.StartsWith("const ", StringComparison.Ordinal)
