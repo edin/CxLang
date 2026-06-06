@@ -237,6 +237,43 @@ public sealed class ScopeResolverTests
     }
 
     [Fact]
+    public void Resolve_AttachesResolvedCallInfoToAdapterExposedCall()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Vec<T> {
+                data: T*;
+
+                fn add(value: T) -> bool {
+                    return true;
+                }
+            }
+
+            type Stack<T> using Vec<T> {
+                expose add as push;
+            }
+
+            fn main() -> int {
+                let stack: Stack<int> = Stack<int> {};
+                stack.push(10);
+                return 0;
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var add = program.Structs.Single().Methods.Single();
+        var main = program.Functions.Single(function => function.Name == "main");
+        var statement = Assert.IsType<CStatement>(main.Body[1]);
+        var call = Assert.IsType<CallExpressionNode>(statement.Expression);
+
+        Assert.Same(add.Semantic.Symbol, call.Semantic.Symbol);
+        Assert.NotNull(call.Semantic.ResolvedCall);
+        Assert.Same(add, call.Semantic.ResolvedCall.Function);
+        Assert.True(call.Semantic.ResolvedCall.IsInstance);
+        Assert.Equal(["int"], call.Semantic.ResolvedCall.TypeArguments);
+    }
+
+    [Fact]
     public void Resolve_AttachesFunctionSymbolToDirectFunctionReference()
     {
         var program = CompilerTestHelpers.Parse(

@@ -7,10 +7,14 @@ namespace Cx.Compiler.Semantic;
 internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel model)
 {
     private IReadOnlyList<FunctionNode> _functions = [];
+    private ProgramNode? _program;
+    private ExpressionTypeResolver? _expressionTypeResolver;
 
     public void Resolve(ProgramNode program)
     {
+        _program = program;
         _functions = GetAllFunctions(program);
+        _expressionTypeResolver = new ExpressionTypeResolver(program);
         DeclareTopLevelSymbols(program);
 
         foreach (var function in program.Functions)
@@ -352,6 +356,11 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private void BindCall(CallExpressionNode call, Scope scope)
     {
+        if (TryBindResolvedCall(call, call.Callee, [], call.Arguments, scope))
+        {
+            return;
+        }
+
         if (call.Callee is NameExpressionNode name
             && scope.TryResolve(name.SourceText, out var symbol)
             && symbol.Kind == SymbolKind.Function)
@@ -379,6 +388,11 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private void BindGenericCall(GenericCallExpressionNode call, Scope scope)
     {
+        if (TryBindResolvedCall(call, call.Callee, call.TypeArguments, call.Arguments, scope))
+        {
+            return;
+        }
+
         if (call.Callee is NameExpressionNode name
             && FindFreeFunction(name.SourceText, call.TypeArguments) is { } function)
         {
@@ -398,6 +412,68 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             member.Semantic.Symbol = functionSymbol;
             member.Semantic.ResolvedCall = call.Semantic.ResolvedCall;
         }
+    }
+
+    private bool TryBindResolvedCall(
+        ExpressionNode callExpression,
+        ExpressionNode callee,
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        Scope scope)
+    {
+        if (_program is null || _expressionTypeResolver is null)
+        {
+            return false;
+        }
+
+        var resolver = new CallResolver(_program, _expressionTypeResolver.Resolve);
+        var variables = BuildVariableMap(scope);
+        var resolved = resolver.Resolve(callee, typeArguments, arguments, variables);
+        if (resolved?.Function is null)
+        {
+            return false;
+        }
+
+        var functionSymbol = FunctionSymbol(resolved.Function);
+        callExpression.Semantic.Symbol = functionSymbol;
+        callExpression.Semantic.ResolvedCall = new ResolvedCallInfo(
+            resolved.Function,
+            resolved.TypeArguments ?? [],
+            resolved.IsInstance);
+
+        switch (callee)
+        {
+            case NameExpressionNode name:
+                name.Semantic.Symbol = functionSymbol;
+                break;
+            case MemberExpressionNode member:
+                member.Semantic.Symbol = functionSymbol;
+                member.Semantic.ResolvedCall = callExpression.Semantic.ResolvedCall;
+                break;
+        }
+
+        return true;
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildVariableMap(Scope scope)
+    {
+        var variables = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var current = scope; current is not null; current = current.Parent)
+        {
+            foreach (var symbol in current.Symbols.Values)
+            {
+                if (symbol.Kind is SymbolKind.Function or SymbolKind.Type
+                    || string.IsNullOrWhiteSpace(symbol.Type)
+                    || variables.ContainsKey(symbol.Name))
+                {
+                    continue;
+                }
+
+                variables[symbol.Name] = symbol.Type;
+            }
+        }
+
+        return variables;
     }
 
     private void BindMemberReference(MemberExpressionNode member, Scope scope)

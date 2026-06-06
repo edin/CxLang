@@ -1,0 +1,708 @@
+using Cx.Compiler.Syntax.Nodes;
+
+namespace Cx.Compiler.Semantic;
+
+internal sealed record CallResolution(
+    string Name,
+    TypeRef ReturnType,
+    IReadOnlyList<TypeRef> ParameterTypes,
+    bool IsVariadic,
+    FunctionNode? Function = null,
+    IReadOnlyList<string>? TypeArguments = null,
+    bool IsInstance = false);
+
+internal sealed class CallResolver(
+    ProgramNode program,
+    Func<ExpressionNode, IReadOnlyDictionary<string, string>, string?> resolveExpressionType,
+    IReadOnlyList<string>? currentTypeParameters = null,
+    IReadOnlyList<GenericConstraintNode>? currentGenericConstraints = null)
+{
+    private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
+    private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
+    private readonly TypeRefParser _typeRefParser = new(program);
+    private readonly MethodCallResolver _methodCallResolver = new(program, new TypeSystem(program, currentTypeParameters));
+
+    public CallResolution? Resolve(
+        ExpressionNode callee,
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        IReadOnlyDictionary<string, string> variables)
+    {
+        if (callee is MemberExpressionNode member)
+        {
+            return ResolveMemberCall(member, typeArguments, arguments, variables);
+        }
+
+        var calleeType = resolveExpressionType(callee, variables);
+        if (TryParseFunctionType(calleeType, out var functionPointerParameters, out var functionPointerReturnType, out var isFunctionPointerVariadic))
+        {
+            return new CallResolution(
+                callee.SourceText,
+                Parse(functionPointerReturnType),
+                functionPointerParameters.Select(Parse).ToList(),
+                isFunctionPointerVariadic);
+        }
+
+        var name = GetQualifiedName(callee);
+        if (name is null)
+        {
+            return null;
+        }
+
+        if (ResolveFunction(name, typeArguments, arguments, variables) is { } functionResolution)
+        {
+            return functionResolution;
+        }
+
+        return ResolveExternFunction(name, typeArguments, arguments, variables);
+    }
+
+    private CallResolution? ResolveMemberCall(
+        MemberExpressionNode member,
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        IReadOnlyDictionary<string, string> variables)
+    {
+        var targetName = GetQualifiedName(member.Target);
+        if (targetName is null)
+        {
+            return null;
+        }
+
+        if (!variables.TryGetValue(targetName, out var targetType))
+        {
+            if (ResolveStaticRequirementCall(targetName, member.MemberName) is { } requirementCall)
+            {
+                return requirementCall;
+            }
+
+            if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: false } staticMethodCall)
+            {
+                return BuildMethodResolution(
+                    staticMethodCall,
+                    typeArguments,
+                    BuildStaticReceiverType(targetName, typeArguments));
+            }
+
+            var staticFunction = program.Functions.FirstOrDefault(function =>
+                function.IsStatic
+                && function.OwnerType is not null
+                && string.Equals(targetName, function.OwnerType, StringComparison.Ordinal)
+                && string.Equals(function.Name, member.MemberName, StringComparison.Ordinal)
+                && (MatchesGenericArguments(function.TypeParameters, typeArguments)
+                    || (typeArguments.Count == 0
+                        && function.TypeParameters.Count > 0
+                        && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null)));
+            if (staticFunction is null)
+            {
+                return null;
+            }
+
+            var staticArguments = typeArguments.Count > 0
+                ? typeArguments
+                : InferFunctionTypeArguments(staticFunction.TypeParameters, staticFunction.Parameters, arguments, variables, skipSelf: false) ?? [];
+            return BuildFunctionResolution(
+                $"{targetName}.{member.MemberName}",
+                staticFunction,
+                staticFunction.TypeParameters,
+                staticFunction.Parameters,
+                staticFunction.ReturnType,
+                staticArguments,
+                skipSelf: false,
+                isInstance: false);
+        }
+
+        if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: true } instanceMethodCall)
+        {
+            return BuildMethodResolution(instanceMethodCall, typeArguments, StripPointer(ResolveAlias(targetType)));
+        }
+
+        var receiverType = StripPointer(ResolveAlias(targetType));
+        var receiverBaseType = GetGenericBaseName(receiverType);
+        var receiverArguments = TryParseGenericUse(receiverType, out _, out var parsedReceiverArguments)
+            ? parsedReceiverArguments
+            : [];
+        var instanceFunction = program.Functions.FirstOrDefault(function =>
+            function.OwnerType is not null
+            && !function.IsStatic
+            && string.Equals(function.Name, member.MemberName, StringComparison.Ordinal)
+            && string.Equals(function.OwnerType, receiverBaseType, StringComparison.Ordinal)
+            && (MatchesGenericArguments(function.TypeParameters, typeArguments)
+                || (typeArguments.Count == 0 && function.TypeParameters.Count == receiverArguments.Count)
+                || (typeArguments.Count == 0
+                    && function.TypeParameters.Count > 0
+                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: true, receiverArguments) is not null)));
+        if (instanceFunction is not null)
+        {
+            var instanceArguments = typeArguments.Count > 0
+                ? typeArguments
+                : receiverArguments.Count == instanceFunction.TypeParameters.Count
+                    ? receiverArguments
+                    : InferFunctionTypeArguments(instanceFunction.TypeParameters, instanceFunction.Parameters, arguments, variables, skipSelf: true, receiverArguments) ?? [];
+            var resolution = BuildFunctionResolution(
+                $"{receiverBaseType}.{member.MemberName}",
+                instanceFunction,
+                instanceFunction.TypeParameters,
+                instanceFunction.Parameters,
+                instanceFunction.ReturnType,
+                instanceArguments,
+                skipSelf: true,
+                isInstance: true);
+            var selfType = Parse(receiverType);
+            return resolution with
+            {
+                ReturnType = TypeRefRewriter.SubstituteSelf(resolution.ReturnType, selfType),
+            };
+        }
+
+        var interfaceNode = program.Interfaces.FirstOrDefault(interfaceNode =>
+            string.Equals(interfaceNode.Name, receiverType, StringComparison.Ordinal));
+        var interfaceMethod = interfaceNode?.Methods.FirstOrDefault(method =>
+            string.Equals(method.Name, member.MemberName, StringComparison.Ordinal));
+        if (interfaceMethod is null)
+        {
+            return null;
+        }
+
+        return new CallResolution(
+            $"{receiverType}.{member.MemberName}",
+            Parse(interfaceMethod.ReturnType),
+            interfaceMethod.Parameters
+                .Where(parameter => !parameter.IsVariadic)
+                .Select(parameter => parameter.TypeNode?.Semantic.Type ?? Parse(parameter.Type))
+                .ToList(),
+            interfaceMethod.Parameters.Any(parameter => parameter.IsVariadic));
+    }
+
+    private CallResolution? ResolveFunction(
+        string name,
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        IReadOnlyDictionary<string, string> variables)
+    {
+        var function = program.Functions.FirstOrDefault(function =>
+            function.OwnerType is null
+            && string.Equals(function.Name, name, StringComparison.Ordinal)
+            && (MatchesGenericArguments(function.TypeParameters, typeArguments)
+                || (typeArguments.Count == 0
+                    && function.TypeParameters.Count > 0
+                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null)));
+        if (function is null)
+        {
+            return null;
+        }
+
+        var resolvedArguments = typeArguments.Count > 0
+            ? typeArguments
+            : InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) ?? [];
+        return BuildFunctionResolution(
+            function.Name,
+            function,
+            function.TypeParameters,
+            function.Parameters,
+            function.ReturnType,
+            resolvedArguments,
+            skipSelf: false,
+            isInstance: false);
+    }
+
+    private CallResolution? ResolveExternFunction(
+        string name,
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        IReadOnlyDictionary<string, string> variables)
+    {
+        var function = program.ExternFunctions.FirstOrDefault(function =>
+            string.Equals(function.Name, name, StringComparison.Ordinal)
+            && (MatchesGenericArguments(function.TypeParameters, typeArguments)
+                || (typeArguments.Count == 0
+                    && function.TypeParameters.Count > 0
+                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null)));
+        if (function is null)
+        {
+            return null;
+        }
+
+        var resolvedArguments = typeArguments.Count > 0
+            ? typeArguments
+            : InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) ?? [];
+        return BuildFunctionResolution(
+            function.Name,
+            function: null,
+            function.TypeParameters,
+            function.Parameters,
+            function.ReturnType,
+            resolvedArguments,
+            skipSelf: false,
+            isInstance: false);
+    }
+
+    private CallResolution? ResolveStaticRequirementCall(string targetName, string memberName)
+    {
+        if (!_currentTypeParameters.Contains(targetName, StringComparer.Ordinal))
+        {
+            return null;
+        }
+
+        foreach (var constraint in _currentGenericConstraints.Where(constraint =>
+            string.Equals(constraint.TypeParameter, targetName, StringComparison.Ordinal)))
+        {
+            foreach (var reference in constraint.Requirements)
+            {
+                var requirement = program.Requirements.FirstOrDefault(requirement =>
+                    string.Equals(requirement.Name, reference.Name, StringComparison.Ordinal));
+                if (requirement is null)
+                {
+                    continue;
+                }
+
+                var function = requirement.Members
+                    .OfType<RequirementFunctionNode>()
+                    .FirstOrDefault(function => function.IsStatic && function.Name == memberName);
+                if (function is null)
+                {
+                    continue;
+                }
+
+                var arguments = reference.TypeArguments.Count == requirement.TypeParameters.Count
+                    ? reference.TypeArguments
+                    : requirement.TypeParameters.Count == 1
+                        ? [targetName]
+                        : [];
+                var substitutions = requirement.TypeParameters.Count == arguments.Count
+                    ? requirement.TypeParameters
+                        .Zip(arguments)
+                        .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal)
+                    : new Dictionary<string, string>(StringComparer.Ordinal);
+                return new CallResolution(
+                    $"{targetName}.{memberName}",
+                    Parse(GenericTypeStringRewriter.Substitute(function.ReturnType, substitutions)),
+                    function.Parameters
+                        .Where(parameter => !parameter.IsVariadic)
+                        .Select(parameter => GenericTypeStringRewriter.Substitute(parameter.Type, substitutions))
+                        .Select(Parse)
+                        .ToList(),
+                    IsVariadic: false);
+            }
+        }
+
+        return null;
+    }
+
+    private CallResolution BuildMethodResolution(
+        ResolvedMethodCall methodCall,
+        IReadOnlyList<string> explicitTypeArguments,
+        string? receiverType)
+    {
+        var parameterTypes = methodCall.Method.ParameterTypes
+            .Skip(methodCall.SkipSelf ? 1 : 0)
+            .ToList();
+        var function = methodCall.Method.Declaration;
+        var typeArguments = ResolveFunctionTypeArguments(function, explicitTypeArguments, receiverType);
+        return new CallResolution(
+            methodCall.DisplayName,
+            methodCall.Method.ReturnType,
+            parameterTypes,
+            IsVariadic: false,
+            function,
+            typeArguments,
+            methodCall.SkipSelf);
+    }
+
+    private CallResolution BuildFunctionResolution(
+        string name,
+        FunctionNode? function,
+        IReadOnlyList<string> typeParameters,
+        IReadOnlyList<ParameterNode> parameters,
+        string returnType,
+        IReadOnlyList<string> typeArguments,
+        bool skipSelf,
+        bool isInstance)
+    {
+        var substitutions = typeParameters.Count == typeArguments.Count
+            ? typeParameters.Zip(typeArguments).ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+        var filteredParameters = parameters
+            .Skip(skipSelf ? 1 : 0)
+            .ToList();
+        var parameterTypes = filteredParameters
+            .Where(parameter => !parameter.IsVariadic)
+            .Select(parameter => GenericTypeStringRewriter.Substitute(parameter.Type, substitutions))
+            .Select(Parse)
+            .ToList();
+        return new CallResolution(
+            name,
+            Parse(GenericTypeStringRewriter.Substitute(returnType, substitutions)),
+            parameterTypes,
+            filteredParameters.Any(parameter => parameter.IsVariadic),
+            function,
+            typeArguments,
+            isInstance);
+    }
+
+    private IReadOnlyList<string> ResolveFunctionTypeArguments(
+        FunctionNode function,
+        IReadOnlyList<string> explicitTypeArguments,
+        string? receiverType)
+    {
+        if (function.TypeParameters.Count == 0)
+        {
+            return [];
+        }
+
+        if (explicitTypeArguments.Count == function.TypeParameters.Count)
+        {
+            return explicitTypeArguments;
+        }
+
+        if (receiverType is not null
+            && TryResolveAdapterBaseArguments(function, receiverType) is { } adapterBaseArguments)
+        {
+            return adapterBaseArguments;
+        }
+
+        return receiverType is not null
+            && TryParseGenericUse(StripPointer(receiverType), out _, out var receiverArguments)
+            && receiverArguments.Count == function.TypeParameters.Count
+                ? receiverArguments
+                : [];
+    }
+
+    private IReadOnlyList<string>? TryResolveAdapterBaseArguments(
+        FunctionNode function,
+        string receiverType)
+    {
+        var currentType = StripPointer(receiverType);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        while (seen.Add(currentType))
+        {
+            var currentName = GetGenericBaseName(currentType);
+            if (string.Equals(function.OwnerType, currentName, StringComparison.Ordinal)
+                && TryParseGenericUse(currentType, out _, out var currentArguments)
+                && currentArguments.Count == function.TypeParameters.Count)
+            {
+                return currentArguments;
+            }
+
+            var adapter = program.TypeAdapters.FirstOrDefault(adapter =>
+                string.Equals(adapter.Name, currentName, StringComparison.Ordinal));
+            if (adapter is null)
+            {
+                return null;
+            }
+
+            var receiverArguments = TryParseGenericUse(currentType, out _, out var parsedReceiverArguments)
+                ? parsedReceiverArguments
+                : [];
+            currentType = adapter.BaseType;
+            if (adapter.TypeParameters.Count == receiverArguments.Count)
+            {
+                var substitutions = adapter.TypeParameters
+                    .Zip(receiverArguments)
+                    .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+                currentType = GenericTypeStringRewriter.Substitute(currentType, substitutions);
+            }
+        }
+
+        return null;
+    }
+
+    private string BuildStaticReceiverType(string targetName, IReadOnlyList<string> typeArguments)
+    {
+        if (typeArguments.Count == 0)
+        {
+            return targetName;
+        }
+
+        var typeParameterCount = program.Structs
+            .FirstOrDefault(structNode => string.Equals(structNode.Name, targetName, StringComparison.Ordinal))
+            ?.TypeParameters.Count
+            ?? program.TypeAdapters
+                .FirstOrDefault(adapter => string.Equals(adapter.Name, targetName, StringComparison.Ordinal))
+                ?.TypeParameters.Count
+            ?? 0;
+        return typeParameterCount == typeArguments.Count
+            ? $"{targetName}<{string.Join(",", typeArguments)}>"
+            : targetName;
+    }
+
+    public IReadOnlyList<string>? InferFunctionTypeArguments(
+        IReadOnlyList<string> typeParameters,
+        IReadOnlyList<ParameterNode> parameters,
+        IReadOnlyList<ExpressionNode> arguments,
+        IReadOnlyDictionary<string, string> variables,
+        bool skipSelf,
+        IReadOnlyList<string>? seedArguments = null)
+    {
+        if (typeParameters.Count == 0)
+        {
+            return [];
+        }
+
+        var fixedParameters = parameters
+            .Skip(skipSelf ? 1 : 0)
+            .Where(parameter => !parameter.IsVariadic)
+            .ToList();
+        if (arguments.Count < fixedParameters.Count)
+        {
+            return null;
+        }
+
+        var bindings = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (seedArguments is not null && seedArguments.Count == typeParameters.Count)
+        {
+            foreach (var (parameter, argument) in typeParameters.Zip(seedArguments))
+            {
+                bindings[parameter] = argument;
+            }
+        }
+
+        for (var i = 0; i < fixedParameters.Count; i++)
+        {
+            var argumentType = resolveExpressionType(arguments[i], variables);
+            if (argumentType is null)
+            {
+                return null;
+            }
+
+            if (!TryBindType(fixedParameters[i].Type, argumentType, typeParameters, bindings))
+            {
+                return null;
+            }
+        }
+
+        return typeParameters.All(bindings.ContainsKey)
+            ? typeParameters.Select(parameter => bindings[parameter]).ToList()
+            : null;
+    }
+
+    private TypeRef Parse(string? type) =>
+        _typeRefParser.Parse(type);
+
+    private string ResolveAlias(string type)
+    {
+        var pointerSuffix = "";
+        type = type.Trim();
+        while (type.EndsWith("*", StringComparison.Ordinal))
+        {
+            pointerSuffix += "*";
+            type = type[..^1].TrimEnd();
+        }
+
+        var aliases = program.TypeAliases
+            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().TargetType, StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        while (aliases.TryGetValue(type, out var targetType) && seen.Add(type))
+        {
+            type = targetType;
+        }
+
+        return type + pointerSuffix;
+    }
+
+    private static bool MatchesGenericArguments(
+        IReadOnlyList<string> typeParameters,
+        IReadOnlyList<string> explicitArguments)
+    {
+        if (typeParameters.Count == 0)
+        {
+            return explicitArguments.Count == 0;
+        }
+
+        return explicitArguments.Count == typeParameters.Count;
+    }
+
+    private static bool TryBindType(
+        string parameterType,
+        string argumentType,
+        IReadOnlyList<string> typeParameters,
+        Dictionary<string, string> bindings)
+    {
+        parameterType = parameterType.Trim();
+        argumentType = argumentType.Trim();
+        if (typeParameters.Contains(parameterType, StringComparer.Ordinal))
+        {
+            return Bind(parameterType, argumentType, bindings);
+        }
+
+        if (parameterType.EndsWith("*", StringComparison.Ordinal)
+            && argumentType.EndsWith("*", StringComparison.Ordinal))
+        {
+            return TryBindType(
+                parameterType[..^1],
+                argumentType[..^1],
+                typeParameters,
+                bindings);
+        }
+
+        if (TryParseGenericUse(parameterType, out var parameterName, out var parameterArguments)
+            && TryParseGenericUse(argumentType, out var argumentName, out var argumentArguments)
+            && string.Equals(parameterName, argumentName, StringComparison.Ordinal)
+            && parameterArguments.Count == argumentArguments.Count)
+        {
+            for (var i = 0; i < parameterArguments.Count; i++)
+            {
+                if (!TryBindType(parameterArguments[i], argumentArguments[i], typeParameters, bindings))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return true;
+    }
+
+    private static bool Bind(string typeParameter, string typeArgument, Dictionary<string, string> bindings)
+    {
+        if (!bindings.TryGetValue(typeParameter, out var existing))
+        {
+            bindings[typeParameter] = typeArgument;
+            return true;
+        }
+
+        return string.Equals(existing.Trim(), typeArgument.Trim(), StringComparison.Ordinal);
+    }
+
+    private static string StripPointer(string type)
+    {
+        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
+        {
+            type = type.TrimEnd()[..^1];
+        }
+
+        return type.TrimEnd();
+    }
+
+    private static string GetGenericBaseName(string type)
+    {
+        type = type.Trim();
+        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
+        return genericStart < 0
+            ? type
+            : type[..genericStart].Trim();
+    }
+
+    private static string? GetQualifiedName(ExpressionNode expression) => expression switch
+    {
+        NameExpressionNode name => name.SourceText,
+        ParenthesizedExpressionNode parenthesized => GetQualifiedName(parenthesized.Expression),
+        MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
+        _ => null,
+    };
+
+    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
+    {
+        name = string.Empty;
+        arguments = [];
+        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
+        var genericEnd = type.LastIndexOf('>');
+        if (genericStart <= 0 || genericEnd < genericStart)
+        {
+            return false;
+        }
+
+        name = type[..genericStart];
+        arguments = SplitGenericArguments(type[(genericStart + 1)..genericEnd]);
+        return true;
+    }
+
+    private static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsText))
+        {
+            return [];
+        }
+
+        var arguments = new List<string>();
+        var start = 0;
+        var angleDepth = 0;
+        var parenDepth = 0;
+        var bracketDepth = 0;
+
+        for (var i = 0; i < argumentsText.Length; i++)
+        {
+            switch (argumentsText[i])
+            {
+                case '<': angleDepth++; break;
+                case '>': angleDepth--; break;
+                case '(': parenDepth++; break;
+                case ')': parenDepth--; break;
+                case '[': bracketDepth++; break;
+                case ']': bracketDepth--; break;
+            }
+
+            if (argumentsText[i] != ',' || angleDepth != 0 || parenDepth != 0 || bracketDepth != 0)
+            {
+                continue;
+            }
+
+            arguments.Add(argumentsText[start..i].Trim());
+            start = i + 1;
+        }
+
+        arguments.Add(argumentsText[start..].Trim());
+        return arguments;
+    }
+
+    private static bool TryParseFunctionType(
+        string? type,
+        out IReadOnlyList<string> parameters,
+        out string returnType,
+        out bool isVariadic)
+    {
+        parameters = [];
+        returnType = string.Empty;
+        isVariadic = false;
+        type = type?.Trim() ?? string.Empty;
+        if (!type.StartsWith("fn(", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var close = FindMatchingParen(type, 2);
+        if (close < 0 || close + 2 >= type.Length || type[close + 1] != '-' || type[close + 2] != '>')
+        {
+            return false;
+        }
+
+        var parsedParameters = SplitGenericArguments(type[3..close]).ToList();
+        if (parsedParameters.Count > 0 && parsedParameters[^1] == "...")
+        {
+            parsedParameters.RemoveAt(parsedParameters.Count - 1);
+            isVariadic = true;
+        }
+
+        parameters = parsedParameters;
+        returnType = type[(close + 3)..].Trim();
+        return !string.IsNullOrWhiteSpace(returnType);
+    }
+
+    private static int FindMatchingParen(string text, int openIndex)
+    {
+        var depth = 0;
+        for (var i = openIndex; i < text.Length; i++)
+        {
+            if (text[i] == '(')
+            {
+                depth++;
+                continue;
+            }
+
+            if (text[i] != ')')
+            {
+                continue;
+            }
+
+            depth--;
+            if (depth == 0)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+}

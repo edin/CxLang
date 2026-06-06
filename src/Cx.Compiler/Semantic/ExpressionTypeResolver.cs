@@ -11,11 +11,16 @@ internal sealed class ExpressionTypeResolver(
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
     private readonly TypeRefParser _typeRefParser = new(program);
-    private readonly TypeSystem _typeSystem = new(program, currentTypeParameters);
-    private readonly MethodCallResolver _methodCallResolver = new(program, new TypeSystem(program, currentTypeParameters));
+    private CallResolver? _callResolver;
     private readonly IReadOnlyDictionary<string, string> _typeAliases = program.TypeAliases
         .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.First().TargetType, StringComparer.Ordinal);
+
+    private CallResolver CallResolver => _callResolver ??= new CallResolver(
+        program,
+        Resolve,
+        _currentTypeParameters,
+        _currentGenericConstraints);
 
     public string? Resolve(ExpressionNode? expression, IReadOnlyDictionary<string, string> variables)
     {
@@ -451,230 +456,15 @@ internal sealed class ExpressionTypeResolver(
         _ => null,
     };
 
-    private string? ResolveCall(CallExpressionNode call, IReadOnlyDictionary<string, string> variables)
-    {
-        if (call.Callee is MemberExpressionNode member)
-        {
-            var memberReturnType = ResolveMemberCall(member, [], call.Arguments, variables);
-            if (memberReturnType is not null)
-            {
-                return memberReturnType;
-            }
-        }
-
-        var calleeType = Resolve(call.Callee, variables);
-        if (TryParseFunctionType(calleeType, out _, out var functionPointerReturnType))
-        {
-            return functionPointerReturnType;
-        }
-
-        var name = GetQualifiedName(call.Callee);
-        if (name is null)
-        {
-            return null;
-        }
-
-        var function = program.Functions.FirstOrDefault(function =>
-            function.OwnerType is null
-            && function.TypeParameters.Count == 0
-            && function.Name == name);
-        if (function is not null)
-        {
-            return function.ReturnType;
-        }
-
-        var genericFunction = program.Functions.FirstOrDefault(function =>
-            function.OwnerType is null
-            && function.TypeParameters.Count > 0
-            && function.Name == name
-            && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: false) is not null);
-        if (genericFunction is not null
-            && InferFunctionTypeArguments(genericFunction.TypeParameters, genericFunction.Parameters, call.Arguments, variables, skipSelf: false) is { } inferredArguments)
-        {
-            return ResolveFunctionReturnType(genericFunction, inferredArguments);
-        }
-
-        var externFunction = program.ExternFunctions.FirstOrDefault(function =>
-            function.Name == name
-            && function.TypeParameters.Count == 0);
-        if (externFunction is not null)
-        {
-            return externFunction.ReturnType;
-        }
-
-        var genericExternFunction = program.ExternFunctions.FirstOrDefault(function =>
-            function.Name == name
-            && function.TypeParameters.Count > 0
-            && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: false) is not null);
-        return genericExternFunction is not null
-            && InferFunctionTypeArguments(genericExternFunction.TypeParameters, genericExternFunction.Parameters, call.Arguments, variables, skipSelf: false) is { } inferredExternArguments
-            ? ResolveExternFunctionReturnType(genericExternFunction, inferredExternArguments)
+    private string? ResolveCall(CallExpressionNode call, IReadOnlyDictionary<string, string> variables) =>
+        CallResolver.Resolve(call.Callee, [], call.Arguments, variables) is { } resolvedCall
+            ? TypeRefFormatter.ToCxString(resolvedCall.ReturnType)
             : null;
-    }
 
-    private string? ResolveGenericCall(GenericCallExpressionNode call, IReadOnlyDictionary<string, string> variables)
-    {
-        if (call.Callee is MemberExpressionNode member)
-        {
-            return ResolveMemberCall(member, call.TypeArguments, call.Arguments, variables);
-        }
-
-        var name = GetQualifiedName(call.Callee);
-        if (name is null)
-        {
-            return null;
-        }
-
-        var function = program.Functions.FirstOrDefault(function =>
-            function.OwnerType is null
-            && function.Name == name
-            && MatchesGenericArguments(function, call.TypeArguments));
-        if (function is not null)
-        {
-            return ResolveFunctionReturnType(function, call.TypeArguments);
-        }
-
-        var externFunction = program.ExternFunctions.FirstOrDefault(function =>
-            function.Name == name
-            && MatchesGenericArguments(function, call.TypeArguments));
-        if (externFunction is not null)
-        {
-            return ResolveExternFunctionReturnType(externFunction, call.TypeArguments);
-        }
-
-        var staticFunction = program.Functions.FirstOrDefault(function =>
-            function.IsStatic
-            && function.OwnerType is not null
-            && name == $"{function.OwnerType}.{function.Name}"
-            && MatchesGenericArguments(function, call.TypeArguments));
-        return staticFunction is null
-            ? null
-            : ResolveFunctionReturnType(staticFunction, call.TypeArguments);
-    }
-
-    private string? ResolveMemberCall(
-        MemberExpressionNode member,
-        IReadOnlyList<string> typeArguments,
-        IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables)
-    {
-        var targetName = GetQualifiedName(member.Target);
-        if (targetName is null)
-        {
-            return null;
-        }
-
-        if (!variables.TryGetValue(targetName, out var targetType))
-        {
-            if (ResolveStaticRequirementCallReturnType(targetName, member.MemberName) is { } requirementReturnType)
-            {
-                return requirementReturnType;
-            }
-
-            if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { } staticCall)
-            {
-                return TypeRefFormatter.ToCxString(staticCall.Method.ReturnType);
-            }
-
-            var staticFunction = program.Functions.FirstOrDefault(function =>
-                function.IsStatic
-                && function.OwnerType is not null
-                && targetName == function.OwnerType
-                && function.Name == member.MemberName
-                && (MatchesGenericArguments(function, typeArguments)
-                    || (typeArguments.Count == 0
-                        && function.TypeParameters.Count > 0
-                        && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null)));
-            if (staticFunction is null)
-            {
-                return null;
-            }
-
-            var staticArguments = typeArguments.Count > 0
-                ? typeArguments
-                : InferFunctionTypeArguments(staticFunction.TypeParameters, staticFunction.Parameters, arguments, variables, skipSelf: false) ?? [];
-            return ResolveFunctionReturnType(staticFunction, staticArguments);
-        }
-
-        var normalizedType = StripPointer(ResolveAlias(targetType));
-        var receiverTypeArguments = TryParseGenericUse(normalizedType, out _, out var parsedReceiverArguments)
-            ? parsedReceiverArguments
-            : [];
-        var receiverBaseType = GetGenericBaseName(normalizedType);
-        if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { } instanceCall)
-        {
-            return TypeRefFormatter.ToCxString(instanceCall.Method.ReturnType);
-        }
-
-        var instanceFunction = program.Functions.FirstOrDefault(function =>
-            function.OwnerType is not null
-            && !function.IsStatic
-            && function.Name == member.MemberName
-            && SameType(function.OwnerType, receiverBaseType)
-            && (MatchesGenericArguments(function, typeArguments, receiverTypeArguments)
-                || (typeArguments.Count == 0
-                    && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: true, receiverTypeArguments) is not null)));
-        if (instanceFunction is not null)
-        {
-            var instanceArguments = typeArguments.Count > 0
-                ? typeArguments
-                : receiverTypeArguments.Count == instanceFunction.TypeParameters.Count
-                    ? receiverTypeArguments
-                    : InferFunctionTypeArguments(instanceFunction.TypeParameters, instanceFunction.Parameters, arguments, variables, skipSelf: true, receiverTypeArguments) ?? [];
-            return GenericTypeStringRewriter.SubstituteSelf(
-                ResolveFunctionReturnType(instanceFunction, instanceArguments),
-                normalizedType);
-        }
-
-        var interfaceNode = program.Interfaces.FirstOrDefault(interfaceNode => interfaceNode.Name == normalizedType);
-        var interfaceMethod = interfaceNode?.Methods.FirstOrDefault(method => method.Name == member.MemberName);
-        return interfaceMethod?.ReturnType;
-    }
-
-    private string? ResolveStaticRequirementCallReturnType(string targetName, string memberName)
-    {
-        if (!_currentTypeParameters.Contains(targetName, StringComparer.Ordinal))
-        {
-            return null;
-        }
-
-        foreach (var constraint in _currentGenericConstraints.Where(constraint =>
-            string.Equals(constraint.TypeParameter, targetName, StringComparison.Ordinal)))
-        {
-            foreach (var reference in constraint.Requirements)
-            {
-                var requirement = program.Requirements.FirstOrDefault(requirement =>
-                    string.Equals(requirement.Name, reference.Name, StringComparison.Ordinal));
-                if (requirement is null)
-                {
-                    continue;
-                }
-
-                var function = requirement.Members
-                    .OfType<RequirementFunctionNode>()
-                    .FirstOrDefault(function => function.IsStatic && function.Name == memberName);
-                if (function is null)
-                {
-                    continue;
-                }
-
-                var arguments = reference.TypeArguments.Count == requirement.TypeParameters.Count
-                    ? reference.TypeArguments
-                    : requirement.TypeParameters.Count == 1
-                        ? [targetName]
-                        : [];
-                var substitutions = requirement.TypeParameters.Count == arguments.Count
-                    ? requirement.TypeParameters
-                        .Zip(arguments)
-                        .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal)
-                    : new Dictionary<string, string>(StringComparer.Ordinal);
-                return GenericTypeStringRewriter.Substitute(function.ReturnType, substitutions);
-            }
-        }
-
-        return null;
-    }
+    private string? ResolveGenericCall(GenericCallExpressionNode call, IReadOnlyDictionary<string, string> variables) =>
+        CallResolver.Resolve(call.Callee, call.TypeArguments, call.Arguments, variables) is { } resolvedCall
+            ? TypeRefFormatter.ToCxString(resolvedCall.ReturnType)
+            : null;
 
     public IReadOnlyList<string>? InferFunctionTypeArguments(
         IReadOnlyList<string> typeParameters,
@@ -777,84 +567,6 @@ internal sealed class ExpressionTypeResolver(
         }
 
         return string.Equals(existing.Trim(), typeArgument.Trim(), StringComparison.Ordinal);
-    }
-
-    private static bool MatchesGenericArguments(
-        FunctionNode function,
-        IReadOnlyList<string> explicitArguments,
-        IReadOnlyList<string>? receiverArguments = null)
-    {
-        if (function.TypeParameters.Count == 0)
-        {
-            return explicitArguments.Count == 0;
-        }
-
-        if (explicitArguments.Count > 0)
-        {
-            return explicitArguments.Count == function.TypeParameters.Count;
-        }
-
-        return receiverArguments is not null
-            && receiverArguments.Count == function.TypeParameters.Count;
-    }
-
-    private static bool MatchesGenericArguments(
-        ExternFunctionNode function,
-        IReadOnlyList<string> explicitArguments)
-    {
-        if (function.TypeParameters.Count == 0)
-        {
-            return explicitArguments.Count == 0;
-        }
-
-        return explicitArguments.Count == function.TypeParameters.Count;
-    }
-
-    private static string ResolveFunctionReturnType(
-        FunctionNode function,
-        IReadOnlyList<string> explicitArguments,
-        IReadOnlyList<string>? receiverArguments = null)
-    {
-        var arguments = explicitArguments.Count > 0
-            ? explicitArguments
-            : receiverArguments ?? [];
-        if (function.TypeParameters.Count == 0 || arguments.Count != function.TypeParameters.Count)
-        {
-            return function.ReturnType;
-        }
-
-        var substitutions = function.TypeParameters
-            .Zip(arguments)
-            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        var returnType = GenericTypeStringRewriter.Substitute(function.ReturnType, substitutions);
-        return function.OwnerType is null
-            ? returnType
-            : GenericTypeStringRewriter.SubstituteSelf(returnType, BuildSelfType(function, arguments));
-    }
-
-    private static string ResolveExternFunctionReturnType(
-        ExternFunctionNode function,
-        IReadOnlyList<string> explicitArguments)
-    {
-        if (function.TypeParameters.Count == 0 || explicitArguments.Count != function.TypeParameters.Count)
-        {
-            return function.ReturnType;
-        }
-
-        var substitutions = function.TypeParameters
-            .Zip(explicitArguments)
-            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return GenericTypeStringRewriter.Substitute(function.ReturnType, substitutions);
-    }
-
-    private static string BuildSelfType(FunctionNode function, IReadOnlyList<string> arguments)
-    {
-        if (function.OwnerType is null || arguments.Count == 0)
-        {
-            return function.OwnerType ?? string.Empty;
-        }
-
-        return $"{function.OwnerType}<{string.Join(",", arguments)}>";
     }
 
     private string? ResolveRaw(string text, IReadOnlyDictionary<string, string> variables)
