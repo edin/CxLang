@@ -508,7 +508,7 @@ public sealed class CEmitter
             $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, declaration.Type, declaration.Name, nameLowerer.SelfType)}",
             declaration.Initializer is null
                 ? null
-                : nameLowerer.LowerInitializerExpression(declaration.Type, declaration.Initializer)),
+                : nameLowerer.LowerInitializerExpression(declaration.TypeNode?.Semantic.Type, declaration.Type, declaration.Initializer)),
         ForExpressionInitializerNode expression => new CExpressionForInitializer(
             nameLowerer.LowerExpression(expression.Expression)),
         _ => new CEmptyForInitializer(),
@@ -874,7 +874,7 @@ public sealed class CEmitter
             + LowerDeclaration(let.TypeNode, let.Type, let.Name, nameLowerer.SelfType);
         var initializer = let.Initializer is null
             ? null
-            : nameLowerer.LowerInitializerExpression(let.Type, let.Initializer);
+            : nameLowerer.LowerInitializerExpression(let.TypeNode?.Semantic.Type, let.Type, let.Initializer);
         return new CLocalDeclarationStatement(declaration, initializer);
     }
 
@@ -903,7 +903,7 @@ public sealed class CEmitter
         var declaration = (global.IsConst ? "const " : "") + LowerDeclaration(global.TypeNode, global.Type, global.Name);
         var initializer = global.Initializer is null
             ? null
-            : nameLowerer.LowerInitializerExpression(global.Type, global.Initializer);
+            : nameLowerer.LowerInitializerExpression(global.TypeNode?.Semantic.Type, global.Type, global.Initializer);
         return new CGlobalDeclaration(declaration, initializer);
     }
 
@@ -2890,10 +2890,44 @@ public sealed class CEmitter
             return TryWrapTaggedUnionValue(targetType, expression, lowered) ?? lowered;
         }
 
+        public string LowerInitializer(TypeRef? targetType, string fallbackTargetType, string expression) =>
+            targetType is null
+                ? LowerInitializer(fallbackTargetType, expression)
+                : LowerInitializer(targetType, expression);
+
+        public string LowerInitializer(TypeRef targetType, string expression)
+        {
+            var lowered = Lower(expression);
+            if (TryBuildInterfaceValue(targetType, expression, out var interfaceInitializer))
+            {
+                return interfaceInitializer;
+            }
+
+            return TryWrapTaggedUnionValue(targetType, expression, lowered) ?? lowered;
+        }
+
         public string LowerInitializer(string targetType, ExpressionNode expression)
         {
             var lowered = expression is InitializerExpressionNode initializer
                 ? LowerInitializerExpression(initializer, targetType)
+                : Lower(expression);
+            if (TryBuildInterfaceValue(targetType, expression.SourceText, out var interfaceInitializer))
+            {
+                return interfaceInitializer;
+            }
+
+            return TryWrapTaggedUnionValue(targetType, expression.SourceText, lowered) ?? lowered;
+        }
+
+        public string LowerInitializer(TypeRef? targetType, string fallbackTargetType, ExpressionNode expression) =>
+            targetType is null
+                ? LowerInitializer(fallbackTargetType, expression)
+                : LowerInitializer(targetType, expression);
+
+        public string LowerInitializer(TypeRef targetType, ExpressionNode expression)
+        {
+            var lowered = expression is InitializerExpressionNode initializer
+                ? _expressionEmitter.Emit(LowerInitializerExpression(targetType, initializer))
                 : Lower(expression);
             if (TryBuildInterfaceValue(targetType, expression.SourceText, out var interfaceInitializer))
             {
@@ -2924,7 +2958,42 @@ public sealed class CEmitter
                 : new CRawExpression(lowered);
         }
 
+        public CExpression LowerInitializerExpression(TypeRef? targetType, string fallbackTargetType, ExpressionNode expression) =>
+            targetType is null
+                ? LowerInitializerExpression(fallbackTargetType, expression)
+                : LowerInitializerExpression(targetType, expression);
+
+        public CExpression LowerInitializerExpression(TypeRef targetType, ExpressionNode expression)
+        {
+            var direct = expression is InitializerExpressionNode initializer
+                ? _expressionLowerer.LowerInitializer(initializer, TypeRefFormatter.ToCxString(targetType))
+                : LowerExpression(expression);
+            if (TryBuildInterfaceValueExpression(targetType, expression.SourceText) is { } interfaceInitializer)
+            {
+                return interfaceInitializer;
+            }
+
+            if (TryWrapTaggedUnionValueExpression(targetType, expression.SourceText, direct) is { } wrapped)
+            {
+                return wrapped;
+            }
+
+            return direct;
+        }
+
         private bool TryBuildInterfaceValue(string targetType, string sourceExpression, out string initializer)
+        {
+            initializer = string.Empty;
+            if (TryBuildInterfaceValueExpression(targetType, sourceExpression) is not { } expression)
+            {
+                return false;
+            }
+
+            initializer = _expressionEmitter.Emit(expression);
+            return true;
+        }
+
+        private bool TryBuildInterfaceValue(TypeRef targetType, string sourceExpression, out string initializer)
         {
             initializer = string.Empty;
             if (TryBuildInterfaceValueExpression(targetType, sourceExpression) is not { } expression)
@@ -2939,6 +3008,20 @@ public sealed class CEmitter
         private CExpression? TryBuildInterfaceValueExpression(string targetType, string sourceExpression)
         {
             var interfaceName = NormalizeType(targetType);
+            return TryBuildInterfaceValueExpression(interfaceName, sourceExpression, LowerType(interfaceName, SelfType));
+        }
+
+        private CExpression? TryBuildInterfaceValueExpression(TypeRef targetType, string sourceExpression)
+        {
+            var interfaceName = NormalizeType(TypeRefFormatter.ToCxString(targetType));
+            return TryBuildInterfaceValueExpression(interfaceName, sourceExpression, CTypeLowerer.LowerType(targetType, s_typeAdapters, GenericTypeSubstitutionBuilder.ParseType(SelfType)));
+        }
+
+        private CExpression? TryBuildInterfaceValueExpression(
+            string interfaceName,
+            string sourceExpression,
+            string loweredInterfaceName)
+        {
             if (!_interfaces.ContainsKey(interfaceName))
             {
                 return null;
@@ -2961,7 +3044,7 @@ public sealed class CEmitter
                 ? new CNameExpression(trimmedSource)
                 : new CUnaryExpression("&", new CNameExpression(trimmedSource));
             return new CInitializerExpression(
-                LowerType(interfaceName, SelfType),
+                loweredInterfaceName,
                 [
                     new CInitializerField("state", state),
                     new CInitializerField(
@@ -3184,7 +3267,8 @@ public sealed class CEmitter
             return assignment.Operator == "="
                 && assignment.Target is NameExpressionNode targetName
                 && _variables.TryGetValue(targetName.SourceText, out var targetType)
-                ? TryWrapTaggedUnionValueExpression(targetType, assignment.Value.SourceText, value)
+                && GenericTypeSubstitutionBuilder.ParseType(targetType) is { } targetTypeRef
+                ? TryWrapTaggedUnionValueExpression(targetTypeRef, assignment.Value.SourceText, value)
                 : null;
         }
 
@@ -3195,7 +3279,8 @@ public sealed class CEmitter
             return assignment.Operator == "="
                 && assignment.Target is NameExpressionNode targetName
                 && _variables.TryGetValue(targetName.SourceText, out var targetType)
-                ? TryWrapTaggedUnionValue(targetType, assignment.Value.SourceText, loweredValue)
+                && GenericTypeSubstitutionBuilder.ParseType(targetType) is { } targetTypeRef
+                ? TryWrapTaggedUnionValue(targetTypeRef, assignment.Value.SourceText, loweredValue)
                 : null;
         }
 
@@ -5069,6 +5154,16 @@ public sealed class CEmitter
             return $"({taggedUnion.Name}){{ .tag = {taggedUnion.Name}_Tag_{variant.Name}, .as.{variant.Name} = {loweredExpression} }}";
         }
 
+        private string? TryWrapTaggedUnionValue(TypeRef targetType, string sourceExpression, string loweredExpression)
+        {
+            if (TryWrapTaggedUnionValueExpression(targetType, sourceExpression, new CRawExpression(loweredExpression)) is not { } expression)
+            {
+                return null;
+            }
+
+            return _expressionEmitter.Emit(expression);
+        }
+
         private CExpression? TryWrapTaggedUnionValueExpression(
             string targetType,
             string sourceExpression,
@@ -5104,6 +5199,52 @@ public sealed class CEmitter
                     new CInitializerField("as." + variant.Name, loweredExpression),
                 ],
                 []);
+        }
+
+        private CExpression? TryWrapTaggedUnionValueExpression(
+            TypeRef targetType,
+            string sourceExpression,
+            CExpression loweredExpression)
+        {
+            var normalizedTargetType = NormalizeType(TypeRefFormatter.ToCxString(targetType));
+            if (!_taggedUnions.TryGetValue(normalizedTargetType, out var taggedUnion)
+                || taggedUnion.IsRaw)
+            {
+                return null;
+            }
+
+            var expressionType = InferExpressionTypeRef(sourceExpression);
+            if (expressionType is null)
+            {
+                return null;
+            }
+
+            var matchingVariants = taggedUnion.Variants
+                .Where(variant => AreSameLoweredType(variant.TypeNode?.Semantic.Type, variant.Type, expressionType))
+                .ToList();
+
+            if (matchingVariants.Count != 1)
+            {
+                return null;
+            }
+
+            var variant = matchingVariants[0];
+            return new CInitializerExpression(
+                CTypeLowerer.LowerType(targetType, s_typeAdapters, GenericTypeSubstitutionBuilder.ParseType(SelfType)),
+                [
+                    new CInitializerField("tag", new CNameExpression($"{taggedUnion.Name}_Tag_{variant.Name}")),
+                    new CInitializerField("as." + variant.Name, loweredExpression),
+                ],
+                []);
+        }
+
+        private bool AreSameLoweredType(TypeRef? leftType, string leftFallback, TypeRef rightType)
+        {
+            var loweredLeft = leftType is null
+                ? LowerType(leftFallback)
+                : CTypeLowerer.LowerType(leftType, s_typeAdapters, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+            var loweredRight = CTypeLowerer.LowerType(rightType, s_typeAdapters, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+            return string.Equals(loweredLeft, loweredRight, StringComparison.Ordinal);
         }
 
         private string? InferExpressionType(string expression)
@@ -5150,6 +5291,16 @@ public sealed class CEmitter
             return _variables.TryGetValue(expression, out var variableType)
                 ? variableType
                 : null;
+        }
+
+        private TypeRef? InferExpressionTypeRef(string expression)
+        {
+            if (InferExpressionType(expression) is not { } type)
+            {
+                return null;
+            }
+
+            return GenericTypeSubstitutionBuilder.ParseType(type);
         }
 
         private sealed record NamedInitializerField(string Name, string Value);
