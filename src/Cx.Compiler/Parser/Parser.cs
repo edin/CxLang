@@ -558,18 +558,16 @@ public sealed class Parser
         var nameToken = Expect(TokenType.Identifier, "Expected declared type name.");
         Expect(TokenType.Equals, "Expected '=' after declared type name.");
 
-        TypeNode? targetTypeNode = null;
-        var targetType = "opaque";
+        var targetTypeNode = CreateTypeNode(nameToken?.Location ?? typeToken?.Location ?? Current.Location, "opaque");
         if (!ConsumeOptional(TokenType.Opaque))
         {
             targetTypeNode = ParseTypeNode();
-            targetType = targetTypeNode.TypeName;
         }
 
         Expect(TokenType.Semicolon, "Expected ';' after declared type.");
         return typeToken is null || nameToken is null
             ? null
-            : new TypeAliasNode(typeToken.Location, nameToken.Value, targetType, [], IsHeaderDeclaration: true, TargetTypeNode: targetTypeNode);
+            : new TypeAliasNode(typeToken.Location, nameToken.Value, [], IsHeaderDeclaration: true, TargetTypeNode: targetTypeNode);
     }
 
     private GlobalVariableNode? ParseCDeclareConstant(bool isMacro)
@@ -581,7 +579,7 @@ public sealed class Parser
         Expect(TokenType.Semicolon, "Expected ';' after declared constant.");
         return constToken is null || nameToken is null
             ? null
-            : new GlobalVariableNode(constToken.Location, IsConst: true, nameToken.Value, typeNode.TypeName, Initializer: null, [], IsHeaderDeclaration: true, IsMacro: isMacro, TypeNode: typeNode);
+            : new GlobalVariableNode(constToken.Location, IsConst: true, nameToken.Value, Initializer: null, [], IsHeaderDeclaration: true, IsMacro: isMacro, TypeNode: typeNode);
     }
 
     private StructNode? ParseCDeclareStruct()
@@ -601,7 +599,7 @@ public sealed class Parser
 
             if (fieldToken is not null)
             {
-                fields.Add(new StructFieldNode(fieldToken.Location, fieldToken.Value, typeNode.TypeName, fieldAttributes, typeNode));
+                fields.Add(new StructFieldNode(fieldToken.Location, fieldToken.Value, fieldAttributes, typeNode));
             }
         }
 
@@ -655,7 +653,6 @@ public sealed class Parser
                 fnToken.Location,
                 nameToken?.Value ?? string.Empty,
                 typeParameters,
-                returnTypeNode.TypeName,
                 parameters,
                 [],
                 IsHeaderDeclaration: true,
@@ -696,7 +693,6 @@ public sealed class Parser
                 externToken.Location,
                 nameToken?.Value ?? string.Empty,
                 [],
-                returnTypeNode.TypeName,
                 parameters,
                 attributes,
                 ReturnTypeNode: returnTypeNode);
@@ -756,7 +752,7 @@ public sealed class Parser
 
         if (ConsumeOptional(TokenType.Using) || ConsumeOptional(TokenType.Over))
         {
-            var baseType = ParseType();
+            var baseTypeNode = ParseTypeNode();
             Expect(TokenType.LBrace, "Expected '{' before type adapter body.");
 
             var exposedMethods = new List<ExposeMethodNode>();
@@ -807,10 +803,10 @@ public sealed class Parser
                     typeToken.Location,
                     nameToken?.Value ?? string.Empty,
                     typeParameters,
-                    baseType,
                     exposedMethods,
                     methods,
-                    attributes);
+                    attributes,
+                    BaseTypeNode: baseTypeNode);
         }
 
         if (typeParameters.Count > 0)
@@ -824,7 +820,7 @@ public sealed class Parser
 
         return typeToken is null
             ? null
-            : new TypeAliasNode(typeToken.Location, nameToken?.Value ?? string.Empty, targetTypeNode.TypeName, attributes, TargetTypeNode: targetTypeNode);
+            : new TypeAliasNode(typeToken.Location, nameToken?.Value ?? string.Empty, attributes, TargetTypeNode: targetTypeNode);
     }
 
     private ExposeMethodNode? ParseExposeMethod()
@@ -838,25 +834,22 @@ public sealed class Parser
             exposedName = Expect(TokenType.Identifier, "Expected exposed method name after 'as'.")?.Value ?? string.Empty;
         }
 
-        string? returnType = null;
         TypeNode? returnTypeNode = null;
         if (ConsumeOptional(TokenType.Arrow))
         {
             returnTypeNode = ParseTypeNode();
-            returnType = returnTypeNode.TypeName;
         }
 
         Expect(TokenType.Semicolon, "Expected ';' after exposed method.");
         return exposeToken is null || sourceToken is null
             ? null
-            : new ExposeMethodNode(exposeToken.Location, isStatic, sourceToken.Value, exposedName, returnType, returnTypeNode);
+            : new ExposeMethodNode(exposeToken.Location, isStatic, sourceToken.Value, exposedName, returnTypeNode);
     }
 
     private GlobalVariableNode? ParseGlobalVariable(Token keywordToken, bool isConst, IReadOnlyList<AttributeApplicationNode> attributes)
     {
         var nameToken = Expect(TokenType.Identifier, "Expected global variable name.");
         var typeNode = ParseOptionalVariableTypeNode("global variable", keywordToken.Location);
-        var type = typeNode?.TypeName ?? string.Empty;
         ExpressionNode? initializer = null;
 
         if (ConsumeOptional(TokenType.Equals))
@@ -864,7 +857,7 @@ public sealed class Parser
             initializer = ParseExpressionText(keywordToken.Location, ReadUntil(TokenType.Semicolon));
         }
 
-        if (string.IsNullOrWhiteSpace(type) && initializer is null)
+        if (typeNode is null && initializer is null)
         {
             _diagnostics.Report(keywordToken.Location, "Expected ':' or '=' after global variable name.");
         }
@@ -877,7 +870,7 @@ public sealed class Parser
         Expect(TokenType.Semicolon, "Expected ';' after global variable declaration.");
         return nameToken is null
             ? null
-            : new GlobalVariableNode(keywordToken.Location, isConst, nameToken.Value, type, initializer, attributes, TypeNode: typeNode);
+            : new GlobalVariableNode(keywordToken.Location, isConst, nameToken.Value, initializer, attributes, TypeNode: typeNode);
     }
 
     private FunctionNode? ParseFunction(IReadOnlyList<AttributeApplicationNode> attributes)
@@ -951,8 +944,8 @@ public sealed class Parser
             && ownerType is not null
             && !HasExplicitReceiverParameter(ownerType, parameters.FirstOrDefault()))
         {
-            var selfTypeNode = new TypeNode(fnLocation, "Self*");
-            parameters.Insert(0, new ParameterNode(fnLocation, "self", selfTypeNode.TypeName, [], IsVariadic: false, TypeNode: selfTypeNode));
+            var selfTypeNode = CreateTypeNode(fnLocation, "Self*");
+            parameters.Insert(0, new ParameterNode(fnLocation, "self", [], IsVariadic: false, TypeNode: selfTypeNode));
         }
 
         Expect(TokenType.RParen, "Expected ')' after function parameters.");
@@ -984,7 +977,6 @@ public sealed class Parser
             typeParameters,
             [],
             genericConstraints,
-            returnTypeNode.TypeName,
             parameters,
             body,
             attributes ?? [],
@@ -1052,7 +1044,7 @@ public sealed class Parser
 
             if (fieldToken is not null)
             {
-                fields.Add(new StructFieldNode(fieldToken.Location, fieldToken.Value, typeNode.TypeName, memberAttributes, typeNode));
+                fields.Add(new StructFieldNode(fieldToken.Location, fieldToken.Value, memberAttributes, typeNode));
             }
         }
 
@@ -1232,7 +1224,7 @@ public sealed class Parser
 
         return fnToken is null
             ? null
-            : new InterfaceMethodNode(fnToken.Location, nameToken?.Value ?? string.Empty, returnTypeNode.TypeName, parameters, returnTypeNode);
+            : new InterfaceMethodNode(fnToken.Location, nameToken?.Value ?? string.Empty, parameters, returnTypeNode);
     }
 
     private EnumNode? ParseEnum(
@@ -1446,7 +1438,6 @@ public sealed class Parser
                 staticToken?.Location ?? fnToken.Location,
                 staticToken is not null,
                 nameToken?.Value ?? string.Empty,
-                returnTypeNode.TypeName,
                 parameters,
                 returnTypeNode);
     }
@@ -1460,7 +1451,7 @@ public sealed class Parser
 
         return fieldToken is null
             ? null
-            : new RequirementFieldNode(fieldToken.Location, fieldToken.Value, typeNode.TypeName, typeNode);
+            : new RequirementFieldNode(fieldToken.Location, fieldToken.Value, typeNode);
     }
 
     private TaggedUnionNode? ParseTaggedUnion(
@@ -1506,7 +1497,7 @@ public sealed class Parser
 
             if (variantToken is not null)
             {
-                variants.Add(new TaggedUnionVariantNode(variantToken.Location, variantToken.Value, typeNode.TypeName, memberAttributes, typeNode));
+                variants.Add(new TaggedUnionVariantNode(variantToken.Location, variantToken.Value, memberAttributes, typeNode));
             }
         }
 
@@ -1535,7 +1526,7 @@ public sealed class Parser
                 _diagnostics.Report(ellipsis.Location, "Variadic parameter '...' is only supported for C declarations.");
             }
 
-            return new ParameterNode(ellipsis.Location, string.Empty, "...", attributes, IsVariadic: true);
+            return new ParameterNode(ellipsis.Location, string.Empty, attributes, IsVariadic: true, TypeNode: CreateTypeNode(ellipsis.Location, "..."));
         }
 
         var nameToken = Expect(TokenType.Identifier, "Expected parameter name.");
@@ -1546,7 +1537,7 @@ public sealed class Parser
 
         Expect(TokenType.Colon, "Expected ':' after parameter name.");
         var typeNode = ParseTypeNode();
-        return new ParameterNode(nameToken.Location, nameToken.Value, typeNode.TypeName, attributes, TypeNode: typeNode);
+        return new ParameterNode(nameToken.Location, nameToken.Value, attributes, TypeNode: typeNode);
     }
 
     private void ValidateVariadicParameter(IReadOnlyList<ParameterNode> parameters)
@@ -1643,7 +1634,6 @@ public sealed class Parser
     {
         var nameToken = Expect(TokenType.Identifier, "Expected variable name.");
         var typeNode = ParseOptionalVariableTypeNode("variable", keywordToken.Location);
-        var type = typeNode?.TypeName ?? string.Empty;
         ExpressionNode? initializer = null;
 
         if (ConsumeOptional(TokenType.Equals))
@@ -1651,7 +1641,7 @@ public sealed class Parser
             initializer = ReadExpressionUntil(keywordToken.Location, TokenType.Semicolon);
         }
 
-        if (string.IsNullOrWhiteSpace(type) && initializer is null)
+        if (typeNode is null && initializer is null)
         {
             _diagnostics.Report(keywordToken.Location, "Expected ':' or '=' after variable name.");
         }
@@ -1662,7 +1652,7 @@ public sealed class Parser
         }
 
         Expect(TokenType.Semicolon, "Expected ';' after variable declaration.");
-        return new LetStatement(keywordToken.Location, isConst, nameToken?.Value ?? string.Empty, type, initializer, typeNode);
+        return new LetStatement(keywordToken.Location, isConst, nameToken?.Value ?? string.Empty, initializer, typeNode);
     }
 
     private IfStatement? ParseIfStatement()
@@ -1733,7 +1723,6 @@ public sealed class Parser
     {
         var nameToken = Expect(TokenType.Identifier, "Expected for initializer variable name.");
         var typeNode = ParseOptionalVariableTypeNode("for initializer variable", location);
-        var type = typeNode?.TypeName ?? string.Empty;
         ExpressionNode? initializer = null;
 
         if (ConsumeOptional(TokenType.Equals))
@@ -1741,7 +1730,7 @@ public sealed class Parser
             initializer = ReadExpressionUntil(location, TokenType.Semicolon);
         }
 
-        if (string.IsNullOrWhiteSpace(type) && initializer is null)
+        if (typeNode is null && initializer is null)
         {
             _diagnostics.Report(location, "Expected ':' or '=' after for initializer variable name.");
         }
@@ -1750,7 +1739,6 @@ public sealed class Parser
             location,
             isConst,
             nameToken?.Value ?? string.Empty,
-            type,
             initializer,
             typeNode);
     }
@@ -1819,7 +1807,7 @@ public sealed class Parser
                 foreachToken.Location,
                 indexBinding,
                 keyBinding,
-                valueBinding ?? new ForeachBinding(foreachToken.Location, string.Empty, string.Empty, IsReference: true, IsConst: false),
+                valueBinding ?? new ForeachBinding(foreachToken.Location, string.Empty, IsReference: true, IsConst: false),
                 iterableExpression,
                 body);
     }
@@ -1830,11 +1818,9 @@ public sealed class Parser
         var isReference = ConsumeOptional(TokenType.Ampersand);
         var nameToken = Expect(TokenType.Identifier, message);
         var typeNode = ParseOptionalVariableTypeNode("foreach binding", nameToken?.Location ?? Current.Location);
-        var type = typeNode?.TypeName ?? string.Empty;
         return new ForeachBinding(
             nameToken?.Location ?? Current.Location,
             nameToken?.Value ?? string.Empty,
-            type,
             isReference,
             isConst,
             typeNode);
@@ -2165,7 +2151,6 @@ public sealed class Parser
                 location,
                 text,
                 parameters,
-                returnTypeNode?.TypeName,
                 ExpressionBody: null,
                 BlockBody: ParseFunctionExpressionBlock(
                     location,
@@ -2191,7 +2176,6 @@ public sealed class Parser
             location,
             text,
             parameters,
-            returnTypeNode?.TypeName,
             ParseExpressionText(location, body),
             BlockBody: null,
             ReturnTypeNode: returnTypeNode);
@@ -2237,7 +2221,7 @@ public sealed class Parser
             }
 
             var typeNode = CreateInlineTypeNode(location, type);
-            parameters.Add(new ParameterNode(location, name, typeNode.TypeName, [], TypeNode: typeNode));
+            parameters.Add(new ParameterNode(location, name, [], TypeNode: typeNode));
         }
 
         return parameters;
@@ -2275,7 +2259,7 @@ public sealed class Parser
     }
 
     private static TypeNode CreateInlineTypeNode(Location location, string type) =>
-        new(location, NormalizeFunctionExpressionType(type.Trim()));
+        CreateTypeNode(location, NormalizeFunctionExpressionType(type.Trim()));
 
     private static IReadOnlyList<TypeNode> CreateInlineTypeNodes(Location location, IReadOnlyList<string> types) =>
         types.Select(type => CreateInlineTypeNode(location, type)).ToList();
@@ -2308,11 +2292,10 @@ public sealed class Parser
         }
 
         var typeNameNode = typeName is null ? null : CreateInlineTypeNode(location, typeName);
-        typeName = typeNameNode?.TypeName;
         var body = text[(openBrace + 1)..^1].Trim();
         if (body.Length == 0)
         {
-            expression = new InitializerExpressionNode(location, text, typeName, [], [], typeNameNode);
+            expression = new InitializerExpressionNode(location, text, [], [], typeNameNode);
             return true;
         }
 
@@ -2332,7 +2315,7 @@ public sealed class Parser
             values.Add(ParseExpressionText(location, item));
         }
 
-        expression = new InitializerExpressionNode(location, text, typeName, fields, values, typeNameNode);
+        expression = new InitializerExpressionNode(location, text, fields, values, typeNameNode);
         return true;
     }
 
@@ -2524,7 +2507,6 @@ public sealed class Parser
         expression = new CastExpressionNode(
             location,
             text,
-            typeNode.TypeName,
             ParseExpressionText(location, operandText),
             typeNode);
         return true;
@@ -2566,8 +2548,8 @@ public sealed class Parser
             ? CreateInlineTypeNode(location, operandText)
             : null;
         expression = operandTypeNode is not null
-            ? new SizeOfExpressionNode(location, text, operandTypeNode.TypeName, ExpressionOperand: null, operandTypeNode)
-            : new SizeOfExpressionNode(location, text, TypeOperand: null, ParseExpressionText(location, operandText));
+            ? new SizeOfExpressionNode(location, text, ExpressionOperand: null, operandTypeNode)
+            : new SizeOfExpressionNode(location, text, ParseExpressionText(location, operandText));
         return true;
     }
 
@@ -3580,7 +3562,7 @@ public sealed class Parser
         if (typeNames.Count == 0)
         {
             _diagnostics.Report(Current.Location, "Expected type name.");
-            return new TypeNode(location, string.Empty);
+            return CreateTypeNode(location, string.Empty);
         }
 
         var parts = new List<string> { string.Join(" ", typeNames) };
@@ -3621,7 +3603,7 @@ public sealed class Parser
             }
         }
 
-        return new TypeNode(location, string.Join("", parts));
+        return CreateTypeNode(location, string.Join("", parts));
     }
 
     private List<string> ParseTypeName()
@@ -3708,8 +3690,11 @@ public sealed class Parser
         Expect(TokenType.Arrow, "Expected '->' before function type return type.");
         var returnType = ParseTypeNode().TypeName;
 
-        return new TypeNode(location, $"fn({string.Join(",", parameterTypes)})->{returnType}");
+        return CreateTypeNode(location, $"fn({string.Join(",", parameterTypes)})->{returnType}");
     }
+
+    private static TypeNode CreateTypeNode(Location location, string type) =>
+        new(location, type, TypeSyntaxParser.Parse(type));
 
     private bool CheckTypeCloseAngle() =>
         _pendingTypeCloseAngles > 0

@@ -1,6 +1,7 @@
 using Cx.Compiler.Syntax.Nodes;
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 
 namespace Cx.Compiler.Tests;
 
@@ -50,6 +51,123 @@ public sealed class TypeNodeParsingTests
         Assert.Equal(parameter.Type, parameter.TypeNode?.TypeName);
         Assert.Equal(function.ReturnType, function.ReturnTypeNode?.TypeName);
         Assert.Equal(local.Type, local.TypeNode?.TypeName);
+    }
+
+    [Fact]
+    public void ParseType_StoresPassiveTypeSyntaxTree()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            type Callback = fn(int, char*, ...) -> double;
+
+            struct Box<T> {
+                values: T*[4];
+            }
+
+            fn main(value: Box<int>*) -> int {
+                return 0;
+            }
+            """);
+
+        var alias = Assert.Single(program.TypeAliases);
+        var functionSyntax = Assert.IsType<FunctionTypeSyntaxNode>(alias.TargetTypeNode?.Syntax);
+        Assert.True(functionSyntax.IsVariadic);
+        Assert.Equal(2, functionSyntax.Parameters.Count);
+        Assert.IsType<PointerTypeSyntaxNode>(functionSyntax.Parameters[1]);
+        Assert.IsType<NamedTypeSyntaxNode>(functionSyntax.ReturnType);
+
+        var field = Assert.Single(Assert.Single(program.Structs).Fields);
+        var arraySyntax = Assert.IsType<FixedArrayTypeSyntaxNode>(field.TypeNode?.Syntax);
+        Assert.Equal("4", arraySyntax.Length);
+        var pointerSyntax = Assert.IsType<PointerTypeSyntaxNode>(arraySyntax.Element);
+        Assert.Equal("T", Assert.IsType<NamedTypeSyntaxNode>(pointerSyntax.Element).Name);
+
+        var parameter = Assert.Single(Assert.Single(program.Functions).Parameters);
+        var parameterPointer = Assert.IsType<PointerTypeSyntaxNode>(parameter.TypeNode?.Syntax);
+        var genericSyntax = Assert.IsType<GenericTypeSyntaxNode>(parameterPointer.Element);
+        Assert.Equal("Box", Assert.IsType<NamedTypeSyntaxNode>(genericSyntax.Target).Name);
+        Assert.Equal("int", Assert.IsType<NamedTypeSyntaxNode>(Assert.Single(genericSyntax.Arguments)).Name);
+    }
+
+    [Fact]
+    public void TypeSyntaxFormatter_RoundTripsCanonicalTypeText()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            type Callback = fn(int, char*, ...) -> Vec<int>*[2];
+            """);
+
+        var syntax = Assert.Single(program.TypeAliases).TargetTypeNode?.Syntax;
+
+        Assert.NotNull(syntax);
+        Assert.Equal("fn(int,char*,...)->Vec<int>*[2]", TypeSyntaxFormatter.ToCxString(syntax!));
+    }
+
+    [Fact]
+    public void TypeSyntaxTypeRefConverter_ConvertsSyntaxToTypeRef()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            type IntVec = Vec<int>;
+            type Callback = fn(IntVec*, ...) -> IntVec[4];
+
+            struct Vec<T> {
+                value: T;
+            }
+            """);
+        var converter = new TypeSyntaxTypeRefConverter(program);
+
+        var intVec = converter.Convert(program.TypeAliases[0].TargetTypeNode);
+        var callback = converter.Convert(program.TypeAliases[1].TargetTypeNode);
+
+        Assert.Equal("Vec<int>", TypeRefFormatter.ToCxString(intVec));
+        var function = Assert.IsType<TypeRef.Function>(callback);
+        var parameter = Assert.Single(function.Parameters);
+        var parameterPointer = Assert.IsType<TypeRef.Pointer>(parameter);
+        Assert.Equal("IntVec", Assert.IsType<TypeRef.Alias>(parameterPointer.Element).Name);
+        var returnArray = Assert.IsType<TypeRef.FixedArray>(function.ReturnType);
+        Assert.Equal("4", returnArray.Length);
+        Assert.Equal("IntVec", Assert.IsType<TypeRef.Alias>(returnArray.Element).Name);
+    }
+
+    [Fact]
+    public void ResolveType_PrefersTypeSyntaxOverCompatibilityText()
+    {
+        var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
+        var typeNode = new TypeNode(location, "NotARealType", new NamedTypeSyntaxNode("int"));
+        var global = new GlobalVariableNode(
+            location,
+            IsConst: false,
+            Name: "value",
+            Initializer: null,
+            Attributes: [],
+            TypeNode: typeNode);
+        var program = new ProgramNode(
+            location,
+            Module: null,
+            Imports: [],
+            SymbolImports: [],
+            Includes: [],
+            CDeclarations: [],
+            ExternFunctions: [],
+            AttributeDeclarations: [],
+            TypeAliases: [],
+            Requirements: [],
+            Enums: [],
+            Interfaces: [],
+            Structs: [],
+            TypeAdapters: [],
+            Extensions: [],
+            TaggedUnions: [],
+            GlobalVariables: [global],
+            Functions: []);
+        var diagnostics = new DiagnosticBag();
+
+        new TypeResolutionPass(diagnostics).Resolve(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(global.Semantic.Type!));
+        Assert.Same(global.Semantic.Type, typeNode.Semantic.Type);
     }
 
     [Fact]

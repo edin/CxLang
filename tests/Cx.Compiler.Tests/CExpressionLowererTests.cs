@@ -36,13 +36,13 @@ public sealed class CExpressionLowererTests
         var cast = lowerer.LowerSimple(new CastExpressionNode(
             location,
             "(Vec<int>*)value",
-            "Vec<int>*",
-            new NameExpressionNode(location, "value")));
+            new NameExpressionNode(location, "value"),
+            new TypeNode(location, "Vec<int>*", TypeSyntaxParser.Parse("Vec<int>*"))));
         var sizeOf = lowerer.LowerSimple(new SizeOfExpressionNode(
             location,
             "sizeof(Vec<int>)",
-            "Vec<int>",
-            ExpressionOperand: null));
+            ExpressionOperand: null,
+            new TypeNode(location, "Vec<int>", TypeSyntaxParser.Parse("Vec<int>"))));
 
         Assert.Equal("lowered_Vec<int>*", Assert.IsType<CCastExpression>(cast).TargetType);
         Assert.Equal("lowered_Vec<int>", Assert.IsType<CSizeOfTypeExpression>(sizeOf).TypeName);
@@ -61,19 +61,16 @@ public sealed class CExpressionLowererTests
         var cast = lowerer.LowerSimple(new CastExpressionNode(
             location,
             "(StaleText)value",
-            "StaleText",
             new NameExpressionNode(location, "value"),
             typeNode));
         var sizeOf = lowerer.LowerSimple(new SizeOfExpressionNode(
             location,
             "sizeof(StaleText)",
-            "StaleText",
             ExpressionOperand: null,
             TypeOperandNode: typeNode));
         var initializer = lowerer.LowerSimple(new InitializerExpressionNode(
             location,
             "StaleText {}",
-            "StaleText",
             [],
             [],
             typeNode));
@@ -92,9 +89,9 @@ public sealed class CExpressionLowererTests
         var initializer = lowerer.LowerSimple(new InitializerExpressionNode(
             location,
             "Point { x: 1 }",
-            "Point",
             [new InitializerFieldNode("x", new LiteralExpressionNode(location, "1"))],
-            []));
+            [],
+            new TypeNode(location, "Point", TypeSyntaxParser.Parse("Point"))));
         var assignment = lowerer.LowerSimple(new AssignmentExpressionNode(
             location,
             "value = 1",

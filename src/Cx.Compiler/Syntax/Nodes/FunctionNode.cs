@@ -8,8 +8,10 @@ public sealed record FunctionNode(
     IReadOnlyList<string> TypeParameters,
     IReadOnlyList<string> TypeArguments,
     IReadOnlyList<GenericConstraintNode> GenericConstraints,
-    string ReturnType,
     IReadOnlyList<ParameterNode> Parameters,
     IReadOnlyList<StatementNode> Body,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    TypeNode? ReturnTypeNode = null) : TopLevelNode(Location);
+    TypeNode? ReturnTypeNode = null) : TopLevelNode(Location)
+{
+    public string ReturnType => ReturnTypeNode?.TypeName ?? string.Empty;
+}

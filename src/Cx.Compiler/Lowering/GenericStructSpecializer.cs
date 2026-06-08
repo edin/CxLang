@@ -128,7 +128,6 @@ internal static class GenericStructSpecializer
                 collectFromType(fieldType);
                 return CopySemantic(field, field with
                 {
-                    Type = fieldType,
                     TypeNode = SubstituteTypeNode(field.TypeNode, substitutions, typeSubstitutions),
                 });
             })

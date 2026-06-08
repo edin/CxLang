@@ -9,6 +9,8 @@ public sealed record InterfaceNode(
 public sealed record InterfaceMethodNode(
     Location Location,
     string Name,
-    string ReturnType,
     IReadOnlyList<ParameterNode> Parameters,
-    TypeNode? ReturnTypeNode = null) : SyntaxNode(Location);
+    TypeNode? ReturnTypeNode = null) : SyntaxNode(Location)
+{
+    public string ReturnType => ReturnTypeNode?.TypeName ?? string.Empty;
+}

@@ -7,10 +7,12 @@ namespace Cx.Compiler.Semantic;
 internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
 {
     private TypeRefParser? _parser;
+    private TypeSyntaxTypeRefConverter? _typeSyntaxConverter;
 
     public void Resolve(ProgramNode program)
     {
         _parser = new TypeRefParser(program);
+        _typeSyntaxConverter = new TypeSyntaxTypeRefConverter(program);
 
         foreach (var typeAlias in program.TypeAliases)
         {
@@ -379,12 +381,27 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
 
     private void ResolveType(SyntaxNode node, TypeNode? typeNode, string? fallbackType)
     {
-        var resolvedType = ResolveType(typeNode?.TypeName ?? fallbackType);
+        var resolvedType = typeNode is null
+            ? ResolveType(fallbackType)
+            : ResolveType(typeNode, fallbackType);
         node.Semantic.Type = resolvedType;
         if (typeNode is not null)
         {
             typeNode.Semantic.Type = resolvedType;
         }
+    }
+
+    private TypeRef ResolveType(TypeNode typeNode, string? fallbackType)
+    {
+        if (_typeSyntaxConverter is null)
+        {
+            diagnostics.Report(new Location(new("<type-resolution>", string.Empty), 0, 1, 1), "Type resolution was not initialized.");
+            return new TypeRef.Unknown();
+        }
+
+        return typeNode.Syntax is null
+            ? ResolveType(fallbackType ?? typeNode.TypeName)
+            : _typeSyntaxConverter.Convert(typeNode);
     }
 
     private TypeRef ResolveType(string? type)

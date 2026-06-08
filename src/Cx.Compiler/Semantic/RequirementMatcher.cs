@@ -464,7 +464,15 @@ public sealed class RequirementMatcher
             .Zip(arguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
         var fields = definition.Fields
-            .Select(field => new StructFieldNode(field.Location, field.Name, Substitute(field.Type, substitutions), field.Attributes))
+            .Select(field =>
+            {
+                var substitutedType = Substitute(field.Type, substitutions);
+                return new StructFieldNode(
+                    field.Location,
+                    field.Name,
+                    field.Attributes,
+                    new TypeNode(field.Location, substitutedType, TypeSyntaxParser.Parse(substitutedType)));
+            })
             .ToList();
 
         structNode = new StructNode(definition.Location, LowerType(resolvedType), [], [], [], fields, [], definition.Attributes);

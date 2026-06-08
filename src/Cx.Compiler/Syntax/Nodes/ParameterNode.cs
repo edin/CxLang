@@ -3,7 +3,9 @@ namespace Cx.Compiler.Syntax.Nodes;
 public sealed record ParameterNode(
     Location Location,
     string Name,
-    string Type,
     IReadOnlyList<AttributeApplicationNode> Attributes,
     bool IsVariadic = false,
-    TypeNode? TypeNode = null) : SyntaxNode(Location);
+    TypeNode? TypeNode = null) : SyntaxNode(Location)
+{
+    public string Type => TypeNode?.TypeName ?? string.Empty;
+}

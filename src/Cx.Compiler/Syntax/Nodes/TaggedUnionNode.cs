@@ -12,6 +12,8 @@ public sealed record TaggedUnionNode(
 public sealed record TaggedUnionVariantNode(
     Location Location,
     string Name,
-    string Type,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    TypeNode? TypeNode = null) : SyntaxNode(Location);
+    TypeNode? TypeNode = null) : SyntaxNode(Location)
+{
+    public string Type => TypeNode?.TypeName ?? string.Empty;
+}

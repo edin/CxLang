@@ -11,6 +11,7 @@ internal sealed class ExpressionTypeResolver(
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
     private readonly TypeRefParser _typeRefParser = new(program);
+    private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
     private CallResolver? _callResolver;
     private readonly IReadOnlyDictionary<string, string> _typeAliases = program.TypeAliases
         .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
@@ -161,7 +162,9 @@ internal sealed class ExpressionTypeResolver(
             : ParseResolvedType(ResolveName(name, variables));
 
     private TypeRef? ResolveTypeNode(TypeNode? typeNode, string? fallbackType) =>
-        typeNode?.Semantic.Type ?? ParseResolvedType(fallbackType);
+        typeNode?.Semantic.Type
+        ?? (typeNode?.Syntax is null ? null : _typeSyntaxConverter.Convert(typeNode))
+        ?? ParseResolvedType(fallbackType);
 
     private TypeRef? ParseResolvedType(string? type) =>
         string.IsNullOrWhiteSpace(type)
@@ -336,10 +339,11 @@ internal sealed class ExpressionTypeResolver(
     private TypeRef ResolveFunctionExpressionTypeRef(FunctionExpressionNode functionExpression)
     {
         var parameters = functionExpression.Parameters
-            .Select(parameter => parameter.TypeNode?.Semantic.Type ?? ParseResolvedType(parameter.Type) ?? new TypeRef.Unknown())
+            .Select(parameter => ResolveTypeNode(parameter.TypeNode, parameter.Type) ?? new TypeRef.Unknown())
             .ToList();
-        var returnType = functionExpression.ReturnTypeNode?.Semantic.Type
-            ?? ParseResolvedType(string.IsNullOrWhiteSpace(functionExpression.ReturnType) ? "int" : functionExpression.ReturnType)
+        var returnType = ResolveTypeNode(
+                functionExpression.ReturnTypeNode,
+                string.IsNullOrWhiteSpace(functionExpression.ReturnType) ? "int" : functionExpression.ReturnType)
             ?? new TypeRef.Unknown();
         return new TypeRef.Function(parameters, returnType);
     }
@@ -595,7 +599,17 @@ internal sealed class ExpressionTypeResolver(
             return definition with
             {
                 Fields = definition.Fields
-                    .Select(field => field with { Type = GenericTypeStringRewriter.Substitute(field.Type, substitutions) })
+                    .Select(field =>
+                    {
+                        var substitutedType = GenericTypeStringRewriter.Substitute(field.Type, substitutions);
+                        return field with
+                        {
+                            TypeNode = new TypeNode(
+                                field.Location,
+                                substitutedType,
+                                TypeSyntaxParser.Parse(substitutedType)),
+                        };
+                    })
                     .ToList(),
             };
         }

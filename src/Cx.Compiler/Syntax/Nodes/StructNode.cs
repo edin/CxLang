@@ -19,9 +19,11 @@ public sealed record GenericConstraintNode(
 public sealed record StructFieldNode(
     Location Location,
     string Name,
-    string Type,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    TypeNode? TypeNode = null) : SyntaxNode(Location);
+    TypeNode? TypeNode = null) : SyntaxNode(Location)
+{
+    public string Type => TypeNode?.TypeName ?? string.Empty;
+}
 
 public sealed record StructRequirementNode(
     Location Location,

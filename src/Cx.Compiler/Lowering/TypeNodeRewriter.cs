@@ -21,6 +21,10 @@ internal static class TypeNodeRewriter
         {
             TypeName = rewriteTypeName(typeNode.TypeName),
         };
+        rewritten = rewritten with
+        {
+            Syntax = TypeSyntaxParser.Parse(rewritten.TypeName),
+        };
         SyntaxNode.CloneSemantic(typeNode, rewritten);
         if (typeNode.Semantic.Type is null)
         {

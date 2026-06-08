@@ -4,9 +4,11 @@ public sealed record ExternFunctionNode(
     Location Location,
     string Name,
     IReadOnlyList<string> TypeParameters,
-    string ReturnType,
     IReadOnlyList<ParameterNode> Parameters,
     IReadOnlyList<AttributeApplicationNode> Attributes,
     bool IsHeaderDeclaration = false,
     bool IsMacro = false,
-    TypeNode? ReturnTypeNode = null) : TopLevelNode(Location);
+    TypeNode? ReturnTypeNode = null) : TopLevelNode(Location)
+{
+    public string ReturnType => ReturnTypeNode?.TypeName ?? string.Empty;
+}

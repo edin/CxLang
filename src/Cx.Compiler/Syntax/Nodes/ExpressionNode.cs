@@ -22,9 +22,11 @@ public sealed record ParenthesizedExpressionNode(
 public sealed record CastExpressionNode(
     Location Location,
     string SourceText,
-    string TargetType,
     ExpressionNode Expression,
-    TypeNode? TargetTypeNode = null) : ExpressionNode(Location, SourceText);
+    TypeNode? TargetTypeNode = null) : ExpressionNode(Location, SourceText)
+{
+    public string TargetType => TargetTypeNode?.TypeName ?? string.Empty;
+}
 
 public sealed record UnaryExpressionNode(
     Location Location,
@@ -41,9 +43,11 @@ public sealed record PostfixExpressionNode(
 public sealed record SizeOfExpressionNode(
     Location Location,
     string SourceText,
-    string? TypeOperand,
     ExpressionNode? ExpressionOperand,
-    TypeNode? TypeOperandNode = null) : ExpressionNode(Location, SourceText);
+    TypeNode? TypeOperandNode = null) : ExpressionNode(Location, SourceText)
+{
+    public string? TypeOperand => TypeOperandNode?.TypeName;
+}
 
 public sealed record BinaryExpressionNode(
     Location Location,
@@ -69,10 +73,12 @@ public sealed record ScalarRangeExpressionNode(
 public sealed record InitializerExpressionNode(
     Location Location,
     string SourceText,
-    string? TypeName,
     IReadOnlyList<InitializerFieldNode> Fields,
     IReadOnlyList<ExpressionNode> Values,
-    TypeNode? TypeNameNode = null) : ExpressionNode(Location, SourceText);
+    TypeNode? TypeNameNode = null) : ExpressionNode(Location, SourceText)
+{
+    public string? TypeName => TypeNameNode?.TypeName;
+}
 
 public sealed record InitializerFieldNode(
     string Name,
@@ -82,10 +88,12 @@ public sealed record FunctionExpressionNode(
     Location Location,
     string SourceText,
     IReadOnlyList<ParameterNode> Parameters,
-    string? ReturnType,
     ExpressionNode? ExpressionBody,
     IReadOnlyList<StatementNode>? BlockBody,
-    TypeNode? ReturnTypeNode = null) : ExpressionNode(Location, SourceText);
+    TypeNode? ReturnTypeNode = null) : ExpressionNode(Location, SourceText)
+{
+    public string? ReturnType => ReturnTypeNode?.TypeName;
+}
 
 public sealed record AssignmentExpressionNode(
     Location Location,

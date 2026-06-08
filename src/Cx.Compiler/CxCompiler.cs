@@ -256,13 +256,13 @@ public sealed class CxCompiler
                             TypeParameters: [],
                             TypeArguments: [],
                             GenericConstraints: [],
-                            ReturnType: "void",
                             Parameters:
                             [
-                                new ParameterNode(test.Location, "runner", "TestRunner*", [])
+                                new ParameterNode(test.Location, "runner", [], TypeNode: RewriteTypeNode(null, "TestRunner*"))
                             ],
                             Body: RewriteTestStatements(test.Body),
-                            Attributes: []);
+                            Attributes: [],
+                            ReturnTypeNode: RewriteTypeNode(null, "void"));
                     })
                     .ToList();
 
@@ -294,10 +294,10 @@ public sealed class CxCompiler
             TypeParameters: [],
             TypeArguments: [],
             GenericConstraints: [],
-            ReturnType: "int",
             Parameters: [],
             Body: BuildTestMainBody(testCases, generatedNames),
-            Attributes: []));
+            Attributes: [],
+            ReturnTypeNode: RewriteTypeNode(null, "int")));
 
         rewrittenPrograms.Add(new ProgramNode(rootLocation, rootDeclarations));
         return rewrittenPrograms;
@@ -321,8 +321,8 @@ public sealed class CxCompiler
                 location,
                 IsConst: false,
                 Name: "runner",
-                Type: "TestRunner",
-                Initializer: new RawExpressionNode(location, "TestRunner.create()")),
+                Initializer: new RawExpressionNode(location, "TestRunner.create()"),
+                TypeNode: RewriteTypeNode(null, "TestRunner")),
         };
 
         foreach (var (_, test) in testCases)
@@ -929,7 +929,7 @@ public sealed class CxCompiler
             TypeAliases = program.TypeAliases.Select(typeAlias => typeAlias with
             {
                 Name = QualifyName(alias, typeAlias.Name),
-                TargetType = QualifyType(typeAlias.TargetType, alias, typeNames),
+                TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, QualifyType(typeAlias.TargetType, alias, typeNames)),
             }).ToList(),
             Enums = program.Enums.Select(enumNode => enumNode with
             {
@@ -941,23 +941,23 @@ public sealed class CxCompiler
                 Name = QualifyName(alias, interfaceNode.Name),
                 Methods = interfaceNode.Methods.Select(method => method with
                 {
-                    ReturnType = QualifyType(method.ReturnType, alias, typeNames),
+                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnType, alias, typeNames)),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
             }).ToList(),
             Structs = program.Structs.Select(structNode => structNode with
             {
                 Name = QualifyName(alias, structNode.Name),
-                Fields = structNode.Fields.Select(field => field with { Type = QualifyType(field.Type, alias, typeNames) }).ToList(),
+                Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, QualifyType(field.Type, alias, typeNames)) }).ToList(),
             }).ToList(),
             TypeAdapters = program.TypeAdapters.Select(adapter => adapter with
             {
                 Name = QualifyName(alias, adapter.Name),
-                BaseType = QualifyType(adapter.BaseType, alias, typeNames),
+                BaseTypeNode = RewriteTypeNode(adapter.BaseTypeNode, QualifyType(adapter.BaseType, alias, typeNames)),
                 Methods = adapter.Methods.Select(method => method with
                 {
                     OwnerType = QualifyName(alias, method.OwnerType ?? adapter.Name),
-                    ReturnType = QualifyType(method.ReturnType, alias, typeNames),
+                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnType, alias, typeNames)),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
             }).ToList(),
@@ -967,19 +967,19 @@ public sealed class CxCompiler
                 Methods = extension.Methods.Select(method => method with
                 {
                     OwnerType = QualifyName(alias, method.OwnerType ?? extension.TargetType),
-                    ReturnType = QualifyType(method.ReturnType, alias, typeNames),
+                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnType, alias, typeNames)),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
             }).ToList(),
             TaggedUnions = program.TaggedUnions.Select(union => union with
             {
                 Name = QualifyName(alias, union.Name),
-                Variants = union.Variants.Select(variant => variant with { Type = QualifyType(variant.Type, alias, typeNames) }).ToList(),
+                Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, QualifyType(variant.Type, alias, typeNames)) }).ToList(),
             }).ToList(),
             GlobalVariables = program.GlobalVariables.Select(global => global with
             {
                 Name = QualifyName(alias, global.Name),
-                Type = QualifyType(global.Type, alias, typeNames),
+                TypeNode = RewriteTypeNode(global.TypeNode, QualifyType(global.Type, alias, typeNames)),
             }).ToList(),
             Functions = program.Functions.Select(function => function.OwnerType is null
                 ? QualifyFunction(function, alias, typeNames) with { Name = QualifyName(alias, function.Name) }
@@ -1004,7 +1004,7 @@ public sealed class CxCompiler
                 .Select(typeAlias => typeAlias with
                 {
                     Name = symbols[typeAlias.Name],
-                    TargetType = ProjectSymbolImportType(typeAlias.TargetType, symbols, typeNames),
+                    TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, ProjectSymbolImportType(typeAlias.TargetType, symbols, typeNames)),
                 })
                 .ToList(),
             Enums = program.Enums
@@ -1027,7 +1027,7 @@ public sealed class CxCompiler
                 .Select(structNode => structNode with
                 {
                     Name = symbols[structNode.Name],
-                    Fields = structNode.Fields.Select(field => field with { Type = ProjectSymbolImportType(field.Type, symbols, typeNames) }).ToList(),
+                    Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, ProjectSymbolImportType(field.Type, symbols, typeNames)) }).ToList(),
                 })
                 .ToList(),
             TypeAdapters = program.TypeAdapters
@@ -1035,11 +1035,11 @@ public sealed class CxCompiler
                 .Select(adapter => adapter with
                 {
                     Name = symbols[adapter.Name],
-                    BaseType = ProjectSymbolImportType(adapter.BaseType, symbols, typeNames),
+                    BaseTypeNode = RewriteTypeNode(adapter.BaseTypeNode, ProjectSymbolImportType(adapter.BaseType, symbols, typeNames)),
                     Methods = adapter.Methods.Select(method => method with
                     {
                         OwnerType = symbols[adapter.Name],
-                        ReturnType = ProjectSymbolImportType(method.ReturnType, symbols, typeNames),
+                        ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, ProjectSymbolImportType(method.ReturnType, symbols, typeNames)),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
                     }).ToList(),
                 })
@@ -1052,7 +1052,7 @@ public sealed class CxCompiler
                     Methods = extension.Methods.Select(method => method with
                     {
                         OwnerType = symbols[extension.TargetType],
-                        ReturnType = ProjectSymbolImportType(method.ReturnType, symbols, typeNames),
+                        ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, ProjectSymbolImportType(method.ReturnType, symbols, typeNames)),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
                     }).ToList(),
                 })
@@ -1062,7 +1062,7 @@ public sealed class CxCompiler
                 .Select(union => union with
                 {
                     Name = symbols[union.Name],
-                    Variants = union.Variants.Select(variant => variant with { Type = ProjectSymbolImportType(variant.Type, symbols, typeNames) }).ToList(),
+                    Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, ProjectSymbolImportType(variant.Type, symbols, typeNames)) }).ToList(),
                 })
                 .ToList(),
             GlobalVariables = program.GlobalVariables
@@ -1070,7 +1070,7 @@ public sealed class CxCompiler
                 .Select(global => global with
                 {
                     Name = symbols[global.Name],
-                    Type = ProjectSymbolImportType(global.Type, symbols, typeNames),
+                    TypeNode = RewriteTypeNode(global.TypeNode, ProjectSymbolImportType(global.Type, symbols, typeNames)),
                 })
                 .ToList(),
             Functions = program.Functions
@@ -1093,7 +1093,7 @@ public sealed class CxCompiler
                 .Select(typeAlias => typeAlias with
                 {
                     Name = symbols[typeAlias.Name],
-                    TargetType = ProjectSymbolImportType(typeAlias.TargetType, symbols, typeNames),
+                    TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, ProjectSymbolImportType(typeAlias.TargetType, symbols, typeNames)),
                 })
                 .ToList(),
             Enums = declaration.Enums
@@ -1112,7 +1112,7 @@ public sealed class CxCompiler
                 .Select(structNode => structNode with
                 {
                     Name = symbols[structNode.Name],
-                    Fields = structNode.Fields.Select(field => field with { Type = ProjectSymbolImportType(field.Type, symbols, typeNames) }).ToList(),
+                    Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, ProjectSymbolImportType(field.Type, symbols, typeNames)) }).ToList(),
                 })
                 .ToList(),
             Unions = declaration.Unions
@@ -1120,7 +1120,7 @@ public sealed class CxCompiler
                 .Select(union => union with
                 {
                     Name = symbols[union.Name],
-                    Variants = union.Variants.Select(variant => variant with { Type = ProjectSymbolImportType(variant.Type, symbols, typeNames) }).ToList(),
+                    Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, ProjectSymbolImportType(variant.Type, symbols, typeNames)) }).ToList(),
                 })
                 .ToList(),
             Constants = declaration.Constants
@@ -1128,7 +1128,7 @@ public sealed class CxCompiler
                 .Select(global => global with
                 {
                     Name = symbols[global.Name],
-                    Type = ProjectSymbolImportType(global.Type, symbols, typeNames),
+                    TypeNode = RewriteTypeNode(global.TypeNode, ProjectSymbolImportType(global.Type, symbols, typeNames)),
                 })
                 .ToList(),
             Functions = declaration.Functions
@@ -1166,7 +1166,7 @@ public sealed class CxCompiler
             TypeAliases = declaration.TypeAliases.Select(typeAlias => typeAlias with
             {
                 Name = QualifyName(alias, typeAlias.Name),
-                TargetType = QualifyType(typeAlias.TargetType, alias, typeNames),
+                TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, QualifyType(typeAlias.TargetType, alias, typeNames)),
             }).ToList(),
             Enums = declaration.Enums.Select(enumNode => enumNode with
             {
@@ -1176,17 +1176,17 @@ public sealed class CxCompiler
             Structs = declaration.Structs.Select(structNode => structNode with
             {
                 Name = QualifyName(alias, structNode.Name),
-                Fields = structNode.Fields.Select(field => field with { Type = QualifyType(field.Type, alias, typeNames) }).ToList(),
+                Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, QualifyType(field.Type, alias, typeNames)) }).ToList(),
             }).ToList(),
             Unions = declaration.Unions.Select(union => union with
             {
                 Name = QualifyName(alias, union.Name),
-                Variants = union.Variants.Select(variant => variant with { Type = QualifyType(variant.Type, alias, typeNames) }).ToList(),
+                Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, QualifyType(variant.Type, alias, typeNames)) }).ToList(),
             }).ToList(),
             Constants = declaration.Constants.Select(global => global with
             {
                 Name = QualifyName(alias, global.Name),
-                Type = QualifyType(global.Type, alias, typeNames),
+                TypeNode = RewriteTypeNode(global.TypeNode, QualifyType(global.Type, alias, typeNames)),
             }).ToList(),
             Functions = declaration.Functions.Select(function => QualifyExternFunction(function, alias, typeNames)).ToList(),
         };
@@ -1198,7 +1198,7 @@ public sealed class CxCompiler
         function with
         {
             Name = QualifyName(alias, function.Name),
-            ReturnType = QualifyType(function.ReturnType, alias, typeNames),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, QualifyType(function.ReturnType, alias, typeNames)),
             Parameters = function.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
         };
 
@@ -1208,7 +1208,7 @@ public sealed class CxCompiler
         IReadOnlySet<string> typeNames) =>
         function with
         {
-            ReturnType = QualifyType(function.ReturnType, alias, typeNames),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, QualifyType(function.ReturnType, alias, typeNames)),
             Parameters = function.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
         };
 
@@ -1220,7 +1220,7 @@ public sealed class CxCompiler
         function with
         {
             Name = visibleName,
-            ReturnType = ProjectSymbolImportType(function.ReturnType, symbols, typeNames),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, ProjectSymbolImportType(function.ReturnType, symbols, typeNames)),
             Parameters = function.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
         };
 
@@ -1232,7 +1232,7 @@ public sealed class CxCompiler
         function with
         {
             Name = visibleName,
-            ReturnType = ProjectSymbolImportType(function.ReturnType, symbols, typeNames),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, ProjectSymbolImportType(function.ReturnType, symbols, typeNames)),
             Parameters = function.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
         };
 
@@ -1242,7 +1242,7 @@ public sealed class CxCompiler
         IReadOnlySet<string> typeNames) =>
         parameter.IsVariadic
             ? parameter
-            : parameter with { Type = ProjectSymbolImportType(parameter.Type, symbols, typeNames) };
+            : parameter with { TypeNode = RewriteTypeNode(parameter.TypeNode, ProjectSymbolImportType(parameter.Type, symbols, typeNames)) };
 
     private static ParameterNode QualifyParameter(
         ParameterNode parameter,
@@ -1250,7 +1250,7 @@ public sealed class CxCompiler
         IReadOnlySet<string> typeNames) =>
         parameter.IsVariadic
             ? parameter
-            : parameter with { Type = QualifyType(parameter.Type, alias, typeNames) };
+            : parameter with { TypeNode = RewriteTypeNode(parameter.TypeNode, QualifyType(parameter.Type, alias, typeNames)) };
 
     private static string QualifyName(string alias, string name) =>
         name.Contains('.', StringComparison.Ordinal) ? name : alias + "." + name;
@@ -1304,4 +1304,10 @@ public sealed class CxCompiler
 
         return type;
     }
+
+    private static TypeNode RewriteTypeNode(TypeNode? typeNode, string typeName) =>
+        new(
+            typeNode?.Location ?? new Location(new SourceFile("<type-rewrite>", string.Empty), 0, 1, 1),
+            typeName,
+            TypeSyntaxParser.Parse(typeName));
 }

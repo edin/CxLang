@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
@@ -110,6 +111,53 @@ public sealed class CallResolverTests
         Assert.Equal("Vec", resolved.Function.OwnerType);
         Assert.False(resolved.IsInstance);
         Assert.Equal(["int"], resolved.TypeArguments);
+    }
+
+    [Fact]
+    public void Resolve_PrefersResolvedTypeNodeForFunctionSignature()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn id(value: int) -> int {
+                return value;
+            }
+
+            fn main() -> int {
+                return id(1);
+            }
+            """);
+        var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
+        var function = program.Functions.Single(function => function.Name == "id");
+        var parameter = Assert.Single(function.Parameters) with
+        {
+            TypeNode = new TypeNode(location, "StaleParameterType", new NamedTypeSyntaxNode("int")),
+        };
+        var rewrittenFunction = function with
+        {
+            ReturnTypeNode = new TypeNode(location, "StaleReturnType", new NamedTypeSyntaxNode("int")),
+            Parameters = [parameter],
+        };
+        var rewrittenProgram = program with
+        {
+            Functions = program.Functions
+                .Select(candidate => candidate.Name == "id" ? rewrittenFunction : candidate)
+                .ToList(),
+        };
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(rewrittenProgram);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var resolvedFunction = rewrittenProgram.Functions.Single(function => function.Name == "id");
+        Assert.Equal("StaleReturnType", resolvedFunction.ReturnType);
+        Assert.NotNull(resolvedFunction.ReturnTypeNode);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(resolvedFunction.ReturnTypeNode.Semantic.Type!));
+        var call = GetReturnCall(rewrittenProgram);
+        var resolver = CreateResolver(rewrittenProgram);
+
+        var resolved = resolver.Resolve(call.Callee, [], call.Arguments, new Dictionary<string, string>(StringComparer.Ordinal));
+
+        Assert.NotNull(resolved);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(resolved.ReturnType));
+        Assert.Equal(["int"], resolved.ParameterTypes.Select(TypeRefFormatter.ToCxString).ToArray());
     }
 
     private static ProgramNode ParseAndResolveTypes(string source)

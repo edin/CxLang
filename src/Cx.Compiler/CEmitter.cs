@@ -2201,6 +2201,14 @@ public sealed partial class CEmitter
 
     private static string RemovePointer(string type) => CTypeLowerer.RemovePointer(type);
 
+    private static string? UnwrapPointer(string type)
+    {
+        type = type.Trim();
+        return type.EndsWith("*", StringComparison.Ordinal)
+            ? type[..^1].TrimEnd()
+            : null;
+    }
+
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch
     {
         NameExpressionNode name => name.SourceText,

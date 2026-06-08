@@ -23,9 +23,16 @@ public sealed partial class CEmitter
         private readonly StructValueBuilder _structValueBuilder;
         private readonly NamedInitializerTextLowerer _namedInitializerTextLowerer;
         private readonly AdapterExposeResolver _adapterExposeResolver;
+        private readonly TextConstructorLowerer _textConstructorLowerer;
+        private readonly TextAdapterExposeLowerer _textAdapterExposeLowerer;
         private readonly ReceiverExpressionBuilder _receiverExpressionBuilder;
         private readonly InterfaceMemberCallLowerer _interfaceMemberCallLowerer;
         private readonly ResolvedCallLowerer _resolvedCallLowerer;
+        private readonly MemberAccessLowerer _memberAccessLowerer;
+        private readonly MemberCallLowerer _memberCallLowerer;
+        private readonly GenericCallLowerer _genericCallLowerer;
+        private readonly CallLowerer _callLowerer;
+        private readonly ExpressionTypeLoweringResolver _expressionTypeResolver;
         public string? SelfType { get; }
         private string? SelfApiType { get; }
 
@@ -64,6 +71,11 @@ public sealed partial class CEmitter
             SelfApiType = selfApiType;
             _expressionLowerer = new CExpressionLowerer(this);
             _genericCallResolver = _context.CreateGenericCallResolver(ResolveExpressionType, CanAssign);
+            _expressionTypeResolver = new ExpressionTypeLoweringResolver(
+                _context,
+                _scope,
+                _genericCallResolver,
+                type => LowerType(type, SelfType));
             _requirementLookup = _context.CreateRequirementLookup();
             _foreachIterableResolver = new ForeachIterableResolver(
                 _scope,
@@ -92,11 +104,20 @@ public sealed partial class CEmitter
                 type => LowerType(type, SelfType));
             _namedInitializerTextLowerer = new NamedInitializerTextLowerer(
                 _context,
-                ReplaceBracedExpressions,
-                SplitArguments,
+                TextExpressionRewriter.ReplaceBracedExpressions,
+                TextExpressionRewriter.SplitArguments,
                 Lower,
                 type => LowerType(type, SelfType));
             _adapterExposeResolver = new AdapterExposeResolver(_context);
+            _textConstructorLowerer = new TextConstructorLowerer(
+                _context,
+                _genericCallResolver,
+                _taggedUnionValueBuilder,
+                _structValueBuilder);
+            _textAdapterExposeLowerer = new TextAdapterExposeLowerer(
+                _context,
+                _genericCallResolver,
+                _adapterExposeResolver);
             _receiverExpressionBuilder = new ReceiverExpressionBuilder(_scope);
             _interfaceMemberCallLowerer = new InterfaceMemberCallLowerer(
                 _context,
@@ -108,6 +129,42 @@ public sealed partial class CEmitter
                 _genericCallResolver,
                 _receiverExpressionBuilder,
                 LowerExpression);
+            _memberAccessLowerer = new MemberAccessLowerer(
+                _context,
+                _scope,
+                Lower,
+                LowerExpression);
+            _memberCallLowerer = new MemberCallLowerer(
+                _context,
+                _scope,
+                _genericCallResolver,
+                _resolvedCallLowerer,
+                _interfaceMemberCallLowerer,
+                _adapterExposeResolver,
+                _receiverExpressionBuilder,
+                ResolveExpressionType,
+                LowerExpression);
+            _genericCallLowerer = new GenericCallLowerer(
+                _context,
+                _genericCallResolver,
+                _resolvedCallLowerer,
+                _memberCallLowerer,
+                _adapterExposeResolver,
+                LowerName,
+                Lower,
+                LowerExpression);
+            _callLowerer = new CallLowerer(
+                _context,
+                _genericCallResolver,
+                _resolvedCallLowerer,
+                _memberCallLowerer,
+                _structValueBuilder,
+                _taggedUnionValueBuilder,
+                LowerFunctionReferenceName,
+                Lower,
+                LowerExpression,
+                _textConstructorLowerer.LowerPayloadConstructor,
+                _textConstructorLowerer.LowerStructConstructor);
         }
 
         public ImportedNameLowerer ForFunction(FunctionNode function)
@@ -391,14 +448,14 @@ public sealed partial class CEmitter
 
             var functionName = dereferenceCall.Groups["name"].Value;
             var openParen = expression.IndexOf('(', dereferenceCall.Groups["name"].Index + functionName.Length);
-            var closeParen = FindMatchingParen(expression, openParen);
+            var closeParen = TextExpressionRewriter.FindMatchingParen(expression, openParen);
             if (openParen < 0 || closeParen != expression.Length - 1)
             {
                 return null;
             }
 
             var argumentsText = expression[(openParen + 1)..closeParen];
-            var arguments = SplitArguments(argumentsText)
+            var arguments = TextExpressionRewriter.SplitArguments(argumentsText)
                 .Select(LowerSimpleRawArgument)
                 .ToList();
             return new CUnaryExpression(
@@ -540,43 +597,8 @@ public sealed partial class CEmitter
             return "&" + Lower(operand);
         }
 
-        private string? LowerCall(CallExpressionNode call)
-        {
-            if (_resolvedCallLowerer.TryLowerStatic(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
-            {
-                return _expressionEmitter.Emit(resolvedCall);
-            }
-
-            if (call.Callee is MemberExpressionNode member)
-            {
-                return LowerMemberCall(member, call.Arguments);
-            }
-
-            if (call.Callee is NameExpressionNode name)
-            {
-                if (_context.TryGetStruct(name.SourceText, out var structNode))
-                {
-                    return LowerStructConstructor(structNode, call.Arguments.Select(argument => argument.SourceText).ToList());
-                }
-
-                if (_context.IsTaggedUnion(name.SourceText))
-                {
-                    return null;
-                }
-
-            var genericCall = _genericCallResolver.FindInferredCall(null, name.SourceText, call.Arguments, skipSelf: false);
-                if (genericCall is not null)
-                {
-                    return EmitCallExpression(
-                        new CResolvedFunction(ModuleName: GetFunctionModule(genericCall.OwnerType, genericCall.Name), genericCall.CName),
-                        call.Arguments);
-                }
-
-                return EmitCallExpression(new CFunctionName(LowerFunctionReferenceName(name)), call.Arguments);
-            }
-
-            return null;
-        }
+        private string? LowerCall(CallExpressionNode call) =>
+            _callLowerer.TryLowerText(call);
 
         private string LowerBinary(BinaryExpressionNode binary)
         {
@@ -624,261 +646,29 @@ public sealed partial class CEmitter
             return expression is null ? null : _expressionEmitter.Emit(expression);
         }
 
-        private CExpression? LowerGenericCallExpression(GenericCallExpressionNode call)
-        {
-            if (_resolvedCallLowerer.TryLowerStatic(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
-            {
-                return resolvedCall;
-            }
-
-            if (call.Callee is MemberExpressionNode member)
-            {
-                var memberCall = LowerGenericMemberCallExpression(member, call.TypeArguments, call.Arguments);
-                if (memberCall is not null)
-                {
-                    return memberCall;
-                }
-            }
-
-            var calleeName = GetQualifiedName(call.Callee);
-            if (calleeName is null)
-            {
-                return null;
-            }
-
-            if (_context.IsGenericMacro(calleeName))
-            {
-                return new CRawExpression($"{LowerName(calleeName)}({string.Join(", ", call.Arguments.Select(Lower))})");
-            }
-
-            var match = _genericCallResolver.FindFreeExact(calleeName, call.TypeArguments);
-            if (match is not null)
-            {
-                return new CCallExpression(
-                    new CResolvedFunction(ModuleName: GetFunctionModule(match.OwnerType, match.Name), match.CName),
-                    call.Arguments.Select(LowerExpression).ToList());
-            }
-
-            var staticMatch = _genericCallResolver.FindStaticExact(calleeName, call.TypeArguments);
-            if (staticMatch is null
-                && TrySplitQualifiedMember(calleeName, out var ownerName, out var memberName)
-                && _context.TryGetAdapterExpose($"{ownerName}.{memberName}", out var staticExpose)
-                && staticExpose.IsStatic)
-            {
-                var resolvedExpose = _adapterExposeResolver.Resolve(staticExpose, call.TypeArguments);
-                staticMatch = _genericCallResolver.FindStaticExact(
-                    resolvedExpose.BaseOwner,
-                    resolvedExpose.SourceName,
-                    resolvedExpose.TypeArguments);
-            }
-
-            return staticMatch is null
-                ? null
-                : new CCallExpression(
-                    new CResolvedFunction(ModuleName: GetFunctionModule(staticMatch.OwnerType, staticMatch.Name), staticMatch.CName),
-                    call.Arguments.Select(LowerExpression).ToList());
-        }
+        private CExpression? LowerGenericCallExpression(GenericCallExpressionNode call) =>
+            _genericCallLowerer.TryLower(call);
 
         private string? LowerGenericMemberCall(
             MemberExpressionNode member,
             IReadOnlyList<string> typeArguments,
             IReadOnlyList<ExpressionNode> arguments)
         {
-            var expression = LowerGenericMemberCallExpression(member, typeArguments, arguments);
+            var expression = _memberCallLowerer.TryLowerGenericMember(member, typeArguments, arguments);
             return expression is null ? null : _expressionEmitter.Emit(expression);
         }
 
         private CExpression? LowerGenericMemberCallExpression(
             MemberExpressionNode member,
             IReadOnlyList<string> typeArguments,
-            IReadOnlyList<ExpressionNode> arguments)
-        {
-            if (_resolvedCallLowerer.TryLowerInstance(member.Semantic.ResolvedCall, member, arguments) is { } resolvedInstanceCall)
-            {
-                return resolvedInstanceCall;
-            }
+            IReadOnlyList<ExpressionNode> arguments) =>
+            _memberCallLowerer.TryLowerGenericMember(member, typeArguments, arguments);
 
-            if (member.Target is not NameExpressionNode targetName
-                || !_scope.TryGetVariableType(targetName.SourceText, out var targetType))
-            {
-                return null;
-            }
-
-            var target = targetName.SourceText;
-            var concreteReceiverType = RemovePointer(targetType);
-            if (_genericCallResolver.FindGenericMemberExact(
-                GetGenericBaseName(targetType),
-                concreteReceiverType,
-                member.MemberName,
-                typeArguments) is { } genericCall)
-            {
-                var loweredArguments = arguments.Select(LowerExpression).ToList();
-                loweredArguments.Insert(0, _receiverExpressionBuilder.Build(target, targetType.EndsWith("*", StringComparison.Ordinal), genericCall.TakesPointerSelf));
-                return new CCallExpression(
-                    new CResolvedFunction(ModuleName: GetFunctionModule(genericCall.OwnerType, genericCall.Name), genericCall.CName),
-                    loweredArguments);
-            }
-
-            return null;
-        }
-
-        private string? ResolveExpressionType(ExpressionNode expression) => expression switch
-        {
-            LiteralExpressionNode literal => ResolveLiteralType(literal.SourceText),
-            NameExpressionNode name => _scope.GetVariableTypeOrDefault(name.SourceText),
-            ParenthesizedExpressionNode parenthesized => ResolveExpressionType(parenthesized.Expression),
-            CastExpressionNode cast => cast.TargetType,
-            UnaryExpressionNode { Operator: "&" } unary when ResolveExpressionType(unary.Operand) is { } operandType => operandType + "*",
-            UnaryExpressionNode { Operator: "*" } unary when ResolveExpressionType(unary.Operand) is { } operandType => UnwrapPointer(operandType),
-            UnaryExpressionNode unary => ResolveExpressionType(unary.Operand),
-            BinaryExpressionNode binary => ResolveBinaryType(binary),
-            ScalarRangeExpressionNode range => ResolveExpressionType(range.Start) ?? ResolveExpressionType(range.End),
-            ConditionalExpressionNode conditional => ResolveExpressionType(conditional.WhenTrue) ?? ResolveExpressionType(conditional.WhenFalse),
-            CallExpressionNode call => ResolveCallType(call),
-            GenericCallExpressionNode call => ResolveGenericCallType(call),
-            MemberExpressionNode member => ResolveMemberType(member),
-            IndexExpressionNode index => ResolveIndexType(index),
-            _ => null,
-        };
+        private string? ResolveExpressionType(ExpressionNode expression) =>
+            _expressionTypeResolver.Resolve(expression);
 
         public string? ResolveExpressionTypeForLowering(ExpressionNode expression) =>
             ResolveExpressionType(expression);
-
-        private string? ResolveCallType(CallExpressionNode call)
-        {
-            if (call.Callee is NameExpressionNode name)
-            {
-                return _genericCallResolver.FindInferredCall(null, name.SourceText, call.Arguments, skipSelf: false)?.ReturnType;
-            }
-
-            if (call.Callee is MemberExpressionNode member)
-            {
-                return ResolveMemberCallType(member, call.Arguments);
-            }
-
-            return null;
-        }
-
-        private string? ResolveGenericCallType(GenericCallExpressionNode call)
-        {
-            var calleeName = GetQualifiedName(call.Callee);
-            if (calleeName is not null)
-            {
-                var freeCall = _genericCallResolver.FindFreeExact(calleeName, call.TypeArguments);
-                if (freeCall is not null)
-                {
-                    return freeCall.ReturnType;
-                }
-
-                var staticCall = _genericCallResolver.FindStaticExact(calleeName, call.TypeArguments);
-                if (staticCall is not null)
-                {
-                    return staticCall.ReturnType;
-                }
-            }
-
-            if (call.Callee is MemberExpressionNode member)
-            {
-                var targetType = ResolveExpressionType(member.Target);
-                var owner = targetType is null ? GetQualifiedName(member.Target) : GetGenericBaseName(RemovePointer(NormalizeType(targetType)));
-                var match = _genericCallResolver.FindExact(owner, member.MemberName, call.TypeArguments);
-                return match?.ReturnType;
-            }
-
-            return null;
-        }
-
-        private string? ResolveMemberCallType(MemberExpressionNode member, IReadOnlyList<ExpressionNode> arguments)
-        {
-            if (member.Target is not NameExpressionNode targetName
-                || !_scope.TryGetVariableType(targetName.SourceText, out var targetType))
-            {
-                return null;
-            }
-
-            var owner = GetGenericBaseName(targetType);
-            return _genericCallResolver.FindInferredCall(owner, member.MemberName, arguments, skipSelf: true)?.ReturnType;
-        }
-
-        private string? ResolveMemberType(MemberExpressionNode member)
-        {
-            var targetType = ResolveExpressionType(member.Target);
-            if (targetType is null)
-            {
-                return null;
-            }
-
-            var normalizedType = RemovePointer(NormalizeType(targetType));
-            if (_context.TryGetStruct(normalizedType, out var structNode)
-                || _context.TryGetStruct(LowerType(normalizedType, SelfType), out structNode))
-            {
-                return structNode.Fields.FirstOrDefault(field => field.Name == member.MemberName)?.Type;
-            }
-
-            return null;
-        }
-
-        private string? ResolveIndexType(IndexExpressionNode index)
-        {
-            var targetType = ResolveExpressionType(index.Target);
-            if (targetType is null)
-            {
-                return null;
-            }
-
-            if (TryParseFixedArrayType(targetType, out var elementType, out _))
-            {
-                return elementType;
-            }
-
-            return UnwrapPointer(targetType);
-        }
-
-        private string? ResolveBinaryType(BinaryExpressionNode binary)
-        {
-            if (binary.Operator is "==" or "!=" or "<" or "<=" or ">" or ">=" or "&&" or "||")
-            {
-                return "bool";
-            }
-
-            if (binary.Operator == "<=>")
-            {
-                return "int";
-            }
-
-            return ResolveExpressionType(binary.Left) ?? ResolveExpressionType(binary.Right);
-        }
-
-        private static string? ResolveLiteralType(string text)
-        {
-            text = text.Trim();
-            if (text is "true" or "false")
-            {
-                return "bool";
-            }
-
-            if (text.StartsWith("\"", StringComparison.Ordinal))
-            {
-                return "char*";
-            }
-
-            if (text.StartsWith("'", StringComparison.Ordinal))
-            {
-                return "char";
-            }
-
-            if (Regex.IsMatch(text, @"^-?\d+$"))
-            {
-                return "int";
-            }
-
-            if (Regex.IsMatch(text, @"^-?(\d+\.\d*|\d*\.\d+)([eE][+-]?\d+)?$"))
-            {
-                return "double";
-            }
-
-            return null;
-        }
 
         private static bool CanAssign(string targetType, string sourceType) =>
             string.Equals(targetType.Trim(), sourceType.Trim(), StringComparison.Ordinal)
@@ -913,14 +703,6 @@ public sealed partial class CEmitter
                 "float" or
                 "double" or
                 "long double";
-        }
-
-        private static string? UnwrapPointer(string type)
-        {
-            type = type.Trim();
-            return type.EndsWith("*", StringComparison.Ordinal)
-                ? type[..^1].TrimEnd()
-                : null;
         }
 
         private static string RemovePointer(string type)
@@ -995,381 +777,22 @@ public sealed partial class CEmitter
             || (!allowAssignment && Regex.IsMatch(expression, @"[\+\-\*/%]\s*="))
             || (!allowAssignment && Regex.IsMatch(expression, @"(?<![=!<>])=(?![=>])"));
 
-        private string LowerMember(MemberExpressionNode member)
-        {
-            if (TryLowerFunctionReferenceMember(member) is { } functionReference)
-            {
-                return functionReference;
-            }
+        private string LowerMember(MemberExpressionNode member) =>
+            _memberAccessLowerer.LowerText(member);
 
-            var qualifiedMember = $"{GetQualifiedName(member.Target)}.{member.MemberName}";
-            if (_context.TryGetEnumMemberAlias(qualifiedMember, out var enumMemberName))
-            {
-                return enumMemberName;
-            }
+        private CExpression LowerMemberExpression(MemberExpressionNode member) =>
+            _memberAccessLowerer.LowerExpression(member);
 
-            var staticMethodKey = $"{GetQualifiedName(member.Target)}.{member.MemberName}";
-            if (_context.TryGetMethod(staticMethodKey, out var staticMethod))
-            {
-                return staticMethod.CName;
-            }
-
-            if (GetQualifiedName(member.Target) is { } moduleTarget && IsModuleQualifierTarget(moduleTarget))
-            {
-                return member.MemberName;
-            }
-
-            if (member.Target is NameExpressionNode targetName
-                && _scope.TryGetVariableType(targetName.SourceText, out var targetType))
-            {
-                var targetIsImplicitReference = _scope.IsImplicitReferenceLocal(targetName.SourceText);
-                var normalizedType = NormalizeType(targetType);
-                if (_context.TryGetTaggedUnion(normalizedType, out var taggedUnion)
-                    && taggedUnion.Variants.Any(variant => variant.Name == member.MemberName))
-                {
-                    if (taggedUnion.IsRaw)
-                    {
-                        var rawAccess = targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal)
-                            ? "->"
-                            : ".";
-                        return targetName.SourceText + rawAccess + member.MemberName;
-                    }
-
-                    var access = targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal)
-                        ? "->as."
-                        : ".as.";
-                    return targetName.SourceText + access + member.MemberName;
-                }
-
-                if (targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal))
-                {
-                    return targetName.SourceText + "->" + member.MemberName;
-                }
-            }
-
-            return $"{Lower(member.Target)}.{member.MemberName}";
-        }
-
-        private CExpression LowerMemberExpression(MemberExpressionNode member)
-        {
-            if (TryLowerFunctionReferenceMember(member) is { } functionReference)
-            {
-                return new CNameExpression(functionReference);
-            }
-
-            var qualifiedMember = $"{GetQualifiedName(member.Target)}.{member.MemberName}";
-            if (_context.TryGetEnumMemberAlias(qualifiedMember, out var enumMemberName))
-            {
-                return new CNameExpression(enumMemberName);
-            }
-
-            var staticMethodKey = $"{GetQualifiedName(member.Target)}.{member.MemberName}";
-            if (_context.TryGetMethod(staticMethodKey, out var staticMethod))
-            {
-                return new CNameExpression(staticMethod.CName);
-            }
-
-            if (GetQualifiedName(member.Target) is { } moduleTarget && IsModuleQualifierTarget(moduleTarget))
-            {
-                return new CNameExpression(member.MemberName);
-            }
-
-            if (member.Target is NameExpressionNode targetName
-                && _scope.TryGetVariableType(targetName.SourceText, out var targetType))
-            {
-                var targetIsImplicitReference = _scope.IsImplicitReferenceLocal(targetName.SourceText);
-                var normalizedType = NormalizeType(targetType);
-                if (_context.TryGetTaggedUnion(normalizedType, out var taggedUnion)
-                    && taggedUnion.Variants.Any(variant => variant.Name == member.MemberName))
-                {
-                    var access = taggedUnion.IsRaw
-                        ? targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal) ? "->" : "."
-                        : targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal) ? "->as." : ".as.";
-                    return new CMemberExpression(new CNameExpression(targetName.SourceText), access, member.MemberName);
-                }
-
-                if (targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal))
-                {
-                    return new CMemberExpression(new CNameExpression(targetName.SourceText), "->", member.MemberName);
-                }
-            }
-
-            return new CMemberExpression(LowerExpression(member.Target), ".", member.MemberName);
-        }
-
-        private string? TryLowerFunctionReferenceMember(MemberExpressionNode member) =>
-            member.Semantic is { Symbol: { Kind: SymbolKind.Function } symbol, ResolvedCall.IsInstance: false }
-                ? s_nameMangler.SymbolName(symbol)
-                : null;
-
-        private CExpression? LowerCallExpression(CallExpressionNode call)
-        {
-            if (_resolvedCallLowerer.TryLowerStatic(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
-            {
-                return resolvedCall;
-            }
-
-            if (call.Callee is MemberExpressionNode member)
-            {
-                if (TryLowerTaggedUnionConstructorExpression(member, call.Arguments) is { } taggedUnionConstructor)
-                {
-                    return taggedUnionConstructor;
-                }
-
-                return LowerMemberCallExpression(member, call.Arguments);
-            }
-
-            if (call.Callee is NameExpressionNode name)
-            {
-                if (_context.TryGetStruct(name.SourceText, out var structNode))
-                {
-                    return LowerStructConstructorExpression(structNode, call.Arguments);
-                }
-
-                if (_context.IsTaggedUnion(name.SourceText))
-                {
-                    return null;
-                }
-
-                var genericCall = _genericCallResolver.FindInferredCall(null, name.SourceText, call.Arguments, skipSelf: false);
-                if (genericCall is not null)
-                {
-                    return new CCallExpression(
-                        new CResolvedFunction(ModuleName: GetFunctionModule(genericCall.OwnerType, genericCall.Name), genericCall.CName),
-                        call.Arguments.Select(LowerExpression).ToList());
-                }
-
-                return new CCallExpression(
-                    new CFunctionName(LowerFunctionReferenceName(name)),
-                    call.Arguments.Select(LowerExpression).ToList());
-            }
-
-            return null;
-        }
-
-        private CExpression? TryLowerTaggedUnionConstructorExpression(
-            MemberExpressionNode member,
-            IReadOnlyList<ExpressionNode> arguments)
-        {
-            if (GetQualifiedName(member.Target) is not { } targetName)
-            {
-                return null;
-            }
-
-            return _taggedUnionValueBuilder.TryBuildConstructorExpression(
-                targetName,
-                member.MemberName,
-                arguments,
-                LowerPayloadConstructorExpression);
-        }
-
-        private CExpression LowerPayloadConstructorExpression(
-            string payloadType,
-            IReadOnlyList<ExpressionNode> arguments) =>
-            _structValueBuilder.BuildPayloadExpression(payloadType, arguments, LowerPayloadConstructor);
-
-        private CExpression LowerStructConstructorExpression(
-            StructNode structNode,
-            IReadOnlyList<ExpressionNode> arguments) =>
-            _structValueBuilder.BuildStructConstructorExpression(structNode, arguments, LowerStructConstructor);
-
-        private string? LowerMemberCall(
-            MemberExpressionNode member,
-            IReadOnlyList<ExpressionNode> arguments)
-        {
-            var expression = LowerMemberCallExpression(member, arguments);
-            return expression is null ? null : _expressionEmitter.Emit(expression);
-        }
-
-        private CExpression? LowerMemberCallExpression(
-            MemberExpressionNode member,
-            IReadOnlyList<ExpressionNode> arguments)
-        {
-            if (_interfaceMemberCallLowerer.TryLower(member, arguments) is { } interfaceCall)
-            {
-                return interfaceCall;
-            }
-
-            if (TryLowerKnownMemberCallExpression(member, arguments) is { } knownMemberCall)
-            {
-                return knownMemberCall;
-            }
-
-            if (member.Target is not NameExpressionNode targetName)
-            {
-                return null;
-            }
-
-            var target = targetName.SourceText;
-            if (!_scope.TryGetVariableType(target, out var targetType))
-            {
-                var staticGenericCall = _genericCallResolver.FindInferredCall(target, member.MemberName, arguments, skipSelf: false);
-                if (staticGenericCall is not null)
-                {
-                    return new CCallExpression(
-                        new CResolvedFunction(ModuleName: GetFunctionModule(staticGenericCall.OwnerType, staticGenericCall.Name), staticGenericCall.CName),
-                        arguments.Select(LowerExpression).ToList());
-                }
-
-                var staticMethodKey = $"{target}.{member.MemberName}";
-                if (_context.TryGetMethod(staticMethodKey, out var staticMethod))
-                {
-                    return new CCallExpression(
-                        new CResolvedFunction(target, staticMethod.CName),
-                        arguments.Select(LowerExpression).ToList());
-                }
-
-                return IsModuleQualifierTarget(target)
-                    ? new CCallExpression(
-                        new CFunctionName(member.MemberName),
-                        arguments.Select(LowerExpression).ToList())
-                    : null;
-            }
-
-            if (_resolvedCallLowerer.TryLowerInstance(member.Semantic.ResolvedCall, member, arguments) is { } resolvedInstanceCall)
-            {
-                return resolvedInstanceCall;
-            }
-
-            var normalizedType = NormalizeType(targetType);
-            var isPointer = targetType.EndsWith("*", StringComparison.Ordinal);
-            var receiverArguments = TryParseGenericUse(RemovePointer(normalizedType), out _, out var parsedReceiverArguments)
-                ? parsedReceiverArguments
-                : [];
-            var genericMemberCall = _genericCallResolver.FindInferredMemberCall(
-                GetGenericBaseName(RemovePointer(normalizedType)),
-                RemovePointer(normalizedType),
-                member.MemberName,
-                arguments,
-                skipSelf: true,
-                preferredTypeArguments: receiverArguments);
-            if (genericMemberCall is not null)
-            {
-                var loweredArguments = arguments.Select(LowerExpression).ToList();
-                loweredArguments.Insert(0, _receiverExpressionBuilder.Build(target, isPointer, genericMemberCall.TakesPointerSelf));
-                return new CCallExpression(
-                    new CResolvedFunction(ModuleName: GetFunctionModule(genericMemberCall.OwnerType, genericMemberCall.Name), genericMemberCall.CName),
-                    loweredArguments);
-            }
-
-            foreach (var methodInfo in _context.GetInstanceMethodsForReceiver(normalizedType))
-            {
-                if (methodInfo.Name != member.MemberName)
-                {
-                    continue;
-                }
-
-                var loweredArguments = arguments.Select(LowerExpression).ToList();
-                loweredArguments.Insert(0, _receiverExpressionBuilder.Build(target, isPointer, methodInfo.TakesPointerSelf));
-                return new CCallExpression(
-                    new CResolvedFunction(NormalizeType(targetType), methodInfo.CName),
-                    loweredArguments);
-            }
-
-            return null;
-        }
-
-        private CExpression? TryLowerKnownMemberCallExpression(
-            MemberExpressionNode member,
-            IReadOnlyList<ExpressionNode> arguments)
-        {
-            if (member.Target is NameExpressionNode)
-            {
-                return null;
-            }
-
-            var targetType = ResolveExpressionType(member.Target);
-            if (targetType is null)
-            {
-                return null;
-            }
-
-            var normalizedType = NormalizeType(targetType);
-            var isPointer = targetType.EndsWith("*", StringComparison.Ordinal);
-            var receiverType = RemovePointer(normalizedType);
-            var receiverArguments = TryParseGenericUse(receiverType, out _, out var parsedReceiverArguments)
-                ? parsedReceiverArguments
-                : [];
-            var ownerType = GetGenericBaseName(receiverType) ?? receiverType;
-
-            var genericMemberCall = _genericCallResolver.FindInferredCall(
-                ownerType,
-                member.MemberName,
-                arguments,
-                skipSelf: true,
-                preferredTypeArguments: receiverArguments);
-            if (genericMemberCall is not null)
-            {
-                var targetExpression = LowerExpression(member.Target);
-                var loweredArguments = arguments.Select(LowerExpression).ToList();
-                loweredArguments.Insert(0, ReceiverExpressionBuilder.Build(targetExpression, isPointer, genericMemberCall.TakesPointerSelf));
-                return new CCallExpression(
-                    new CResolvedFunction(ModuleName: GetFunctionModule(genericMemberCall.OwnerType, genericMemberCall.Name), genericMemberCall.CName),
-                    loweredArguments);
-            }
-
-            foreach (var methodInfo in _context.GetInstanceMethodsForReceiver(receiverType))
-            {
-                if (methodInfo.Name != member.MemberName)
-                {
-                    continue;
-                }
-
-                var targetExpression = LowerExpression(member.Target);
-                var loweredArguments = arguments.Select(LowerExpression).ToList();
-                loweredArguments.Insert(0, ReceiverExpressionBuilder.Build(targetExpression, isPointer, methodInfo.TakesPointerSelf));
-                return new CCallExpression(
-                    new CResolvedFunction(receiverType, methodInfo.CName),
-                    loweredArguments);
-            }
-
-            return null;
-        }
+        private CExpression? LowerCallExpression(CallExpressionNode call) =>
+            _callLowerer.TryLowerExpression(call);
 
         private CExpression? LowerAdapterExposeCall(
             AdapterExposeInfo adapterExpose,
             IReadOnlyList<string> receiverArguments,
             IReadOnlyList<ExpressionNode> arguments,
             string target,
-            bool isPointer)
-        {
-            var resolvedExpose = _adapterExposeResolver.Resolve(adapterExpose, receiverArguments);
-            var genericBaseCall = _genericCallResolver.FindInferredCall(
-                resolvedExpose.BaseOwner,
-                resolvedExpose.SourceName,
-                arguments,
-                skipSelf: true,
-                preferredTypeArguments: resolvedExpose.TypeArguments)
-                ?? _genericCallResolver.FindExact(
-                    resolvedExpose.BaseOwner,
-                    resolvedExpose.SourceName,
-                    resolvedExpose.TypeArguments);
-            if (genericBaseCall is not null)
-            {
-                var loweredArguments = arguments.Select(LowerExpression).ToList();
-                loweredArguments.Insert(0, _receiverExpressionBuilder.Build(target, isPointer, takesPointerSelf: true));
-                return new CCallExpression(
-                    new CResolvedFunction(ModuleName: GetFunctionModule(genericBaseCall.OwnerType, genericBaseCall.Name), genericBaseCall.CName),
-                    loweredArguments);
-            }
-
-            var baseMethodKey = $"{resolvedExpose.BaseOwner}.{resolvedExpose.SourceName}";
-            if (_context.TryGetMethod(baseMethodKey, out var baseMethod))
-            {
-                var loweredArguments = arguments.Select(LowerExpression).ToList();
-                loweredArguments.Insert(0, _receiverExpressionBuilder.Build(target, isPointer, takesPointerSelf: true));
-                return new CCallExpression(
-                    new CResolvedFunction(GetFunctionModule(resolvedExpose.BaseOwner, resolvedExpose.SourceName) ?? resolvedExpose.BaseOwner, baseMethod.CName),
-                    loweredArguments);
-            }
-
-            return null;
-        }
-
-        private string EmitCallExpression(CFunctionReference function, IReadOnlyList<ExpressionNode> arguments) =>
-            _expressionEmitter.Emit(new CCallExpression(
-                function,
-                arguments.Select(argument => new CRawExpression(Lower(argument))).ToList()));
+            bool isPointer) =>
+            _memberCallLowerer.TryLowerAdapterExposeCall(adapterExpose, receiverArguments, arguments, target, isPointer);
 
         private static string GetFunctionModule(string? ownerType, string name) =>
             ownerType is null ? name : ownerType;
@@ -1387,12 +810,12 @@ public sealed partial class CEmitter
             expression = Regex.Replace(expression, @"\btrue\b", "1");
             expression = Regex.Replace(expression, @"\bfalse\b", "0");
             expression = Regex.Replace(expression, @"\bnull\b", "NULL");
-            expression = LowerExplicitGenericStaticCalls(expression);
+            expression = _textConstructorLowerer.LowerExplicitGenericStaticCalls(expression);
 
-            expression = LowerTaggedUnionConstructors(expression);
+            expression = _textConstructorLowerer.LowerTaggedUnionConstructors(expression);
             expression = LowerNamedStructInitializers(expression);
             expression = LowerNamedInterfaceInitializers(expression);
-            expression = LowerStructConstructors(expression);
+            expression = _textConstructorLowerer.LowerStructConstructors(expression);
 
             foreach (var (variable, type) in _scope.GetVariables())
             {
@@ -1445,16 +868,16 @@ public sealed partial class CEmitter
                     ? parsedReceiverApiArguments
                     : [];
                 var receiverApiName = GetGenericBaseName(receiverApiType) ?? receiverApiType;
-                expression = LowerAdapterExposeCalls(expression, variable, argument, receiverApiName, receiverApiArguments);
+                expression = _textAdapterExposeLowerer.LowerCalls(expression, variable, argument, receiverApiName, receiverApiArguments);
 
                 var adapterName = GetGenericBaseName(receiverType) ?? receiverType;
-                expression = LowerAdapterExposeCalls(expression, variable, argument, adapterName, receiverArguments);
+                expression = _textAdapterExposeLowerer.LowerCalls(expression, variable, argument, adapterName, receiverArguments);
                 foreach (var expose in _context.GetInstanceAdapterExposes())
                 {
                     var baseType = _adapterExposeResolver.SubstituteBaseType(expose, receiverArguments);
                     if (LowerType(baseType) == LowerType(receiverType))
                     {
-                        expression = LowerAdapterExposeCall(expression, variable, argument, expose, receiverArguments);
+                        expression = _textAdapterExposeLowerer.LowerCall(expression, variable, argument, expose, receiverArguments);
                     }
                 }
 
@@ -1555,296 +978,11 @@ public sealed partial class CEmitter
             return false;
         }
 
-        private string LowerExplicitGenericStaticCalls(string expression)
-        {
-            foreach (var call in _genericCallResolver.GetStaticOrFreeCalls())
-            {
-                var sourceName = call.OwnerType is null ? call.Name : $"{call.OwnerType}.{call.Name}";
-                var source = Regex.Escape(sourceName).Replace("\\.", @"\s*\.\s*")
-                    + @"\s*<\s*"
-                    + string.Join(@"\s*,\s*", call.TypeArguments.Select(Regex.Escape))
-                    + @"\s*>\s*\(";
-                expression = Regex.Replace(expression, source, call.CName + "(");
-            }
-
-            return expression;
-        }
-
-        private string LowerTaggedUnionConstructors(string expression)
-        {
-            foreach (var taggedUnion in _context.GetTaggedUnions())
-            {
-                if (taggedUnion.IsRaw)
-                {
-                    continue;
-                }
-
-                foreach (var variant in taggedUnion.Variants)
-                {
-                    expression = ReplaceCallExpressions(
-                        expression,
-                        $"{taggedUnion.Name}.{variant.Name}",
-                        arguments => LowerTaggedUnionConstructor(taggedUnion, variant, arguments));
-                }
-            }
-
-            return expression;
-        }
-
-        private string LowerTaggedUnionConstructor(
-            TaggedUnionNode taggedUnion,
-            TaggedUnionVariantNode variant,
-            IReadOnlyList<string> arguments) =>
-            _taggedUnionValueBuilder.BuildConstructorText(
-                taggedUnion,
-                variant,
-                arguments,
-                LowerPayloadConstructor);
-
-        private string LowerStructConstructors(string expression)
-        {
-            foreach (var structNode in _context.GetStructs())
-            {
-                expression = ReplaceCallExpressions(
-                    expression,
-                    structNode.Name,
-                    arguments => LowerStructConstructor(structNode, arguments));
-            }
-
-            return expression;
-        }
-
-        private string LowerAdapterExposeCalls(
-            string expression,
-            string variable,
-            string receiver,
-            string adapterName,
-            IReadOnlyList<string> receiverArguments)
-        {
-            foreach (var expose in _context.GetInstanceAdapterExposes(adapterName))
-            {
-                expression = LowerAdapterExposeCall(expression, variable, receiver, expose, receiverArguments);
-            }
-
-            return expression;
-        }
-
-        private string LowerAdapterExposeCall(
-            string expression,
-            string variable,
-            string receiver,
-            AdapterExposeInfo expose,
-            IReadOnlyList<string> receiverArguments)
-        {
-            var resolvedExpose = _adapterExposeResolver.Resolve(expose, receiverArguments);
-            var genericBaseCall = _genericCallResolver.FindExact(
-                resolvedExpose.BaseOwner,
-                resolvedExpose.SourceName,
-                resolvedExpose.TypeArguments);
-
-            var cName = genericBaseCall?.CName;
-            if (cName is null)
-            {
-                if (!_context.TryGetMethod($"{resolvedExpose.BaseOwner}.{resolvedExpose.SourceName}", out var baseMethod))
-                {
-                    return expression;
-                }
-
-                cName = baseMethod.CName;
-            }
-
-            expression = Regex.Replace(
-                expression,
-                $@"\b{Regex.Escape(variable)}\.{Regex.Escape(expose.ExposedName)}\(\s*\)",
-                $"{cName}({receiver})");
-            return Regex.Replace(
-                expression,
-                $@"\b{Regex.Escape(variable)}\.{Regex.Escape(expose.ExposedName)}\(",
-                $"{cName}({receiver}, ");
-        }
-
         private string LowerNamedStructInitializers(string expression) =>
             _namedInitializerTextLowerer.LowerStructInitializers(expression);
 
         private string LowerNamedInterfaceInitializers(string expression) =>
             _namedInitializerTextLowerer.LowerInterfaceInitializers(expression);
-
-        private string LowerPayloadConstructor(string payloadType, IReadOnlyList<string> arguments)
-            => _structValueBuilder.BuildPayloadText(payloadType, arguments, LowerStructConstructor);
-
-        private string LowerStructConstructor(StructNode structNode, IReadOnlyList<string> arguments)
-            => _structValueBuilder.BuildStructConstructorText(structNode, arguments);
-
-        private static string ReplaceBracedExpressions(
-            string expression,
-            string callee,
-            Func<string, string> replacementFactory)
-        {
-            var searchStart = 0;
-            while (searchStart < expression.Length)
-            {
-                var index = expression.IndexOf(callee, searchStart, StringComparison.Ordinal);
-                if (index < 0)
-                {
-                    break;
-                }
-
-                if (index > 0 && IsIdentifierPart(expression[index - 1]))
-                {
-                    searchStart = index + callee.Length;
-                    continue;
-                }
-
-                var scan = index + callee.Length;
-                while (scan < expression.Length && char.IsWhiteSpace(expression[scan]))
-                {
-                    scan++;
-                }
-
-                if (scan >= expression.Length || expression[scan] != '{')
-                {
-                    searchStart = index + callee.Length;
-                    continue;
-                }
-
-                var closeBrace = FindMatchingBrace(expression, scan);
-                if (closeBrace < 0)
-                {
-                    break;
-                }
-
-                var initializerText = expression[(scan + 1)..closeBrace];
-                var replacement = replacementFactory(initializerText);
-                expression = expression[..index] + replacement + expression[(closeBrace + 1)..];
-                searchStart = index + replacement.Length;
-            }
-
-            return expression;
-        }
-
-        private static string ReplaceCallExpressions(
-            string expression,
-            string callee,
-            Func<IReadOnlyList<string>, string> replacementFactory)
-        {
-            var searchStart = 0;
-            while (searchStart < expression.Length)
-            {
-                var index = expression.IndexOf(callee + "(", searchStart, StringComparison.Ordinal);
-                if (index < 0)
-                {
-                    break;
-                }
-
-                if (index > 0 && IsIdentifierPart(expression[index - 1]))
-                {
-                    searchStart = index + callee.Length;
-                    continue;
-                }
-
-                var openParen = index + callee.Length;
-                var closeParen = FindMatchingParen(expression, openParen);
-                if (closeParen < 0)
-                {
-                    break;
-                }
-
-                var argumentsText = expression[(openParen + 1)..closeParen];
-                var arguments = SplitArguments(argumentsText);
-                var replacement = replacementFactory(arguments);
-                expression = expression[..index] + replacement + expression[(closeParen + 1)..];
-                searchStart = index + replacement.Length;
-            }
-
-            return expression;
-        }
-
-        private static int FindMatchingBrace(string text, int openBrace)
-        {
-            var depth = 0;
-            for (var i = openBrace; i < text.Length; i++)
-            {
-                if (text[i] == '{')
-                {
-                    depth++;
-                    continue;
-                }
-
-                if (text[i] != '}')
-                {
-                    continue;
-                }
-
-                depth--;
-                if (depth == 0)
-                {
-                    return i;
-                }
-            }
-
-            return -1;
-        }
-
-        private static int FindMatchingParen(string text, int openParen)
-        {
-            var depth = 0;
-            for (var i = openParen; i < text.Length; i++)
-            {
-                if (text[i] == '(')
-                {
-                    depth++;
-                    continue;
-                }
-
-                if (text[i] != ')')
-                {
-                    continue;
-                }
-
-                depth--;
-                if (depth == 0)
-                {
-                    return i;
-                }
-            }
-
-            return -1;
-        }
-
-        private static IReadOnlyList<string> SplitArguments(string argumentsText)
-        {
-            if (string.IsNullOrWhiteSpace(argumentsText))
-            {
-                return [];
-            }
-
-            var arguments = new List<string>();
-            var start = 0;
-            var depth = 0;
-
-            for (var i = 0; i < argumentsText.Length; i++)
-            {
-                depth += argumentsText[i] switch
-                {
-                    '(' or '[' or '{' => 1,
-                    ')' or ']' or '}' => -1,
-                    _ => 0
-                };
-
-                if (argumentsText[i] != ',' || depth != 0)
-                {
-                    continue;
-                }
-
-                arguments.Add(argumentsText[start..i].Trim());
-                start = i + 1;
-            }
-
-            arguments.Add(argumentsText[start..].Trim());
-            return arguments;
-        }
-
-        private static bool IsIdentifierPart(char ch) => char.IsLetterOrDigit(ch) || ch == '_';
 
         private string LowerTaggedUnionAssignment(string expression)
         {

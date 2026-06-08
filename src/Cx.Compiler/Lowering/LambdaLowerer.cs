@@ -262,12 +262,12 @@ internal static class LambdaLowerer
                 TypeParameters: [],
                 TypeArguments: [],
                 GenericConstraints: [],
-                ReturnType: returnType,
                 Parameters: functionExpression.Parameters,
                 Body: functionExpression.BlockBody
                     .Select(statement => LowerStatement(statement, returnType, parentName, state))
                     .ToList(),
-                Attributes: []));
+                Attributes: [],
+                ReturnTypeNode: CreateTypeNode(returnType)));
             return functionName;
         }
 
@@ -283,13 +283,13 @@ internal static class LambdaLowerer
             TypeParameters: [],
             TypeArguments: [],
             GenericConstraints: [],
-            ReturnType: returnType,
             Parameters: functionExpression.Parameters,
             Body:
             [
                 new ReturnStatement(functionExpression.Location, expressionBody)
             ],
-            Attributes: []));
+            Attributes: [],
+            ReturnTypeNode: CreateTypeNode(returnType)));
 
         return functionName;
     }
@@ -409,7 +409,6 @@ internal static class LambdaLowerer
             TypeParameters: [],
             TypeArguments: [],
             GenericConstraints: [],
-            ReturnType: returnType,
             Parameters: parameters,
             Body:
             [
@@ -417,7 +416,8 @@ internal static class LambdaLowerer
                     new Location(new SourceFile("<lambda>", ""), 0, 1, 1),
                     new RawExpressionNode(new Location(new SourceFile("<lambda>", ""), 0, 1, 1), body))
             ],
-            Attributes: []));
+            Attributes: [],
+            ReturnTypeNode: CreateTypeNode(returnType)));
 
         parsed = new ParsedLambda(functionName, bodyEnd);
         return true;
@@ -454,11 +454,17 @@ internal static class LambdaLowerer
             parameters.Add(new ParameterNode(
                 new Location(new SourceFile("<lambda>", ""), 0, 1, 1),
                 name,
-                type,
-                []));
+                [],
+                TypeNode: CreateTypeNode(type)));
         }
 
         return parameters;
+    }
+
+    private static TypeNode CreateTypeNode(string type)
+    {
+        var location = new Location(new SourceFile("<lambda>", ""), 0, 1, 1);
+        return new TypeNode(location, type, TypeSyntaxParser.Parse(type));
     }
 
     private static int FindLambdaStart(string expression, int start)

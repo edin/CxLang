@@ -45,10 +45,10 @@ public sealed class CTypeLowererTests
             new Location(new SourceFile("test.cx", string.Empty), 0, 1, 1),
             "Stack",
             ["T"],
-            "Vec<T>",
             [],
             [],
-            []);
+            [],
+            Type("Vec<T>"));
 
         Assert.Equal("Vec<int>", CTypeLowerer.ResolveAdapterStorageType("Stack<int>", [adapter]));
     }
@@ -100,10 +100,10 @@ public sealed class CTypeLowererTests
             new Location(new SourceFile("test.cx", string.Empty), 0, 1, 1),
             "Stack",
             ["T"],
-            "Vec<T>",
             [],
             [],
-            []);
+            [],
+            Type("Vec<T>"));
         var type = new TypeRef.Named("Stack", [new TypeRef.Named("int", [])]);
 
         Assert.Equal("Vec_int", CTypeLowerer.LowerType(type, [adapter]));
@@ -118,4 +118,7 @@ public sealed class CTypeLowererTests
 
         Assert.Equal("Maybe_usize", CTypeLowerer.LowerType(type, []));
     }
+
+    private static TypeNode Type(string type) =>
+        new(new Location(new SourceFile("test.cx", string.Empty), 0, 1, 1), type, TypeSyntaxParser.Parse(type));
 }

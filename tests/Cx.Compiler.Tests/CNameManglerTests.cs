@@ -86,10 +86,10 @@ public sealed class CNameManglerTests
             TypeParameters: [],
             TypeArguments: typeArguments ?? [],
             GenericConstraints: [],
-            ReturnType: "int",
             Parameters: [],
             Body: [],
-            Attributes: []);
+            Attributes: [],
+            ReturnTypeNode: new TypeNode(Location(), "int", TypeSyntaxParser.Parse("int")));
 
     private static Location Location() => new(new SourceFile("test.cx", string.Empty), 0, 1, 1);
 }

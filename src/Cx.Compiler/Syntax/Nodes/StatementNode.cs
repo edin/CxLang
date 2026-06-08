@@ -6,9 +6,11 @@ public sealed record LetStatement(
     Location Location,
     bool IsConst,
     string Name,
-    string Type,
     ExpressionNode? Initializer,
-    TypeNode? TypeNode = null) : StatementNode(Location);
+    TypeNode? TypeNode = null) : StatementNode(Location)
+{
+    public string Type => TypeNode?.TypeName ?? string.Empty;
+}
 
 public sealed record ReturnStatement(
     Location Location,
@@ -48,9 +50,11 @@ public sealed record ForDeclarationInitializerNode(
     Location Location,
     bool IsConst,
     string Name,
-    string Type,
     ExpressionNode? Initializer,
-    TypeNode? TypeNode = null) : ForInitializerNode(Location);
+    TypeNode? TypeNode = null) : ForInitializerNode(Location)
+{
+    public string Type => TypeNode?.TypeName ?? string.Empty;
+}
 
 public sealed record ForExpressionInitializerNode(
     Location Location,
@@ -59,10 +63,12 @@ public sealed record ForExpressionInitializerNode(
 public sealed record ForeachBinding(
     Location Location,
     string Name,
-    string Type,
     bool IsReference,
     bool IsConst,
-    TypeNode? TypeNode = null) : SyntaxNode(Location);
+    TypeNode? TypeNode = null) : SyntaxNode(Location)
+{
+    public string Type => TypeNode?.TypeName ?? string.Empty;
+}
 
 public sealed record ForeachStatement(
     Location Location,

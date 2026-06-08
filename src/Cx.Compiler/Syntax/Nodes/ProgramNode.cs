@@ -247,12 +247,14 @@ public sealed record GlobalVariableNode(
     Location Location,
     bool IsConst,
     string Name,
-    string Type,
     ExpressionNode? Initializer,
     IReadOnlyList<AttributeApplicationNode> Attributes,
     bool IsHeaderDeclaration = false,
     bool IsMacro = false,
-    TypeNode? TypeNode = null) : TopLevelNode(Location);
+    TypeNode? TypeNode = null) : TopLevelNode(Location)
+{
+    public string Type => TypeNode?.TypeName ?? string.Empty;
+}
 
 public sealed record ExtensionNode(
     Location Location,
@@ -266,18 +268,23 @@ public sealed record TypeAdapterNode(
     Location Location,
     string Name,
     IReadOnlyList<string> TypeParameters,
-    string BaseType,
     IReadOnlyList<ExposeMethodNode> ExposedMethods,
     IReadOnlyList<FunctionNode> Methods,
-    IReadOnlyList<AttributeApplicationNode> Attributes) : TopLevelNode(Location);
+    IReadOnlyList<AttributeApplicationNode> Attributes,
+    TypeNode? BaseTypeNode = null) : TopLevelNode(Location)
+{
+    public string BaseType => BaseTypeNode?.TypeName ?? string.Empty;
+}
 
 public sealed record ExposeMethodNode(
     Location Location,
     bool IsStatic,
     string SourceName,
     string ExposedName,
-    string? ReturnType,
-    TypeNode? ReturnTypeNode = null) : SyntaxNode(Location);
+    TypeNode? ReturnTypeNode = null) : SyntaxNode(Location)
+{
+    public string? ReturnType => ReturnTypeNode?.TypeName;
+}
 
 public sealed record TestNode(
     Location Location,

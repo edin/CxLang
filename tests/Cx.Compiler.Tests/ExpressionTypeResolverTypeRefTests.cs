@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
@@ -60,6 +61,26 @@ public sealed class ExpressionTypeResolverTypeRefTests
         var alias = Assert.IsType<TypeRef.Alias>(resolved);
         Assert.Equal("usize", alias.Name);
         Assert.Same(cast.TargetTypeNode?.Semantic.Type, resolved);
+    }
+
+    [Fact]
+    public void ResolveTypeRef_PrefersTypeSyntaxWhenSemanticTypeIsMissing()
+    {
+        var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
+        var typeNode = new TypeNode(location, "StaleTypeText", new PointerTypeSyntaxNode(new NamedTypeSyntaxNode("int")));
+        var cast = new CastExpressionNode(
+            location,
+            "(StaleTypeText)value",
+            new NameExpressionNode(location, "value"),
+            typeNode);
+        var resolver = new ExpressionTypeResolver(CompilerTestHelpers.Parse("fn main() -> int { return 0; }"));
+
+        var resolved = resolver.ResolveTypeRef(cast, new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["value"] = "int",
+        });
+
+        Assert.Equal("int*", TypeRefFormatter.ToCxString(resolved!));
     }
 
     [Fact]

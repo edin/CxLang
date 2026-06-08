@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
@@ -64,7 +65,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
             inferred.Add(global with
             {
-                Type = type,
+                TypeNode = CreateInferredTypeNode(global.Location, type),
                 Initializer = initializer,
             });
         }
@@ -158,7 +159,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
         return let with
         {
-            Type = type,
+            TypeNode = CreateInferredTypeNode(let.Location, type),
             Initializer = initializer,
         };
     }
@@ -207,10 +208,15 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
         return declaration with
         {
-            Type = type,
+            TypeNode = CreateInferredTypeNode(declaration.Location, type),
             Initializer = initializer,
         };
     }
+
+    private static TypeNode? CreateInferredTypeNode(Location location, string type) =>
+        string.IsNullOrWhiteSpace(type)
+            ? null
+            : new TypeNode(location, type, TypeSyntaxParser.Parse(type));
 
     private ForeachStatement InferForeachStatement(ForeachStatement foreachStatement, Dictionary<string, string> variables)
     {
@@ -270,7 +276,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private static ForeachBinding FillBindingType(ForeachBinding binding, string inferredType) =>
         string.IsNullOrWhiteSpace(binding.Type)
-            ? binding with { Type = inferredType }
+            ? binding with { TypeNode = CreateInferredTypeNode(binding.Location, inferredType) }
             : binding;
 
     private static void AddForeachBindings(
