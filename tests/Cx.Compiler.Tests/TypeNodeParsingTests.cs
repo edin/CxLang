@@ -404,7 +404,7 @@ public sealed class TypeNodeParsingTests
 
         Assert.Equal("Box<int>*", cast.TargetTypeNode?.TypeName);
         Assert.Equal("Box<int>", sizeOf.TypeOperandNode?.TypeName);
-        Assert.Equal(initializer.TypeName, initializer.TypeNameNode?.TypeName);
+        Assert.Equal("Box<int>", initializer.TypeNameNode?.TypeName);
         Assert.Equal(genericCall.TypeArguments, genericCall.TypeArgumentNodes.Select(node => node.TypeName).ToList());
         Assert.Equal(functionExpression.ReturnType, functionExpression.ReturnTypeNode?.TypeName);
         Assert.Equal("Box<int>", Assert.Single(functionExpression.Parameters).TypeNode?.TypeName);

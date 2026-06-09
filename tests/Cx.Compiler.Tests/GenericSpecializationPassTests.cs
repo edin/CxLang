@@ -104,7 +104,7 @@ public sealed class GenericSpecializationPassTests
         Assert.Equal("value", field.Name);
         Assert.Equal("int", field.Type);
         Assert.Equal("Box_int", let.TypeNode?.TypeName);
-        Assert.Equal("Box_int", initializer.TypeName);
+        Assert.Equal("Box_int", initializer.TypeNameNode?.TypeName);
         Assert.DoesNotContain(lowered.Structs, structNode => structNode.Name == "Unused_int");
     }
 }

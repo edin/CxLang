@@ -1181,8 +1181,8 @@ public sealed partial class CEmitter
                 case CastExpressionNode cast:
                     yield return CastExpressionTargetTypeText(cast);
                     break;
-                case InitializerExpressionNode { TypeName: not null } initializer:
-                    yield return initializer.TypeName;
+                case InitializerExpressionNode { TypeNameNode: not null } initializer:
+                    yield return InitializerExpressionTypeNameText(initializer);
                     break;
                 case SizeOfExpressionNode { TypeOperandNode: not null } sizeOf:
                     yield return SizeOfExpressionTypeOperandText(sizeOf);
@@ -2174,6 +2174,11 @@ public sealed partial class CEmitter
         sizeOf.TypeOperandNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
             : sizeOf.TypeOperandNode.ToTypeName();
+
+    private static string InitializerExpressionTypeNameText(InitializerExpressionNode initializer) =>
+        initializer.TypeNameNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : initializer.TypeNameNode.ToTypeName();
 
     private static string InterfaceMethodReturnTypeText(InterfaceMethodNode method) =>
         method.ReturnTypeNode?.Semantic.Type is { } type

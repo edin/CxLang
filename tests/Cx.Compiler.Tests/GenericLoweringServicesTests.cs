@@ -312,8 +312,7 @@ public sealed class GenericLoweringServicesTests
 
         Assert.Equal("Box_int*", cast.TargetTypeNode?.TypeName);
         Assert.Equal("Box_int", sizeOf.TypeOperandNode?.TypeName);
-        Assert.Equal("Box_int", initializer.TypeName);
-        Assert.Equal(initializer.TypeName, initializer.TypeNameNode?.TypeName);
+        Assert.Equal("Box_int", initializer.TypeNameNode?.TypeName);
         Assert.Equal(["Box_int"], genericCall.TypeArguments);
         Assert.Equal(genericCall.TypeArguments, genericCall.TypeArgumentNodes.Select(node => node.TypeName).ToList());
         Assert.Equal("Box_int", functionExpression.ReturnType);
