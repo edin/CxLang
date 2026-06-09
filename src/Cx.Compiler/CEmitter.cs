@@ -121,7 +121,7 @@ public sealed partial class CEmitter
             .Select(taggedUnion => taggedUnion.Name)
             .ToHashSet(StringComparer.Ordinal);
         var lateStructNames = structsToEmit
-            .Where(structNode => structNode.Fields.Any(field => ReferencesCompositeType(field.Type, taggedUnionNames)))
+            .Where(structNode => structNode.Fields.Any(field => ReferencesCompositeType(StructFieldTypeText(field), taggedUnionNames)))
             .Select(structNode => structNode.Name)
             .ToHashSet(StringComparer.Ordinal);
         var changed = true;
@@ -131,7 +131,7 @@ public sealed partial class CEmitter
             foreach (var structNode in structsToEmit)
             {
                 if (lateStructNames.Contains(structNode.Name)
-                    || !structNode.Fields.Any(field => ReferencesCompositeType(field.Type, lateStructNames)))
+                    || !structNode.Fields.Any(field => ReferencesCompositeType(StructFieldTypeText(field), lateStructNames)))
                 {
                     continue;
                 }
@@ -325,8 +325,8 @@ public sealed partial class CEmitter
             taggedUnion.Variants
                 .Select(variant => new CTaggedUnionVariantDeclaration(
                     variant.Name,
-                    LowerType(variant.Type),
-                    LowerDeclaration(variant.Type, variant.Name)))
+                    LowerType(variant.TypeNode, TaggedUnionVariantTypeText(variant)),
+                    LowerDeclaration(variant.TypeNode, TaggedUnionVariantTypeText(variant), variant.Name)))
                 .ToList());
 
     private static IReadOnlyList<InterfaceImplementation> GetInterfaceImplementations(
@@ -903,7 +903,7 @@ public sealed partial class CEmitter
         var declaration = (global.IsConst ? "const " : "") + LowerDeclaration(global.TypeNode, global.Type, global.Name);
         var initializer = global.Initializer is null
             ? null
-            : nameLowerer.LowerInitializerExpression(global.TypeNode?.Semantic.Type, global.Type, global.Initializer);
+            : nameLowerer.LowerInitializerExpression(global.TypeNode, global.Type, global.Initializer);
         return new CGlobalDeclaration(declaration, initializer);
     }
 
@@ -1040,7 +1040,7 @@ public sealed partial class CEmitter
         {
             foreach (var field in structNode.Fields)
             {
-                yield return field.Type;
+                yield return StructFieldTypeText(field);
             }
         }
 
@@ -1048,7 +1048,7 @@ public sealed partial class CEmitter
         {
             foreach (var variant in taggedUnion.Variants)
             {
-                yield return variant.Type;
+                yield return TaggedUnionVariantTypeText(variant);
             }
         }
     }
@@ -1268,9 +1268,10 @@ public sealed partial class CEmitter
     private static string LowerStructFieldDeclaration(StructNode structNode, StructFieldNode field)
     {
         var selfPointerType = structNode.Name + "*";
-        return field.Type == selfPointerType
+        var fieldType = StructFieldTypeText(field);
+        return fieldType == selfPointerType
             ? $"struct {structNode.Name}* {field.Name}"
-            : LowerDeclaration(field.TypeNode, field.Type, field.Name);
+            : LowerDeclaration(field.TypeNode, fieldType, field.Name);
     }
 
     private static void EmitEnum(StringBuilder builder, EnumNode enumNode)
@@ -2108,6 +2109,16 @@ public sealed partial class CEmitter
             ? CTypeLowerer.LowerType(type, s_typeAdapters, GenericTypeSubstitutionBuilder.ParseType(selfType))
             : LowerType(fallbackType, selfType);
 
+    private static string TaggedUnionVariantTypeText(TaggedUnionVariantNode variant) =>
+        variant.TypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : variant.TypeNode.ToTypeName();
+
+    private static string StructFieldTypeText(StructFieldNode field) =>
+        field.TypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : field.TypeNode.ToTypeName();
+
     private static string ResolveAdapterStorageType(string type)
         => CTypeLowerer.ResolveAdapterStorageType(type, s_typeAdapters);
 
@@ -2243,7 +2254,7 @@ public sealed partial class CEmitter
         while (remaining.Count > 0)
         {
             var index = remaining.FindIndex(structNode =>
-                !structNode.Fields.Any(field => ReferencesCompositeType(field.Type, remainingNames)));
+                !structNode.Fields.Any(field => ReferencesCompositeType(StructFieldTypeText(field), remainingNames)));
             if (index < 0)
             {
                 ordered.AddRange(remaining);

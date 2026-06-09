@@ -53,7 +53,7 @@ public sealed partial class CEmitter
             }
 
             var matchingVariants = taggedUnion.Variants
-                .Where(variant => lowerCxType(variant.Type) == lowerCxType(expressionType))
+                .Where(variant => lowerCxType(VariantTypeText(variant)) == lowerCxType(expressionType))
                 .ToList();
 
             if (matchingVariants.Count != 1)
@@ -81,7 +81,7 @@ public sealed partial class CEmitter
                 lowerCxType(taggedUnion.Name),
                 taggedUnion.Name,
                 variant.Name,
-                buildPayload(variant.Type, arguments));
+                buildPayload(VariantTypeText(variant), arguments));
         }
 
         public string BuildConstructorText(
@@ -90,7 +90,7 @@ public sealed partial class CEmitter
             IReadOnlyList<string> arguments,
             Func<string, IReadOnlyList<string>, string> buildPayload)
         {
-            var payload = buildPayload(variant.Type, arguments);
+            var payload = buildPayload(VariantTypeText(variant), arguments);
             return $"({taggedUnion.Name}){{ .tag = {taggedUnion.Name}_Tag_{variant.Name}, .as.{variant.Name} = {payload} }}";
         }
 
@@ -113,7 +113,7 @@ public sealed partial class CEmitter
             }
 
             var matchingVariants = taggedUnion.Variants
-                .Where(variant => AreSameLoweredType(variant.TypeNode?.Semantic.Type, variant.Type, expressionType))
+                .Where(variant => AreSameLoweredType(variant.TypeNode, expressionType))
                 .ToList();
 
             if (matchingVariants.Count != 1)
@@ -138,11 +138,16 @@ public sealed partial class CEmitter
                 ],
                 []);
 
-        private bool AreSameLoweredType(TypeRef? leftType, string leftFallback, TypeRef rightType)
+        private static string VariantTypeText(TaggedUnionVariantNode variant) =>
+            variant.TypeNode?.Semantic.Type is { } type
+                ? TypeRefFormatter.ToCxString(type)
+                : variant.TypeNode.ToTypeName();
+
+        private bool AreSameLoweredType(TypeNode? leftTypeNode, TypeRef rightType)
         {
-            var loweredLeft = leftType is null
-                ? lowerCxType(leftFallback)
-                : CTypeLowerer.LowerType(leftType, s_typeAdapters, selfTypeProvider());
+            var loweredLeft = leftTypeNode?.Semantic.Type is { } leftType
+                ? CTypeLowerer.LowerType(leftType, s_typeAdapters, selfTypeProvider())
+                : lowerCxType(leftTypeNode.ToTypeName());
             var loweredRight = lowerTypeRef(rightType);
             return string.Equals(loweredLeft, loweredRight, StringComparison.Ordinal);
         }

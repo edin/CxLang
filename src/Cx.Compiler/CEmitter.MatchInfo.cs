@@ -1,4 +1,5 @@
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -35,7 +36,9 @@ public sealed partial class CEmitter
         {
             if (Union is not null)
             {
-                return Union.Variants.FirstOrDefault(variant => variant.Name == pattern)?.Type;
+                return Union.Variants.FirstOrDefault(variant => variant.Name == pattern) is { } variant
+                    ? VariantTypeText(variant)
+                    : null;
             }
 
             return InterfaceImplementations.ContainsKey(pattern)
@@ -59,5 +62,10 @@ public sealed partial class CEmitter
 
             return null;
         }
+
+        private static string VariantTypeText(TaggedUnionVariantNode variant) =>
+            variant.TypeNode?.Semantic.Type is { } type
+                ? TypeRefFormatter.ToCxString(type)
+                : variant.TypeNode.ToTypeName();
     }
 }

@@ -1,4 +1,5 @@
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -7,6 +8,7 @@ public sealed partial class CEmitter
 {
     private sealed class GenericCallLowerer(
         CLoweringContext context,
+        CLoweringScope scope,
         GenericCallResolver genericCallResolver,
         ResolvedCallLowerer resolvedCallLowerer,
         MemberCallLowerer memberCallLowerer,
@@ -22,8 +24,9 @@ public sealed partial class CEmitter
                 return resolvedCall;
             }
 
+            var typeArguments = TypeTexts(call.TypeArgumentNodes);
             if (call.Callee is MemberExpressionNode member
-                && memberCallLowerer.TryLowerGenericMember(member, call.TypeArguments, call.Arguments) is { } memberCall)
+                && memberCallLowerer.TryLowerGenericMember(member, typeArguments, call.Arguments) is { } memberCall)
             {
                 return memberCall;
             }
@@ -39,7 +42,7 @@ public sealed partial class CEmitter
                 return new CRawExpression($"{lowerName(calleeName)}({string.Join(", ", call.Arguments.Select(lowerText))})");
             }
 
-            var freeMatch = genericCallResolver.FindFreeExact(calleeName, call.TypeArguments);
+            var freeMatch = genericCallResolver.FindFreeExact(calleeName, typeArguments);
             if (freeMatch is not null)
             {
                 return new CCallExpression(
@@ -47,13 +50,13 @@ public sealed partial class CEmitter
                     call.Arguments.Select(lowerExpression).ToList());
             }
 
-            var staticMatch = genericCallResolver.FindStaticExact(calleeName, call.TypeArguments);
+            var staticMatch = genericCallResolver.FindStaticExact(calleeName, typeArguments);
             if (staticMatch is null
                 && TrySplitQualifiedMember(calleeName, out var ownerName, out var memberName)
                 && context.TryGetAdapterExpose($"{ownerName}.{memberName}", out var staticExpose)
                 && staticExpose.IsStatic)
             {
-                var resolvedExpose = adapterExposeResolver.Resolve(staticExpose, call.TypeArguments);
+                var resolvedExpose = adapterExposeResolver.Resolve(staticExpose, typeArguments);
                 staticMatch = genericCallResolver.FindStaticExact(
                     resolvedExpose.BaseOwner,
                     resolvedExpose.SourceName,
@@ -76,5 +79,18 @@ public sealed partial class CEmitter
             MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
             _ => null,
         };
+
+        private IReadOnlyList<string> TypeTexts(IReadOnlyList<TypeNode> typeNodes) =>
+            typeNodes
+                .Select(TypeText)
+                .Where(type => !string.IsNullOrWhiteSpace(type))
+                .Select(type => type!)
+                .ToList();
+
+        private string? TypeText(TypeNode? typeNode)
+        {
+            var type = scope.ResolveType(typeNode);
+            return type is null ? null : TypeRefFormatter.ToCxString(type);
+        }
     }
 }

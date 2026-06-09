@@ -9,7 +9,8 @@ public sealed partial class CEmitter
     private sealed class GenericCallResolver(
         IReadOnlyList<GenericCallInfo> calls,
         Func<ExpressionNode, string?> resolveExpressionType,
-        Func<string, string, bool> canAssign)
+        Func<string, string, bool> canAssign,
+        Func<FunctionNode, string?> resolveFunctionOwnerType)
     {
         public string RestoreSourceGenericType(string type)
         {
@@ -106,7 +107,7 @@ public sealed partial class CEmitter
 
         public GenericCallInfo? FindResolved(ResolvedCallInfo resolvedCall) =>
             calls.FirstOrDefault(call =>
-                string.Equals(call.OwnerType, resolvedCall.Function.OwnerType, StringComparison.Ordinal)
+                string.Equals(call.OwnerType, resolveFunctionOwnerType(resolvedCall.Function), StringComparison.Ordinal)
                 && string.Equals(call.Name, resolvedCall.Function.Name, StringComparison.Ordinal)
                 && SameTypeArguments(call.TypeArguments, resolvedCall.TypeArguments));
 

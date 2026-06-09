@@ -155,6 +155,11 @@ public sealed class CExpressionLowererTests
 
         public string LowerType(TypeRef type) => typeRefPrefix + TypeRefFormatter.ToCxString(type);
 
+        public string LowerType(TypeNode? typeNode) =>
+            typeNode?.Semantic.Type is { } type
+                ? LowerType(type)
+                : LowerType(typeNode?.TypeName ?? string.Empty);
+
         public string LowerType(TypeNode? typeNode, string fallbackType) => LowerType(fallbackType);
 
         public bool ShouldUseRawLowering(string text) => false;

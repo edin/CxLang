@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -7,6 +8,9 @@ namespace Cx.Compiler.Lowering;
 internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> genericFunctions)
 {
     private readonly List<RawGenericUseAuditEntry> _auditEntries = [];
+    private readonly TypeRefParser _typeRefParser = new(new ProgramNode(
+        new Location(new SourceFile("<raw-generic-use>", string.Empty), 0, 1, 1),
+        genericFunctions.Cast<TopLevelNode>().ToList()));
 
     public IReadOnlyList<RawGenericUseAuditEntry> AuditEntries => _auditEntries;
 
@@ -18,9 +22,10 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
     {
         foreach (var function in genericFunctions)
         {
-            var staticCallee = function.OwnerType is null
+            var ownerType = OwnerType(function);
+            var staticCallee = ownerType is null
                 ? function.Name
-                : $"{function.OwnerType}.{function.Name}";
+                : $"{ownerType}.{function.Name}";
             foreach (var arguments in FindExplicitTypeArgumentCalls(expression, staticCallee))
             {
                 if (arguments.Count == function.TypeParameters.Count)
@@ -44,7 +49,7 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
                 continue;
             }
 
-            foreach (var function in genericFunctions.Where(function => function.OwnerType == owner && !function.IsStatic))
+            foreach (var function in genericFunctions.Where(function => OwnerType(function) == owner && !function.IsStatic))
             {
                 var inferredCallPattern = $@"\b{Regex.Escape(variable)}\s*\.\s*{Regex.Escape(function.Name)}\s*\(";
                 if (function.TypeParameters.Count == (TypeSyntaxFacts.TryParseGenericUse(variableType, out _, out var receiverArguments) ? receiverArguments.Count : 0)
@@ -97,10 +102,30 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
             reason));
     }
 
-    private static string FormatFunctionName(FunctionNode function) =>
-        function.OwnerType is null
+    private string FormatFunctionName(FunctionNode function)
+    {
+        var ownerType = OwnerType(function);
+        return ownerType is null
             ? function.Name
-            : $"{function.OwnerType}.{function.Name}";
+            : $"{ownerType}.{function.Name}";
+    }
+
+    private string? OwnerType(FunctionNode function)
+    {
+        var type = TypeText(function.OwnerTypeNode);
+        return string.IsNullOrWhiteSpace(type) ? null : type;
+    }
+
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
 
     private static string TrimForAudit(string expression)
     {

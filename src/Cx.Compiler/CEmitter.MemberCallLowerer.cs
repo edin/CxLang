@@ -1,4 +1,5 @@
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -36,7 +37,7 @@ public sealed partial class CEmitter
             }
 
             var target = targetName.SourceText;
-            if (!scope.TryGetVariableType(target, out var targetType))
+            if (!TryGetReceiverType(target, out var targetType))
             {
                 return TryLowerStaticOrModuleCall(target, member.MemberName, arguments);
             }
@@ -60,15 +61,15 @@ public sealed partial class CEmitter
             }
 
             if (member.Target is not NameExpressionNode targetName
-                || !scope.TryGetVariableType(targetName.SourceText, out var targetType))
+                || !TryGetReceiverType(targetName.SourceText, out var targetType))
             {
                 return null;
             }
 
             var target = targetName.SourceText;
-            var concreteReceiverType = RemovePointer(targetType);
+            var concreteReceiverType = targetType.ReceiverType;
             if (genericCallResolver.FindGenericMemberExact(
-                GetGenericBaseName(targetType),
+                targetType.GenericBaseName,
                 concreteReceiverType,
                 member.MemberName,
                 typeArguments) is not { } genericCall)
@@ -79,7 +80,7 @@ public sealed partial class CEmitter
             var loweredArguments = arguments.Select(lowerExpression).ToList();
             loweredArguments.Insert(0, receiverExpressionBuilder.Build(
                 target,
-                targetType.EndsWith("*", StringComparison.Ordinal),
+                targetType.IsPointer,
                 genericCall.TakesPointerSelf));
             return new CCallExpression(
                 new CResolvedFunction(GetFunctionModule(genericCall.OwnerType, genericCall.Name), genericCall.CName),
@@ -166,16 +167,14 @@ public sealed partial class CEmitter
 
         private CExpression? TryLowerInstanceCall(
             string target,
-            string targetType,
+            ReceiverTypeInfo targetType,
             string memberName,
             IReadOnlyList<ExpressionNode> arguments)
         {
-            var normalizedType = NormalizeType(targetType);
-            var isPointer = targetType.EndsWith("*", StringComparison.Ordinal);
-            var receiverArguments = TryParseGenericUse(RemovePointer(normalizedType), out _, out var parsedReceiverArguments)
-                ? parsedReceiverArguments
-                : [];
-            var adapterName = GetGenericBaseName(RemovePointer(normalizedType)) ?? RemovePointer(normalizedType);
+            var normalizedType = targetType.NormalizedType;
+            var isPointer = targetType.IsPointer;
+            var receiverArguments = targetType.TypeArguments;
+            var adapterName = targetType.GenericBaseName ?? targetType.ReceiverType;
             if (context.TryGetAdapterExpose($"{adapterName}.{memberName}", out var adapterExpose)
                 && !adapterExpose.IsStatic
                 && TryLowerAdapterExposeCall(
@@ -189,8 +188,8 @@ public sealed partial class CEmitter
             }
 
             var genericMemberCall = genericCallResolver.FindInferredMemberCall(
-                GetGenericBaseName(RemovePointer(normalizedType)),
-                RemovePointer(normalizedType),
+                targetType.GenericBaseName,
+                targetType.ReceiverType,
                 memberName,
                 arguments,
                 skipSelf: true,
@@ -214,7 +213,7 @@ public sealed partial class CEmitter
                 var loweredArguments = arguments.Select(lowerExpression).ToList();
                 loweredArguments.Insert(0, receiverExpressionBuilder.Build(target, isPointer, methodInfo.TakesPointerSelf));
                 return new CCallExpression(
-                    new CResolvedFunction(NormalizeType(targetType), methodInfo.CName),
+                    new CResolvedFunction(normalizedType, methodInfo.CName),
                     loweredArguments);
             }
 
@@ -236,13 +235,11 @@ public sealed partial class CEmitter
                 return null;
             }
 
-            var normalizedType = NormalizeType(targetType);
-            var isPointer = targetType.EndsWith("*", StringComparison.Ordinal);
-            var receiverType = RemovePointer(normalizedType);
-            var receiverArguments = TryParseGenericUse(receiverType, out _, out var parsedReceiverArguments)
-                ? parsedReceiverArguments
-                : [];
-            var ownerType = GetGenericBaseName(receiverType) ?? receiverType;
+            var targetTypeInfo = ReceiverTypeInfo.FromText(targetType);
+            var isPointer = targetTypeInfo.IsPointer;
+            var receiverType = targetTypeInfo.ReceiverType;
+            var receiverArguments = targetTypeInfo.TypeArguments;
+            var ownerType = targetTypeInfo.GenericBaseName ?? receiverType;
 
             var genericMemberCall = genericCallResolver.FindInferredCall(
                 ownerType,
@@ -280,5 +277,72 @@ public sealed partial class CEmitter
 
         private static string GetFunctionModule(string? ownerType, string name) =>
             ownerType is null ? name : ownerType;
+
+        private bool TryGetReceiverType(string name, out ReceiverTypeInfo typeInfo)
+        {
+            if (scope.TryGetVariableTypeRef(name, out var typeRef))
+            {
+                typeInfo = ReceiverTypeInfo.FromTypeRef(typeRef);
+                return true;
+            }
+
+            if (scope.TryGetVariableType(name, out var typeText))
+            {
+                typeInfo = ReceiverTypeInfo.FromText(typeText);
+                return true;
+            }
+
+            typeInfo = null!;
+            return false;
+        }
+
+        private sealed record ReceiverTypeInfo(
+            string Type,
+            string NormalizedType,
+            bool IsPointer,
+            string ReceiverType,
+            string? GenericBaseName,
+            IReadOnlyList<string> TypeArguments)
+        {
+            public static ReceiverTypeInfo FromTypeRef(TypeRef type)
+            {
+                var receiverType = type is TypeRef.Pointer pointer ? pointer.Element : type;
+                var receiverText = NormalizeType(TypeRefFormatter.ToCxString(receiverType));
+                var typeText = TypeRefFormatter.ToCxString(type);
+                var typeArguments = receiverType is TypeRef.Named named
+                    ? named.Arguments.Select(TypeRefFormatter.ToCxString).ToList()
+                    : TryParseGenericUse(receiverText, out _, out var parsedArguments)
+                        ? parsedArguments
+                        : [];
+                var genericBase = receiverType is TypeRef.Named { Arguments.Count: > 0 } namedReceiver
+                    ? namedReceiver.Name
+                    : GetGenericBaseName(receiverText);
+
+                return new(
+                    typeText,
+                    NormalizeType(typeText),
+                    type is TypeRef.Pointer,
+                    receiverText,
+                    genericBase,
+                    typeArguments);
+            }
+
+            public static ReceiverTypeInfo FromText(string type)
+            {
+                var normalizedType = NormalizeType(type);
+                var isPointer = type.EndsWith("*", StringComparison.Ordinal);
+                var receiverType = RemovePointer(normalizedType);
+                var typeArguments = TryParseGenericUse(receiverType, out _, out var parsedArguments)
+                    ? parsedArguments
+                    : [];
+                return new(
+                    type,
+                    normalizedType,
+                    isPointer,
+                    receiverType,
+                    GetGenericBaseName(receiverType),
+                    typeArguments);
+            }
+        }
     }
 }

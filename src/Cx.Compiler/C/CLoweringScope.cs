@@ -5,11 +5,14 @@ using Cx.Compiler.Syntax.Nodes;
 namespace Cx.Compiler.C;
 
 internal sealed class CLoweringScope(
+    TypeRefParser typeRefParser,
     IReadOnlySet<string> pointerParameters,
     IReadOnlyDictionary<string, string> variables,
     IReadOnlyDictionary<string, TypeRef> variableTypes,
     IReadOnlyDictionary<string, CLoweringScope.ImplicitReferenceLocal> implicitReferenceLocals)
 {
+    private TypeRefParser TypeRefParser { get; } = typeRefParser;
+
     private IReadOnlySet<string> PointerParameters { get; } = pointerParameters;
 
     private IReadOnlyDictionary<string, string> Variables { get; } = variables;
@@ -19,10 +22,12 @@ internal sealed class CLoweringScope(
     private IReadOnlyDictionary<string, ImplicitReferenceLocal> ImplicitReferenceLocals { get; } = implicitReferenceLocals;
 
     public static CLoweringScope Create(
+        TypeRefParser typeRefParser,
         IReadOnlySet<string> pointerParameters,
         IReadOnlyDictionary<string, string> variables,
         IReadOnlyDictionary<string, TypeRef> variableTypes) =>
         new(
+            typeRefParser,
             pointerParameters,
             variables,
             variableTypes,
@@ -33,27 +38,22 @@ internal sealed class CLoweringScope(
         var scopeSelfType = selfApiType ?? selfType;
         var variables = Variables.ToDictionary(StringComparer.Ordinal);
         var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
-        foreach (var variable in function.Parameters
+        var locals = function.Parameters
             .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => (parameter.Name, Type: SubstituteSelfType(parameter.TypeNode.ToTypeName(), scopeSelfType)))
-            .Concat(CollectLocalVariables(function.Body)
-                .Select(statement => (statement.Name, Type: SubstituteSelfType(statement.Type, scopeSelfType))))
-            .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !string.IsNullOrWhiteSpace(item.Type))
+            .Select(parameter => (parameter.Name, Type: SubstituteSelf(parameter.TypeNode.ToTypeRef(TypeRefParser), scopeSelfType)))
+            .Concat(CollectLocalVariableTypes(function.Body)
+                .Select(statement => (statement.Name, Type: SubstituteSelf(statement.TypeRef, scopeSelfType))))
+            .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !IsUnknown(item.Type))
             .GroupBy(item => item.Name, StringComparer.Ordinal)
-            .Select(group => (group.Key, Type: group.First().Type)))
+            .Select(group => (group.Key, Type: group.First().Type))
+            .ToList();
+
+        foreach (var variable in locals)
         {
-            variables[variable.Key] = variable.Type;
+            variables[variable.Key] = TypeText(variable.Type);
         }
 
-        foreach (var variable in function.Parameters
-            .Where(parameter => !parameter.IsVariadic && parameter.TypeNode?.Semantic.Type is not null)
-            .Select(parameter => (parameter.Name, Type: SubstituteSelf(parameter.TypeNode!.Semantic.Type!, scopeSelfType)))
-            .Concat(CollectLocalVariableTypes(function.Body)
-                .Where(local => local.TypeRef is not null)
-                .Select(local => (local.Name, Type: SubstituteSelf(local.TypeRef!, scopeSelfType))))
-            .Where(item => !string.IsNullOrWhiteSpace(item.Name))
-            .GroupBy(item => item.Name, StringComparer.Ordinal)
-            .Select(group => (group.Key, Type: group.First().Type)))
+        foreach (var variable in locals)
         {
             variableTypes[variable.Key] = variable.Type;
         }
@@ -62,7 +62,7 @@ internal sealed class CLoweringScope(
             .Where(item => item.Value.EndsWith("*", StringComparison.Ordinal))
             .Select(item => item.Key)
             .ToHashSet(StringComparer.Ordinal);
-        return new(pointerVariables, variables, variableTypes, ImplicitReferenceLocals);
+        return new(TypeRefParser, pointerVariables, variables, variableTypes, ImplicitReferenceLocals);
     }
 
     public CLoweringScope WithLocal(string name, string type)
@@ -71,7 +71,8 @@ internal sealed class CLoweringScope(
         variables[name] = type;
 
         var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
-        if (GenericTypeSubstitutionBuilder.ParseType(type) is { } typeRef)
+        var typeRef = TypeRefParser.Parse(type);
+        if (!IsUnknown(typeRef))
         {
             variableTypes[name] = typeRef;
         }
@@ -82,7 +83,7 @@ internal sealed class CLoweringScope(
             pointerParameters.Add(name);
         }
 
-        return new(pointerParameters, variables, variableTypes, ImplicitReferenceLocals);
+        return new(TypeRefParser, pointerParameters, variables, variableTypes, ImplicitReferenceLocals);
     }
 
     public CLoweringScope WithImplicitReferenceLocal(
@@ -95,7 +96,8 @@ internal sealed class CLoweringScope(
         variables[name] = valueType;
 
         var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
-        if (GenericTypeSubstitutionBuilder.ParseType(valueType) is { } valueTypeRef)
+        var valueTypeRef = TypeRefParser.Parse(valueType);
+        if (!IsUnknown(valueTypeRef))
         {
             variableTypes[name] = valueTypeRef;
         }
@@ -103,7 +105,7 @@ internal sealed class CLoweringScope(
         var implicitReferenceLocals = ImplicitReferenceLocals.ToDictionary(StringComparer.Ordinal);
         implicitReferenceLocals[name] = new ImplicitReferenceLocal(valueType, storageType, isConst);
 
-        return new(PointerParameters, variables, variableTypes, implicitReferenceLocals);
+        return new(TypeRefParser, PointerParameters, variables, variableTypes, implicitReferenceLocals);
     }
 
     public bool TryGetVariableType(string name, out string type) =>
@@ -123,7 +125,8 @@ internal sealed class CLoweringScope(
         }
 
         if (Variables.TryGetValue(name, out var textType)
-            && GenericTypeSubstitutionBuilder.ParseType(textType) is { } parsed)
+            && TypeRefParser.Parse(textType) is { } parsed
+            && !IsUnknown(parsed))
         {
             type = parsed;
             return true;
@@ -133,100 +136,26 @@ internal sealed class CLoweringScope(
         return false;
     }
 
+    public TypeRef? ResolveType(TypeNode? typeNode)
+    {
+        var type = typeNode.ToTypeRef(TypeRefParser);
+        return IsUnknown(type) ? null : type;
+    }
+
     public bool IsImplicitReferenceLocal(string name) =>
         ImplicitReferenceLocals.ContainsKey(name);
 
     public IEnumerable<string> GetPointerParametersByDescendingLength() =>
         PointerParameters.OrderByDescending(name => name.Length);
 
-    private static IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
+    private IEnumerable<(string Name, TypeRef TypeRef)> CollectLocalVariableTypes(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
             switch (statement)
             {
                 case LetStatement let:
-                    yield return (let.Name, let.TypeNode.ToTypeName());
-                    break;
-                case IfStatement ifStatement:
-                    foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
-                    {
-                        yield return variable;
-                    }
-
-                    if (ifStatement.ElseBranch is not null)
-                    {
-                        foreach (var variable in CollectLocalVariables([ifStatement.ElseBranch]))
-                        {
-                            yield return variable;
-                        }
-                    }
-
-                    break;
-                case ElseBlockStatement elseBlock:
-                    foreach (var variable in CollectLocalVariables(elseBlock.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case WhileStatement whileStatement:
-                    foreach (var variable in CollectLocalVariables(whileStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case ForStatement forStatement:
-                    if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
-                    {
-                        yield return (declaration.Name, declaration.TypeNode.ToTypeName());
-                    }
-
-                    foreach (var variable in CollectLocalVariables(forStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case ForeachStatement foreachStatement:
-                    foreach (var variable in CollectLocalVariables(foreachStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case SwitchStatement switchStatement:
-                    foreach (var switchCase in switchStatement.Cases)
-                    {
-                        foreach (var variable in CollectLocalVariables(switchCase.Body))
-                        {
-                            yield return variable;
-                        }
-                    }
-
-                    foreach (var variable in CollectLocalVariables(switchStatement.DefaultBody))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var variable in CollectLocalVariables(arm.Body))
-                        {
-                            yield return variable;
-                        }
-                    }
-                    break;
-            }
-        }
-    }
-
-    private static IEnumerable<(string Name, string Type, TypeRef? TypeRef)> CollectLocalVariableTypes(IEnumerable<StatementNode> statements)
-    {
-        foreach (var statement in statements)
-        {
-            switch (statement)
-            {
-                case LetStatement let:
-                    yield return (let.Name, let.TypeNode.ToTypeName(), let.TypeNode?.Semantic.Type);
+                    yield return (let.Name, let.TypeNode.ToTypeRef(TypeRefParser));
                     break;
                 case IfStatement ifStatement:
                     foreach (var variable in CollectLocalVariableTypes(ifStatement.ThenBody))
@@ -258,7 +187,7 @@ internal sealed class CLoweringScope(
                 case ForStatement forStatement:
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
-                        yield return (declaration.Name, declaration.TypeNode.ToTypeName(), declaration.TypeNode?.Semantic.Type);
+                        yield return (declaration.Name, declaration.TypeNode.ToTypeRef(TypeRefParser));
                     }
 
                     foreach (var variable in CollectLocalVariableTypes(forStatement.Body))
@@ -269,13 +198,13 @@ internal sealed class CLoweringScope(
                 case ForeachStatement foreachStatement:
                     if (foreachStatement.IndexBinding is not null)
                     {
-                        yield return (foreachStatement.IndexBinding.Name, foreachStatement.IndexBinding.TypeNode.ToTypeName(), foreachStatement.IndexBinding.TypeNode?.Semantic.Type);
+                        yield return (foreachStatement.IndexBinding.Name, foreachStatement.IndexBinding.TypeNode.ToTypeRef(TypeRefParser));
                     }
                     if (foreachStatement.KeyBinding is not null)
                     {
-                        yield return (foreachStatement.KeyBinding.Name, foreachStatement.KeyBinding.TypeNode.ToTypeName(), foreachStatement.KeyBinding.TypeNode?.Semantic.Type);
+                        yield return (foreachStatement.KeyBinding.Name, foreachStatement.KeyBinding.TypeNode.ToTypeRef(TypeRefParser));
                     }
-                    yield return (foreachStatement.ValueBinding.Name, foreachStatement.ValueBinding.TypeNode.ToTypeName(), foreachStatement.ValueBinding.TypeNode?.Semantic.Type);
+                    yield return (foreachStatement.ValueBinding.Name, foreachStatement.ValueBinding.TypeNode.ToTypeRef(TypeRefParser));
                     foreach (var variable in CollectLocalVariableTypes(foreachStatement.Body))
                     {
                         yield return variable;
@@ -308,13 +237,16 @@ internal sealed class CLoweringScope(
         }
     }
 
-    private static string SubstituteSelfType(string type, string? selfType) =>
-        GenericTypeStringRewriter.SubstituteSelf(type, selfType);
+    private TypeRef SubstituteSelf(TypeRef type, string? selfType) =>
+        string.IsNullOrWhiteSpace(selfType)
+            ? type
+            : TypeRefRewriter.SubstituteSelf(type, TypeRefParser.Parse(selfType));
 
-    private static TypeRef SubstituteSelf(TypeRef type, string? selfType) =>
-        GenericTypeSubstitutionBuilder.ParseType(selfType) is { } selfTypeRef
-            ? TypeRefRewriter.SubstituteSelf(type, selfTypeRef)
-            : type;
+    private static bool IsUnknown(TypeRef type) =>
+        type is TypeRef.Unknown;
+
+    private static string TypeText(TypeRef type) =>
+        IsUnknown(type) ? string.Empty : TypeRefFormatter.ToCxString(type);
 
     public sealed record ImplicitReferenceLocal(
         string ValueType,

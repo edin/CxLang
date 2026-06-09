@@ -12,6 +12,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         .ToList();
     private readonly IReadOnlyList<TypeAdapterNode> _typeAdapters = program.TypeAdapters;
     private readonly ExpressionTypeResolver _resolver = new(program);
+    private readonly TypeRefParser _typeRefParser = new(program);
 
     public IReadOnlyList<RawGenericUseAuditEntry> RawGenericUseAuditEntries => [];
     public IEnumerable<GenericFunctionUse> Collect(ProgramNode program)
@@ -47,7 +48,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var scopeSelfType = selfApiType ?? selfType;
         var variables = function.Parameters
             .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => (parameter.Name, Type: GenericTypeStringRewriter.SubstituteSelf(parameter.Type, scopeSelfType)))
+            .Select(parameter => (parameter.Name, Type: GenericTypeStringRewriter.SubstituteSelf(TypeText(parameter.TypeNode), scopeSelfType)))
             .Concat(CollectLocalVariables(function.Body)
                 .Select(local => (local.Name, Type: GenericTypeStringRewriter.SubstituteSelf(local.Type, scopeSelfType))))
             .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !string.IsNullOrWhiteSpace(item.Type))
@@ -78,6 +79,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
     private IEnumerable<GenericFunctionUse> CollectGlobals(ProgramNode program)
     {
         var variables = program.GlobalVariables
+            .Select(global => (global.Name, Type: TypeText(global.TypeNode)))
             .Where(global => !string.IsNullOrWhiteSpace(global.Name) && !string.IsNullOrWhiteSpace(global.Type))
             .GroupBy(global => global.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal);
@@ -138,7 +140,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                         && TypeSyntaxFacts.TryParseGenericUse(iterableType, out var ownerName, out var ownerArguments))
                     {
                         foreach (var iteratorFunction in _genericFunctions.Where(function =>
-                            function.OwnerType == ownerName
+                            OwnerType(function) == ownerName
                             && function.Name == "iterator"
                             && function.TypeParameters.Count == ownerArguments.Count))
                         {
@@ -147,11 +149,11 @@ internal sealed class GenericUseCollector(ProgramNode program)
                             var substitutions = iteratorFunction.TypeParameters
                                 .Zip(ownerArguments)
                                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-                            var iteratorType = GenericTypeStringRewriter.Substitute(iteratorFunction.ReturnType, substitutions);
+                            var iteratorType = GenericTypeStringRewriter.Substitute(TypeText(iteratorFunction.ReturnTypeNode), substitutions);
                             if (TypeSyntaxFacts.TryParseGenericUse(iteratorType, out var iteratorOwner, out var iteratorArguments))
                             {
                                 foreach (var iteratorMember in _genericFunctions.Where(function =>
-                                    function.OwnerType == iteratorOwner
+                                    OwnerType(function) == iteratorOwner
                                     && function.TypeParameters.Count == iteratorArguments.Count
                                     && (function.Name == "next"
                                         || function.Name == "value"
@@ -250,7 +252,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 }
                 break;
             case GenericCallExpressionNode call:
-                var resolvedExplicitUses = FindResolvedGenericFunctionUses(call.Callee, call.TypeArguments, call.Arguments, variables, selfApiType).ToList();
+                var resolvedExplicitUses = FindResolvedGenericFunctionUses(call.Callee, TypeArguments(call.TypeArgumentNodes), call.Arguments, variables, selfApiType).ToList();
                 if (resolvedExplicitUses.Count > 0)
                 {
                     foreach (var use in resolvedExplicitUses)
@@ -303,7 +305,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         if (call.Callee is NameExpressionNode name)
         {
             foreach (var function in _genericFunctions.Where(function =>
-                function.OwnerType is null
+                OwnerType(function) is null
                 && function.Name == name.SourceText))
             {
                 if (_resolver.InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: false) is { } arguments)
@@ -330,7 +332,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         {
             foreach (var function in _genericFunctions.Where(function =>
                 function.IsStatic
-                && function.OwnerType == targetName
+                && OwnerType(function) == targetName
                 && function.Name == member.MemberName))
             {
                 if (_resolver.InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: false) is { } arguments)
@@ -350,7 +352,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
         foreach (var function in _genericFunctions.Where(function =>
             !function.IsStatic
-            && function.OwnerType == ownerType
+            && OwnerType(function) == ownerType
             && function.Name == member.MemberName))
         {
             var arguments = receiverArguments.Count == function.TypeParameters.Count
@@ -371,12 +373,12 @@ internal sealed class GenericUseCollector(ProgramNode program)
         if (call.Callee is NameExpressionNode name)
         {
             var matchedFunction = _genericFunctions.FirstOrDefault(candidate =>
-                candidate.OwnerType is null
+                OwnerType(candidate) is null
                 && candidate.Name == name.SourceText
-                && candidate.TypeParameters.Count == call.TypeArguments.Count);
+                && candidate.TypeParameters.Count == TypeArguments(call.TypeArgumentNodes).Count);
             if (matchedFunction is not null)
             {
-                yield return new GenericFunctionUse(matchedFunction, call.TypeArguments);
+                yield return new GenericFunctionUse(matchedFunction, TypeArguments(call.TypeArgumentNodes));
             }
 
             yield break;
@@ -397,12 +399,12 @@ internal sealed class GenericUseCollector(ProgramNode program)
         {
             var staticFunction = _genericFunctions.FirstOrDefault(function =>
                 function.IsStatic
-                && function.OwnerType == targetName
+                && OwnerType(function) == targetName
                 && function.Name == member.MemberName
-                && function.TypeParameters.Count == call.TypeArguments.Count);
+                && function.TypeParameters.Count == TypeArguments(call.TypeArgumentNodes).Count);
             if (staticFunction is not null)
             {
-                yield return new GenericFunctionUse(staticFunction, call.TypeArguments);
+                yield return new GenericFunctionUse(staticFunction, TypeArguments(call.TypeArgumentNodes));
             }
 
             yield break;
@@ -411,12 +413,12 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var ownerType = TypeSyntaxFacts.GetGenericBaseName(TypeSyntaxFacts.RemovePointer(targetType));
         var matchedMethod = _genericFunctions.FirstOrDefault(candidate =>
             !candidate.IsStatic
-            && candidate.OwnerType == ownerType
+            && OwnerType(candidate) == ownerType
             && candidate.Name == member.MemberName
-            && candidate.TypeParameters.Count == call.TypeArguments.Count);
+            && candidate.TypeParameters.Count == TypeArguments(call.TypeArgumentNodes).Count);
         if (matchedMethod is not null)
         {
-            yield return new GenericFunctionUse(matchedMethod, call.TypeArguments);
+            yield return new GenericFunctionUse(matchedMethod, TypeArguments(call.TypeArgumentNodes));
         }
     }
 
@@ -689,14 +691,14 @@ internal sealed class GenericUseCollector(ProgramNode program)
         _ => [],
     };
 
-    private static IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
+    private IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
             switch (statement)
             {
                 case LetStatement let:
-                    yield return (let.Name, let.Type);
+                    yield return (let.Name, TypeText(let.TypeNode));
                     break;
                 case IfStatement ifStatement:
                     foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
@@ -726,7 +728,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 case ForStatement forStatement:
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
-                        yield return (declaration.Name, declaration.Type);
+                        yield return (declaration.Name, TypeText(declaration.TypeNode));
                     }
                     foreach (var variable in CollectLocalVariables(forStatement.Body))
                     {
@@ -736,13 +738,13 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 case ForeachStatement foreachStatement:
                     if (foreachStatement.IndexBinding is not null)
                     {
-                        yield return (foreachStatement.IndexBinding.Name, foreachStatement.IndexBinding.Type);
+                        yield return (foreachStatement.IndexBinding.Name, TypeText(foreachStatement.IndexBinding.TypeNode));
                     }
                     if (foreachStatement.KeyBinding is not null)
                     {
-                        yield return (foreachStatement.KeyBinding.Name, foreachStatement.KeyBinding.Type);
+                        yield return (foreachStatement.KeyBinding.Name, TypeText(foreachStatement.KeyBinding.TypeNode));
                     }
-                    yield return (foreachStatement.ValueBinding.Name, foreachStatement.ValueBinding.Type);
+                    yield return (foreachStatement.ValueBinding.Name, TypeText(foreachStatement.ValueBinding.TypeNode));
                     foreach (var variable in CollectLocalVariables(foreachStatement.Body))
                     {
                         yield return variable;
@@ -776,35 +778,37 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     private string? ResolveSelfType(FunctionNode function)
     {
-        if (function.OwnerType is null)
+        if (OwnerType(function) is null)
         {
             return null;
         }
 
-        if (function.TypeArguments.Count > 0)
+        var functionTypeArguments = TypeArguments(function.TypeArgumentNodes);
+        if (functionTypeArguments.Count > 0)
         {
-            return ResolveAdapterStorageType($"{function.OwnerType}<{string.Join(",", function.TypeArguments)}>");
+            return ResolveAdapterStorageType($"{OwnerType(function)}<{string.Join(",", functionTypeArguments)}>");
         }
 
         var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
-        if (selfParameter is not null && !Regex.IsMatch(selfParameter.Type, @"\bSelf\b"))
+        if (selfParameter is not null && !Regex.IsMatch(TypeText(selfParameter.TypeNode), @"\bSelf\b"))
         {
-            return TypeSyntaxFacts.RemovePointer(selfParameter.Type);
+            return TypeSyntaxFacts.RemovePointer(TypeText(selfParameter.TypeNode));
         }
 
-        return ResolveAdapterStorageType(function.OwnerType);
+        return ResolveAdapterStorageType(OwnerType(function)!);
     }
 
-    private static string? ResolveSelfApiType(FunctionNode function)
+    private string? ResolveSelfApiType(FunctionNode function)
     {
-        if (function.OwnerType is null)
+        if (OwnerType(function) is null)
         {
             return null;
         }
 
-        return function.TypeArguments.Count > 0
-            ? $"{function.OwnerType}<{string.Join(",", function.TypeArguments)}>"
-            : function.OwnerType;
+        var functionTypeArguments = TypeArguments(function.TypeArgumentNodes);
+        return functionTypeArguments.Count > 0
+            ? $"{OwnerType(function)}<{string.Join(",", functionTypeArguments)}>"
+            : OwnerType(function);
     }
 
     private string ResolveAdapterStorageType(string type)
@@ -841,17 +845,37 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
-    private static string SubstituteAdapterBaseType(TypeAdapterNode adapter, IReadOnlyList<string> receiverArguments)
+    private string SubstituteAdapterBaseType(TypeAdapterNode adapter, IReadOnlyList<string> receiverArguments)
     {
         if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
         {
-            return adapter.BaseType;
+            return TypeText(adapter.BaseTypeNode);
         }
 
         var substitutions = adapter.TypeParameters
             .Zip(receiverArguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return GenericTypeStringRewriter.Substitute(adapter.BaseType, substitutions);
+        return GenericTypeStringRewriter.Substitute(TypeText(adapter.BaseTypeNode), substitutions);
+    }
+
+    private string? OwnerType(FunctionNode function)
+    {
+        var type = TypeText(function.OwnerTypeNode);
+        return string.IsNullOrWhiteSpace(type) ? null : type;
+    }
+
+    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> typeArgumentNodes) =>
+        typeArgumentNodes.Select(TypeText).ToList();
+
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
     }
 
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch

@@ -22,6 +22,7 @@ public sealed partial class CEmitter
         IReadOnlyDictionary<string, string> EnumMemberAliases,
         IReadOnlyDictionary<string, string> TypeAliases,
         IReadOnlyDictionary<string, AdapterExposeInfo> AdapterExposes,
+        TypeRefParser TypeRefParser,
         RequirementMatcher RequirementMatcher)
     {
         public bool IsGenericMacro(string name) =>
@@ -30,7 +31,11 @@ public sealed partial class CEmitter
         public GenericCallResolver CreateGenericCallResolver(
             Func<ExpressionNode, string?> resolveExpressionType,
             Func<string, string, bool> canAssign) =>
-            new(GenericCalls, resolveExpressionType, canAssign);
+            new(
+                GenericCalls,
+                resolveExpressionType,
+                canAssign,
+                function => TypeTextOrNull(function.OwnerTypeNode, TypeRefParser));
 
         public RequirementLookup CreateRequirementLookup() =>
             new(RequirementMatcher);
@@ -180,8 +185,11 @@ public sealed partial class CEmitter
         public static CLoweringContext Create(
             ProgramNode program,
             IReadOnlyList<StructNode> concreteStructs,
-            RequirementMatcher requirementMatcher) =>
-            new(
+            RequirementMatcher requirementMatcher)
+        {
+            var typeRefParser = new TypeRefParser(program);
+
+            return new(
                 program.SymbolImports
                     .SelectMany(import => import.Symbols)
                     .Where(symbol => symbol.Alias is not null)
@@ -192,35 +200,38 @@ public sealed partial class CEmitter
                     .Select(name => name + ".")
                     .ToList(),
                 program.Functions
-                    .Where(function => function.OwnerType is not null && function.TypeArguments.Count == 0)
+                    .Where(function => function.OwnerTypeNode is not null && (function.TypeArgumentNodes ?? []).Count == 0)
                     .ToDictionary(
-                        function => $"{function.OwnerType}.{function.Name}",
+                        function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
                         GetCFunctionName,
                         StringComparer.Ordinal),
                 program.Functions
-                    .Where(function => function.OwnerType is not null)
-                    .Where(function => function.TypeArguments.Count == 0)
+                    .Where(function => function.OwnerTypeNode is not null)
+                    .Where(function => (function.TypeArgumentNodes ?? []).Count == 0)
                     .ToDictionary(
-                        function => $"{function.OwnerType}.{function.Name}",
-                        function => NormalizeType(SubstituteSelfType(function.Parameters.FirstOrDefault()?.Type ?? string.Empty, ResolveSelfType(function))),
+                        function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
+                        function => NormalizeType(TypeText(
+                            SubstituteSelf(function.Parameters.FirstOrDefault()?.TypeNode.ToTypeRef(typeRefParser) ?? new TypeRef.Unknown(),
+                                ResolveSelfType(function, typeRefParser),
+                                typeRefParser))),
                         StringComparer.Ordinal),
                 program.Functions
-                    .Where(function => function.OwnerType is not null)
-                    .Where(function => function.TypeArguments.Count == 0)
+                    .Where(function => function.OwnerTypeNode is not null)
+                    .Where(function => (function.TypeArgumentNodes ?? []).Count == 0)
                     .ToDictionary(
-                        function => $"{function.OwnerType}.{function.Name}",
-                        function => function.Parameters.FirstOrDefault()?.Type.EndsWith("*", StringComparison.Ordinal) == true,
+                        function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
+                        function => IsPointer(function.Parameters.FirstOrDefault()?.TypeNode, typeRefParser),
                         StringComparer.Ordinal),
                 program.Functions
-                    .Where(function => function.TypeArguments.Count > 0)
+                    .Where(function => (function.TypeArgumentNodes ?? []).Count > 0)
                     .Select(function => new GenericCallInfo(
-                        function.OwnerType,
+                        TypeTextOrNull(function.OwnerTypeNode, typeRefParser),
                         function.Name,
-                        function.TypeArguments,
-                        function.Parameters.Where(parameter => !parameter.IsVariadic).Select(parameter => parameter.Type).ToList(),
-                        function.ReturnType,
+                        TypeTexts(function.TypeArgumentNodes ?? [], typeRefParser),
+                        function.Parameters.Where(parameter => !parameter.IsVariadic).Select(parameter => TypeText(parameter.TypeNode, typeRefParser)).ToList(),
+                        TypeText(function.ReturnTypeNode, typeRefParser),
                         GetCFunctionName(function),
-                        function.Parameters.FirstOrDefault()?.Type.EndsWith("*", StringComparison.Ordinal) == true,
+                        IsPointer(function.Parameters.FirstOrDefault()?.TypeNode, typeRefParser),
                         function.IsStatic))
                     .ToList(),
                 program.ExternFunctions
@@ -228,8 +239,8 @@ public sealed partial class CEmitter
                     .Select(function => function.Name)
                     .ToHashSet(StringComparer.Ordinal),
                 program.Functions
-                    .Where(function => function.OwnerType is not null && function.IsStatic)
-                    .Select(function => $"{function.OwnerType}.{function.Name}")
+                    .Where(function => function.OwnerTypeNode is not null && function.IsStatic)
+                    .Select(function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}")
                     .ToHashSet(StringComparer.Ordinal),
                 concreteStructs.ToDictionary(structNode => structNode.Name, StringComparer.Ordinal),
                 program.Interfaces.ToDictionary(interfaceNode => interfaceNode.Name, StringComparer.Ordinal),
@@ -255,19 +266,86 @@ public sealed partial class CEmitter
                     .ToDictionary(item => item.Source, item => item.Target, StringComparer.Ordinal),
                 program.TypeAliases
                     .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-                    .ToDictionary(group => group.Key, group => group.Last().TargetType, StringComparer.Ordinal),
+                    .ToDictionary(group => group.Key, group => TypeText(group.Last().TargetTypeNode, typeRefParser), StringComparer.Ordinal),
                 program.TypeAdapters
                     .SelectMany(adapter => adapter.ExposedMethods.Select(expose => new AdapterExposeInfo(
                         adapter.Name,
                         adapter.TypeParameters,
-                        adapter.BaseType,
+                        TypeText(adapter.BaseTypeNode, typeRefParser),
                         expose.IsStatic,
                         expose.SourceName,
                         expose.ExposedName,
-                        expose.ReturnType)))
+                        TypeTextOrNull(expose.ReturnTypeNode, typeRefParser))))
                     .GroupBy(expose => $"{expose.AdapterName}.{expose.ExposedName}", StringComparer.Ordinal)
                     .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal),
+                typeRefParser,
                 requirementMatcher);
+        }
+
+        private static string? ResolveSelfType(FunctionNode function, TypeRefParser typeRefParser)
+        {
+            if (function.OwnerTypeNode is null)
+            {
+                return null;
+            }
+
+            var ownerType = TypeText(function.OwnerTypeNode, typeRefParser);
+            var typeArguments = TypeTexts(function.TypeArgumentNodes ?? [], typeRefParser);
+            if (typeArguments.Count > 0)
+            {
+                return ResolveAdapterStorageType($"{ownerType}<{string.Join(",", typeArguments)}>");
+            }
+
+            var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
+            if (selfParameter is not null)
+            {
+                var selfType = selfParameter.TypeNode.ToTypeRef(typeRefParser);
+                var selfTypeText = TypeText(selfType);
+                if (!ContainsSelf(selfType))
+                {
+                    return NormalizeType(selfTypeText);
+                }
+            }
+
+            return ResolveAdapterStorageType(ownerType);
+        }
+
+        private static TypeRef SubstituteSelf(TypeRef type, string? selfType, TypeRefParser typeRefParser) =>
+            string.IsNullOrWhiteSpace(selfType)
+                ? type
+                : TypeRefRewriter.SubstituteSelf(type, typeRefParser.Parse(selfType));
+
+        private static bool ContainsSelf(TypeRef type) =>
+            type switch
+            {
+                TypeRef.Named named => string.Equals(named.Name, "Self", StringComparison.Ordinal)
+                    || named.Arguments.Any(ContainsSelf),
+                TypeRef.Alias alias => string.Equals(alias.Name, "Self", StringComparison.Ordinal)
+                    || ContainsSelf(alias.Target),
+                TypeRef.Pointer pointer => ContainsSelf(pointer.Element),
+                TypeRef.FixedArray array => ContainsSelf(array.Element),
+                TypeRef.Function function => function.Parameters.Any(ContainsSelf)
+                    || ContainsSelf(function.ReturnType),
+                _ => false,
+            };
+
+        private static bool IsPointer(TypeNode? typeNode, TypeRefParser typeRefParser) =>
+            typeNode.ToTypeRef(typeRefParser) is TypeRef.Pointer;
+
+        private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser) =>
+            TypeText(typeNode.ToTypeRef(typeRefParser));
+
+        private static string? TypeTextOrNull(TypeNode? typeNode, TypeRefParser typeRefParser)
+        {
+            var type = typeNode.ToTypeRef(typeRefParser);
+            return type is TypeRef.Unknown ? null : TypeText(type);
+        }
+
+        private static IReadOnlyList<string> TypeTexts(IReadOnlyList<TypeNode> typeNodes, TypeRefParser typeRefParser) =>
+            typeNodes.Select(typeNode => TypeText(typeNode, typeRefParser)).ToList();
+
+        private static string TypeText(TypeRef type) =>
+            type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
 
         private CLoweringMethodInfo CreateMethodInfo(string key, string cName) =>
             new(

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -17,7 +18,7 @@ public sealed partial class CEmitter
             LiteralExpressionNode literal => ResolveLiteralType(literal.SourceText),
             NameExpressionNode name => scope.GetVariableTypeOrDefault(name.SourceText),
             ParenthesizedExpressionNode parenthesized => Resolve(parenthesized.Expression),
-            CastExpressionNode cast => cast.TargetType,
+            CastExpressionNode cast => TypeText(cast.TargetTypeNode),
             UnaryExpressionNode { Operator: "&" } unary when Resolve(unary.Operand) is { } operandType => operandType + "*",
             UnaryExpressionNode { Operator: "*" } unary when Resolve(unary.Operand) is { } operandType => UnwrapPointer(operandType),
             UnaryExpressionNode unary => Resolve(unary.Operand),
@@ -49,15 +50,16 @@ public sealed partial class CEmitter
         private string? ResolveGenericCallType(GenericCallExpressionNode call)
         {
             var calleeName = GetQualifiedName(call.Callee);
+            var typeArguments = TypeTexts(call.TypeArgumentNodes);
             if (calleeName is not null)
             {
-                var freeCall = genericCallResolver.FindFreeExact(calleeName, call.TypeArguments);
+                var freeCall = genericCallResolver.FindFreeExact(calleeName, typeArguments);
                 if (freeCall is not null)
                 {
                     return freeCall.ReturnType;
                 }
 
-                var staticCall = genericCallResolver.FindStaticExact(calleeName, call.TypeArguments);
+                var staticCall = genericCallResolver.FindStaticExact(calleeName, typeArguments);
                 if (staticCall is not null)
                 {
                     return staticCall.ReturnType;
@@ -70,7 +72,7 @@ public sealed partial class CEmitter
                 var owner = targetType is null
                     ? GetQualifiedName(member.Target)
                     : GetGenericBaseName(RemovePointer(NormalizeType(targetType)));
-                var match = genericCallResolver.FindExact(owner, member.MemberName, call.TypeArguments);
+                var match = genericCallResolver.FindExact(owner, member.MemberName, typeArguments);
                 return match?.ReturnType;
             }
 
@@ -103,7 +105,7 @@ public sealed partial class CEmitter
             if (context.TryGetStruct(normalizedType, out var structNode)
                 || context.TryGetStruct(lowerType(normalizedType), out structNode))
             {
-                return structNode.Fields.FirstOrDefault(field => field.Name == member.MemberName)?.Type;
+                return TypeText(structNode.Fields.FirstOrDefault(field => field.Name == member.MemberName)?.TypeNode);
             }
 
             return null;
@@ -177,5 +179,18 @@ public sealed partial class CEmitter
             MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
             _ => null,
         };
+
+        private string? TypeText(TypeNode? typeNode)
+        {
+            var type = scope.ResolveType(typeNode);
+            return type is null ? null : TypeRefFormatter.ToCxString(type);
+        }
+
+        private IReadOnlyList<string> TypeTexts(IReadOnlyList<TypeNode> typeNodes) =>
+            typeNodes
+                .Select(TypeText)
+                .Where(type => !string.IsNullOrWhiteSpace(type))
+                .Select(type => type!)
+                .ToList();
     }
 }

@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Lowering;
@@ -18,11 +19,12 @@ internal static class TypeAdapterLoweringPass
         var adapters = program.TypeAdapters
             .GroupBy(adapter => adapter.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var typeRefParser = new TypeRefParser(program);
 
         var adapterMethods = new List<FunctionNode>();
         foreach (var adapter in program.TypeAdapters)
         {
-            var baseType = adapter.BaseTypeNode.ToTypeName();
+            var baseType = TypeText(adapter.BaseTypeNode, typeRefParser);
             var baseName = GetGenericBaseName(baseType);
             var baseTypeParameters = Array.Empty<string>() as IReadOnlyList<string>;
             if (structs.TryGetValue(baseName, out var baseStruct))
@@ -120,6 +122,17 @@ internal static class TypeAdapterLoweringPass
         }
 
         yield return text[start..];
+    }
+
+    private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
     }
 
 }

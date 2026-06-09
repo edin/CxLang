@@ -33,16 +33,17 @@ public sealed partial class CEmitter
             MemberExpressionNode member,
             IReadOnlyList<ExpressionNode> arguments)
         {
-            if (resolvedCall is not { IsInstance: true, Function.OwnerType: not null } resolved
+            if (resolvedCall is not { IsInstance: true } resolved
                 || member.Target is not NameExpressionNode targetName
-                || !scope.TryGetVariableType(targetName.SourceText, out var targetType))
+                || OwnerType(resolved.Function) is not { } ownerType
+                || !TryGetReceiverPointerInfo(targetName.SourceText, out var isPointerReceiver))
             {
                 return null;
             }
 
             var takesPointerSelf = resolved.TypeArguments.Count > 0
                 ? genericCallResolver.FindResolved(resolvedCall)?.TakesPointerSelf
-                : context.TryGetMethodTakesPointerSelf($"{resolved.Function.OwnerType}.{resolved.Function.Name}", out var methodTakesPointerSelf)
+                : context.TryGetMethodTakesPointerSelf($"{ownerType}.{resolved.Function.Name}", out var methodTakesPointerSelf)
                     ? methodTakesPointerSelf
                     : null;
             if (takesPointerSelf is null)
@@ -59,7 +60,7 @@ public sealed partial class CEmitter
             var loweredArguments = arguments.Select(lowerExpression).ToList();
             loweredArguments.Insert(0, receiverExpressionBuilder.Build(
                 targetName.SourceText,
-                targetType.EndsWith("*", StringComparison.Ordinal),
+                isPointerReceiver,
                 takesPointerSelf.Value));
             return new CCallExpression(functionReference, loweredArguments);
         }
@@ -72,18 +73,49 @@ public sealed partial class CEmitter
                 return genericCall is null
                     ? null
                     : new CResolvedFunction(
-                        GetFunctionModule(genericCall.OwnerType, genericCall.Name) ?? resolvedCall.Function.OwnerType ?? genericCall.Name,
+                        GetFunctionModule(genericCall.OwnerType ?? OwnerType(resolvedCall.Function), genericCall.Name),
                         genericCall.CName);
             }
 
+            var ownerType = OwnerType(resolvedCall.Function);
             return new CResolvedFunction(
-                GetFunctionModule(resolvedCall.Function.OwnerType, resolvedCall.Function.Name)
-                    ?? resolvedCall.Function.OwnerType
+                GetFunctionModule(ownerType, resolvedCall.Function.Name)
+                    ?? ownerType
                     ?? resolvedCall.Function.Name,
                 s_nameMangler.FunctionName(resolvedCall.Function));
         }
 
-        private static string? GetFunctionModule(string? ownerType, string name) =>
+        private static string GetFunctionModule(string? ownerType, string name) =>
             ownerType is null ? name : ownerType;
+
+        private bool TryGetReceiverPointerInfo(string name, out bool isPointer)
+        {
+            if (scope.TryGetVariableTypeRef(name, out var typeRef))
+            {
+                isPointer = typeRef is TypeRef.Pointer;
+                return true;
+            }
+
+            if (scope.TryGetVariableType(name, out var typeText))
+            {
+                isPointer = typeText.EndsWith("*", StringComparison.Ordinal);
+                return true;
+            }
+
+            isPointer = false;
+            return false;
+        }
+
+        private string? OwnerType(FunctionNode function)
+        {
+            if (function.OwnerTypeNode is null)
+            {
+                return null;
+            }
+
+            return scope.ResolveType(function.OwnerTypeNode) is { } ownerType
+                ? TypeRefFormatter.ToCxString(ownerType)
+                : null;
+        }
     }
 }

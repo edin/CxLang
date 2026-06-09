@@ -948,7 +948,7 @@ public sealed class CxCompiler
             Structs = program.Structs.Select(structNode => structNode with
             {
                 Name = QualifyName(alias, structNode.Name),
-                Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, QualifyType(field.Type, alias, typeNames)) }).ToList(),
+                Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, QualifyType(field.TypeNode.ToTypeName(), alias, typeNames)) }).ToList(),
             }).ToList(),
             TypeAdapters = program.TypeAdapters.Select(adapter => adapter with
             {
@@ -974,7 +974,7 @@ public sealed class CxCompiler
             TaggedUnions = program.TaggedUnions.Select(union => union with
             {
                 Name = QualifyName(alias, union.Name),
-                Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, QualifyType(variant.Type, alias, typeNames)) }).ToList(),
+                Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, QualifyType(variant.TypeNode.ToTypeName(), alias, typeNames)) }).ToList(),
             }).ToList(),
             GlobalVariables = program.GlobalVariables.Select(global => global with
             {
@@ -1027,7 +1027,7 @@ public sealed class CxCompiler
                 .Select(structNode => structNode with
                 {
                     Name = symbols[structNode.Name],
-                    Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, ProjectSymbolImportType(field.Type, symbols, typeNames)) }).ToList(),
+                    Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, ProjectSymbolImportType(field.TypeNode.ToTypeName(), symbols, typeNames)) }).ToList(),
                 })
                 .ToList(),
             TypeAdapters = program.TypeAdapters
@@ -1062,7 +1062,7 @@ public sealed class CxCompiler
                 .Select(union => union with
                 {
                     Name = symbols[union.Name],
-                    Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, ProjectSymbolImportType(variant.Type, symbols, typeNames)) }).ToList(),
+                    Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, ProjectSymbolImportType(variant.TypeNode.ToTypeName(), symbols, typeNames)) }).ToList(),
                 })
                 .ToList(),
             GlobalVariables = program.GlobalVariables
@@ -1112,7 +1112,7 @@ public sealed class CxCompiler
                 .Select(structNode => structNode with
                 {
                     Name = symbols[structNode.Name],
-                    Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, ProjectSymbolImportType(field.Type, symbols, typeNames)) }).ToList(),
+                    Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, ProjectSymbolImportType(field.TypeNode.ToTypeName(), symbols, typeNames)) }).ToList(),
                 })
                 .ToList(),
             Unions = declaration.Unions
@@ -1120,7 +1120,7 @@ public sealed class CxCompiler
                 .Select(union => union with
                 {
                     Name = symbols[union.Name],
-                    Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, ProjectSymbolImportType(variant.Type, symbols, typeNames)) }).ToList(),
+                    Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, ProjectSymbolImportType(variant.TypeNode.ToTypeName(), symbols, typeNames)) }).ToList(),
                 })
                 .ToList(),
             Constants = declaration.Constants
@@ -1176,12 +1176,12 @@ public sealed class CxCompiler
             Structs = declaration.Structs.Select(structNode => structNode with
             {
                 Name = QualifyName(alias, structNode.Name),
-                Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, QualifyType(field.Type, alias, typeNames)) }).ToList(),
+                Fields = structNode.Fields.Select(field => field with { TypeNode = RewriteTypeNode(field.TypeNode, QualifyType(field.TypeNode.ToTypeName(), alias, typeNames)) }).ToList(),
             }).ToList(),
             Unions = declaration.Unions.Select(union => union with
             {
                 Name = QualifyName(alias, union.Name),
-                Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, QualifyType(variant.Type, alias, typeNames)) }).ToList(),
+                Variants = union.Variants.Select(variant => variant with { TypeNode = RewriteTypeNode(variant.TypeNode, QualifyType(variant.TypeNode.ToTypeName(), alias, typeNames)) }).ToList(),
             }).ToList(),
             Constants = declaration.Constants.Select(global => global with
             {

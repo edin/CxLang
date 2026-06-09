@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 using CxParser = Cx.Compiler.Parser.Parser;
@@ -9,13 +10,13 @@ internal static class LambdaLowerer
 {
     public static ProgramNode Lower(ProgramNode program, DiagnosticBag diagnostics)
     {
-        var state = new State();
+        var state = new State(new TypeRefParser(program));
         var globals = program.GlobalVariables
             .Select(global => global with
             {
                 Initializer = global.Initializer is null
                     ? null
-                    : LowerExpressionNode(global.Initializer, TryParseFunctionReturnType(global.Type), "global", state),
+                    : LowerExpressionNode(global.Initializer, TryParseFunctionReturnType(TypeText(global.TypeNode, state)), "global", state),
             })
             .ToList();
 
@@ -46,7 +47,7 @@ internal static class LambdaLowerer
         return function with
         {
             Body = function.Body
-                .Select(statement => LowerStatement(statement, function.ReturnType, parentName, state))
+                .Select(statement => LowerStatement(statement, TypeText(function.ReturnTypeNode, state), parentName, state))
                 .ToList(),
         };
     }
@@ -61,7 +62,7 @@ internal static class LambdaLowerer
         {
             Initializer = let.Initializer is null
                 ? null
-                : LowerExpressionNode(let.Initializer, TryParseFunctionReturnType(let.Type), parentName, state),
+                : LowerExpressionNode(let.Initializer, TryParseFunctionReturnType(TypeText(let.TypeNode, state)), parentName, state),
         },
         ReturnStatement ret => ret with
         {
@@ -247,9 +248,10 @@ internal static class LambdaLowerer
         string parentName,
         State state)
     {
-        var returnType = string.IsNullOrWhiteSpace(functionExpression.ReturnType)
+        var explicitReturnType = TypeText(functionExpression.ReturnTypeNode, state);
+        var returnType = string.IsNullOrWhiteSpace(explicitReturnType)
             ? contextualReturnType ?? "int"
-            : functionExpression.ReturnType;
+            : explicitReturnType;
         var functionName = $"{parentName}_fn_{state.NextId++}";
 
         if (functionExpression.BlockBody is not null)
@@ -429,7 +431,10 @@ internal static class LambdaLowerer
         IReadOnlyList<ParameterNode> parameters,
         string body)
     {
-        var parameterText = string.Join(", ", parameters.Select(parameter => $"{parameter.Name}: {parameter.Type}"));
+        var parser = new TypeRefParser(new ProgramNode(
+            new Location(new SourceFile("<lambda>", string.Empty), 0, 1, 1),
+            []));
+        var parameterText = string.Join(", ", parameters.Select(parameter => $"{parameter.Name}: {TypeText(parameter.TypeNode, parser)}"));
         return $"fn {functionName}({parameterText}) -> {returnType} {{{body}}}";
     }
 
@@ -465,6 +470,20 @@ internal static class LambdaLowerer
     {
         var location = new Location(new SourceFile("<lambda>", ""), 0, 1, 1);
         return TypeNode.Create(location, type);
+    }
+
+    private static string TypeText(TypeNode? typeNode, State state) =>
+        TypeText(typeNode, state.TypeRefParser);
+
+    private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
     }
 
     private static int FindLambdaStart(string expression, int start)
@@ -660,16 +679,22 @@ internal static class LambdaLowerer
 
     private static string GetParentName(FunctionNode function)
     {
-        var name = function.OwnerType is null
+        var parser = new TypeRefParser(new ProgramNode(
+            new Location(new SourceFile("<lambda>", string.Empty), 0, 1, 1),
+            []));
+        var ownerType = TypeText(function.OwnerTypeNode, parser);
+        var name = string.IsNullOrWhiteSpace(ownerType)
             ? function.Name
-            : $"{function.OwnerType}_{function.Name}";
+            : $"{ownerType}_{function.Name}";
         return new string(name.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray());
     }
 
     private static bool IsIdentifierPart(char ch) => char.IsLetterOrDigit(ch) || ch == '_';
 
-    private sealed class State
+    private sealed class State(TypeRefParser typeRefParser)
     {
+        public TypeRefParser TypeRefParser { get; } = typeRefParser;
+
         public int NextId { get; set; }
 
         public List<FunctionNode> GeneratedFunctions { get; } = [];

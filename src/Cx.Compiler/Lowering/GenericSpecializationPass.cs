@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 using System.Text.RegularExpressions;
 
@@ -26,6 +27,7 @@ internal static class GenericSpecializationPass
         var specializedFunctions = new Dictionary<string, FunctionNode>(StringComparer.Ordinal);
         var pending = new Queue<GenericFunctionUse>();
         var collector = new GenericUseCollector(program);
+        var typeRefParser = new TypeRefParser(program);
         var openTypeParameterNames = GetOpenTypeParameterNames(program);
         foreach (var use in collector.Collect(program))
         {
@@ -34,7 +36,7 @@ internal static class GenericSpecializationPass
 
         while (pending.TryDequeue(out var use))
         {
-            var key = Key(use.Function, use.TypeArguments);
+            var key = Key(use.Function, use.TypeArguments, typeRefParser);
             if (specializedFunctions.ContainsKey(key)
                 || use.Function.TypeParameters.Count != use.TypeArguments.Count
                 || !IsClosedTypeArgumentList(use.TypeArguments, openTypeParameterNames))
@@ -96,8 +98,22 @@ internal static class GenericSpecializationPass
         };
     }
 
-    private static string Key(FunctionNode function, IReadOnlyList<string> arguments) =>
-        $"{(function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}")}<{string.Join(",", arguments)}>";
+    private static string Key(FunctionNode function, IReadOnlyList<string> arguments, TypeRefParser typeRefParser)
+    {
+        var ownerType = TypeText(function.OwnerTypeNode, typeRefParser);
+        return $"{(string.IsNullOrWhiteSpace(ownerType) ? function.Name : $"{ownerType}.{function.Name}")}<{string.Join(",", arguments)}>";
+    }
+
+    private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
 
     private static IReadOnlySet<string> GetOpenTypeParameterNames(ProgramNode program) =>
         program.Structs.SelectMany(structNode => structNode.TypeParameters)

@@ -42,21 +42,34 @@ public sealed partial class CEmitter
             RequirementMatcher requirementMatcher)
             : this(
                 CLoweringContext.Create(program, concreteStructs, requirementMatcher),
-                CLoweringScope.Create(
-                    program.GlobalVariables
-                        .Where(global => global.Type.EndsWith("*", StringComparison.Ordinal))
-                        .Select(global => global.Name)
-                        .ToHashSet(StringComparer.Ordinal),
-                    program.GlobalVariables
-                        .Select(global => (global.Name, global.Type))
-                        .GroupBy(item => item.Name, StringComparer.Ordinal)
-                        .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal),
-                    program.GlobalVariables
-                        .Where(global => global.TypeNode?.Semantic.Type is not null)
-                        .Select(global => (global.Name, Type: global.TypeNode!.Semantic.Type!))
-                        .GroupBy(item => item.Name, StringComparer.Ordinal)
-                        .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal)))
+                CreateInitialScope(program))
         {
+        }
+
+        private static CLoweringScope CreateInitialScope(ProgramNode program)
+        {
+            var typeRefParser = new TypeRefParser(program);
+            var globals = program.GlobalVariables
+                .Select(global => (global.Name, Type: global.TypeNode.ToTypeRef(typeRefParser)))
+                .Where(global => global.Type is not TypeRef.Unknown)
+                .GroupBy(global => global.Name, StringComparer.Ordinal)
+                .Select(group => group.Last())
+                .ToList();
+
+            return CLoweringScope.Create(
+                typeRefParser,
+                globals
+                    .Where(global => global.Type is TypeRef.Pointer)
+                    .Select(global => global.Name)
+                    .ToHashSet(StringComparer.Ordinal),
+                globals.ToDictionary(
+                    global => global.Name,
+                    global => TypeRefFormatter.ToCxString(global.Type),
+                    StringComparer.Ordinal),
+                globals.ToDictionary(
+                    global => global.Name,
+                    global => global.Type,
+                    StringComparer.Ordinal));
         }
 
         private ImportedNameLowerer(
@@ -146,6 +159,7 @@ public sealed partial class CEmitter
                 LowerExpression);
             _genericCallLowerer = new GenericCallLowerer(
                 _context,
+                _scope,
                 _genericCallResolver,
                 _resolvedCallLowerer,
                 _memberCallLowerer,
@@ -298,6 +312,9 @@ public sealed partial class CEmitter
             targetType is null
                 ? LowerInitializerExpression(fallbackTargetType, expression)
                 : LowerInitializerExpression(targetType, expression);
+
+        public CExpression LowerInitializerExpression(TypeNode? targetTypeNode, string fallbackTargetType, ExpressionNode expression) =>
+            LowerInitializerExpression(_scope.ResolveType(targetTypeNode), fallbackTargetType, expression);
 
         public CExpression LowerInitializerExpression(TypeRef targetType, ExpressionNode expression)
         {
@@ -543,6 +560,11 @@ public sealed partial class CEmitter
 
         string ICExpressionLoweringContext.LowerType(TypeRef type) =>
             CTypeLowerer.LowerType(type, s_typeAdapters, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+
+        string ICExpressionLoweringContext.LowerType(TypeNode? typeNode) =>
+            _scope.ResolveType(typeNode) is { } type
+                ? CTypeLowerer.LowerType(type, s_typeAdapters, GenericTypeSubstitutionBuilder.ParseType(SelfType))
+                : string.Empty;
 
         string ICExpressionLoweringContext.LowerType(TypeNode? typeNode, string fallbackType) =>
             CEmitter.LowerType(typeNode, fallbackType, SelfType);

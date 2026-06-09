@@ -70,7 +70,7 @@ internal static class DebugDeriveGenerator
         IReadOnlySet<string> debugStructNames,
         IReadOnlyDictionary<string, string> typeAliases)
     {
-        var type = field.Type.Trim();
+        var type = field.TypeNode.ToTypeName().Trim();
         var expression = $"self.{field.Name}";
         var resolvedType = ResolveAlias(type, typeAliases);
 

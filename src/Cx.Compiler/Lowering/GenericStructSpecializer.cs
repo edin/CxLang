@@ -27,6 +27,7 @@ internal static class GenericStructSpecializer
             .ToDictionary(structNode => structNode.Name, StringComparer.Ordinal);
         var emitted = new HashSet<string>(concreteStructs.Keys, StringComparer.Ordinal);
         var pending = new Queue<GenericStructUse>();
+        var typeRefParser = new TypeRefParser(program);
 
         void CollectFromType(string? type)
         {
@@ -46,23 +47,24 @@ internal static class GenericStructSpecializer
 
         foreach (var typeAlias in program.TypeAliases)
         {
-            CollectFromType(typeAlias.TargetType);
+            CollectFromType(TypeText(typeAlias.TargetTypeNode, typeRefParser));
         }
 
         foreach (var adapter in program.TypeAdapters)
         {
-            if (!adapter.TypeParameters.Any(parameter => Regex.IsMatch(adapter.BaseType, $@"\b{Regex.Escape(parameter)}\b")))
+            var baseType = TypeText(adapter.BaseTypeNode, typeRefParser);
+            if (!adapter.TypeParameters.Any(parameter => Regex.IsMatch(baseType, $@"\b{Regex.Escape(parameter)}\b")))
             {
-                CollectFromType(adapter.BaseType);
+                CollectFromType(baseType);
             }
         }
 
         foreach (var externFunction in program.ExternFunctions)
         {
-            CollectFromType(externFunction.ReturnType);
+            CollectFromType(TypeText(externFunction.ReturnTypeNode, typeRefParser));
             foreach (var parameter in externFunction.Parameters.Where(parameter => !parameter.IsVariadic))
             {
-                CollectFromType(parameter.Type);
+                CollectFromType(TypeText(parameter.TypeNode, typeRefParser));
             }
         }
 
@@ -70,7 +72,7 @@ internal static class GenericStructSpecializer
         {
             foreach (var field in structNode.Fields)
             {
-                CollectFromType(field.Type);
+                CollectFromType(TypeText(field.TypeNode, typeRefParser));
             }
         }
 
@@ -78,18 +80,18 @@ internal static class GenericStructSpecializer
         {
             foreach (var variant in taggedUnion.Variants)
             {
-                CollectFromType(variant.Type);
+                CollectFromType(TypeText(variant.TypeNode, typeRefParser));
             }
         }
 
         foreach (var global in program.GlobalVariables)
         {
-            CollectFromType(global.Type);
+            CollectFromType(TypeText(global.TypeNode, typeRefParser));
         }
 
         foreach (var function in program.Functions.Concat(specializedFunctions))
         {
-            CollectFromFunction(function, CollectFromType);
+            CollectFromFunction(function, CollectFromType, typeRefParser);
         }
 
         var result = new List<StructNode>();
@@ -104,7 +106,7 @@ internal static class GenericStructSpecializer
                 continue;
             }
 
-            var specialized = SpecializeDefinition(definition, concreteName, use.Arguments, CollectFromType);
+            var specialized = SpecializeDefinition(definition, concreteName, use.Arguments, CollectFromType, typeRefParser);
             result.Add(specialized);
         }
 
@@ -115,7 +117,8 @@ internal static class GenericStructSpecializer
         StructNode definition,
         string concreteName,
         IReadOnlyList<string> arguments,
-        Action<string?> collectFromType)
+        Action<string?> collectFromType,
+        TypeRefParser typeRefParser)
     {
         var substitutions = definition.TypeParameters
             .Zip(arguments)
@@ -124,7 +127,7 @@ internal static class GenericStructSpecializer
         var fields = definition.Fields
             .Select(field =>
             {
-                var fieldType = GenericTypeStringRewriter.Substitute(field.Type, substitutions);
+                var fieldType = GenericTypeStringRewriter.Substitute(TypeText(field.TypeNode, typeRefParser), substitutions);
                 collectFromType(fieldType);
                 return CopySemantic(field, field with
                 {
@@ -153,80 +156,86 @@ internal static class GenericStructSpecializer
         return specialized;
     }
 
-    private static void CollectFromFunction(FunctionNode function, Action<string?> collectFromType)
+    private static void CollectFromFunction(
+        FunctionNode function,
+        Action<string?> collectFromType,
+        TypeRefParser typeRefParser)
     {
-        collectFromType(function.ReturnType);
+        collectFromType(TypeText(function.ReturnTypeNode, typeRefParser));
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
-            collectFromType(parameter.Type);
+            collectFromType(TypeText(parameter.TypeNode, typeRefParser));
         }
 
         foreach (var statement in function.Body)
         {
-            CollectFromStatement(statement, collectFromType);
+            CollectFromStatement(statement, collectFromType, typeRefParser);
         }
     }
 
-    private static void CollectFromStatement(StatementNode statement, Action<string?> collectFromType)
+    private static void CollectFromStatement(
+        StatementNode statement,
+        Action<string?> collectFromType,
+        TypeRefParser typeRefParser)
     {
         switch (statement)
         {
             case LetStatement let:
-                collectFromType(let.Type);
+                collectFromType(TypeText(let.TypeNode, typeRefParser));
                 break;
             case IfStatement ifStatement:
                 foreach (var nested in ifStatement.ThenBody)
                 {
-                    CollectFromStatement(nested, collectFromType);
+                    CollectFromStatement(nested, collectFromType, typeRefParser);
                 }
 
                 if (ifStatement.ElseBranch is not null)
                 {
-                    CollectFromStatement(ifStatement.ElseBranch, collectFromType);
+                    CollectFromStatement(ifStatement.ElseBranch, collectFromType, typeRefParser);
                 }
 
                 break;
             case ElseBlockStatement elseBlock:
                 foreach (var nested in elseBlock.Body)
                 {
-                    CollectFromStatement(nested, collectFromType);
+                    CollectFromStatement(nested, collectFromType, typeRefParser);
                 }
 
                 break;
             case WhileStatement whileStatement:
                 foreach (var nested in whileStatement.Body)
                 {
-                    CollectFromStatement(nested, collectFromType);
+                    CollectFromStatement(nested, collectFromType, typeRefParser);
                 }
 
                 break;
             case ForStatement forStatement:
                 if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                 {
-                    collectFromType(declaration.Type);
+                    collectFromType(TypeText(declaration.TypeNode, typeRefParser));
                 }
 
                 foreach (var nested in forStatement.Body)
                 {
-                    CollectFromStatement(nested, collectFromType);
+                    CollectFromStatement(nested, collectFromType, typeRefParser);
                 }
 
                 break;
             case ForeachStatement foreachStatement:
-                collectFromType(foreachStatement.ValueBinding.Type);
+                collectFromType(TypeText(foreachStatement.ValueBinding.TypeNode, typeRefParser));
                 if (foreachStatement.IndexBinding is not null)
                 {
-                    collectFromType(foreachStatement.IndexBinding.Type);
+                    collectFromType(TypeText(foreachStatement.IndexBinding.TypeNode, typeRefParser));
                 }
 
                 if (foreachStatement.KeyBinding is not null)
                 {
-                    collectFromType(foreachStatement.KeyBinding.Type);
+                    collectFromType(TypeText(foreachStatement.KeyBinding.TypeNode, typeRefParser));
                 }
 
                 foreach (var nested in foreachStatement.Body)
                 {
-                    CollectFromStatement(nested, collectFromType);
+                    CollectFromStatement(nested, collectFromType, typeRefParser);
                 }
 
                 break;
@@ -235,13 +244,13 @@ internal static class GenericStructSpecializer
                 {
                     foreach (var nested in switchCase.Body)
                     {
-                        CollectFromStatement(nested, collectFromType);
+                        CollectFromStatement(nested, collectFromType, typeRefParser);
                     }
                 }
 
                 foreach (var nested in switchStatement.DefaultBody)
                 {
-                    CollectFromStatement(nested, collectFromType);
+                    CollectFromStatement(nested, collectFromType, typeRefParser);
                 }
 
                 break;
@@ -250,7 +259,7 @@ internal static class GenericStructSpecializer
                 {
                     foreach (var nested in arm.Body)
                     {
-                        CollectFromStatement(nested, collectFromType);
+                        CollectFromStatement(nested, collectFromType, typeRefParser);
                     }
                 }
 
@@ -266,6 +275,17 @@ internal static class GenericStructSpecializer
             typeNode,
             typeName => GenericTypeStringRewriter.Substitute(typeName, substitutions),
             typeSubstitutions);
+
+    private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
 
     private static IReadOnlySet<string> GetOpenTypeParameterNames(ProgramNode program) =>
         program.Structs.SelectMany(structNode => structNode.TypeParameters)
