@@ -79,10 +79,10 @@ public sealed partial class CEmitter
             .Where(typeAlias => !typeAlias.IsHeaderDeclaration)
             .ToList();
         var earlyTypeAliases = emittedTypeAliases
-            .Where(typeAlias => !ReferencesCompositeType(typeAlias.TargetType, compositeTypeNames))
+            .Where(typeAlias => !ReferencesCompositeType(TypeAliasTargetTypeText(typeAlias), compositeTypeNames))
             .ToList();
         var lateTypeAliases = emittedTypeAliases
-            .Where(typeAlias => ReferencesCompositeType(typeAlias.TargetType, compositeTypeNames))
+            .Where(typeAlias => ReferencesCompositeType(TypeAliasTargetTypeText(typeAlias), compositeTypeNames))
             .ToList();
 
         foreach (var typeAlias in earlyTypeAliases)
@@ -358,7 +358,8 @@ public sealed partial class CEmitter
 
     private static CTypeAliasDeclaration ToCTypeAlias(TypeAliasNode typeAlias)
     {
-        if (TryParseFunctionType(typeAlias.TargetType, out var parameters, out var returnType))
+        var targetType = TypeAliasTargetTypeText(typeAlias);
+        if (TryParseFunctionType(targetType, out var parameters, out var returnType))
         {
             return new CTypeAliasDeclaration(
                 typeAlias.Name,
@@ -368,7 +369,7 @@ public sealed partial class CEmitter
 
         return new CTypeAliasDeclaration(
             typeAlias.Name,
-            LowerType(typeAlias.TargetTypeNode, typeAlias.TargetType));
+            LowerType(typeAlias.TargetTypeNode, targetType));
     }
 
     private static CFunctionDeclaration ToCFunctionDeclaration(FunctionNode function)
@@ -1019,7 +1020,7 @@ public sealed partial class CEmitter
 
         foreach (var typeAlias in program.TypeAliases.Where(typeAlias => !typeAlias.IsHeaderDeclaration))
         {
-            yield return typeAlias.TargetType;
+            yield return TypeAliasTargetTypeText(typeAlias);
         }
 
         foreach (var function in program.Functions)
@@ -1607,13 +1608,13 @@ public sealed partial class CEmitter
     {
         if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
         {
-            return adapter.BaseType;
+            return TypeAdapterBaseTypeText(adapter);
         }
 
         var substitutions = adapter.TypeParameters
             .Zip(receiverArguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return SubstituteGenericType(adapter.BaseType, substitutions);
+        return SubstituteGenericType(TypeAdapterBaseTypeText(adapter), substitutions);
     }
 
     private static ResolvedAdapterExpose ResolveAdapterExpose(
@@ -2113,6 +2114,16 @@ public sealed partial class CEmitter
         variant.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
             : variant.TypeNode.ToTypeName();
+
+    private static string TypeAliasTargetTypeText(TypeAliasNode typeAlias) =>
+        typeAlias.TargetTypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : typeAlias.TargetTypeNode.ToTypeName();
+
+    private static string TypeAdapterBaseTypeText(TypeAdapterNode adapter) =>
+        adapter.BaseTypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : adapter.BaseTypeNode.ToTypeName();
 
     private static string StructFieldTypeText(StructFieldNode field) =>
         field.TypeNode?.Semantic.Type is { } type

@@ -16,7 +16,7 @@ internal static class DebugDeriveGenerator
 
         var typeAliases = program.TypeAliases
             .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Last().TargetType, StringComparer.Ordinal);
+            .ToDictionary(group => group.Key, group => group.Last().TargetTypeNode.ToTypeName(), StringComparer.Ordinal);
 
         foreach (var structNode in program.Structs.Where(HasDebugDerive).Where(structNode => structNode.TypeParameters.Count == 0))
         {

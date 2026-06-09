@@ -929,7 +929,7 @@ public sealed class CxCompiler
             TypeAliases = program.TypeAliases.Select(typeAlias => typeAlias with
             {
                 Name = QualifyName(alias, typeAlias.Name),
-                TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, QualifyType(typeAlias.TargetType, alias, typeNames)),
+                TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, QualifyType(typeAlias.TargetTypeNode.ToTypeName(), alias, typeNames)),
             }).ToList(),
             Enums = program.Enums.Select(enumNode => enumNode with
             {
@@ -953,7 +953,7 @@ public sealed class CxCompiler
             TypeAdapters = program.TypeAdapters.Select(adapter => adapter with
             {
                 Name = QualifyName(alias, adapter.Name),
-                BaseTypeNode = RewriteTypeNode(adapter.BaseTypeNode, QualifyType(adapter.BaseType, alias, typeNames)),
+                BaseTypeNode = RewriteTypeNode(adapter.BaseTypeNode, QualifyType(adapter.BaseTypeNode.ToTypeName(), alias, typeNames)),
                 Methods = adapter.Methods.Select(method => method with
                 {
                     OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, method.OwnerType ?? adapter.Name)),
@@ -963,10 +963,10 @@ public sealed class CxCompiler
             }).ToList(),
             Extensions = program.Extensions.Select(extension => extension with
             {
-                TargetTypeNode = RewriteTypeNode(extension.TargetTypeNode, QualifyName(alias, extension.TargetType)),
+                TargetTypeNode = RewriteTypeNode(extension.TargetTypeNode, QualifyName(alias, extension.TargetTypeNode.ToTypeName())),
                 Methods = extension.Methods.Select(method => method with
                 {
-                    OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, method.OwnerType ?? extension.TargetType)),
+                    OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, method.OwnerType ?? extension.TargetTypeNode.ToTypeName())),
                     ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnType, alias, typeNames)),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
@@ -1004,7 +1004,7 @@ public sealed class CxCompiler
                 .Select(typeAlias => typeAlias with
                 {
                     Name = symbols[typeAlias.Name],
-                    TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, ProjectSymbolImportType(typeAlias.TargetType, symbols, typeNames)),
+                    TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, ProjectSymbolImportType(typeAlias.TargetTypeNode.ToTypeName(), symbols, typeNames)),
                 })
                 .ToList(),
             Enums = program.Enums
@@ -1035,7 +1035,7 @@ public sealed class CxCompiler
                 .Select(adapter => adapter with
                 {
                     Name = symbols[adapter.Name],
-                    BaseTypeNode = RewriteTypeNode(adapter.BaseTypeNode, ProjectSymbolImportType(adapter.BaseType, symbols, typeNames)),
+                    BaseTypeNode = RewriteTypeNode(adapter.BaseTypeNode, ProjectSymbolImportType(adapter.BaseTypeNode.ToTypeName(), symbols, typeNames)),
                     Methods = adapter.Methods.Select(method => method with
                     {
                         OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, symbols[adapter.Name]),
@@ -1045,13 +1045,13 @@ public sealed class CxCompiler
                 })
                 .ToList(),
             Extensions = program.Extensions
-                .Where(extension => symbols.ContainsKey(extension.TargetType))
+                .Where(extension => symbols.ContainsKey(extension.TargetTypeNode.ToTypeName()))
                 .Select(extension => extension with
                 {
-                    TargetTypeNode = RewriteTypeNode(extension.TargetTypeNode, symbols[extension.TargetType]),
+                    TargetTypeNode = RewriteTypeNode(extension.TargetTypeNode, symbols[extension.TargetTypeNode.ToTypeName()]),
                     Methods = extension.Methods.Select(method => method with
                     {
-                        OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, symbols[extension.TargetType]),
+                        OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, symbols[extension.TargetTypeNode.ToTypeName()]),
                         ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, ProjectSymbolImportType(method.ReturnType, symbols, typeNames)),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
                     }).ToList(),
@@ -1093,7 +1093,7 @@ public sealed class CxCompiler
                 .Select(typeAlias => typeAlias with
                 {
                     Name = symbols[typeAlias.Name],
-                    TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, ProjectSymbolImportType(typeAlias.TargetType, symbols, typeNames)),
+                    TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, ProjectSymbolImportType(typeAlias.TargetTypeNode.ToTypeName(), symbols, typeNames)),
                 })
                 .ToList(),
             Enums = declaration.Enums
@@ -1166,7 +1166,7 @@ public sealed class CxCompiler
             TypeAliases = declaration.TypeAliases.Select(typeAlias => typeAlias with
             {
                 Name = QualifyName(alias, typeAlias.Name),
-                TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, QualifyType(typeAlias.TargetType, alias, typeNames)),
+                TargetTypeNode = RewriteTypeNode(typeAlias.TargetTypeNode, QualifyType(typeAlias.TargetTypeNode.ToTypeName(), alias, typeNames)),
             }).ToList(),
             Enums = declaration.Enums.Select(enumNode => enumNode with
             {
