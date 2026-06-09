@@ -5,18 +5,18 @@ public sealed partial class CEmitter
     private sealed class AdapterExposeResolver(CLoweringContext context)
     {
         public string SubstituteBaseType(
-            AdapterExposeInfo adapter,
+            AdapterExposeInfo expose,
             IReadOnlyList<string> receiverArguments)
         {
-            if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
+            if (expose.TypeParameters.Count == 0 || expose.TypeParameters.Count != receiverArguments.Count)
             {
-                return adapter.BaseType;
+                return expose.BaseType;
             }
 
-            var substitutions = adapter.TypeParameters
+            var substitutions = expose.TypeParameters
                 .Zip(receiverArguments)
                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-            return SubstituteGenericType(adapter.BaseType, substitutions);
+            return SubstituteGenericType(expose.BaseType, substitutions);
         }
 
         public ResolvedAdapterExpose Resolve(

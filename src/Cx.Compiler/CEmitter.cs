@@ -270,7 +270,7 @@ public sealed partial class CEmitter
         {
             var parameters = new List<string> { "void* state" };
             parameters.AddRange(method.Parameters.Select(parameter => LowerParameterDeclaration(parameter)));
-            fields.Add($"{LowerType(method.ReturnType)} (*{method.Name})({string.Join(", ", parameters)})");
+            fields.Add($"{LowerType(InterfaceMethodReturnTypeText(method))} (*{method.Name})({string.Join(", ", parameters)})");
         }
 
         return new CStructDeclaration(GetInterfaceVTableName(interfaceNode.Name), fields);
@@ -306,8 +306,8 @@ public sealed partial class CEmitter
             }
 
             var parameters = new List<string> { "void*" };
-            parameters.AddRange(method.Parameters.Select(parameter => LowerType(parameter.Type)));
-            var slotType = $"{LowerType(method.ReturnType)} (*)({string.Join(", ", parameters)})";
+            parameters.AddRange(method.Parameters.Select(parameter => LowerType(ParameterTypeText(parameter))));
+            var slotType = $"{LowerType(InterfaceMethodReturnTypeText(method))} (*)({string.Join(", ", parameters)})";
             builder.AppendLine($"    .{method.Name} = ({slotType}){GetCFunctionName(concrete)},");
         }
 
@@ -376,7 +376,7 @@ public sealed partial class CEmitter
     {
         var selfType = ResolveSelfType(function);
         return new CFunctionDeclaration(
-            LowerType(function.ReturnTypeNode, function.ReturnType, selfType),
+            LowerType(function.ReturnTypeNode, FunctionReturnTypeText(function), selfType),
             GetCFunctionName(function),
             function.Parameters
                 .Select(parameter => LowerParameterDeclaration(parameter, selfType))
@@ -506,10 +506,10 @@ public sealed partial class CEmitter
         ImportedNameLowerer nameLowerer) => initializer switch
     {
         ForDeclarationInitializerNode declaration => new CDeclarationForInitializer(
-            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, declaration.Type, declaration.Name, nameLowerer.SelfType)}",
+            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)}",
             declaration.Initializer is null
                 ? null
-                : nameLowerer.LowerInitializerExpression(declaration.TypeNode?.Semantic.Type, declaration.Type, declaration.Initializer)),
+                : nameLowerer.LowerInitializerExpression(declaration.TypeNode?.Semantic.Type, ForDeclarationInitializerTypeText(declaration), declaration.Initializer)),
         ForExpressionInitializerNode expression => new CExpressionForInitializer(
             nameLowerer.LowerExpression(expression.Expression)),
         _ => new CEmptyForInitializer(),
@@ -558,7 +558,7 @@ public sealed partial class CEmitter
             foreachStatement.ValueBinding.IsConst);
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
-            var indexType = string.IsNullOrWhiteSpace(indexBinding.Type) ? "usize" : indexBinding.Type;
+            var indexType = string.IsNullOrWhiteSpace(ForeachBindingTypeText(indexBinding)) ? "usize" : ForeachBindingTypeText(indexBinding);
             bodyLowerer = bodyLowerer.WithLocal(indexBinding.Name, indexType);
         }
 
@@ -761,19 +761,19 @@ public sealed partial class CEmitter
         && Regex.IsMatch(literal.SourceText.Trim(), @"^-?\d+$");
 
     private static string GetForeachIndexType(ForeachStatement foreachStatement) =>
-        foreachStatement.IndexBinding is { } indexBinding && !string.IsNullOrWhiteSpace(indexBinding.Type)
-            ? indexBinding.Type
+        foreachStatement.IndexBinding is { } indexBinding && !string.IsNullOrWhiteSpace(ForeachBindingTypeText(indexBinding))
+            ? ForeachBindingTypeText(indexBinding)
             : "usize";
 
     private static string GetForeachValueType(ForeachStatement foreachStatement, string elementType) =>
-        string.IsNullOrWhiteSpace(foreachStatement.ValueBinding.Type)
+        string.IsNullOrWhiteSpace(ForeachBindingTypeText(foreachStatement.ValueBinding))
             ? elementType
-            : foreachStatement.ValueBinding.Type;
+            : ForeachBindingTypeText(foreachStatement.ValueBinding);
 
     private static string GetForeachBindingValueType(ForeachBinding binding, string elementType) =>
-        string.IsNullOrWhiteSpace(binding.Type)
+        string.IsNullOrWhiteSpace(ForeachBindingTypeText(binding))
             ? elementType
-            : binding.Type;
+            : ForeachBindingTypeText(binding);
 
     private static string GetForeachValueStorageType(ForeachStatement foreachStatement, string elementType)
         => GetForeachBindingStorageType(foreachStatement.ValueBinding, elementType, forceConst: false);
@@ -871,11 +871,12 @@ public sealed partial class CEmitter
         LetStatement let,
         ImportedNameLowerer nameLowerer)
     {
+        var type = LetStatementTypeText(let);
         var declaration = (let.IsConst ? "const " : "")
-            + LowerDeclaration(let.TypeNode, let.Type, let.Name, nameLowerer.SelfType);
+            + LowerDeclaration(let.TypeNode, type, let.Name, nameLowerer.SelfType);
         var initializer = let.Initializer is null
             ? null
-            : nameLowerer.LowerInitializerExpression(let.TypeNode?.Semantic.Type, let.Type, let.Initializer);
+            : nameLowerer.LowerInitializerExpression(let.TypeNode?.Semantic.Type, type, let.Initializer);
         return new CLocalDeclarationStatement(declaration, initializer);
     }
 
@@ -891,7 +892,7 @@ public sealed partial class CEmitter
 
     private static CFunctionDeclaration ToCFunctionDeclaration(ExternFunctionNode function) =>
         new(
-            LowerType(function.ReturnTypeNode, function.ReturnType),
+            LowerType(function.ReturnTypeNode, ExternFunctionReturnTypeText(function)),
             function.Name,
             function.Parameters
                 .Select(parameter => LowerParameterDeclaration(parameter))
@@ -901,10 +902,11 @@ public sealed partial class CEmitter
         GlobalVariableNode global,
         ImportedNameLowerer nameLowerer)
     {
-        var declaration = (global.IsConst ? "const " : "") + LowerDeclaration(global.TypeNode, global.Type, global.Name);
+        var globalType = GlobalVariableTypeText(global);
+        var declaration = (global.IsConst ? "const " : "") + LowerDeclaration(global.TypeNode, globalType, global.Name);
         var initializer = global.Initializer is null
             ? null
-            : nameLowerer.LowerInitializerExpression(global.TypeNode, global.Type, global.Initializer);
+            : nameLowerer.LowerInitializerExpression(global.TypeNode, globalType, global.Initializer);
         return new CGlobalDeclaration(declaration, initializer);
     }
 
@@ -1011,7 +1013,7 @@ public sealed partial class CEmitter
     {
         foreach (var global in program.GlobalVariables.Where(global => !global.IsHeaderDeclaration))
         {
-            yield return global.Type;
+            yield return GlobalVariableTypeText(global);
             foreach (var type in EnumerateExpressionTypeReferences(global.Initializer))
             {
                 yield return type;
@@ -1025,10 +1027,10 @@ public sealed partial class CEmitter
 
         foreach (var function in program.Functions)
         {
-            yield return function.ReturnType;
+            yield return FunctionReturnTypeText(function);
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
-                yield return parameter.Type;
+                yield return ParameterTypeText(parameter);
             }
 
             foreach (var type in EnumerateStatementTypeReferences(function.Body))
@@ -1061,7 +1063,7 @@ public sealed partial class CEmitter
             switch (statement)
             {
                 case LetStatement letStatement:
-                    yield return letStatement.Type;
+                    yield return LetStatementTypeText(letStatement);
                     foreach (var type in EnumerateExpressionTypeReferences(letStatement.Initializer))
                     {
                         yield return type;
@@ -1160,7 +1162,7 @@ public sealed partial class CEmitter
 
     private static IEnumerable<string> EnumerateForInitializerTypeReferences(ForInitializerNode initializer) => initializer switch
     {
-        ForDeclarationInitializerNode declaration => [declaration.Type, .. EnumerateExpressionTypeReferences(declaration.Initializer)],
+        ForDeclarationInitializerNode declaration => [ForDeclarationInitializerTypeText(declaration), .. EnumerateExpressionTypeReferences(declaration.Initializer)],
         ForExpressionInitializerNode expression => EnumerateExpressionTypeReferences(expression.Expression),
         _ => [],
     };
@@ -1177,13 +1179,13 @@ public sealed partial class CEmitter
             switch (node)
             {
                 case CastExpressionNode cast:
-                    yield return cast.TargetType;
+                    yield return CastExpressionTargetTypeText(cast);
                     break;
                 case InitializerExpressionNode { TypeName: not null } initializer:
                     yield return initializer.TypeName;
                     break;
-                case SizeOfExpressionNode { TypeOperand: not null } sizeOf:
-                    yield return sizeOf.TypeOperand;
+                case SizeOfExpressionNode { TypeOperandNode: not null } sizeOf:
+                    yield return SizeOfExpressionTypeOperandText(sizeOf);
                     break;
             }
         }
@@ -1193,9 +1195,10 @@ public sealed partial class CEmitter
     {
         foreach (var binding in new[] { foreachStatement.IndexBinding, foreachStatement.KeyBinding, foreachStatement.ValueBinding })
         {
-            if (!string.IsNullOrWhiteSpace(binding?.Type))
+            var type = binding is null ? null : ForeachBindingTypeText(binding);
+            if (!string.IsNullOrWhiteSpace(type))
             {
-                yield return binding.Type;
+                yield return type;
             }
         }
     }
@@ -1531,7 +1534,7 @@ public sealed partial class CEmitter
             switch (statement)
             {
                 case LetStatement let:
-                    yield return (let.Name, let.Type);
+                    yield return (let.Name, LetStatementTypeText(let));
                     break;
                 case IfStatement ifStatement:
                     foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
@@ -1563,7 +1566,7 @@ public sealed partial class CEmitter
                 case ForStatement forStatement:
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
-                        yield return (declaration.Name, declaration.Type);
+                        yield return (declaration.Name, ForDeclarationInitializerTypeText(declaration));
                     }
 
                     foreach (var variable in CollectLocalVariables(forStatement.Body))
@@ -1670,14 +1673,14 @@ public sealed partial class CEmitter
         s_nameMangler.FunctionName(function);
 
     private static string GetFunctionKey(FunctionNode function) =>
-        function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}";
+        FunctionOwnerTypeText(function) is { } ownerType ? $"{ownerType}.{function.Name}" : function.Name;
 
     private static string? GetConcreteFunctionOwnerName(FunctionNode function) =>
-        function.OwnerType is null
+        FunctionOwnerTypeText(function) is not { } ownerType
             ? null
-            : function.TypeArguments.Count == 0
-                ? function.OwnerType
-                : LowerType($"{function.OwnerType}<{string.Join(",", function.TypeArguments)}>");
+            : FunctionTypeArgumentTexts(function).Count == 0
+                ? ownerType
+                : LowerType($"{ownerType}<{string.Join(",", FunctionTypeArgumentTexts(function))}>");
 
     private static string? GetGenericBaseName(string type) =>
         CTypeLowerer.GetGenericBaseName(type);
@@ -1755,16 +1758,16 @@ public sealed partial class CEmitter
 
     private static string EmitLetStatement(LetStatement let, ImportedNameLowerer nameLowerer) => let switch
     {
-        LetStatement declaration when declaration.Initializer is null => $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, declaration.Type, declaration.Name, nameLowerer.SelfType)};",
-        LetStatement declaration => $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, declaration.Type, declaration.Name, nameLowerer.SelfType)} = {nameLowerer.LowerInitializer(declaration.Type, declaration.Initializer!)};",
+        LetStatement declaration when declaration.Initializer is null => $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, LetStatementTypeText(declaration), declaration.Name, nameLowerer.SelfType)};",
+        LetStatement declaration => $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, LetStatementTypeText(declaration), declaration.Name, nameLowerer.SelfType)} = {nameLowerer.LowerInitializer(LetStatementTypeText(declaration), declaration.Initializer!)};",
     };
 
     private static string EmitForInitializer(ForInitializerNode initializer, ImportedNameLowerer nameLowerer) => initializer switch
     {
         ForDeclarationInitializerNode declaration when declaration.Initializer is null =>
-            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, declaration.Type, declaration.Name, nameLowerer.SelfType)}",
+            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)}",
         ForDeclarationInitializerNode declaration =>
-            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, declaration.Type, declaration.Name, nameLowerer.SelfType)} = {nameLowerer.LowerInitializer(declaration.Type, declaration.Initializer!)}",
+            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)} = {nameLowerer.LowerInitializer(ForDeclarationInitializerTypeText(declaration), declaration.Initializer!)}",
         ForExpressionInitializerNode expression => nameLowerer.Lower(expression.Expression),
         _ => string.Empty,
     };
@@ -2125,6 +2128,70 @@ public sealed partial class CEmitter
             ? TypeRefFormatter.ToCxString(type)
             : adapter.BaseTypeNode.ToTypeName();
 
+    private static string? FunctionOwnerTypeText(FunctionNode function) =>
+        function.OwnerTypeNode is null
+            ? null
+            : function.OwnerTypeNode.Semantic.Type is { } type
+                ? TypeRefFormatter.ToCxString(type)
+                : function.OwnerTypeNode.ToTypeName();
+
+    private static string FunctionReturnTypeText(FunctionNode function) =>
+        function.ReturnTypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : function.ReturnTypeNode.ToTypeName();
+
+    private static string ParameterTypeText(ParameterNode parameter) =>
+        parameter.TypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : parameter.TypeNode.ToTypeName();
+
+    private static string GlobalVariableTypeText(GlobalVariableNode global) =>
+        global.TypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : global.TypeNode.ToTypeName();
+
+    private static string ForDeclarationInitializerTypeText(ForDeclarationInitializerNode initializer) =>
+        initializer.TypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : initializer.TypeNode.ToTypeName();
+
+    private static string LetStatementTypeText(LetStatement let) =>
+        let.TypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : let.TypeNode.ToTypeName();
+
+    private static string ForeachBindingTypeText(ForeachBinding binding) =>
+        binding.TypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : binding.TypeNode.ToTypeName();
+
+    private static string CastExpressionTargetTypeText(CastExpressionNode cast) =>
+        cast.TargetTypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : cast.TargetTypeNode.ToTypeName();
+
+    private static string SizeOfExpressionTypeOperandText(SizeOfExpressionNode sizeOf) =>
+        sizeOf.TypeOperandNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : sizeOf.TypeOperandNode.ToTypeName();
+
+    private static string InterfaceMethodReturnTypeText(InterfaceMethodNode method) =>
+        method.ReturnTypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : method.ReturnTypeNode.ToTypeName();
+
+    private static string ExternFunctionReturnTypeText(ExternFunctionNode function) =>
+        function.ReturnTypeNode?.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : function.ReturnTypeNode.ToTypeName();
+
+    private static IReadOnlyList<string> FunctionTypeArgumentTexts(FunctionNode function) =>
+        (function.TypeArgumentNodes ?? [])
+            .Select(typeArgument => typeArgument.Semantic.Type is { } type
+                ? TypeRefFormatter.ToCxString(type)
+                : typeArgument.ToTypeName())
+            .ToList();
+
     private static string StructFieldTypeText(StructFieldNode field) =>
         field.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
@@ -2157,7 +2224,7 @@ public sealed partial class CEmitter
     private static string LowerParameterDeclaration(ParameterNode parameter, string? selfType = null) =>
         CTypeLowerer.LowerParameterDeclaration(
             parameter,
-            TryUseStructuredType(parameter.TypeNode, parameter.Type, out var type) ? type : null,
+            TryUseStructuredType(parameter.TypeNode, ParameterTypeText(parameter), out var type) ? type : null,
             s_typeAdapters,
             GenericTypeSubstitutionBuilder.ParseType(selfType));
 
@@ -2188,35 +2255,37 @@ public sealed partial class CEmitter
 
     private static string? ResolveSelfType(FunctionNode function)
     {
-        if (function.OwnerType is null)
+        if (FunctionOwnerTypeText(function) is not { } ownerType)
         {
             return null;
         }
 
-        if (function.TypeArguments.Count > 0)
+        var typeArguments = FunctionTypeArgumentTexts(function);
+        if (typeArguments.Count > 0)
         {
-            return ResolveAdapterStorageType($"{function.OwnerType}<{string.Join(",", function.TypeArguments)}>");
+            return ResolveAdapterStorageType($"{ownerType}<{string.Join(",", typeArguments)}>");
         }
 
         var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
-        if (selfParameter is not null && !Regex.IsMatch(selfParameter.Type, @"\bSelf\b"))
+        if (selfParameter is not null && !Regex.IsMatch(selfParameter.TypeNode.ToTypeName(), @"\bSelf\b"))
         {
-            return NormalizeType(selfParameter.Type);
+            return NormalizeType(selfParameter.TypeNode.ToTypeName());
         }
 
-        return ResolveAdapterStorageType(function.OwnerType);
+        return ResolveAdapterStorageType(ownerType);
     }
 
     private static string? ResolveSelfApiType(FunctionNode function)
     {
-        if (function.OwnerType is null)
+        if (FunctionOwnerTypeText(function) is not { } ownerType)
         {
             return null;
         }
 
-        return function.TypeArguments.Count > 0
-            ? $"{function.OwnerType}<{string.Join(",", function.TypeArguments)}>"
-            : function.OwnerType;
+        var typeArguments = FunctionTypeArgumentTexts(function);
+        return typeArguments.Count > 0
+            ? $"{ownerType}<{string.Join(",", typeArguments)}>"
+            : ownerType;
     }
 
     private static string NormalizeType(string type) => CTypeLowerer.NormalizeType(type);

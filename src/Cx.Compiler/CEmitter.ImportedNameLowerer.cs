@@ -428,9 +428,9 @@ public sealed partial class CEmitter
 
         private CExpression LowerSizeOfExpression(SizeOfExpressionNode sizeOf)
         {
-            if (!string.IsNullOrWhiteSpace(sizeOf.TypeOperand))
+            if (sizeOf.TypeOperandNode is not null)
             {
-                return new CSizeOfTypeExpression(LowerType(sizeOf.TypeOperand, SelfType));
+                return new CSizeOfTypeExpression(LowerType(sizeOf.TypeOperandNode));
             }
 
             return sizeOf.ExpressionOperand is null
@@ -569,6 +569,14 @@ public sealed partial class CEmitter
         string ICExpressionLoweringContext.LowerType(TypeNode? typeNode, string fallbackType) =>
             CEmitter.LowerType(typeNode, fallbackType, SelfType);
 
+        private string LowerType(TypeNode? typeNode) =>
+            _scope.ResolveType(typeNode) is { } type
+                ? CTypeLowerer.LowerType(type, s_typeAdapters, GenericTypeSubstitutionBuilder.ParseType(SelfType))
+                : string.Empty;
+
+        private static string LowerType(string type, string? selfType = null) =>
+            CEmitter.LowerType(type, selfType);
+
         bool ICExpressionLoweringContext.ShouldUseRawLowering(string text) =>
             ShouldUseRawLowering(text);
 
@@ -639,9 +647,9 @@ public sealed partial class CEmitter
 
         private string LowerSizeOf(SizeOfExpressionNode sizeOf)
         {
-            if (!string.IsNullOrWhiteSpace(sizeOf.TypeOperand))
+            if (sizeOf.TypeOperandNode is not null)
             {
-                return $"sizeof({LowerType(sizeOf.TypeOperand, SelfType)})";
+                return $"sizeof({LowerType(sizeOf.TypeOperandNode)})";
             }
 
             return sizeOf.ExpressionOperand is null

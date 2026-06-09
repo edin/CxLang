@@ -108,7 +108,7 @@ public sealed class CallResolverTests
         Assert.NotNull(resolved);
         Assert.NotNull(resolved.Function);
         Assert.Equal("create", resolved.Function.Name);
-        Assert.Equal("Vec", resolved.Function.OwnerType);
+        Assert.Equal("Vec", resolved.Function.OwnerTypeNode?.ToTypeName());
         Assert.False(resolved.IsInstance);
         Assert.Equal(["int"], resolved.TypeArguments);
     }
@@ -147,7 +147,6 @@ public sealed class CallResolverTests
         new TypeResolutionPass(diagnostics).Resolve(rewrittenProgram);
         CompilerTestHelpers.AssertNoErrors(diagnostics);
         var resolvedFunction = rewrittenProgram.Functions.Single(function => function.Name == "id");
-        Assert.Equal("StaleReturnType", resolvedFunction.ReturnType);
         Assert.NotNull(resolvedFunction.ReturnTypeNode);
         Assert.Equal("int", TypeRefFormatter.ToCxString(resolvedFunction.ReturnTypeNode.Semantic.Type!));
         var call = GetReturnCall(rewrittenProgram);

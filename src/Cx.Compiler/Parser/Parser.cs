@@ -893,7 +893,7 @@ public sealed class Parser
         }
 
         var function = ParseFunctionAfterFn(staticToken?.Location ?? Current.Location, isStatic: true, attributes: attributes);
-        if (function?.OwnerType is null)
+        if (function?.OwnerTypeNode is null)
         {
             _diagnostics.Report(staticToken?.Location ?? Current.Location, "Static functions must be declared with an owner type, for example 'static fn Vec.empty()'.");
         }
@@ -995,7 +995,7 @@ public sealed class Parser
             return true;
         }
 
-        var type = parameter.Type.Trim();
+        var type = parameter.TypeNode.ToTypeName().Trim();
         return type == "Self*"
             || type == ownerType + "*"
             || (type.StartsWith(ownerType + "<", StringComparison.Ordinal)
@@ -2187,7 +2187,7 @@ public sealed class Parser
         string returnType,
         string body)
     {
-        var parameterText = string.Join(", ", parameters.Select(parameter => $"{parameter.Name}: {parameter.Type}"));
+        var parameterText = string.Join(", ", parameters.Select(parameter => $"{parameter.Name}: {parameter.TypeNode.ToTypeName()}"));
         var source = new SourceFile(
             "<lambda-block>",
             $"fn __lambda_block({parameterText}) -> {returnType} {{{body}}}");

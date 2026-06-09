@@ -96,7 +96,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{(use.Function.OwnerType is null ? "" : use.Function.OwnerType + ".")}{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{(use.Function.OwnerTypeNode is null ? "" : use.Function.OwnerTypeNode.ToTypeName() + ".")}{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("Box.make<int>", uses);
@@ -145,7 +145,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{use.Function.OwnerType}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{use.Function.OwnerTypeNode?.ToTypeName()}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MiniVec.with_capacity<u8>", uses);
@@ -189,7 +189,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{use.Function.OwnerType}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{use.Function.OwnerTypeNode?.ToTypeName()}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MiniVec.add<u8>", uses);
@@ -220,10 +220,8 @@ public sealed class GenericLoweringServicesTests
         var rewritten = GenericTypeRewriter.Rewrite(program, concreteStructNames);
         var function = Assert.Single(rewritten.Functions);
 
-        Assert.Equal("Box_int", function.ReturnType);
-        Assert.Equal(function.ReturnType, function.ReturnTypeNode?.TypeName);
-        Assert.Equal("Box_Box_int*", Assert.Single(function.Parameters).Type);
-        Assert.Equal(Assert.Single(function.Parameters).Type, Assert.Single(function.Parameters).TypeNode?.TypeName);
+        Assert.Equal("Box_int", function.ReturnTypeNode.ToTypeName());
+        Assert.Equal("Box_Box_int*", Assert.Single(function.Parameters).TypeNode.ToTypeName());
         var resolvedParameter = Assert.IsType<Cx.Compiler.Semantic.TypeRef.Pointer>(Assert.Single(function.Parameters).TypeNode?.Semantic.Type);
         Assert.Equal("Box_Box_int", Assert.IsType<Cx.Compiler.Semantic.TypeRef.Named>(resolvedParameter.Element).Name);
     }
@@ -244,12 +242,9 @@ public sealed class GenericLoweringServicesTests
         var parameter = Assert.Single(specialized.Parameters);
         var local = Assert.IsType<LetStatement>(specialized.Body[0]);
 
-        Assert.Equal("int", specialized.ReturnType);
-        Assert.Equal(specialized.ReturnType, specialized.ReturnTypeNode?.TypeName);
-        Assert.Equal("int", parameter.Type);
-        Assert.Equal(parameter.Type, parameter.TypeNode?.TypeName);
-        Assert.Equal("int", local.Type);
-        Assert.Equal(local.Type, local.TypeNode?.TypeName);
+        Assert.Equal("int", specialized.ReturnTypeNode.ToTypeName());
+        Assert.Equal("int", parameter.TypeNode.ToTypeName());
+        Assert.Equal("int", local.TypeNode?.TypeName);
     }
 
     [Fact]
@@ -275,10 +270,10 @@ public sealed class GenericLoweringServicesTests
         var parameter = Assert.Single(specialized.Parameters);
         var local = Assert.IsType<LetStatement>(specialized.Body[0]);
 
-        Assert.Equal("Box<int>*", parameter.Type);
-        Assert.Equal(parameter.Type, TypeRefFormatter.ToCxString(parameter.TypeNode!.Semantic.Type!));
-        Assert.Equal("Box<int>*", local.Type);
-        Assert.Equal(local.Type, TypeRefFormatter.ToCxString(local.TypeNode!.Semantic.Type!));
+        Assert.Equal("Box<int>*", parameter.TypeNode.ToTypeName());
+        Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(parameter.TypeNode!.Semantic.Type!));
+        Assert.Equal("Box<int>*", local.TypeNode?.TypeName);
+        Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(local.TypeNode!.Semantic.Type!));
     }
 
     [Fact]
@@ -315,18 +310,15 @@ public sealed class GenericLoweringServicesTests
         var genericCall = Assert.IsType<GenericCallExpressionNode>(Assert.IsType<LetStatement>(body[3]).Initializer);
         var functionExpression = Assert.IsType<FunctionExpressionNode>(Assert.IsType<LetStatement>(body[4]).Initializer);
 
-        Assert.Equal("Box_int*", cast.TargetType);
-        Assert.Equal(cast.TargetType, cast.TargetTypeNode?.TypeName);
-        Assert.Equal("Box_int", sizeOf.TypeOperand);
-        Assert.Equal(sizeOf.TypeOperand, sizeOf.TypeOperandNode?.TypeName);
+        Assert.Equal("Box_int*", cast.TargetTypeNode?.TypeName);
+        Assert.Equal("Box_int", sizeOf.TypeOperandNode?.TypeName);
         Assert.Equal("Box_int", initializer.TypeName);
         Assert.Equal(initializer.TypeName, initializer.TypeNameNode?.TypeName);
         Assert.Equal(["Box_int"], genericCall.TypeArguments);
         Assert.Equal(genericCall.TypeArguments, genericCall.TypeArgumentNodes.Select(node => node.TypeName).ToList());
         Assert.Equal("Box_int", functionExpression.ReturnType);
         Assert.Equal(functionExpression.ReturnType, functionExpression.ReturnTypeNode?.TypeName);
-        Assert.Equal("Box_int", Assert.Single(functionExpression.Parameters).Type);
-        Assert.Equal(Assert.Single(functionExpression.Parameters).Type, Assert.Single(functionExpression.Parameters).TypeNode?.TypeName);
+        Assert.Equal("Box_int", Assert.Single(functionExpression.Parameters).TypeNode.ToTypeName());
     }
 
     [Fact]

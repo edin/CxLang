@@ -269,7 +269,7 @@ public sealed class CxCompiler
                 return program with
                 {
                     Functions = program.Functions
-                        .Where(function => function.OwnerType is not null || function.Name != "main")
+                        .Where(function => function.OwnerTypeNode is not null || function.Name != "main")
                         .Concat(testFunctions)
                         .ToList(),
                 };
@@ -669,7 +669,7 @@ public sealed class CxCompiler
 
     private static ProgramNode GetRootProgram(IReadOnlyList<ProgramNode> userPrograms) =>
         userPrograms.FirstOrDefault(program => program.Functions.Any(function =>
-            function.OwnerType is null
+            function.OwnerTypeNode is null
             && function.Name == "main"))
         ?? userPrograms.LastOrDefault()
         ?? throw new InvalidOperationException("At least one source file is required.");
@@ -941,7 +941,7 @@ public sealed class CxCompiler
                 Name = QualifyName(alias, interfaceNode.Name),
                 Methods = interfaceNode.Methods.Select(method => method with
                 {
-                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnType, alias, typeNames)),
+                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnTypeNode.ToTypeName(), alias, typeNames)),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
             }).ToList(),
@@ -956,8 +956,8 @@ public sealed class CxCompiler
                 BaseTypeNode = RewriteTypeNode(adapter.BaseTypeNode, QualifyType(adapter.BaseTypeNode.ToTypeName(), alias, typeNames)),
                 Methods = adapter.Methods.Select(method => method with
                 {
-                    OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, method.OwnerType ?? adapter.Name)),
-                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnType, alias, typeNames)),
+                    OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, method.OwnerTypeNode?.ToTypeName() ?? adapter.Name)),
+                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnTypeNode.ToTypeName(), alias, typeNames)),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
             }).ToList(),
@@ -966,8 +966,8 @@ public sealed class CxCompiler
                 TargetTypeNode = RewriteTypeNode(extension.TargetTypeNode, QualifyName(alias, extension.TargetTypeNode.ToTypeName())),
                 Methods = extension.Methods.Select(method => method with
                 {
-                    OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, method.OwnerType ?? extension.TargetTypeNode.ToTypeName())),
-                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnType, alias, typeNames)),
+                    OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, method.OwnerTypeNode?.ToTypeName() ?? extension.TargetTypeNode.ToTypeName())),
+                    ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, QualifyType(method.ReturnTypeNode.ToTypeName(), alias, typeNames)),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
             }).ToList(),
@@ -979,9 +979,9 @@ public sealed class CxCompiler
             GlobalVariables = program.GlobalVariables.Select(global => global with
             {
                 Name = QualifyName(alias, global.Name),
-                TypeNode = RewriteTypeNode(global.TypeNode, QualifyType(global.Type, alias, typeNames)),
+                TypeNode = RewriteTypeNode(global.TypeNode, QualifyType(global.TypeNode.ToTypeName(), alias, typeNames)),
             }).ToList(),
-            Functions = program.Functions.Select(function => function.OwnerType is null
+            Functions = program.Functions.Select(function => function.OwnerTypeNode is null
                 ? QualifyFunction(function, alias, typeNames) with { Name = QualifyName(alias, function.Name) }
                 : function).ToList(),
         };
@@ -1039,7 +1039,7 @@ public sealed class CxCompiler
                     Methods = adapter.Methods.Select(method => method with
                     {
                         OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, symbols[adapter.Name]),
-                        ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, ProjectSymbolImportType(method.ReturnType, symbols, typeNames)),
+                        ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, ProjectSymbolImportType(method.ReturnTypeNode.ToTypeName(), symbols, typeNames)),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
                     }).ToList(),
                 })
@@ -1052,7 +1052,7 @@ public sealed class CxCompiler
                     Methods = extension.Methods.Select(method => method with
                     {
                         OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, symbols[extension.TargetTypeNode.ToTypeName()]),
-                        ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, ProjectSymbolImportType(method.ReturnType, symbols, typeNames)),
+                        ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, ProjectSymbolImportType(method.ReturnTypeNode.ToTypeName(), symbols, typeNames)),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
                     }).ToList(),
                 })
@@ -1070,12 +1070,12 @@ public sealed class CxCompiler
                 .Select(global => global with
                 {
                     Name = symbols[global.Name],
-                    TypeNode = RewriteTypeNode(global.TypeNode, ProjectSymbolImportType(global.Type, symbols, typeNames)),
+                    TypeNode = RewriteTypeNode(global.TypeNode, ProjectSymbolImportType(global.TypeNode.ToTypeName(), symbols, typeNames)),
                 })
                 .ToList(),
             Functions = program.Functions
-                .Where(function => function.OwnerType is not null || symbols.ContainsKey(function.Name))
-                .Select(function => function.OwnerType is null
+                .Where(function => function.OwnerTypeNode is not null || symbols.ContainsKey(function.Name))
+                .Select(function => function.OwnerTypeNode is null
                     ? RenameFunction(function, symbols[function.Name], symbols, typeNames)
                     : function)
                 .ToList(),
@@ -1128,7 +1128,7 @@ public sealed class CxCompiler
                 .Select(global => global with
                 {
                     Name = symbols[global.Name],
-                    TypeNode = RewriteTypeNode(global.TypeNode, ProjectSymbolImportType(global.Type, symbols, typeNames)),
+                    TypeNode = RewriteTypeNode(global.TypeNode, ProjectSymbolImportType(global.TypeNode.ToTypeName(), symbols, typeNames)),
                 })
                 .ToList(),
             Functions = declaration.Functions
@@ -1186,7 +1186,7 @@ public sealed class CxCompiler
             Constants = declaration.Constants.Select(global => global with
             {
                 Name = QualifyName(alias, global.Name),
-                TypeNode = RewriteTypeNode(global.TypeNode, QualifyType(global.Type, alias, typeNames)),
+                TypeNode = RewriteTypeNode(global.TypeNode, QualifyType(global.TypeNode.ToTypeName(), alias, typeNames)),
             }).ToList(),
             Functions = declaration.Functions.Select(function => QualifyExternFunction(function, alias, typeNames)).ToList(),
         };
@@ -1198,7 +1198,7 @@ public sealed class CxCompiler
         function with
         {
             Name = QualifyName(alias, function.Name),
-            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, QualifyType(function.ReturnType, alias, typeNames)),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, QualifyType(function.ReturnTypeNode.ToTypeName(), alias, typeNames)),
             Parameters = function.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
         };
 
@@ -1208,7 +1208,7 @@ public sealed class CxCompiler
         IReadOnlySet<string> typeNames) =>
         function with
         {
-            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, QualifyType(function.ReturnType, alias, typeNames)),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, QualifyType(function.ReturnTypeNode.ToTypeName(), alias, typeNames)),
             Parameters = function.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
         };
 
@@ -1220,7 +1220,7 @@ public sealed class CxCompiler
         function with
         {
             Name = visibleName,
-            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, ProjectSymbolImportType(function.ReturnType, symbols, typeNames)),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, ProjectSymbolImportType(function.ReturnTypeNode.ToTypeName(), symbols, typeNames)),
             Parameters = function.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
         };
 
@@ -1232,7 +1232,7 @@ public sealed class CxCompiler
         function with
         {
             Name = visibleName,
-            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, ProjectSymbolImportType(function.ReturnType, symbols, typeNames)),
+            ReturnTypeNode = RewriteTypeNode(function.ReturnTypeNode, ProjectSymbolImportType(function.ReturnTypeNode.ToTypeName(), symbols, typeNames)),
             Parameters = function.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
         };
 
@@ -1242,7 +1242,7 @@ public sealed class CxCompiler
         IReadOnlySet<string> typeNames) =>
         parameter.IsVariadic
             ? parameter
-            : parameter with { TypeNode = RewriteTypeNode(parameter.TypeNode, ProjectSymbolImportType(parameter.Type, symbols, typeNames)) };
+            : parameter with { TypeNode = RewriteTypeNode(parameter.TypeNode, ProjectSymbolImportType(parameter.TypeNode.ToTypeName(), symbols, typeNames)) };
 
     private static ParameterNode QualifyParameter(
         ParameterNode parameter,
@@ -1250,7 +1250,7 @@ public sealed class CxCompiler
         IReadOnlySet<string> typeNames) =>
         parameter.IsVariadic
             ? parameter
-            : parameter with { TypeNode = RewriteTypeNode(parameter.TypeNode, QualifyType(parameter.Type, alias, typeNames)) };
+            : parameter with { TypeNode = RewriteTypeNode(parameter.TypeNode, QualifyType(parameter.TypeNode.ToTypeName(), alias, typeNames)) };
 
     private static string QualifyName(string alias, string name) =>
         name.Contains('.', StringComparison.Ordinal) ? name : alias + "." + name;

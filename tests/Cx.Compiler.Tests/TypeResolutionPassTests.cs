@@ -24,7 +24,7 @@ public sealed class TypeResolutionPassTests
         CompilerTestHelpers.AssertNoErrors(diagnostics);
 
         var local = program.Functions.Single().Body.OfType<LetStatement>().Single();
-        Assert.Equal("IntVec", local.Type);
+        Assert.Equal("IntVec", local.TypeNode?.TypeName);
         var alias = Assert.IsType<TypeRef.Alias>(local.Semantic.Type);
         Assert.Equal("IntVec", alias.Name);
         var named = Assert.IsType<TypeRef.Named>(alias.Target);

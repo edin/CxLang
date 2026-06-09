@@ -91,8 +91,8 @@ public sealed class TypeNodeParsingTests
             """);
 
         var function = Assert.Single(program.Functions);
-        Assert.Equal("Box<Box<int>>*", Assert.Single(function.Parameters).Type);
-        Assert.Equal("Box<int>", function.ReturnType);
+        Assert.Equal("Box<Box<int>>*", Assert.Single(function.Parameters).TypeNode.ToTypeName());
+        Assert.Equal("Box<int>", function.ReturnTypeNode.ToTypeName());
     }
 
     [Fact]
@@ -117,9 +117,9 @@ public sealed class TypeNodeParsingTests
         var local = Assert.IsType<LetStatement>(function.Body[0]);
 
         Assert.Equal(field.Type, field.TypeNode?.TypeName);
-        Assert.Equal(parameter.Type, parameter.TypeNode?.TypeName);
-        Assert.Equal(function.ReturnType, function.ReturnTypeNode?.TypeName);
-        Assert.Equal(local.Type, local.TypeNode?.TypeName);
+        Assert.Equal("Box<int>", parameter.TypeNode?.TypeName);
+        Assert.Equal("Box<int>", function.ReturnTypeNode?.TypeName);
+        Assert.Equal("Box<int>", local.TypeNode?.TypeName);
     }
 
     [Fact]
@@ -402,12 +402,12 @@ public sealed class TypeNodeParsingTests
         var genericCall = Assert.IsType<GenericCallExpressionNode>(Assert.IsType<LetStatement>(body[3]).Initializer);
         var functionExpression = Assert.IsType<FunctionExpressionNode>(Assert.IsType<LetStatement>(body[4]).Initializer);
 
-        Assert.Equal(cast.TargetType, cast.TargetTypeNode?.TypeName);
-        Assert.Equal(sizeOf.TypeOperand, sizeOf.TypeOperandNode?.TypeName);
+        Assert.Equal("Box<int>*", cast.TargetTypeNode?.TypeName);
+        Assert.Equal("Box<int>", sizeOf.TypeOperandNode?.TypeName);
         Assert.Equal(initializer.TypeName, initializer.TypeNameNode?.TypeName);
         Assert.Equal(genericCall.TypeArguments, genericCall.TypeArgumentNodes.Select(node => node.TypeName).ToList());
         Assert.Equal(functionExpression.ReturnType, functionExpression.ReturnTypeNode?.TypeName);
-        Assert.Equal(Assert.Single(functionExpression.Parameters).Type, Assert.Single(functionExpression.Parameters).TypeNode?.TypeName);
+        Assert.Equal("Box<int>", Assert.Single(functionExpression.Parameters).TypeNode?.TypeName);
     }
 
     [Fact]

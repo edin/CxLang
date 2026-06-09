@@ -39,8 +39,8 @@ public sealed class GenericSpecializationPassTests
 
         Assert.Equal("identity", identity.Name);
         Assert.Equal(["int"], identity.TypeArguments);
-        Assert.Equal("int", identity.ReturnType);
-        Assert.Equal("int", Assert.Single(identity.Parameters).Type);
+        Assert.Equal("int", identity.ReturnTypeNode.ToTypeName());
+        Assert.Equal("int", Assert.Single(identity.Parameters).TypeNode.ToTypeName());
         Assert.Same(identity, call.Semantic.ResolvedCall?.Function);
         Assert.DoesNotContain(lowered.Functions, function => function.Name == "unused" && function.TypeArguments.Count > 0);
     }
@@ -67,8 +67,8 @@ public sealed class GenericSpecializationPassTests
         var identity = Assert.Single(lowered.Functions, function => function.Name == "identity" && function.TypeArguments.Count > 0);
 
         Assert.Equal(["int"], identity.TypeArguments);
-        Assert.Equal("int", identity.ReturnType);
-        Assert.Equal("int", Assert.Single(identity.Parameters).Type);
+        Assert.Equal("int", identity.ReturnTypeNode.ToTypeName());
+        Assert.Equal("int", Assert.Single(identity.Parameters).TypeNode.ToTypeName());
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class GenericSpecializationPassTests
 
         Assert.Equal("value", field.Name);
         Assert.Equal("int", field.Type);
-        Assert.Equal("Box_int", let.Type);
+        Assert.Equal("Box_int", let.TypeNode?.TypeName);
         Assert.Equal("Box_int", initializer.TypeName);
         Assert.DoesNotContain(lowered.Structs, structNode => structNode.Name == "Unused_int");
     }

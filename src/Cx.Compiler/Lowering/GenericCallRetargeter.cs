@@ -229,5 +229,5 @@ internal static class GenericCallRetargeter
     }
 
     private static string Key(FunctionNode function, IReadOnlyList<string> arguments) =>
-        $"{(function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}")}<{string.Join(",", arguments)}>";
+        $"{(function.OwnerTypeNode is null ? function.Name : $"{function.OwnerTypeNode.ToTypeName()}.{function.Name}")}<{string.Join(",", arguments)}>";
 }

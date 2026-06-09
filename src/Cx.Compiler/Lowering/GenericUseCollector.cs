@@ -596,7 +596,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             switch (statement)
             {
                 case LetStatement let:
-                    yield return let.Type;
+                    yield return let.TypeNode.ToTypeName();
                     if (let.Initializer is not null)
                     {
                         yield return let.Initializer.SourceText;
@@ -894,6 +894,6 @@ internal readonly record struct GenericFunctionUseKey(string FunctionName, strin
 {
     public static GenericFunctionUseKey Create(FunctionNode function, IReadOnlyList<string> typeArguments) =>
         new(
-            function.OwnerType is null ? function.Name : $"{function.OwnerType}.{function.Name}",
+            function.OwnerTypeNode is null ? function.Name : $"{function.OwnerTypeNode.ToTypeName()}.{function.Name}",
             string.Join(",", typeArguments));
 }
