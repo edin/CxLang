@@ -23,7 +23,10 @@ internal sealed class TypeRefParser(ProgramNode program)
 {
     private readonly IReadOnlyDictionary<string, string> _aliases = program.TypeAliases
         .GroupBy(alias => alias.Name, StringComparer.Ordinal)
-        .ToDictionary(group => group.Key, group => TypeText(group.First().TargetTypeNode), StringComparer.Ordinal);
+        .ToDictionary(group => group.Key, group => group.First().TargetTypeNode.ToTypeName(), StringComparer.Ordinal);
+    private readonly IReadOnlyDictionary<string, TypeNode?> _aliasNodes = program.TypeAliases
+        .GroupBy(alias => alias.Name, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First().TargetTypeNode, StringComparer.Ordinal);
     private readonly IReadOnlySet<string> _enumNames = program.Enums
         .Where(enumNode => !string.IsNullOrWhiteSpace(enumNode.Name))
         .Select(enumNode => enumNode.Name)
@@ -35,6 +38,31 @@ internal sealed class TypeRefParser(ProgramNode program)
 
     public bool IsEnumName(string name) => _enumNames.Contains(name);
 
+    public TypeRef Parse(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return new TypeRef.Unknown();
+        }
+
+        if (typeNode.Semantic.Type is { } semanticType)
+        {
+            return semanticType;
+        }
+
+        if (string.IsNullOrWhiteSpace(typeNode.TypeName))
+        {
+            return new TypeRef.Unknown();
+        }
+
+        if (typeNode.Syntax is null)
+        {
+            throw new InvalidOperationException($"TypeNode '{typeNode.TypeName}' has no parsed type syntax.");
+        }
+
+        return Parse(typeNode.Syntax, []);
+    }
+
     public TypeRef Parse(string? type)
     {
         if (string.IsNullOrWhiteSpace(type))
@@ -43,6 +71,81 @@ internal sealed class TypeRefParser(ProgramNode program)
         }
 
         return Parse(type.Trim(), []);
+    }
+
+    private TypeRef Parse(TypeSyntaxNode syntax, HashSet<string> resolvingAliases) =>
+        syntax switch
+        {
+            NamedTypeSyntaxNode named => ParseNamedSyntax(named, resolvingAliases),
+            GenericTypeSyntaxNode generic => ParseGenericSyntax(generic, resolvingAliases),
+            PointerTypeSyntaxNode pointer => new TypeRef.Pointer(Parse(pointer.Element, resolvingAliases)),
+            FixedArrayTypeSyntaxNode array => new TypeRef.FixedArray(Parse(array.Element, resolvingAliases), array.Length),
+            FunctionTypeSyntaxNode function => new TypeRef.Function(
+                function.Parameters
+                    .Select(parameter => Parse(parameter, new HashSet<string>(resolvingAliases, StringComparer.Ordinal)))
+                    .ToList(),
+                Parse(function.ReturnType, resolvingAliases)),
+            _ => new TypeRef.Unknown(),
+        };
+
+    private TypeRef ParseNamedSyntax(NamedTypeSyntaxNode named, HashSet<string> resolvingAliases)
+    {
+        if (string.IsNullOrWhiteSpace(named.Name))
+        {
+            return new TypeRef.Unknown();
+        }
+
+        if (string.Equals(named.Name, "null", StringComparison.Ordinal))
+        {
+            return new TypeRef.Null();
+        }
+
+        if (!_aliasNodes.TryGetValue(named.Name, out var targetType))
+        {
+            return new TypeRef.Named(named.Name, []);
+        }
+
+        if (!resolvingAliases.Add(named.Name))
+        {
+            return new TypeRef.Named(named.Name, []);
+        }
+
+        var target = ParseAliasTarget(named.Name, targetType, resolvingAliases);
+        resolvingAliases.Remove(named.Name);
+        return new TypeRef.Alias(named.Name, target);
+    }
+
+    private TypeRef ParseAliasTarget(
+        string aliasName,
+        TypeNode? targetType,
+        HashSet<string> resolvingAliases)
+    {
+        if (targetType is null || string.IsNullOrWhiteSpace(targetType.TypeName))
+        {
+            return new TypeRef.Unknown();
+        }
+
+        if (targetType.Semantic.Type is { } semanticType)
+        {
+            return semanticType;
+        }
+
+        if (targetType.Syntax is null)
+        {
+            throw new InvalidOperationException($"Type alias '{aliasName}' target type '{targetType.TypeName}' has no parsed type syntax.");
+        }
+
+        return Parse(targetType.Syntax, resolvingAliases);
+    }
+
+    private TypeRef ParseGenericSyntax(GenericTypeSyntaxNode generic, HashSet<string> resolvingAliases)
+    {
+        var name = TypeSyntaxFormatter.ToCxString(generic.Target);
+        return new TypeRef.Named(
+            name,
+            generic.Arguments
+                .Select(argument => Parse(argument, new HashSet<string>(resolvingAliases, StringComparer.Ordinal)))
+                .ToList());
     }
 
     private TypeRef Parse(string type, HashSet<string> resolvingAliases)
@@ -285,8 +388,6 @@ internal sealed class TypeRefParser(ProgramNode program)
         values.Add(text[start..].Trim());
         return values.Where(value => value.Length > 0).ToList();
     }
-
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
 }
 
 internal sealed class TypeCompatibility(TypeRefParser parser)

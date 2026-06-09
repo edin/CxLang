@@ -272,7 +272,7 @@ public sealed class SemanticAnalyzer(
         }
     }
 
-    private static IReadOnlyList<GenericConstraintNode> GetEffectiveGenericConstraints(
+    private IReadOnlyList<GenericConstraintNode> GetEffectiveGenericConstraints(
         ProgramNode program,
         FunctionNode function)
     {
@@ -937,7 +937,7 @@ public sealed class SemanticAnalyzer(
             ? "no details available."
             : string.Join(" ", failures.Select(failure => failure.Trim()));
 
-    private static string FormatRequirementReference(StructRequirementNode requirement) =>
+    private string FormatRequirementReference(StructRequirementNode requirement) =>
         TypeArguments(requirement.TypeArgumentNodes).Count == 0
             ? requirement.Name
             : $"{requirement.Name}<{string.Join(", ", TypeArguments(requirement.TypeArgumentNodes))}>";
@@ -949,7 +949,7 @@ public sealed class SemanticAnalyzer(
         _typeSystem?.SatisfiesRequirement(concreteType, requirementName, requirementArguments)
         ?? RequirementMatch.Failed(concreteType, requirementName, []);
 
-    private static string GetFunctionDisplayName(FunctionNode function) =>
+    private string GetFunctionDisplayName(FunctionNode function) =>
         OwnerType(function) is null
             ? function.Name
             : $"{OwnerType(function)}.{function.Name}";
@@ -1139,7 +1139,7 @@ public sealed class SemanticAnalyzer(
     private static bool SameTypeName(string left, string right) =>
         string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
 
-    private static IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
+    private IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
@@ -2062,7 +2062,7 @@ public sealed class SemanticAnalyzer(
             .FirstOrDefault();
     }
 
-    private static bool DefinesFunction(ProgramNode program, string name) =>
+    private bool DefinesFunction(ProgramNode program, string name) =>
         program.Functions.Any(function =>
             OwnerType(function) is null
             && string.Equals(function.Name, name, StringComparison.Ordinal))
@@ -2511,14 +2511,28 @@ public sealed class SemanticAnalyzer(
 
     private static bool IsIdentifierPart(char ch) => char.IsLetterOrDigit(ch) || ch == '_';
 
-    private static string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private static IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
+    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(TypeText).ToList();
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
 
-    private static string? TypeTextOrNull(TypeNode? typeNode)
+        if (_typeRefParser is null)
+        {
+            throw new InvalidOperationException("Semantic analyzer has no TypeRef parser.");
+        }
+
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private string? TypeTextOrNull(TypeNode? typeNode)
     {
         var type = TypeText(typeNode);
         return string.IsNullOrWhiteSpace(type) ? null : type;

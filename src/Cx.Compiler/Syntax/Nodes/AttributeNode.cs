@@ -15,7 +15,7 @@ public sealed record AttributeFieldNode(
         Location Location,
         string Name,
         string Type)
-        : this(Location, Name, new TypeNode(Location, Type, TypeSyntaxParser.Parse(Type)))
+        : this(Location, Name, TypeNode.Create(Location, Type))
     {
     }
 

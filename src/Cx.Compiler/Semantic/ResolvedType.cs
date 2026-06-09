@@ -107,7 +107,7 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         declaration.Fields
             .Select(field =>
             {
-                var fieldType = field.TypeNode?.Semantic.Type ?? _parser.Parse(TypeText(field.TypeNode));
+                var fieldType = field.TypeNode.ToTypeRef(_parser);
                 return new ResolvedField(
                     field.Name,
                     TypeRefRewriter.Substitute(fieldType, substitutions),
@@ -122,12 +122,12 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         var methods = declaration.Methods
             .Concat(program.Extensions
                 .Where(extension =>
-                    string.Equals(TypeText(extension.TargetTypeNode), declaration.Name, StringComparison.Ordinal)
+                    string.Equals(extension.TargetTypeNode.ToTypeName(), declaration.Name, StringComparison.Ordinal)
                     && ExtensionConstraintsSatisfied(extension, type))
                 .SelectMany(extension => extension.Methods))
             .Concat(program.Functions.Where(function =>
-                TypeTextOrNull(function.OwnerTypeNode) is not null
-                && string.Equals(TypeText(function.OwnerTypeNode), declaration.Name, StringComparison.Ordinal)));
+                function.OwnerTypeNode.ToTypeNameOrNull() is not null
+                && string.Equals(function.OwnerTypeNode.ToTypeName(), declaration.Name, StringComparison.Ordinal)));
         return methods
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
             .ToList();
@@ -143,8 +143,8 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
 
         return program.Functions
             .Where(function =>
-                TypeTextOrNull(function.OwnerTypeNode) is not null
-                && string.Equals(TypeText(function.OwnerTypeNode), ownerName, StringComparison.Ordinal))
+                function.OwnerTypeNode.ToTypeNameOrNull() is not null
+                && string.Equals(function.OwnerTypeNode.ToTypeName(), ownerName, StringComparison.Ordinal))
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
             .ToList();
     }
@@ -180,8 +180,9 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
                 continue;
             }
 
-            var returnType = expose.ReturnTypeNode?.Semantic.Type
-                ?? (TypeTextOrNull(expose.ReturnTypeNode) is null ? baseMethod.ReturnType : _parser.Parse(TypeText(expose.ReturnTypeNode)));
+            var returnType = expose.ReturnTypeNode.ToTypeNameOrNull() is null
+                ? baseMethod.ReturnType
+                : expose.ReturnTypeNode.ToTypeRef(_parser);
             returnType = TypeRefRewriter.Substitute(returnType, type.Substitutions);
             returnType = TypeRefRewriter.SubstituteSelf(returnType, selfType);
 
@@ -207,10 +208,10 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         TypeRef ownerType,
         IReadOnlyDictionary<string, TypeRef> substitutions)
     {
-        var returnType = method.ReturnTypeNode?.Semantic.Type ?? _parser.Parse(TypeText(method.ReturnTypeNode));
+        var returnType = method.ReturnTypeNode.ToTypeRef(_parser);
         var parameterTypes = method.Parameters
             .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => parameter.TypeNode?.Semantic.Type ?? _parser.Parse(TypeText(parameter.TypeNode)))
+            .Select(parameter => parameter.TypeNode.ToTypeRef(_parser))
             .Select(parameterType => TypeRefRewriter.Substitute(parameterType, substitutions))
             .ToList();
         return new ResolvedMethod(
@@ -245,7 +246,7 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
             foreach (var requirement in constraint.Requirements)
             {
                 var arguments = requirement.TypeArgumentNodes
-                    .Select(argument => GenericTypeStringRewriter.Substitute(TypeText(argument), substitutions))
+                    .Select(argument => GenericTypeStringRewriter.Substitute(argument.ToTypeName(), substitutions))
                     .ToList();
                 if (!_requirementMatcher.Value.Match(concreteType, requirement.Name, arguments).Success)
                 {
@@ -261,16 +262,8 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         TypeAdapterNode declaration,
         IReadOnlyDictionary<string, TypeRef> substitutions)
     {
-        var baseType = declaration.Semantic.Type ?? _parser.Parse(TypeText(declaration.BaseTypeNode));
+        var baseType = declaration.Semantic.Type ?? declaration.BaseTypeNode.ToTypeRef(_parser);
         return TypeRefRewriter.Substitute(baseType, substitutions);
-    }
-
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
-
-    private static string? TypeTextOrNull(TypeNode? typeNode)
-    {
-        var type = TypeText(typeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
     }
 
     private static string? GetOwnerName(TypeRef type) =>

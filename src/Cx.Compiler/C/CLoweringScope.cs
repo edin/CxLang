@@ -35,7 +35,7 @@ internal sealed class CLoweringScope(
         var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
         foreach (var variable in function.Parameters
             .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => (parameter.Name, Type: SubstituteSelfType(parameter.Type, scopeSelfType)))
+            .Select(parameter => (parameter.Name, Type: SubstituteSelfType(parameter.TypeNode.ToTypeName(), scopeSelfType)))
             .Concat(CollectLocalVariables(function.Body)
                 .Select(statement => (statement.Name, Type: SubstituteSelfType(statement.Type, scopeSelfType))))
             .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !string.IsNullOrWhiteSpace(item.Type))
@@ -146,7 +146,7 @@ internal sealed class CLoweringScope(
             switch (statement)
             {
                 case LetStatement let:
-                    yield return (let.Name, let.Type);
+                    yield return (let.Name, let.TypeNode.ToTypeName());
                     break;
                 case IfStatement ifStatement:
                     foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
@@ -178,7 +178,7 @@ internal sealed class CLoweringScope(
                 case ForStatement forStatement:
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
-                        yield return (declaration.Name, declaration.Type);
+                        yield return (declaration.Name, declaration.TypeNode.ToTypeName());
                     }
 
                     foreach (var variable in CollectLocalVariables(forStatement.Body))
@@ -226,7 +226,7 @@ internal sealed class CLoweringScope(
             switch (statement)
             {
                 case LetStatement let:
-                    yield return (let.Name, let.Type, let.TypeNode?.Semantic.Type);
+                    yield return (let.Name, let.TypeNode.ToTypeName(), let.TypeNode?.Semantic.Type);
                     break;
                 case IfStatement ifStatement:
                     foreach (var variable in CollectLocalVariableTypes(ifStatement.ThenBody))
@@ -258,7 +258,7 @@ internal sealed class CLoweringScope(
                 case ForStatement forStatement:
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
-                        yield return (declaration.Name, declaration.Type, declaration.TypeNode?.Semantic.Type);
+                        yield return (declaration.Name, declaration.TypeNode.ToTypeName(), declaration.TypeNode?.Semantic.Type);
                     }
 
                     foreach (var variable in CollectLocalVariableTypes(forStatement.Body))
@@ -269,13 +269,13 @@ internal sealed class CLoweringScope(
                 case ForeachStatement foreachStatement:
                     if (foreachStatement.IndexBinding is not null)
                     {
-                        yield return (foreachStatement.IndexBinding.Name, foreachStatement.IndexBinding.Type, foreachStatement.IndexBinding.TypeNode?.Semantic.Type);
+                        yield return (foreachStatement.IndexBinding.Name, foreachStatement.IndexBinding.TypeNode.ToTypeName(), foreachStatement.IndexBinding.TypeNode?.Semantic.Type);
                     }
                     if (foreachStatement.KeyBinding is not null)
                     {
-                        yield return (foreachStatement.KeyBinding.Name, foreachStatement.KeyBinding.Type, foreachStatement.KeyBinding.TypeNode?.Semantic.Type);
+                        yield return (foreachStatement.KeyBinding.Name, foreachStatement.KeyBinding.TypeNode.ToTypeName(), foreachStatement.KeyBinding.TypeNode?.Semantic.Type);
                     }
-                    yield return (foreachStatement.ValueBinding.Name, foreachStatement.ValueBinding.Type, foreachStatement.ValueBinding.TypeNode?.Semantic.Type);
+                    yield return (foreachStatement.ValueBinding.Name, foreachStatement.ValueBinding.TypeNode.ToTypeName(), foreachStatement.ValueBinding.TypeNode?.Semantic.Type);
                     foreach (var variable in CollectLocalVariableTypes(foreachStatement.Body))
                     {
                         yield return variable;

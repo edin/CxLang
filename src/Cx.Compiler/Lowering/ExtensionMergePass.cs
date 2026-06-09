@@ -13,7 +13,7 @@ internal static class ExtensionMergePass
         }
 
         var extensionsByTarget = program.Extensions
-            .GroupBy(extension => extension.TargetType, StringComparer.Ordinal)
+            .GroupBy(extension => extension.TargetTypeNode.ToTypeName(), StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
         var structs = program.Structs
             .Select(structNode => MergeStructExtensions(structNode, extensionsByTarget))
@@ -29,9 +29,10 @@ internal static class ExtensionMergePass
 
         foreach (var extension in program.Extensions)
         {
-            if (!knownTargets.Contains(extension.TargetType))
+            var targetType = extension.TargetTypeNode.ToTypeName();
+            if (!knownTargets.Contains(targetType))
             {
-                diagnostics.Report(extension.Location, $"Extension target type '{extension.TargetType}' was not found.");
+                diagnostics.Report(extension.Location, $"Extension target type '{targetType}' was not found.");
             }
         }
 
@@ -92,4 +93,5 @@ internal static class ExtensionMergePass
                 .ToList(),
         };
     }
+
 }

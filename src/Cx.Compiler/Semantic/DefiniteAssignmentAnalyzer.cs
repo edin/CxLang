@@ -9,6 +9,8 @@ internal sealed class DefiniteAssignmentAnalyzer(
     ExpressionTypeResolver expressionTypeResolver,
     ReturnFlowAnalyzer returnFlow)
 {
+    private readonly TypeRefParser _typeRefParser = new(program);
+
     public void AnalyzeFunction(
         FunctionNode function,
         IReadOnlyDictionary<string, string> globalVariables)
@@ -439,7 +441,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         return enumNode.Members.All(member => covered.Contains(member.Name));
     }
 
-    private static IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
+    private IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
@@ -622,5 +624,14 @@ internal sealed class DefiniteAssignmentAnalyzer(
         yield return foreachStatement.ValueBinding;
     }
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
 }

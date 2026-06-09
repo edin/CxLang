@@ -1306,8 +1306,7 @@ public sealed class CxCompiler
     }
 
     private static TypeNode RewriteTypeNode(TypeNode? typeNode, string typeName) =>
-        new(
+        TypeNode.Create(
             typeNode?.Location ?? new Location(new SourceFile("<type-rewrite>", string.Empty), 0, 1, 1),
-            typeName,
-            TypeSyntaxParser.Parse(typeName));
+            typeName);
 }

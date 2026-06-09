@@ -9,12 +9,14 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     private IReadOnlyList<FunctionNode> _functions = [];
     private ProgramNode? _program;
     private ExpressionTypeResolver? _expressionTypeResolver;
+    private TypeRefParser? _typeRefParser;
 
     public void Resolve(ProgramNode program)
     {
         _program = program;
         _functions = GetAllFunctions(program);
         _expressionTypeResolver = new ExpressionTypeResolver(program);
+        _typeRefParser = new TypeRefParser(program);
         DeclareTopLevelSymbols(program);
 
         foreach (var function in program.Functions)
@@ -594,7 +596,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 : [];
     }
 
-    private static Symbol FunctionSymbol(FunctionNode function)
+    private Symbol FunctionSymbol(FunctionNode function)
     {
         if (function.Semantic.Symbol is { Kind: SymbolKind.Function } symbol)
         {
@@ -618,14 +620,28 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         IReadOnlyList<string> TypeArguments,
         bool IsInstance);
 
-    private static string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private static IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
+    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(TypeText).ToList();
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
 
-    private static string? TypeTextOrNull(TypeNode? typeNode)
+        if (_typeRefParser is null)
+        {
+            throw new InvalidOperationException("Scope resolver has no TypeRef parser.");
+        }
+
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private string? TypeTextOrNull(TypeNode? typeNode)
     {
         var type = TypeText(typeNode);
         return string.IsNullOrWhiteSpace(type) ? null : type;

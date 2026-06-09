@@ -16,18 +16,18 @@ internal sealed class CNameMangler(
 
     public string FunctionName(FunctionNode function) =>
         ModulePrefix(function) +
-        (function.OwnerType is null ? function.Name : $"{function.OwnerType}_{function.Name}") +
-        TypeArgumentSuffix(function.TypeArguments);
+        (function.OwnerTypeNode.ToTypeNameOrNull() is { } ownerType ? $"{ownerType}_{function.Name}" : function.Name) +
+        TypeArgumentSuffix(function.TypeArgumentNodes ?? []);
 
     public string SymbolName(Symbol symbol) =>
         symbol.Node is FunctionNode function
             ? FunctionName(function)
             : symbol.Name;
 
-    private string TypeArgumentSuffix(IReadOnlyList<string> arguments) =>
+    private string TypeArgumentSuffix(IReadOnlyList<TypeNode> arguments) =>
         arguments.Count == 0
             ? string.Empty
-            : "_" + string.Join("_", arguments.Select(lowerType).Select(sanitizeTypeName));
+            : "_" + string.Join("_", arguments.Select(argument => argument.ToTypeName()).Select(lowerType).Select(sanitizeTypeName));
 
     private string ModulePrefix(FunctionNode function)
     {

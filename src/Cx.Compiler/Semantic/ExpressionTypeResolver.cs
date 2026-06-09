@@ -13,9 +13,7 @@ internal sealed class ExpressionTypeResolver(
     private readonly TypeRefParser _typeRefParser = new(program);
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
     private CallResolver? _callResolver;
-    private readonly IReadOnlyDictionary<string, string> _typeAliases = program.TypeAliases
-        .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-        .ToDictionary(group => group.Key, group => TypeText(group.First().TargetTypeNode), StringComparer.Ordinal);
+    private readonly IReadOnlyDictionary<string, string> _typeAliases = BuildTypeAliases(program);
 
     private CallResolver CallResolver => _callResolver ??= new CallResolver(
         program,
@@ -328,7 +326,7 @@ internal sealed class ExpressionTypeResolver(
             : null;
     }
 
-    private static string ResolveFunctionExpression(FunctionExpressionNode functionExpression)
+    private string ResolveFunctionExpression(FunctionExpressionNode functionExpression)
     {
         var returnType = functionExpression.ReturnTypeNode is null
             ? "int"
@@ -348,7 +346,7 @@ internal sealed class ExpressionTypeResolver(
         return new TypeRef.Function(parameters, returnType);
     }
 
-    private static string GetFunctionType(IReadOnlyList<ParameterNode> parameters, string returnType) =>
+    private string GetFunctionType(IReadOnlyList<ParameterNode> parameters, string returnType) =>
         $"fn({string.Join(",", parameters.Select(parameter => TypeText(parameter.TypeNode)))})->{returnType}";
 
     private string? ResolveMember(MemberExpressionNode member, IReadOnlyDictionary<string, string> variables)
@@ -604,10 +602,7 @@ internal sealed class ExpressionTypeResolver(
                         var substitutedType = GenericTypeStringRewriter.Substitute(TypeText(field.TypeNode), substitutions);
                         return field with
                         {
-                            TypeNode = new TypeNode(
-                                field.Location,
-                                substitutedType,
-                                TypeSyntaxParser.Parse(substitutedType)),
+                            TypeNode = TypeNode.Create(field.Location, substitutedType),
                         };
                     })
                     .ToList(),
@@ -689,15 +684,37 @@ internal sealed class ExpressionTypeResolver(
         left.Count == right.Count
         && left.Zip(right).All(pair => string.Equals(pair.First, pair.Second, StringComparison.Ordinal));
 
-    private static string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private static IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> typeArgumentNodes) =>
+    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> typeArgumentNodes) =>
         typeArgumentNodes.Select(TypeText).ToList();
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode) => FormatTypeNode(typeNode, _typeRefParser);
 
-    private static string? TypeTextOrNull(TypeNode? typeNode) =>
-        string.IsNullOrWhiteSpace(typeNode?.TypeName) ? null : typeNode.TypeName;
+    private string? TypeTextOrNull(TypeNode? typeNode)
+    {
+        var type = TypeText(typeNode);
+        return string.IsNullOrWhiteSpace(type) ? null : type;
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildTypeAliases(ProgramNode program)
+    {
+        var parser = new TypeRefParser(program);
+        return program.TypeAliases
+            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => FormatTypeNode(group.First().TargetTypeNode, parser), StringComparer.Ordinal);
+    }
+
+    private static string FormatTypeNode(TypeNode? typeNode, TypeRefParser parser)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(parser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
 
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch
     {

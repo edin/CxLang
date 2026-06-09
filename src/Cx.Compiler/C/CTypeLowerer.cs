@@ -114,7 +114,7 @@ internal static class CTypeLowerer
         string? selfType = null) =>
         parameter.IsVariadic
             ? "..."
-            : LowerDeclaration(parameter.Type, parameter.Name, typeAdapters, selfType);
+            : LowerDeclaration(parameter.TypeNode.ToTypeName(), parameter.Name, typeAdapters, selfType);
 
     public static string LowerParameterDeclaration(
         ParameterNode parameter,
@@ -124,7 +124,7 @@ internal static class CTypeLowerer
         parameter.IsVariadic
             ? "..."
             : parameterType is null
-                ? LowerDeclaration(parameter.Type, parameter.Name, typeAdapters, selfType is null ? null : TypeRefFormatter.ToCxString(selfType))
+                ? LowerDeclaration(parameter.TypeNode.ToTypeName(), parameter.Name, typeAdapters, selfType is null ? null : TypeRefFormatter.ToCxString(selfType))
                 : LowerDeclaration(parameterType, parameter.Name, typeAdapters, selfType);
 
     public static string ResolveAdapterStorageType(
@@ -333,7 +333,7 @@ internal static class CTypeLowerer
             var substitutions = adapter.TypeParameters
                 .Zip(named.Arguments)
                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-            var baseType = TypeParser.Parse(adapter.BaseType);
+            var baseType = adapter.BaseTypeNode.ToTypeRef(TypeParser);
             var resolved = TypeRefRewriter.Substitute(baseType, substitutions);
             if (resolved is not TypeRef.Named resolvedNamed)
             {
@@ -351,13 +351,13 @@ internal static class CTypeLowerer
     {
         if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
         {
-            return adapter.BaseType;
+            return adapter.BaseTypeNode.ToTypeName();
         }
 
         var substitutions = adapter.TypeParameters
             .Zip(receiverArguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return GenericTypeStringRewriter.Substitute(adapter.BaseType, substitutions);
+        return GenericTypeStringRewriter.Substitute(adapter.BaseTypeNode.ToTypeName(), substitutions);
     }
 
     private static string StripModuleQualifier(string type)
@@ -403,4 +403,5 @@ internal static class CTypeLowerer
 
         return (type, suffixBuilder.ToString());
     }
+
 }

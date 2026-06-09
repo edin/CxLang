@@ -2,11 +2,80 @@ using Cx.Compiler.Syntax.Nodes;
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
+using System.Collections;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Cx.Compiler.Tests;
 
 public sealed class TypeNodeParsingTests
 {
+    [Fact]
+    public void ParseType_AllRealTypeNodesHaveSyntax()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            module app.main;
+
+            type Callback = fn(int, char*, ...) -> double;
+            type IntVec = Vec<int>;
+
+            requires Contiguous<T> {
+                data: T*;
+                fn count(self: Self*) -> usize;
+            }
+
+            interface Allocator {
+                fn allocate(size: usize, align: usize) -> void*;
+            }
+
+            struct Vec<T>: Contiguous<T> {
+                data: T*;
+                length: usize;
+
+                static fn create(capacity: usize) -> Vec<T> {
+                    return Vec<T> { data: null, length: 0 };
+                }
+            }
+
+            extension Vec<T> {
+                fn set(index: usize, value: T) -> void {
+                    self.data[index] = value;
+                }
+            }
+
+            union Value {
+                Number: int;
+                Vector: Vec<int>;
+            }
+
+            let global: IntVec = Vec<int> { data: null, length: 0 };
+
+            fn identity<T>(value: T) -> T {
+                return value;
+            }
+
+            fn main(value: void*) -> int {
+                let casted: Vec<int>* = (Vec<int>*)value;
+                let bytes: usize = sizeof(Vec<int>);
+                let box: Vec<int> = Vec<int> { data: null, length: 0 };
+                let same = identity<Vec<int>>(box);
+                let map = fn(item: Vec<int>) -> Vec<int> => item;
+                for (let i: int = 0; i < 1; i = i + 1) {
+                    let local: Callback = null;
+                }
+                return 0;
+            }
+            """);
+
+        var missingSyntax = CollectTypeNodes(program)
+            .Where(typeNode => !string.IsNullOrWhiteSpace(typeNode.TypeName) && typeNode.Syntax is null)
+            .Select(typeNode => typeNode.TypeName)
+            .ToList();
+
+        Assert.Empty(missingSyntax);
+    }
+
     [Fact]
     public void ParseType_AllowsAdjacentNestedGenericClosers()
     {
@@ -168,6 +237,18 @@ public sealed class TypeNodeParsingTests
         CompilerTestHelpers.AssertNoErrors(diagnostics);
         Assert.Equal("int", TypeRefFormatter.ToCxString(global.Semantic.Type!));
         Assert.Same(global.Semantic.Type, typeNode.Semantic.Type);
+    }
+
+    [Fact]
+    public void ToTypeRef_ThrowsWhenTypeNodeHasNoSyntax()
+    {
+        var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
+        var typeNode = new TypeNode(location, "MissingSyntax");
+        var parser = new TypeRefParser(new ProgramNode(location, []));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => typeNode.ToTypeRef(parser));
+
+        Assert.Contains("has no parsed type syntax", exception.Message);
     }
 
     [Fact]
@@ -369,5 +450,75 @@ public sealed class TypeNodeParsingTests
         Assert.IsType<TypeRef.Named>(Assert.Single(genericCall.TypeArgumentNodes).Semantic.Type);
         Assert.Equal(functionExpression.Semantic.Type, functionExpression.ReturnTypeNode?.Semantic.Type);
         Assert.Equal(Assert.Single(functionExpression.Parameters).Semantic.Type, Assert.Single(functionExpression.Parameters).TypeNode?.Semantic.Type);
+    }
+
+    private static IEnumerable<TypeNode> CollectTypeNodes(object? value)
+    {
+        var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        return Collect(value, visited);
+    }
+
+    private static IEnumerable<TypeNode> Collect(object? value, HashSet<object> visited)
+    {
+        if (value is null or string)
+        {
+            yield break;
+        }
+
+        if (value is TypeNode currentTypeNode)
+        {
+            yield return currentTypeNode;
+            yield break;
+        }
+
+        if (value is TypeSyntaxNode)
+        {
+            yield break;
+        }
+
+        if (!value.GetType().IsValueType && !visited.Add(value))
+        {
+            yield break;
+        }
+
+        if (value is IEnumerable enumerable)
+        {
+            foreach (var item in enumerable)
+            {
+                foreach (var nestedTypeNode in Collect(item, visited))
+                {
+                    yield return nestedTypeNode;
+                }
+            }
+
+            yield break;
+        }
+
+        if (value is not SyntaxNode)
+        {
+            yield break;
+        }
+
+        foreach (var property in value.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        {
+            if (property.GetIndexParameters().Length != 0)
+            {
+                continue;
+            }
+
+            foreach (var nestedTypeNode in Collect(property.GetValue(value), visited))
+            {
+                yield return nestedTypeNode;
+            }
+        }
+    }
+
+    private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
+    {
+        public static ReferenceEqualityComparer Instance { get; } = new();
+
+        public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
     }
 }

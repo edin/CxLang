@@ -22,7 +22,8 @@ internal static class TypeAdapterLoweringPass
         var adapterMethods = new List<FunctionNode>();
         foreach (var adapter in program.TypeAdapters)
         {
-            var baseName = GetGenericBaseName(adapter.BaseType);
+            var baseType = adapter.BaseTypeNode.ToTypeName();
+            var baseName = GetGenericBaseName(baseType);
             var baseTypeParameters = Array.Empty<string>() as IReadOnlyList<string>;
             if (structs.TryGetValue(baseName, out var baseStruct))
             {
@@ -34,16 +35,16 @@ internal static class TypeAdapterLoweringPass
             }
             else
             {
-                diagnostics.Report(adapter.Location, $"Adapter base type '{adapter.BaseType}' was not found.");
+                diagnostics.Report(adapter.Location, $"Adapter base type '{baseType}' was not found.");
                 continue;
             }
 
-            var baseArguments = TryParseGenericUse(adapter.BaseType, out _, out var parsedBaseArguments)
+            var baseArguments = TryParseGenericUse(baseType, out _, out var parsedBaseArguments)
                 ? parsedBaseArguments
                 : [];
             if (baseTypeParameters.Count != baseArguments.Count)
             {
-                diagnostics.Report(adapter.Location, $"Adapter base type '{adapter.BaseType}' expects {baseTypeParameters.Count} type argument(s).");
+                diagnostics.Report(adapter.Location, $"Adapter base type '{baseType}' expects {baseTypeParameters.Count} type argument(s).");
                 continue;
             }
 
@@ -120,4 +121,5 @@ internal static class TypeAdapterLoweringPass
 
         yield return text[start..];
     }
+
 }

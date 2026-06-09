@@ -3,7 +3,23 @@ namespace Cx.Compiler.Syntax.Nodes;
 public sealed record TypeNode(
     Location Location,
     string TypeName,
-    TypeSyntaxNode? Syntax = null) : SyntaxNode(Location);
+    TypeSyntaxNode? Syntax = null) : SyntaxNode(Location)
+{
+    public static TypeNode Create(Location location, string typeName) =>
+        new(location, typeName, TypeSyntaxParser.Parse(typeName));
+}
+
+public static class TypeNodeExtensions
+{
+    public static string ToTypeName(this TypeNode? typeNode) =>
+        typeNode?.TypeName ?? string.Empty;
+
+    public static string? ToTypeNameOrNull(this TypeNode? typeNode)
+    {
+        var typeName = typeNode.ToTypeName();
+        return string.IsNullOrWhiteSpace(typeName) ? null : typeName;
+    }
+}
 
 public abstract record TypeSyntaxNode;
 

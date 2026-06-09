@@ -4,6 +4,8 @@ namespace Cx.Compiler.Semantic;
 
 internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeResolver expressionTypeResolver)
 {
+    private readonly TypeRefParser _typeRefParser = new(program);
+
     public bool StatementsAlwaysReturn(
         IReadOnlyList<StatementNode> statements,
         IReadOnlyDictionary<string, string> variables) =>
@@ -161,5 +163,14 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         return type.TrimEnd();
     }
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
 }

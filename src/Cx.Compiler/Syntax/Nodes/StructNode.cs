@@ -38,7 +38,7 @@ public sealed record StructRequirementNode(
         Location Location,
         string Name,
         IReadOnlyList<string> TypeArguments)
-        : this(Location, Name, TypeArguments.Select(type => new TypeNode(Location, type, TypeSyntaxParser.Parse(type))).ToList())
+        : this(Location, Name, TypeArguments.Select(type => TypeNode.Create(Location, type)).ToList())
     {
     }
 }

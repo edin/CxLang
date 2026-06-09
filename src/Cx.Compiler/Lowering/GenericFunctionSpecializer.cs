@@ -12,15 +12,16 @@ internal static class GenericFunctionSpecializer
             .Zip(arguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
         var typeSubstitutions = GenericTypeSubstitutionBuilder.Build(substitutions);
-        var selfType = function.OwnerType is not null && arguments.Count > 0
-            ? $"{function.OwnerType}<{string.Join(",", arguments)}>"
-            : function.OwnerType;
+        var ownerType = function.OwnerTypeNode.ToTypeNameOrNull();
+        var selfType = ownerType is not null && arguments.Count > 0
+            ? $"{ownerType}<{string.Join(",", arguments)}>"
+            : ownerType;
         var selfTypeRef = GenericTypeSubstitutionBuilder.ParseType(selfType);
         var specialized = function with
         {
             TypeParameters = [],
             TypeArgumentNodes = arguments
-                .Select(argument => new TypeNode(function.Location, argument, TypeSyntaxParser.Parse(argument)))
+                .Select(argument => TypeNode.Create(function.Location, argument))
                 .ToList(),
             ReturnTypeNode = SubstituteTypeNode(function.ReturnTypeNode, substitutions, typeSubstitutions, selfType, selfTypeRef),
             Parameters = function.Parameters
@@ -46,7 +47,7 @@ internal static class GenericFunctionSpecializer
         function.Semantic.Symbol = new Symbol(
             function.Name,
             SymbolKind.Function,
-            function.ReturnType,
+            function.ReturnTypeNode.ToTypeName(),
             function.Location,
             function);
     }

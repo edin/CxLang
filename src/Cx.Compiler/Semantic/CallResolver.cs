@@ -735,14 +735,23 @@ internal sealed class CallResolver(
         return -1;
     }
 
-    private static string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private static IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
+    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(TypeText).ToList();
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
 
-    private static string? TypeTextOrNull(TypeNode? typeNode)
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private string? TypeTextOrNull(TypeNode? typeNode)
     {
         var type = TypeText(typeNode);
         return string.IsNullOrWhiteSpace(type) ? null : type;

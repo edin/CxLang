@@ -8,16 +8,19 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 {
     private ExpressionTypeResolver? _resolver;
     private TypeSystem? _typeSystem;
+    private TypeRefParser? _typeRefParser;
     private ProgramNode? _program;
     private IReadOnlyDictionary<string, string> _globals = new Dictionary<string, string>(StringComparer.Ordinal);
 
     public ProgramNode Apply(ProgramNode program)
     {
         _program = program;
+        _typeRefParser = new TypeRefParser(program);
         _resolver = new ExpressionTypeResolver(program);
         var globalVariables = InferGlobalVariables(program.GlobalVariables);
         var programWithGlobals = program with { GlobalVariables = globalVariables };
         _program = programWithGlobals;
+        _typeRefParser = new TypeRefParser(programWithGlobals);
         _resolver = new ExpressionTypeResolver(programWithGlobals);
         _typeSystem = new TypeSystem(programWithGlobals);
         _globals = globalVariables
@@ -216,7 +219,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     private static TypeNode? CreateInferredTypeNode(Location location, string type) =>
         string.IsNullOrWhiteSpace(type)
             ? null
-            : new TypeNode(location, type, TypeSyntaxParser.Parse(type));
+            : TypeNode.Create(location, type);
 
     private ForeachStatement InferForeachStatement(ForeachStatement foreachStatement, Dictionary<string, string> variables)
     {
@@ -258,7 +261,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         };
     }
 
-    private static ForeachStatement ApplyForeachBindingTypes(
+    private ForeachStatement ApplyForeachBindingTypes(
         ForeachStatement foreachStatement,
         string elementType,
         string? keyType)
@@ -275,12 +278,12 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         };
     }
 
-    private static ForeachBinding FillBindingType(ForeachBinding binding, string inferredType) =>
+    private ForeachBinding FillBindingType(ForeachBinding binding, string inferredType) =>
         string.IsNullOrWhiteSpace(TypeText(binding.TypeNode))
             ? binding with { TypeNode = CreateInferredTypeNode(binding.Location, inferredType) }
             : binding;
 
-    private static void AddForeachBindings(
+    private void AddForeachBindings(
         ForeachStatement foreachStatement,
         Dictionary<string, string> variables,
         string elementType)
@@ -436,7 +439,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         return null;
     }
 
-    private static string BuildGenericCallDiagnostic(
+    private string BuildGenericCallDiagnostic(
         string subject,
         string variableName,
         FunctionNode function,
@@ -600,11 +603,25 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     private static Dictionary<string, string> CopyVariables(IReadOnlyDictionary<string, string> variables) =>
         new(variables, StringComparer.Ordinal);
 
-    private static string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
 
-    private static string? TypeTextOrNull(TypeNode? typeNode)
+        if (_typeRefParser is null)
+        {
+            throw new InvalidOperationException("Type inference has no TypeRef parser.");
+        }
+
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private string? TypeTextOrNull(TypeNode? typeNode)
     {
         var type = TypeText(typeNode);
         return string.IsNullOrWhiteSpace(type) ? null : type;

@@ -133,7 +133,7 @@ public sealed record GenericCallExpressionNode(
             SourceText,
             Callee,
             Arguments,
-            TypeArguments.Select(type => new TypeNode(Location, type, TypeSyntaxParser.Parse(type))).ToList())
+            TypeArguments.Select(type => TypeNode.Create(Location, type)).ToList())
     {
     }
 }

@@ -21,9 +21,7 @@ internal sealed class TypeSyntaxTypeRefConverter(ProgramNode program)
     }
 
     public TypeRef Convert(TypeNode? typeNode) =>
-        typeNode?.Syntax is null
-            ? _fallbackParser.Parse(typeNode?.TypeName)
-            : Convert(typeNode.Syntax);
+        _fallbackParser.Parse(typeNode);
 
     private TypeRef Convert(TypeSyntaxNode syntax, HashSet<string> resolvingAliases) =>
         syntax switch
@@ -60,9 +58,8 @@ internal sealed class TypeSyntaxTypeRefConverter(ProgramNode program)
             return new TypeRef.Named(named.Name, []);
         }
 
-        var target = targetType?.Syntax is null
-            ? _fallbackParser.Parse(targetType?.TypeName)
-            : Convert(targetType.Syntax, resolvingAliases);
+        var target = targetType?.Semantic.Type
+            ?? (targetType?.Syntax is null ? _fallbackParser.Parse(targetType) : Convert(targetType.Syntax, resolvingAliases));
         resolvingAliases.Remove(named.Name);
         return new TypeRef.Alias(named.Name, target);
     }

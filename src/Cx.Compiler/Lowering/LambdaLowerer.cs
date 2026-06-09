@@ -464,7 +464,7 @@ internal static class LambdaLowerer
     private static TypeNode CreateTypeNode(string type)
     {
         var location = new Location(new SourceFile("<lambda>", ""), 0, 1, 1);
-        return new TypeNode(location, type, TypeSyntaxParser.Parse(type));
+        return TypeNode.Create(location, type);
     }
 
     private static int FindLambdaStart(string expression, int start)

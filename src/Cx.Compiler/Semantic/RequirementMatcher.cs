@@ -479,7 +479,7 @@ public sealed class RequirementMatcher
                     field.Location,
                     field.Name,
                     field.Attributes,
-                    new TypeNode(field.Location, substitutedType, TypeSyntaxParser.Parse(substitutedType)));
+                    TypeNode.Create(field.Location, substitutedType));
             })
             .ToList();
 
@@ -499,7 +499,7 @@ public sealed class RequirementMatcher
         if (TryResolveStruct(type, out var structNode))
         {
             fields = structNode.Fields
-                .Select(field => new ResolvedField(field.Name, field.TypeNode?.Semantic.Type ?? _typeRefParser.Parse(TypeText(field.TypeNode)), field))
+                .Select(field => new ResolvedField(field.Name, field.TypeNode.ToTypeRef(_typeRefParser), field))
                 .ToList();
             return true;
         }
@@ -706,14 +706,23 @@ public sealed class RequirementMatcher
         return arguments;
     }
 
-    private static string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private static IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
+    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(TypeText).ToList();
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
 
-    private static string? TypeTextOrNull(TypeNode? typeNode)
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private string? TypeTextOrNull(TypeNode? typeNode)
     {
         var type = TypeText(typeNode);
         return string.IsNullOrWhiteSpace(type) ? null : type;

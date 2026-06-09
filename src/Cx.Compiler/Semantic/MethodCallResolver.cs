@@ -9,6 +9,8 @@ internal sealed record ResolvedMethodCall(
 
 internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSystem)
 {
+    private readonly TypeRefParser _typeRefParser = new(program);
+
     public ResolvedMethodCall? Resolve(
         MemberExpressionNode member,
         IReadOnlyList<string> typeArguments,
@@ -94,5 +96,14 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
         _ => null,
     };
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
 }

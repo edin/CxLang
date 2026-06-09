@@ -3691,7 +3691,7 @@ public sealed class Parser
     }
 
     private static TypeNode CreateTypeNode(Location location, string type) =>
-        new(location, type, TypeSyntaxParser.Parse(type));
+        TypeNode.Create(location, type);
 
     private bool CheckTypeCloseAngle() =>
         _pendingTypeCloseAngles > 0

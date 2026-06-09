@@ -7,6 +7,10 @@ internal sealed class ModuleVisibilityAnalyzer(
     DiagnosticBag diagnostics,
     IReadOnlyList<ProgramNode> availablePrograms)
 {
+    private readonly TypeRefParser _typeRefParser = new(availablePrograms.FirstOrDefault() ?? new ProgramNode(
+        new Cx.Compiler.Syntax.Location(new Cx.Compiler.Syntax.SourceFile("<module-visibility>", string.Empty), 0, 1, 1),
+        []));
+
     private readonly IReadOnlyDictionary<string, ModuleSymbols> _modules = availablePrograms
         .GroupBy(program => program.Module?.Name ?? string.Empty, StringComparer.Ordinal)
         .ToDictionary(
@@ -601,11 +605,24 @@ internal sealed class ModuleVisibilityAnalyzer(
         return arguments;
     }
 
-    private static string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private static string? OwnerType(FunctionNode function)
+    {
+        var type = function.OwnerTypeNode?.TypeName ?? string.Empty;
+        return string.IsNullOrWhiteSpace(type) ? null : type;
+    }
 
-    private static string TypeText(TypeNode? typeNode) => typeNode?.TypeName ?? string.Empty;
+    private string TypeText(TypeNode? typeNode)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
 
-    private static string? TypeTextOrNull(TypeNode? typeNode)
+        var type = typeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private string? TypeTextOrNull(TypeNode? typeNode)
     {
         var type = TypeText(typeNode);
         return string.IsNullOrWhiteSpace(type) ? null : type;

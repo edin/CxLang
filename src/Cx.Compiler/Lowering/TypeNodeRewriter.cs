@@ -17,14 +17,7 @@ internal static class TypeNodeRewriter
             return null;
         }
 
-        var rewritten = typeNode with
-        {
-            TypeName = rewriteTypeName(typeNode.TypeName),
-        };
-        rewritten = rewritten with
-        {
-            Syntax = TypeSyntaxParser.Parse(rewritten.TypeName),
-        };
+        var rewritten = TypeNode.Create(typeNode.Location, rewriteTypeName(typeNode.TypeName));
         SyntaxNode.CloneSemantic(typeNode, rewritten);
         if (typeNode.Semantic.Type is null)
         {

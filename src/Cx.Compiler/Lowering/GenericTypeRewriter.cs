@@ -525,14 +525,9 @@ internal static class GenericTypeRewriter
             return null;
         }
 
-        var rewritten = typeNode with
-        {
-            TypeName = RewriteConcreteGenericStructTypes(typeNode.TypeName, concreteStructNames),
-        };
-        rewritten = rewritten with
-        {
-            Syntax = TypeSyntaxParser.Parse(rewritten.TypeName),
-        };
+        var rewritten = TypeNode.Create(
+            typeNode.Location,
+            RewriteConcreteGenericStructTypes(typeNode.TypeName, concreteStructNames));
         SyntaxNode.CloneSemantic(typeNode, rewritten);
         if (typeNode.Semantic.Type is not null)
         {
