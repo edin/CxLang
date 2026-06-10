@@ -8,8 +8,4 @@ public sealed record ExternFunctionNode(
     IReadOnlyList<AttributeApplicationNode> Attributes,
     bool IsHeaderDeclaration = false,
     bool IsMacro = false,
-    TypeNode? ReturnTypeNode = null) : TopLevelNode(Location)
-{
-    [Obsolete("Use ReturnTypeNode instead of the string compatibility property.")]
-    public string ReturnType => ReturnTypeNode?.TypeName ?? string.Empty;
-}
+    TypeNode? ReturnTypeNode = null) : TopLevelNode(Location);

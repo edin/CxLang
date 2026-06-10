@@ -40,15 +40,6 @@ public sealed record FunctionNode(
     {
     }
 
-    [Obsolete("Use OwnerTypeNode instead of the string compatibility property.")]
-    public string? OwnerType => OwnerTypeNode?.TypeName;
-
-    [Obsolete("Use TypeArgumentNodes instead of the string compatibility property.")]
-    public IReadOnlyList<string> TypeArguments => (TypeArgumentNodes ?? []).Select(node => node.TypeName).ToList();
-
-    [Obsolete("Use ReturnTypeNode instead of the string compatibility property.")]
-    public string ReturnType => ReturnTypeNode?.TypeName ?? string.Empty;
-
     private static TypeNode? CreateOwnerTypeNode(Location location, string? ownerType) =>
         string.IsNullOrWhiteSpace(ownerType)
             ? null

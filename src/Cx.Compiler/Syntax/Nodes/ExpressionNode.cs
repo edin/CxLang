@@ -23,11 +23,7 @@ public sealed record CastExpressionNode(
     Location Location,
     string SourceText,
     ExpressionNode Expression,
-    TypeNode? TargetTypeNode = null) : ExpressionNode(Location, SourceText)
-{
-    [Obsolete("Use TargetTypeNode instead of the string compatibility property.")]
-    public string TargetType => TargetTypeNode?.TypeName ?? string.Empty;
-}
+    TypeNode? TargetTypeNode = null) : ExpressionNode(Location, SourceText);
 
 public sealed record UnaryExpressionNode(
     Location Location,
@@ -45,11 +41,7 @@ public sealed record SizeOfExpressionNode(
     Location Location,
     string SourceText,
     ExpressionNode? ExpressionOperand,
-    TypeNode? TypeOperandNode = null) : ExpressionNode(Location, SourceText)
-{
-    [Obsolete("Use TypeOperandNode instead of the string compatibility property.")]
-    public string? TypeOperand => TypeOperandNode?.TypeName;
-}
+    TypeNode? TypeOperandNode = null) : ExpressionNode(Location, SourceText);
 
 public sealed record BinaryExpressionNode(
     Location Location,
@@ -77,11 +69,7 @@ public sealed record InitializerExpressionNode(
     string SourceText,
     IReadOnlyList<InitializerFieldNode> Fields,
     IReadOnlyList<ExpressionNode> Values,
-    TypeNode? TypeNameNode = null) : ExpressionNode(Location, SourceText)
-{
-    [Obsolete("Use TypeNameNode instead of the string compatibility property.")]
-    public string? TypeName => TypeNameNode?.TypeName;
-}
+    TypeNode? TypeNameNode = null) : ExpressionNode(Location, SourceText);
 
 public sealed record InitializerFieldNode(
     string Name,
@@ -93,11 +81,7 @@ public sealed record FunctionExpressionNode(
     IReadOnlyList<ParameterNode> Parameters,
     ExpressionNode? ExpressionBody,
     IReadOnlyList<StatementNode>? BlockBody,
-    TypeNode? ReturnTypeNode = null) : ExpressionNode(Location, SourceText)
-{
-    [Obsolete("Use ReturnTypeNode instead of the string compatibility property.")]
-    public string? ReturnType => ReturnTypeNode?.TypeName;
-}
+    TypeNode? ReturnTypeNode = null) : ExpressionNode(Location, SourceText);
 
 public sealed record AssignmentExpressionNode(
     Location Location,
@@ -119,9 +103,6 @@ public sealed record GenericCallExpressionNode(
     IReadOnlyList<ExpressionNode> Arguments,
     IReadOnlyList<TypeNode> TypeArgumentNodes) : ExpressionNode(Location, SourceText)
 {
-    [Obsolete("Use TypeArgumentNodes instead of the string compatibility property.")]
-    public IReadOnlyList<string> TypeArguments => TypeArgumentNodes.Select(node => node.TypeName).ToList();
-
     public GenericCallExpressionNode(
         Location Location,
         string SourceText,

@@ -7,11 +7,7 @@ public sealed record LetStatement(
     bool IsConst,
     string Name,
     ExpressionNode? Initializer,
-    TypeNode? TypeNode = null) : StatementNode(Location)
-{
-    [Obsolete("Use TypeNode instead of the string compatibility property.")]
-    public string Type => TypeNode?.TypeName ?? string.Empty;
-}
+    TypeNode? TypeNode = null) : StatementNode(Location);
 
 public sealed record ReturnStatement(
     Location Location,
@@ -52,11 +48,7 @@ public sealed record ForDeclarationInitializerNode(
     bool IsConst,
     string Name,
     ExpressionNode? Initializer,
-    TypeNode? TypeNode = null) : ForInitializerNode(Location)
-{
-    [Obsolete("Use TypeNode instead of the string compatibility property.")]
-    public string Type => TypeNode?.TypeName ?? string.Empty;
-}
+    TypeNode? TypeNode = null) : ForInitializerNode(Location);
 
 public sealed record ForExpressionInitializerNode(
     Location Location,
@@ -67,11 +59,7 @@ public sealed record ForeachBinding(
     string Name,
     bool IsReference,
     bool IsConst,
-    TypeNode? TypeNode = null) : SyntaxNode(Location)
-{
-    [Obsolete("Use TypeNode instead of the string compatibility property.")]
-    public string Type => TypeNode?.TypeName ?? string.Empty;
-}
+    TypeNode? TypeNode = null) : SyntaxNode(Location);
 
 public sealed record ForeachStatement(
     Location Location,

@@ -10,8 +10,4 @@ public sealed record InterfaceMethodNode(
     Location Location,
     string Name,
     IReadOnlyList<ParameterNode> Parameters,
-    TypeNode? ReturnTypeNode = null) : SyntaxNode(Location)
-{
-    [Obsolete("Use ReturnTypeNode instead of the string compatibility property.")]
-    public string ReturnType => ReturnTypeNode?.TypeName ?? string.Empty;
-}
+    TypeNode? ReturnTypeNode = null) : SyntaxNode(Location);
