@@ -1,10 +1,12 @@
 using Cx.Compiler.Lexer;
+using Cx.Compiler.Syntax;
 
 namespace Cx.Compiler.Parser;
 
 internal sealed class TokenStream
 {
     private readonly IReadOnlyList<Token> _tokens;
+    private readonly Token _eofToken;
     private int _position;
 
     public TokenStream(IReadOnlyList<Token> tokens)
@@ -15,6 +17,15 @@ internal sealed class TokenStream
         }
 
         _tokens = tokens;
+        _eofToken = tokens[^1].Type == TokenType.Eof
+            ? tokens[^1]
+            : CreateEof(tokens[^1].Location);
+    }
+
+    public TokenStream(IReadOnlyList<Token> tokens, Location eofLocation)
+    {
+        _tokens = tokens;
+        _eofToken = CreateEof(eofLocation);
     }
 
     public int Position => _position;
@@ -71,6 +82,35 @@ internal sealed class TokenStream
         }
 
         return null;
+    }
+
+    public IReadOnlyList<Token> ReadBalancedUntil(TokenType type) => ReadBalancedUntilAny(type);
+
+    public IReadOnlyList<Token> ReadBalancedUntilAny(params TokenType[] types)
+    {
+        var tokens = new List<Token>();
+        var depth = 0;
+
+        while (!IsAtEnd)
+        {
+            if (depth <= 0 && CheckAny(types))
+            {
+                break;
+            }
+
+            if (CheckAny(TokenType.LParen, TokenType.LBracket, TokenType.LBrace))
+            {
+                depth++;
+            }
+            else if (CheckAny(TokenType.RParen, TokenType.RBracket, TokenType.RBrace))
+            {
+                depth--;
+            }
+
+            tokens.Add(Advance());
+        }
+
+        return tokens;
     }
 
     public T? OneOf<T>(params Func<T?>[] parsers)
@@ -138,16 +178,19 @@ internal sealed class TokenStream
 
     public void Restore(int position)
     {
-        _position = Math.Clamp(position, 0, _tokens.Count - 1);
+        _position = Math.Clamp(position, 0, _tokens.Count);
     }
 
     private Token At(int position)
     {
         if (position < 0)
         {
-            return _tokens[0];
+            return _tokens.Count > 0 ? _tokens[0] : _eofToken;
         }
 
-        return position < _tokens.Count ? _tokens[position] : _tokens[^1];
+        return position < _tokens.Count ? _tokens[position] : _eofToken;
     }
+
+    private static Token CreateEof(Location location) =>
+        new(TokenType.Eof, string.Empty, location.Position, location);
 }

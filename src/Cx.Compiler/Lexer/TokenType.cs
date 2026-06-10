@@ -121,8 +121,11 @@ public enum TokenType
     [Token("]", TokenClass.Symbol)]
     RBracket,
     [Token("*", TokenClass.Symbol)]
+    [BinaryOperator(100)]
+    [PrefixOperator(110)]
     Star,
     [Token("=", TokenClass.Symbol)]
+    [BinaryOperator(10, OperatorAssociativity.Right)]
     Equals,
     [Token(":", TokenClass.Symbol)]
     Colon,
@@ -131,64 +134,98 @@ public enum TokenType
     [Token(",", TokenClass.Symbol)]
     Comma,
     [Token("...", TokenClass.Symbol)]
+    [BinaryOperator(15)]
     Ellipsis,
     [Token("..", TokenClass.Symbol)]
+    [BinaryOperator(15)]
     DotDot,
     [Token(".", TokenClass.Symbol)]
     Dot,
     [Token("==", TokenClass.Symbol)]
+    [BinaryOperator(60)]
     EqualEqual,
     [Token("!=", TokenClass.Symbol)]
+    [BinaryOperator(60)]
     BangEqual,
     [Token("<=>", TokenClass.Symbol)]
+    [BinaryOperator(70)]
     Spaceship,
     [Token("<=", TokenClass.Symbol)]
+    [BinaryOperator(70)]
     LessThanOrEqual,
     [Token(">=", TokenClass.Symbol)]
+    [BinaryOperator(70)]
     GreaterThanOrEqual,
     [Token("&&", TokenClass.Symbol)]
+    [BinaryOperator(30)]
     AmpersandAmpersand,
     [Token("||", TokenClass.Symbol)]
+    [BinaryOperator(20)]
     PipePipe,
     [Token("++", TokenClass.Symbol)]
+    [PrefixOperator(110)]
+    [PostfixOperator(120)]
     PlusPlus,
     [Token("--", TokenClass.Symbol)]
+    [PrefixOperator(110)]
+    [PostfixOperator(120)]
     MinusMinus,
     [Token("+=", TokenClass.Symbol)]
+    [BinaryOperator(10, OperatorAssociativity.Right)]
     PlusEquals,
     [Token("-=", TokenClass.Symbol)]
+    [BinaryOperator(10, OperatorAssociativity.Right)]
     MinusEquals,
     [Token("*=", TokenClass.Symbol)]
+    [BinaryOperator(10, OperatorAssociativity.Right)]
     StarEquals,
     [Token("/=", TokenClass.Symbol)]
+    [BinaryOperator(10, OperatorAssociativity.Right)]
     SlashEquals,
     [Token("%=", TokenClass.Symbol)]
+    [BinaryOperator(10, OperatorAssociativity.Right)]
     PercentEquals,
     [Token("<<", TokenClass.Symbol)]
+    [BinaryOperator(80)]
     LessThanLessThan,
     [Token(">>", TokenClass.Symbol)]
+    [BinaryOperator(80)]
     GreaterThanGreaterThan,
     [Token("+", TokenClass.Symbol)]
+    [BinaryOperator(90)]
+    [PrefixOperator(110)]
     Plus,
     [Token("-", TokenClass.Symbol)]
+    [BinaryOperator(90)]
+    [PrefixOperator(110)]
     Minus,
     [Token("/", TokenClass.Symbol)]
+    [BinaryOperator(100)]
     Slash,
     [Token("%", TokenClass.Symbol)]
+    [BinaryOperator(100)]
     Percent,
     [Token("!", TokenClass.Symbol)]
+    [PrefixOperator(110)]
     Bang,
     [Token("&", TokenClass.Symbol)]
+    [BinaryOperator(50)]
+    [PrefixOperator(110)]
     Ampersand,
     [Token("|", TokenClass.Symbol)]
+    [BinaryOperator(40)]
     Pipe,
     [Token("^", TokenClass.Symbol)]
+    [BinaryOperator(45)]
     Caret,
     [Token("~", TokenClass.Symbol)]
+    [PrefixOperator(110)]
     Tilde,
     [Token("<", TokenClass.Symbol)]
+    [BinaryOperator(70)]
     LessThan,
     [Token(">", TokenClass.Symbol)]
+    [BinaryOperator(70)]
     GreaterThan,
     [Token("?", TokenClass.Symbol)]
     QuestionMark,

@@ -266,12 +266,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
                 ResolveExpression(postfix.Operand);
                 break;
             case SizeOfExpressionNode sizeOf:
-                if (sizeOf.TypeOperandNode is not null)
-                {
-                    ResolveType(sizeOf, sizeOf.TypeOperandNode);
-                }
-
-                ResolveExpression(sizeOf.ExpressionOperand);
+                ResolveSizeOfExpression(sizeOf);
                 break;
             case BinaryExpressionNode binary:
                 ResolveExpression(binary.Left);
@@ -351,6 +346,27 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
                 ResolveExpression(index.Index);
                 break;
         }
+    }
+
+    private void ResolveSizeOfExpression(SizeOfExpressionNode sizeOf)
+    {
+        if (sizeOf.OperandNode is SizeOfUnresolvedOperandNode unresolved
+            && unresolved.ExpressionCandidate is NameExpressionNode name
+            && name.Semantic.Symbol is null or { Kind: SymbolKind.Type })
+        {
+            var typeNode = TypeNode.Create(unresolved.Location, unresolved.SourceText);
+            sizeOf.TypeOperandNode = typeNode;
+            sizeOf.ExpressionOperand = null;
+            sizeOf.OperandNode = new SizeOfTypeOperandNode(typeNode.Location, typeNode.TypeName, typeNode);
+        }
+
+        if (sizeOf.TypeOperandNode is not null)
+        {
+            ResolveType(sizeOf, sizeOf.TypeOperandNode);
+            return;
+        }
+
+        ResolveExpression(sizeOf.ExpressionOperand);
     }
 
     private void ResolveType(SyntaxNode node, TypeNode? typeNode)

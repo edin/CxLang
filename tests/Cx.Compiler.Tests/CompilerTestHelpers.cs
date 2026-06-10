@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.C;
+using Cx.Compiler.Parser;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
@@ -26,6 +27,25 @@ internal static class CompilerTestHelpers
         var program = new CxParser(diagnostics).Parse(Source(source, path));
         AssertNoErrors(diagnostics);
         return program;
+    }
+
+    public static ExpressionNode ParseTokenExpression(string expression, string path = "expression.cx")
+    {
+        var diagnostics = new DiagnosticBag();
+        var source = Source(expression, path);
+        var tokens = new Cx.Compiler.Lexer.Lexer(source, diagnostics)
+            .Tokenize()
+            .Where(token => token.Type is not Cx.Compiler.Lexer.TokenType.Eof
+                and not Cx.Compiler.Lexer.TokenType.Comment
+                and not Cx.Compiler.Lexer.TokenType.MultilineComment)
+            .ToList();
+
+        AssertNoErrors(diagnostics);
+        Assert.NotEmpty(tokens);
+
+        var parsed = ExpressionTokenParser.TryParse(new TokenSlice(tokens[0].Location, tokens));
+        Assert.NotNull(parsed);
+        return parsed;
     }
 
     public static SemanticModel Resolve(ProgramNode program)

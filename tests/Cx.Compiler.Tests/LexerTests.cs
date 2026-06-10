@@ -62,6 +62,17 @@ public sealed class LexerTests
             tokens.Select(token => token.Type));
     }
 
+    [Theory]
+    [InlineData("0..10", new[] { TokenType.Number, TokenType.DotDot, TokenType.Number, TokenType.Eof })]
+    [InlineData("0...10", new[] { TokenType.Number, TokenType.Ellipsis, TokenType.Number, TokenType.Eof })]
+    [InlineData("0.5", new[] { TokenType.Number, TokenType.Eof })]
+    public void Tokenize_DoesNotConsumeRangeDotsAsNumber(string text, TokenType[] expected)
+    {
+        var tokens = Tokenize(text);
+
+        Assert.Equal(expected, tokens.Select(token => token.Type));
+    }
+
     private static IReadOnlyList<Token> Tokenize(string text)
     {
         var lexer = new Cx.Compiler.Lexer.Lexer(new SourceFile("test.cx", text), new DiagnosticBag());

@@ -10,7 +10,30 @@ public sealed class NumberTokenMatcher : ITokenMatcher
         }
 
         var location = lexer.Location;
-        var value = lexer.TakeWhile(ch => char.IsLetterOrDigit(ch) || ch is '.' or '_');
+        var start = lexer.Position;
+        var seenDecimalPoint = false;
+        while (!lexer.IsAtEnd)
+        {
+            if (char.IsLetterOrDigit(lexer.Current) || lexer.Current == '_')
+            {
+                lexer.Advance();
+                continue;
+            }
+
+            if (lexer.Current == '.'
+                && !seenDecimalPoint
+                && lexer.Peek() != '.'
+                && char.IsDigit(lexer.Peek()))
+            {
+                seenDecimalPoint = true;
+                lexer.Advance();
+                continue;
+            }
+
+            break;
+        }
+
+        var value = lexer.Input[start..lexer.Position];
         return new Token(TokenType.Number, value, location.Position, location);
     }
 }

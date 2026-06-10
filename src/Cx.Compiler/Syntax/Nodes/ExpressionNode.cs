@@ -37,11 +37,55 @@ public sealed record PostfixExpressionNode(
     ExpressionNode Operand,
     string Operator) : ExpressionNode(Location, SourceText);
 
-public sealed record SizeOfExpressionNode(
+public abstract record SizeOfOperandNode(Location Location, string SourceText);
+
+public sealed record SizeOfTypeOperandNode(
     Location Location,
     string SourceText,
-    ExpressionNode? ExpressionOperand,
-    TypeNode? TypeOperandNode = null) : ExpressionNode(Location, SourceText);
+    TypeNode TypeNode) : SizeOfOperandNode(Location, SourceText);
+
+public sealed record SizeOfExpressionOperandNode(
+    Location Location,
+    string SourceText,
+    ExpressionNode Expression) : SizeOfOperandNode(Location, SourceText);
+
+public sealed record SizeOfUnresolvedOperandNode(
+    Location Location,
+    string SourceText,
+    ExpressionNode? ExpressionCandidate = null) : SizeOfOperandNode(Location, SourceText);
+
+public sealed record SizeOfExpressionNode : ExpressionNode
+{
+    public SizeOfExpressionNode(
+        Location Location,
+        string SourceText,
+        ExpressionNode? ExpressionOperand,
+        TypeNode? TypeOperandNode = null,
+        SizeOfOperandNode? OperandNode = null)
+        : base(Location, SourceText)
+    {
+        this.ExpressionOperand = ExpressionOperand;
+        this.TypeOperandNode = TypeOperandNode;
+        this.OperandNode = OperandNode
+            ?? CreateOperand(Location, ExpressionOperand, TypeOperandNode);
+    }
+
+    public ExpressionNode? ExpressionOperand { get; set; }
+
+    public TypeNode? TypeOperandNode { get; set; }
+
+    public SizeOfOperandNode OperandNode { get; set; }
+
+    private static SizeOfOperandNode CreateOperand(
+        Location location,
+        ExpressionNode? expressionOperand,
+        TypeNode? typeOperandNode) =>
+        typeOperandNode is not null
+            ? new SizeOfTypeOperandNode(typeOperandNode.Location, typeOperandNode.TypeName, typeOperandNode)
+            : expressionOperand is not null
+                ? new SizeOfExpressionOperandNode(expressionOperand.Location, expressionOperand.SourceText, expressionOperand)
+                : new SizeOfUnresolvedOperandNode(location, string.Empty);
+}
 
 public sealed record BinaryExpressionNode(
     Location Location,

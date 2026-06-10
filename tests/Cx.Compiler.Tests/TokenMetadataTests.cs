@@ -63,4 +63,32 @@ public sealed class TokenMetadataTests
                 $"{metadata.MatcherType?.FullName} must implement {nameof(ITokenMatcher)}.");
         }
     }
+
+    [Fact]
+    public void OperatorFacts_ExposeBinaryPrecedenceAndAssociativity()
+    {
+        var multiply = OperatorFacts.GetBinary(TokenType.Star);
+        var add = OperatorFacts.GetBinary(TokenType.Plus);
+        var assign = OperatorFacts.GetBinary(TokenType.Equals);
+
+        Assert.NotNull(multiply);
+        Assert.NotNull(add);
+        Assert.NotNull(assign);
+        Assert.True(multiply.Precedence > add.Precedence);
+        Assert.True(add.Precedence > assign.Precedence);
+        Assert.Equal(OperatorAssociativity.Left, add.Associativity);
+        Assert.Equal(OperatorAssociativity.Right, assign.Associativity);
+    }
+
+    [Fact]
+    public void OperatorFacts_ExposePrefixAndPostfixRoles()
+    {
+        Assert.NotNull(OperatorFacts.GetPrefix(TokenType.Minus));
+        Assert.NotNull(OperatorFacts.GetPrefix(TokenType.Ampersand));
+        Assert.NotNull(OperatorFacts.GetPostfix(TokenType.PlusPlus));
+        Assert.NotNull(OperatorFacts.GetPostfix(TokenType.MinusMinus));
+
+        Assert.Null(OperatorFacts.GetPostfix(TokenType.Minus));
+        Assert.Null(OperatorFacts.GetPrefix(TokenType.Slash));
+    }
 }

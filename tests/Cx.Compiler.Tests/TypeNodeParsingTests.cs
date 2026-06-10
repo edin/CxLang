@@ -159,6 +159,69 @@ public sealed class TypeNodeParsingTests
     }
 
     [Fact]
+    public void ParseType_ReportsVariadicFunctionTypeWithoutFixedParameter()
+    {
+        var diagnostics = ParseDiagnostics(
+            """
+            type Callback = fn(...) -> int;
+            """);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("Variadic function types require at least one fixed parameter before '...'.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ParseType_ReportsVariadicFunctionTypeWhenNotLastParameter()
+    {
+        var diagnostics = ParseDiagnostics(
+            """
+            type Callback = fn(int, ..., char*) -> int;
+            """);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("Variadic marker '...' must be the last function type parameter.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ParseType_ParsesDeclarationTypeSyntaxFromTokens()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                value: T;
+            }
+
+            struct Holder {
+                values: Vec<Box<int>*>[4];
+            }
+
+            fn apply(callback: fn(int, Vec<int>*) -> bool) -> void {
+            }
+
+            declare <x.h> {
+                fn read(buffer: UInt8*, count: usize) -> int;
+            }
+            """);
+
+        var fieldType = Assert.Single(program.Structs.Single(node => node.Name == "Holder").Fields).TypeNode;
+        var array = Assert.IsType<FixedArrayTypeSyntaxNode>(fieldType?.Syntax);
+        Assert.Equal("4", array.Length);
+        var generic = Assert.IsType<GenericTypeSyntaxNode>(array.Element);
+        var boxedPointer = Assert.IsType<PointerTypeSyntaxNode>(Assert.Single(generic.Arguments));
+        var boxedGeneric = Assert.IsType<GenericTypeSyntaxNode>(boxedPointer.Element);
+        Assert.Equal("Box", Assert.IsType<NamedTypeSyntaxNode>(boxedGeneric.Target).Name);
+
+        var callback = Assert.Single(program.Functions.Single(node => node.Name == "apply").Parameters).TypeNode;
+        var functionType = Assert.IsType<FunctionTypeSyntaxNode>(callback?.Syntax);
+        Assert.Equal(2, functionType.Parameters.Count);
+        Assert.IsType<PointerTypeSyntaxNode>(functionType.Parameters[1]);
+
+        var declaredFunction = Assert.Single(Assert.Single(program.CDeclarations).Functions);
+        Assert.Equal("UInt8*", declaredFunction.Parameters[0].TypeNode.ToTypeName());
+        Assert.Equal("usize", declaredFunction.Parameters[1].TypeNode.ToTypeName());
+    }
+
+    [Fact]
     public void TypeSyntaxFormatter_RoundTripsCanonicalTypeText()
     {
         var program = CompilerTestHelpers.Parse(
@@ -456,6 +519,13 @@ public sealed class TypeNodeParsingTests
     {
         var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
         return Collect(value, visited);
+    }
+
+    private static DiagnosticBag ParseDiagnostics(string source)
+    {
+        var diagnostics = new DiagnosticBag();
+        _ = new Cx.Compiler.Parser.Parser(diagnostics).Parse(CompilerTestHelpers.Source(source));
+        return diagnostics;
     }
 
     private static IEnumerable<TypeNode> Collect(object? value, HashSet<object> visited)

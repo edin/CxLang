@@ -9,72 +9,86 @@ public sealed partial class Parser
     private TypeNode ParseTypeNode()
     {
         var location = Current.Location;
-        if (Check(TokenType.Fn))
-        {
-            return ParseFunctionTypeNode();
-        }
-
-        var typeNames = ParseTypeName();
-        if (typeNames.Count == 0)
+        var tokens = ParseTypeTokens();
+        if (tokens.Count == 0)
         {
             _diagnostics.Report(Current.Location, "Expected type name.");
             return CreateTypeNode(location, string.Empty);
         }
 
-        var parts = new List<string> { string.Join(" ", typeNames) };
+        return TypeTokenParser.Parse(tokens);
+    }
 
-        if (ConsumeOptional(TokenType.LessThan))
+    private List<Token> ParseTypeTokens()
+    {
+        if (Check(TokenType.Fn))
         {
-            var typeArguments = new List<string>();
+            return ParseFunctionTypeTokens();
+        }
+
+        var tokens = ParsePrimaryTypeTokens();
+        if (tokens.Count == 0)
+        {
+            return tokens;
+        }
+
+        if (Match(TokenType.LessThan) is { } openGeneric)
+        {
+            tokens.Add(openGeneric);
 
             if (!CheckTypeCloseAngle())
             {
                 do
                 {
-                    typeArguments.Add(ParseTypeNode().TypeName);
+                    tokens.AddRange(ParseTypeTokens());
                 }
-                while (ConsumeOptional(TokenType.Comma));
+                while (Match(TokenType.Comma) is { } comma && AddToken(tokens, comma));
             }
 
-            ExpectTypeCloseAngle("Expected '>' after generic type arguments.");
-            parts.Add("<");
-            parts.Add(string.Join(",", typeArguments));
-            parts.Add(">");
+            if (ConsumeTypeCloseAngle() is { FromPending: false, Token: { } closeGeneric })
+            {
+                tokens.Add(closeGeneric);
+            }
+            else if (!WasLastTypeCloseAngleFromPending)
+            {
+                _diagnostics.Report(Current.Location, "Expected '>' after generic type arguments.");
+            }
         }
 
         if (_pendingTypeCloseAngles == 0)
         {
-            while (ConsumeOptional(TokenType.Star))
+            while (Match(TokenType.Star) is { } pointer)
             {
-                parts.Add("*");
+                tokens.Add(pointer);
             }
 
-            while (ConsumeOptional(TokenType.LBracket))
+            while (Match(TokenType.LBracket) is { } openArray)
             {
-                var length = ReadUntil(TokenType.RBracket);
-                Expect(TokenType.RBracket, "Expected ']' after array length.");
-                parts.Add("[");
-                parts.Add(length);
-                parts.Add("]");
+                tokens.Add(openArray);
+                tokens.AddRange(Tokens.ReadBalancedUntil(TokenType.RBracket));
+                if (Expect(TokenType.RBracket, "Expected ']' after array length.") is { } closeArray)
+                {
+                    tokens.Add(closeArray);
+                }
             }
         }
 
-        return CreateTypeNode(location, string.Join("", parts));
+        return tokens;
     }
 
-    private List<string> ParseTypeName()
+    private List<Token> ParsePrimaryTypeTokens()
     {
-        var names = new List<string>();
+        var tokens = new List<Token>();
 
         if (Current.Type is TokenType.Struct or TokenType.Enum or TokenType.Union)
         {
-            names.Add(Advance().Value);
+            tokens.Add(Advance());
             if (Expect(TokenType.Identifier, "Expected C tag type name.") is { } tagName)
             {
-                names.Add(tagName.Value);
+                tokens.Add(tagName);
             }
 
-            return names;
+            return tokens;
         }
 
         var isConst = Current.Type == TokenType.Const;
@@ -84,73 +98,103 @@ public sealed partial class Parser
 
         if (first is null)
         {
-            return names;
+            return tokens;
         }
 
-        names.Add(first.Value);
+        tokens.Add(first);
         if (isConst && Current.Type == TokenType.Identifier)
         {
-            names.Add(Advance().Value);
+            tokens.Add(Advance());
         }
 
-        while (ConsumeOptional(TokenType.Dot))
+        while (Match(TokenType.Dot) is { } dot)
         {
+            tokens.Add(dot);
             if (Expect(TokenType.Identifier, "Expected type name after '.'.") is { } part)
             {
-                names[^1] = names[^1] + "." + part.Value;
+                tokens.Add(part);
             }
         }
 
         while (Current.Type == TokenType.Identifier && IsTypeNameContinuation(Current.Value))
         {
-            names.Add(Advance().Value);
+            tokens.Add(Advance());
         }
 
-        return names;
+        return tokens;
     }
 
     private static bool IsTypeNameContinuation(string value) =>
         value is "void" or "char" or "short" or "int" or "long" or "float" or "double";
 
-    private TypeNode ParseFunctionTypeNode()
+    private List<Token> ParseFunctionTypeTokens()
     {
-        var location = Current.Location;
-        Expect(TokenType.Fn, "Expected 'fn'.");
-        Expect(TokenType.LParen, "Expected '(' after 'fn' in function type.");
+        var tokens = new List<Token>();
+        if (Expect(TokenType.Fn, "Expected 'fn'.") is { } fnToken)
+        {
+            tokens.Add(fnToken);
+        }
 
-        var parameterTypes = new List<string>();
+        if (Expect(TokenType.LParen, "Expected '(' after 'fn' in function type.") is { } openParameters)
+        {
+            tokens.Add(openParameters);
+        }
+
+        var parameters = new List<FunctionTypeParameterTokens>();
         if (!Check(TokenType.RParen))
         {
             do
             {
                 if (Current.Type == TokenType.Identifier && PeekType() == TokenType.Colon)
                 {
-                    Advance();
-                    Expect(TokenType.Colon, "Expected ':' after function type parameter name.");
+                    tokens.Add(Advance());
+                    if (Expect(TokenType.Colon, "Expected ':' after function type parameter name.") is { } colon)
+                    {
+                        tokens.Add(colon);
+                    }
                 }
 
-                if (Match(TokenType.Ellipsis) is not null)
+                if (Match(TokenType.Ellipsis) is { } ellipsis)
                 {
-                    parameterTypes.Add("...");
+                    tokens.Add(ellipsis);
+                    parameters.Add(new FunctionTypeParameterTokens(ellipsis, IsVariadic: true));
                 }
                 else
                 {
-                    parameterTypes.Add(ParseTypeNode().TypeName);
+                    var parameterTokens = ParseTypeTokens();
+                    tokens.AddRange(parameterTokens);
+                    parameters.Add(new FunctionTypeParameterTokens(
+                        parameterTokens.FirstOrDefault() ?? Current,
+                        IsVariadic: false));
                 }
             }
-            while (ConsumeOptional(TokenType.Comma));
+            while (Match(TokenType.Comma) is { } comma && AddToken(tokens, comma));
         }
 
-        ValidateVariadicFunctionType(parameterTypes);
-        Expect(TokenType.RParen, "Expected ')' after function type parameters.");
-        Expect(TokenType.Arrow, "Expected '->' before function type return type.");
-        var returnType = ParseTypeNode().TypeName;
+        ValidateVariadicFunctionType(parameters);
+        if (Expect(TokenType.RParen, "Expected ')' after function type parameters.") is { } closeParameters)
+        {
+            tokens.Add(closeParameters);
+        }
 
-        return CreateTypeNode(location, $"fn({string.Join(",", parameterTypes)})->{returnType}");
+        if (Expect(TokenType.Arrow, "Expected '->' before function type return type.") is { } arrow)
+        {
+            tokens.Add(arrow);
+        }
+
+        tokens.AddRange(ParseTypeTokens());
+
+        return tokens;
     }
 
     private static TypeNode CreateTypeNode(Location location, string type) =>
         TypeNode.Create(location, type);
+
+    private static bool AddToken(List<Token> tokens, Token token)
+    {
+        tokens.Add(token);
+        return true;
+    }
 
     private bool CheckTypeCloseAngle() =>
         _pendingTypeCloseAngles > 0
@@ -167,46 +211,61 @@ public sealed partial class Parser
         _diagnostics.Report(Current.Location, message);
     }
 
-    private bool ConsumeTypeCloseAngle()
+    private bool WasLastTypeCloseAngleFromPending { get; set; }
+
+    private TypeCloseAngle ConsumeTypeCloseAngle()
     {
+        WasLastTypeCloseAngleFromPending = false;
         if (_pendingTypeCloseAngles > 0)
         {
             _pendingTypeCloseAngles--;
-            return true;
+            WasLastTypeCloseAngleFromPending = true;
+            return new TypeCloseAngle(null, FromPending: true);
         }
 
-        if (ConsumeOptional(TokenType.GreaterThan))
+        if (Match(TokenType.GreaterThan) is { } greaterThan)
         {
-            return true;
+            return new TypeCloseAngle(greaterThan, FromPending: false);
         }
 
-        if (ConsumeOptional(TokenType.GreaterThanGreaterThan))
+        if (Match(TokenType.GreaterThanGreaterThan) is { } doubleGreaterThan)
         {
             _pendingTypeCloseAngles++;
-            return true;
+            return new TypeCloseAngle(doubleGreaterThan, FromPending: false);
         }
 
-        return false;
+        return new TypeCloseAngle(null, FromPending: false);
     }
 
-    private void ValidateVariadicFunctionType(IReadOnlyList<string> parameterTypes)
+    private readonly record struct TypeCloseAngle(Token? Token, bool FromPending)
     {
-        for (var i = 0; i < parameterTypes.Count; i++)
+        public static implicit operator bool(TypeCloseAngle closeAngle) =>
+            closeAngle.Token is not null || closeAngle.FromPending;
+    }
+
+    private void ValidateVariadicFunctionType(IReadOnlyList<FunctionTypeParameterTokens> parameters)
+    {
+        for (var i = 0; i < parameters.Count; i++)
         {
-            if (parameterTypes[i] != "...")
+            if (!parameters[i].IsVariadic)
             {
                 continue;
             }
 
-            if (i != parameterTypes.Count - 1)
+            if (i != parameters.Count - 1)
             {
-                _diagnostics.Report(Current.Location, "Variadic marker '...' must be the last function type parameter.");
+                _diagnostics.Report(parameters[i].Location, "Variadic marker '...' must be the last function type parameter.");
             }
 
             if (i == 0)
             {
-                _diagnostics.Report(Current.Location, "Variadic function types require at least one fixed parameter before '...'.");
+                _diagnostics.Report(parameters[i].Location, "Variadic function types require at least one fixed parameter before '...'.");
             }
         }
+    }
+
+    private readonly record struct FunctionTypeParameterTokens(Token FirstToken, bool IsVariadic)
+    {
+        public Location Location => FirstToken.Location;
     }
 }
