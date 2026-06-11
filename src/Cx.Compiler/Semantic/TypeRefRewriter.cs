@@ -49,7 +49,8 @@ internal static class TypeRefRewriter
             TypeRef.FixedArray array => new TypeRef.FixedArray(Rewrite(array.Element, rewriteNamed), array.Length),
             TypeRef.Function function => new TypeRef.Function(
                 function.Parameters.Select(parameter => Rewrite(parameter, rewriteNamed)).ToList(),
-                Rewrite(function.ReturnType, rewriteNamed)),
+                Rewrite(function.ReturnType, rewriteNamed),
+                function.IsVariadic),
             _ => type,
         };
 

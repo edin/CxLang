@@ -70,4 +70,17 @@ public sealed class SemanticSpaceshipTypeRefTests
 
         CompilerTestHelpers.AssertDiagnosticContains(result, "Cannot compare 'Count' and 'char*' with '<=>'");
     }
+
+    [Fact]
+    public void Compile_ReportsNullArithmeticFromExpressionAst()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                return (null) + 5;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(result, "Cannot use null in arithmetic expressions.");
+    }
 }

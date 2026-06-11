@@ -34,4 +34,26 @@ public sealed class SemanticAssignmentTypeRefTests
 
         CompilerTestHelpers.AssertDiagnosticContains(result, "Type mismatch for assignment", "cannot assign 'int' to 'Bytes'");
     }
+
+    [Fact]
+    public void Compile_ReportsFunctionPointerVariadicMismatch()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            type VariadicFn = fn(const char*, ...) -> int;
+            type PlainFn = fn(const char*) -> int;
+
+            fn plain(format: const char*) -> int {
+                return 0;
+            }
+
+            fn main() -> int {
+                let value: PlainFn = plain;
+                let other: VariadicFn = value;
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(result, "Type mismatch for local 'other'");
+    }
 }

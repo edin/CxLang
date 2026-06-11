@@ -49,13 +49,13 @@ internal sealed class CallResolver(
         }
 
         var calleeType = resolveExpressionType(callee, variables);
-        if (TryParseFunctionType(calleeType, out var functionPointerParameters, out var functionPointerReturnType, out var isFunctionPointerVariadic))
+        if (Parse(calleeType) is TypeRef.Function functionPointer)
         {
             return new CallResolution(
                 callee.SourceText,
-                Parse(functionPointerReturnType),
-                functionPointerParameters.Select(Parse).ToList(),
-                isFunctionPointerVariadic);
+                functionPointer.ReturnType,
+                functionPointer.Parameters,
+                functionPointer.IsVariadic);
         }
 
         if (name is null)
@@ -674,65 +674,6 @@ internal sealed class CallResolver(
 
         arguments.Add(argumentsText[start..].Trim());
         return arguments;
-    }
-
-    private static bool TryParseFunctionType(
-        string? type,
-        out IReadOnlyList<string> parameters,
-        out string returnType,
-        out bool isVariadic)
-    {
-        parameters = [];
-        returnType = string.Empty;
-        isVariadic = false;
-        type = type?.Trim() ?? string.Empty;
-        if (!type.StartsWith("fn(", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var close = FindMatchingParen(type, 2);
-        if (close < 0 || close + 2 >= type.Length || type[close + 1] != '-' || type[close + 2] != '>')
-        {
-            return false;
-        }
-
-        var parsedParameters = SplitGenericArguments(type[3..close]).ToList();
-        if (parsedParameters.Count > 0 && parsedParameters[^1] == "...")
-        {
-            parsedParameters.RemoveAt(parsedParameters.Count - 1);
-            isVariadic = true;
-        }
-
-        parameters = parsedParameters;
-        returnType = type[(close + 3)..].Trim();
-        return !string.IsNullOrWhiteSpace(returnType);
-    }
-
-    private static int FindMatchingParen(string text, int openIndex)
-    {
-        var depth = 0;
-        for (var i = openIndex; i < text.Length; i++)
-        {
-            if (text[i] == '(')
-            {
-                depth++;
-                continue;
-            }
-
-            if (text[i] != ')')
-            {
-                continue;
-            }
-
-            depth--;
-            if (depth == 0)
-            {
-                return i;
-            }
-        }
-
-        return -1;
     }
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);

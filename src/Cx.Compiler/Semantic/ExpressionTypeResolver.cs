@@ -658,14 +658,14 @@ internal sealed class ExpressionTypeResolver(
         return type.TrimEnd();
     }
 
-    private static string GetGenericBaseName(string type)
-    {
-        type = type.Trim();
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        return genericStart < 0
-            ? type
-            : type[..genericStart].Trim();
-    }
+    //private static string GetGenericBaseName(string type)
+    //{
+    //    type = type.Trim();
+    //    var genericStart = type.IndexOf('<', StringComparison.Ordinal);
+    //    return genericStart < 0
+    //        ? type
+    //        : type[..genericStart].Trim();
+    //}
 
     private static bool SameType(string? left, string? right) =>
         left is not null
@@ -797,56 +797,6 @@ internal sealed class ExpressionTypeResolver(
 
         arguments.Add(argumentsText[start..].Trim());
         return arguments;
-    }
-
-    private static bool TryParseFunctionType(
-        string? type,
-        out IReadOnlyList<string> parameters,
-        out string returnType)
-    {
-        parameters = [];
-        returnType = string.Empty;
-        type = type?.Trim() ?? string.Empty;
-        if (!type.StartsWith("fn(", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var close = FindMatchingParen(type, 2);
-        if (close < 0 || close + 2 >= type.Length || type[close + 1] != '-' || type[close + 2] != '>')
-        {
-            return false;
-        }
-
-        parameters = SplitGenericArguments(type[3..close]);
-        returnType = type[(close + 3)..].Trim();
-        return !string.IsNullOrWhiteSpace(returnType);
-    }
-
-    private static int FindMatchingParen(string text, int openIndex)
-    {
-        var depth = 0;
-        for (var i = openIndex; i < text.Length; i++)
-        {
-            if (text[i] == '(')
-            {
-                depth++;
-                continue;
-            }
-
-            if (text[i] != ')')
-            {
-                continue;
-            }
-
-            depth--;
-            if (depth == 0)
-            {
-                return i;
-            }
-        }
-
-        return -1;
     }
 
 }

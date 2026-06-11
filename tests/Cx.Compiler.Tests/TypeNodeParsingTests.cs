@@ -254,6 +254,7 @@ public sealed class TypeNodeParsingTests
 
         Assert.Equal("Vec<int>", TypeRefFormatter.ToCxString(intVec));
         var function = Assert.IsType<TypeRef.Function>(callback);
+        Assert.True(function.IsVariadic);
         var parameter = Assert.Single(function.Parameters);
         var parameterPointer = Assert.IsType<TypeRef.Pointer>(parameter);
         Assert.Equal("IntVec", Assert.IsType<TypeRef.Alias>(parameterPointer.Element).Name);

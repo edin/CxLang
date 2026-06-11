@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -18,6 +17,8 @@ public sealed class SemanticAnalyzer(
     private ReturnSemanticAnalyzer? _returnAnalyzer;
     private MatchSemanticAnalyzer? _matchAnalyzer;
     private ForeachSemanticAnalyzer? _foreachAnalyzer;
+    private ExpressionSemanticAnalyzer? _expressionAnalyzer;
+    private SymbolSuggestionService? _symbolSuggestions;
     private ProgramNode? _program;
     private IReadOnlyList<string> _currentTypeParameters = [];
     private IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = [];
@@ -30,19 +31,21 @@ public sealed class SemanticAnalyzer(
         _expressionTypeResolver = new ExpressionTypeResolver(program);
         _typeRefParser = new TypeRefParser(program);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
+        _symbolSuggestions = new SymbolSuggestionService(program, availablePrograms, OwnerType);
         _assignmentAnalyzer = CreateAssignmentAnalyzer(program);
         _returnAnalyzer = CreateReturnAnalyzer();
         _matchAnalyzer = CreateMatchAnalyzer(program);
         _foreachAnalyzer = CreateForeachAnalyzer();
+        _expressionAnalyzer = CreateExpressionAnalyzer();
         _typeUsageAnalyzer = new TypeUsageAnalyzer(
             diagnostics,
             program,
             _requirementMatcher,
             TypeText,
             IsKnownTypeName,
-            FindAliasSuggestionForType,
-            FindPartialImportSuggestionForType,
-            FindImportSuggestionForType);
+            _symbolSuggestions.FindAliasSuggestionForType,
+            _symbolSuggestions.FindPartialImportSuggestionForType,
+            _symbolSuggestions.FindImportSuggestionForType);
         var requirementDeclarations = new RequirementDeclarationAnalyzer(
             diagnostics,
             program,
@@ -127,6 +130,7 @@ public sealed class SemanticAnalyzer(
             _returnAnalyzer = CreateReturnAnalyzer();
             _matchAnalyzer = CreateMatchAnalyzer(program);
             _foreachAnalyzer = CreateForeachAnalyzer();
+            _expressionAnalyzer = CreateExpressionAnalyzer();
 
             var functionReturnType = function.ReturnTypeNode?.Semantic.Type ?? ParseTypeRef(TypeText(function.ReturnTypeNode));
             AnalyzeStatements(function.Body, functionReturnType, variables, mutability, program, function.TypeParameters);
@@ -138,6 +142,7 @@ public sealed class SemanticAnalyzer(
             _returnAnalyzer = CreateReturnAnalyzer();
             _matchAnalyzer = CreateMatchAnalyzer(program);
             _foreachAnalyzer = CreateForeachAnalyzer();
+            _expressionAnalyzer = CreateExpressionAnalyzer();
             definiteAssignment.AnalyzeFunction(function, globalVariables);
             if (!IsVoidType(functionReturnType) && !returnFlow.StatementsAlwaysReturn(function.Body, variables))
             {
@@ -204,6 +209,22 @@ public sealed class SemanticAnalyzer(
                 _typeCompatibility,
                 _expressionTypeResolver,
                 TypeTextOrNull);
+
+    private ExpressionSemanticAnalyzer? CreateExpressionAnalyzer() =>
+        _program is null || _expressionTypeResolver is null || _typeCompatibility is null
+            ? null
+            : new ExpressionSemanticAnalyzer(
+                diagnostics,
+                _program,
+                _assignmentAnalyzer,
+                _expressionTypeResolver,
+                _typeCompatibility,
+                _symbolSuggestions,
+                _currentTypeParameters,
+                _currentGenericConstraints,
+                TypeText,
+                IsKnownTypeName,
+                AnalyzeExpression);
 
     private void AnalyzeStatements(
         IReadOnlyList<StatementNode> statements,
@@ -367,8 +388,7 @@ public sealed class SemanticAnalyzer(
             ? function.Name
             : $"{OwnerType(function)}.{function.Name}";
 
-    private static bool IsVoidType(string type) =>
-        string.Equals(type.Trim(), "void", StringComparison.Ordinal);
+
 
     private static bool IsVoidType(TypeRef? type) =>
         UnwrapAlias(type) is TypeRef.Named { Name: "void", Arguments.Count: 0 };
@@ -388,37 +408,6 @@ public sealed class SemanticAnalyzer(
     {
         _ = program;
         _typeUsageAnalyzer?.Analyze(type, location, inScopeTypeParameters);
-    }
-
-    private void AnalyzeExpression(
-        string? expression,
-        Cx.Compiler.Syntax.Location location,
-        IReadOnlyDictionary<string, string>? variables = null,
-        IReadOnlyDictionary<string, LocalMutability>? mutability = null)
-    {
-        if (ContainsNullArithmetic(expression))
-        {
-            diagnostics.Report(location, "Cannot use null in arithmetic expressions.");
-        }
-
-        if (expression is null || !TrySplitTopLevelSpaceship(expression, out var left, out var right))
-        {
-            return;
-        }
-
-        if (variables is null || _expressionTypeResolver is null)
-        {
-            return;
-        }
-
-        var leftType = _expressionTypeResolver.ResolveTypeRef(new RawExpressionNode(location, left), variables);
-        var rightType = _expressionTypeResolver.ResolveTypeRef(new RawExpressionNode(location, right), variables);
-        if (leftType is null || rightType is null)
-        {
-            return;
-        }
-
-        AnalyzeSpaceshipTypes(leftType, rightType, location);
     }
 
     private void AnalyzeSpaceshipTypes(
@@ -656,14 +645,6 @@ public sealed class SemanticAnalyzer(
         }
     }
 
-    private static string? GetQualifiedName(ExpressionNode expression) => expression switch
-    {
-        NameExpressionNode name => name.SourceText,
-        ParenthesizedExpressionNode parenthesized => GetQualifiedName(parenthesized.Expression),
-        MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
-        _ => null,
-    };
-
     private static bool IsBareNull(string expression) =>
         string.Equals(expression.Trim(), "null", StringComparison.Ordinal);
 
@@ -678,19 +659,18 @@ public sealed class SemanticAnalyzer(
         IReadOnlyDictionary<string, string>? variables = null,
         IReadOnlyDictionary<string, LocalMutability>? mutability = null)
     {
-        AnalyzeExpressionTree(expression, location, variables, mutability);
+        _expressionAnalyzer?.Analyze(expression, location, variables, mutability);
+
+        if (ContainsNullArithmetic(expression))
+        {
+            diagnostics.Report(location, "Cannot use null in arithmetic expressions.");
+        }
 
         if (expression is not BinaryExpressionNode { Operator: "<=>" } binary
             || variables is null
             || _expressionTypeResolver is null)
         {
-            AnalyzeExpression(expression?.SourceText, location, variables, mutability);
             return;
-        }
-
-        if (ContainsNullArithmetic(expression.SourceText))
-        {
-            diagnostics.Report(location, "Cannot use null in arithmetic expressions.");
         }
 
         var leftType = _expressionTypeResolver.ResolveTypeRef(binary.Left, variables);
@@ -699,401 +679,6 @@ public sealed class SemanticAnalyzer(
         {
             AnalyzeSpaceshipTypes(leftType, rightType, location);
         }
-    }
-
-    private void AnalyzeExpressionTree(
-        ExpressionNode? expression,
-        Cx.Compiler.Syntax.Location location,
-        IReadOnlyDictionary<string, string>? variables,
-        IReadOnlyDictionary<string, LocalMutability>? mutability)
-    {
-        if (expression is null)
-        {
-            return;
-        }
-
-        switch (expression)
-        {
-            case NameExpressionNode name:
-                AnalyzeNameExpression(name, location, variables);
-                break;
-            case ParenthesizedExpressionNode parenthesized:
-                AnalyzeExpressionTree(parenthesized.Expression, location, variables, mutability);
-                break;
-            case CastExpressionNode cast:
-                AnalyzeExpressionTree(cast.Expression, location, variables, mutability);
-                break;
-            case UnaryExpressionNode unary:
-                AnalyzeExpressionTree(unary.Operand, location, variables, mutability);
-                break;
-            case PostfixExpressionNode postfix:
-                if (postfix.Operator is "++" or "--")
-                {
-                    _assignmentAnalyzer?.AnalyzeMutationTarget(postfix.Operand, postfix.Location, mutability);
-                }
-
-                AnalyzeExpressionTree(postfix.Operand, location, variables, mutability);
-                break;
-            case SizeOfExpressionNode sizeOf:
-                AnalyzeExpressionTree(sizeOf.ExpressionOperand, location, variables, mutability);
-                break;
-            case BinaryExpressionNode binary:
-                AnalyzeExpressionTree(binary.Left, location, variables, mutability);
-                AnalyzeExpressionTree(binary.Right, location, variables, mutability);
-                break;
-            case ScalarRangeExpressionNode range:
-                AnalyzeExpressionTree(range.Start, location, variables, mutability);
-                AnalyzeExpressionTree(range.End, location, variables, mutability);
-                break;
-            case ConditionalExpressionNode conditional:
-                AnalyzeExpressionTree(conditional.Condition, location, variables, mutability);
-                AnalyzeExpressionTree(conditional.WhenTrue, location, variables, mutability);
-                AnalyzeExpressionTree(conditional.WhenFalse, location, variables, mutability);
-                break;
-            case InitializerExpressionNode initializer:
-                foreach (var field in initializer.Fields)
-                {
-                    AnalyzeExpressionTree(field.Value, location, variables, mutability);
-                }
-
-                foreach (var value in initializer.Values)
-                {
-                    AnalyzeExpressionTree(value, location, variables, mutability);
-                }
-
-                break;
-            case FunctionExpressionNode functionExpression:
-                AnalyzeExpressionTree(functionExpression.ExpressionBody, location, variables, mutability);
-                break;
-            case AssignmentExpressionNode assignment:
-                AnalyzeExpressionTree(assignment.Target, location, variables, mutability);
-                AnalyzeExpressionTree(assignment.Value, location, variables, mutability);
-                if (variables is not null)
-                {
-                    _assignmentAnalyzer?.AnalyzeAssignmentExpression(
-                        assignment,
-                        variables,
-                        mutability,
-                        AnalyzeExpression);
-                }
-
-                break;
-            case CallExpressionNode call:
-                AnalyzeCallExpression(call, location, variables);
-                AnalyzeExpressionTree(call.Callee, location, variables, mutability);
-                foreach (var argument in call.Arguments)
-                {
-                    AnalyzeExpressionTree(argument, location, variables, mutability);
-                }
-
-                break;
-            case GenericCallExpressionNode call:
-                AnalyzeGenericCallExpression(call, location, variables);
-                AnalyzeExpressionTree(call.Callee, location, variables, mutability);
-                foreach (var argument in call.Arguments)
-                {
-                    AnalyzeExpressionTree(argument, location, variables, mutability);
-                }
-
-                break;
-            case MemberExpressionNode member:
-                AnalyzeExpressionTree(member.Target, location, variables, mutability);
-                break;
-            case IndexExpressionNode index:
-                AnalyzeExpressionTree(index.Target, location, variables, mutability);
-                AnalyzeExpressionTree(index.Index, location, variables, mutability);
-                break;
-        }
-    }
-
-    private void AnalyzeNameExpression(
-        NameExpressionNode name,
-        Cx.Compiler.Syntax.Location location,
-        IReadOnlyDictionary<string, string>? variables)
-    {
-        if (variables is null || _expressionTypeResolver is null)
-        {
-            return;
-        }
-
-        if (_expressionTypeResolver.Resolve(name, variables) is not null
-            || IsKnownTypeName(name.SourceText)
-            || _currentTypeParameters.Contains(name.SourceText, StringComparer.Ordinal)
-            || IsKnownConstructorOrVariantCall(name.SourceText))
-        {
-            return;
-        }
-
-        if (FindAliasSuggestionForValue(name.SourceText) is { } aliasSuggestion)
-        {
-            diagnostics.Report(location, $"Unknown symbol '{name.SourceText}'. Did you mean '{aliasSuggestion}'?");
-        }
-        else if (FindPartialImportSuggestionForValue(name.SourceText) is { } partialSuggestion)
-        {
-            diagnostics.Report(location, $"Unknown symbol '{name.SourceText}'. Did you mean '{partialSuggestion}'?");
-        }
-        else if (FindImportSuggestionForValue(name.SourceText) is { } suggestion)
-        {
-            diagnostics.Report(location, $"Unknown symbol '{name.SourceText}'. Did you mean to import {suggestion}?");
-        }
-    }
-
-    private void AnalyzeCallExpression(
-        CallExpressionNode call,
-        Cx.Compiler.Syntax.Location location,
-        IReadOnlyDictionary<string, string>? variables)
-    {
-        if (variables is null || _expressionTypeResolver is null || _typeCompatibility is null)
-        {
-            return;
-        }
-
-        if (ResolveCallSignature(call.Callee, [], call.Arguments, variables) is { } signature)
-        {
-            CheckCallArguments(location, signature, call.Arguments, variables);
-            return;
-        }
-
-        ReportUnknownCall(call.Callee, location, variables);
-    }
-
-    private void ReportUnknownCall(
-        ExpressionNode callee,
-        Cx.Compiler.Syntax.Location location,
-        IReadOnlyDictionary<string, string> variables)
-    {
-        if (_expressionTypeResolver?.Resolve(callee, variables) is not null)
-        {
-            return;
-        }
-
-        if (callee is not NameExpressionNode)
-        {
-            return;
-        }
-
-        if (GetQualifiedName(callee) is { } name)
-        {
-            if (IsKnownConstructorOrVariantCall(name))
-            {
-                return;
-            }
-
-            if (IsKnownTypeName(name))
-            {
-                return;
-            }
-
-            var aliasSuggestion = FindAliasSuggestionForFunction(name);
-            var partialSuggestion = aliasSuggestion is null ? FindPartialImportSuggestionForFunction(name) : null;
-            var suggestion = aliasSuggestion is null && partialSuggestion is null ? FindImportSuggestionForFunction(name) : null;
-            diagnostics.Report(
-                location,
-                aliasSuggestion is not null
-                    ? $"Unknown function '{name}'. Did you mean '{aliasSuggestion}'?"
-                    : partialSuggestion is not null
-                    ? $"Unknown function '{name}'. Did you mean '{partialSuggestion}'?"
-                    : suggestion is null
-                    ? $"Unknown function '{name}'."
-                    : $"Unknown function '{name}'. Did you mean to import {suggestion}?");
-        }
-    }
-
-    private string? FindAliasSuggestionForFunction(string name) =>
-        FindAliasSuggestion(name, DefinesFunction);
-
-    private string? FindAliasSuggestionForType(string name) =>
-        FindAliasSuggestion(name, DefinesType);
-
-    private string? FindAliasSuggestionForValue(string name) =>
-        FindAliasSuggestion(name, DefinesValue);
-
-    private string? FindPartialImportSuggestionForFunction(string name) =>
-        FindPartialImportSuggestion(name, DefinesFunction);
-
-    private string? FindPartialImportSuggestionForType(string name) =>
-        FindPartialImportSuggestion(name, DefinesType);
-
-    private string? FindPartialImportSuggestionForValue(string name) =>
-        FindPartialImportSuggestion(name, DefinesValue);
-
-    private string? FindPartialImportSuggestion(
-        string name,
-        Func<ProgramNode, string, bool> definesSymbol)
-    {
-        if (_program is null || availablePrograms is null)
-        {
-            return null;
-        }
-
-        foreach (var import in _program.SymbolImports)
-        {
-            if (import.Symbols.Any(symbol =>
-                    string.Equals(symbol.Name, name, StringComparison.Ordinal)
-                    || string.Equals(symbol.Alias, name, StringComparison.Ordinal)))
-            {
-                continue;
-            }
-
-            if (availablePrograms.Any(program =>
-                    string.Equals(program.Module?.Name, import.ModuleName, StringComparison.Ordinal)
-                    && definesSymbol(program, name)))
-            {
-                return $"from {import.ModuleName} import {name}";
-            }
-        }
-
-        return null;
-    }
-
-    private string? FindAliasSuggestion(
-        string name,
-        Func<ProgramNode, string, bool> definesSymbol)
-    {
-        if (_program is null || availablePrograms is null)
-        {
-            return null;
-        }
-
-        foreach (var import in _program.Imports.Where(import => import.Alias is not null))
-        {
-            if (availablePrograms.Any(program =>
-                    string.Equals(program.Module?.Name, import.ModuleName, StringComparison.Ordinal)
-                    && definesSymbol(program, name)))
-            {
-                return import.Alias + "." + name;
-            }
-        }
-
-        return null;
-    }
-
-    private string? FindImportSuggestionForFunction(string name)
-    {
-        if (availablePrograms is null)
-        {
-            return null;
-        }
-
-        var visibleModules = _program is null
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : _program.Imports.Select(import => import.ModuleName)
-                .Concat(_program.SymbolImports.Select(import => import.ModuleName))
-                .Append(_program.Module?.Name ?? string.Empty)
-                .Append("std.core")
-                .ToHashSet(StringComparer.Ordinal);
-
-        return availablePrograms
-            .Select(program => new
-            {
-                ModuleName = program.Module?.Name ?? string.Empty,
-                Program = program,
-            })
-            .Where(item => item.ModuleName.Length > 0)
-            .Where(item => !visibleModules.Contains(item.ModuleName))
-            .Where(item => DefinesFunction(item.Program, name))
-            .Select(item => item.ModuleName)
-            .OrderBy(moduleName => moduleName, StringComparer.Ordinal)
-            .FirstOrDefault();
-    }
-
-    private string? FindImportSuggestionForType(string name)
-    {
-        if (availablePrograms is null)
-        {
-            return null;
-        }
-
-        return FindImportSuggestion(name, DefinesType);
-    }
-
-    private string? FindImportSuggestionForValue(string name)
-    {
-        if (availablePrograms is null)
-        {
-            return null;
-        }
-
-        return FindImportSuggestion(name, DefinesValue);
-    }
-
-    private string? FindImportSuggestion(
-        string name,
-        Func<ProgramNode, string, bool> definesSymbol)
-    {
-        if (availablePrograms is null)
-        {
-            return null;
-        }
-
-        var visibleModules = _program is null
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : _program.Imports.Select(import => import.ModuleName)
-                .Concat(_program.SymbolImports.Select(import => import.ModuleName))
-                .Append(_program.Module?.Name ?? string.Empty)
-                .Append("std.core")
-                .ToHashSet(StringComparer.Ordinal);
-
-        return availablePrograms
-            .Select(program => new
-            {
-                ModuleName = program.Module?.Name ?? string.Empty,
-                Program = program,
-            })
-            .Where(item => item.ModuleName.Length > 0)
-            .Where(item => !visibleModules.Contains(item.ModuleName))
-            .Where(item => definesSymbol(item.Program, name))
-            .Select(item => item.ModuleName)
-            .OrderBy(moduleName => moduleName, StringComparer.Ordinal)
-            .FirstOrDefault();
-    }
-
-    private bool DefinesFunction(ProgramNode program, string name) =>
-        program.Functions.Any(function =>
-            OwnerType(function) is null
-            && string.Equals(function.Name, name, StringComparison.Ordinal))
-        || program.ExternFunctions.Any(function =>
-            string.Equals(function.Name, name, StringComparison.Ordinal))
-        || program.CDeclarations.Any(declaration =>
-            declaration.Functions.Any(function =>
-                string.Equals(function.Name, name, StringComparison.Ordinal)));
-
-    private static bool DefinesType(ProgramNode program, string name) =>
-        program.TypeAliases.Any(typeAlias => string.Equals(typeAlias.Name, name, StringComparison.Ordinal))
-        || program.Structs.Any(structNode => string.Equals(structNode.Name, name, StringComparison.Ordinal))
-        || program.Enums.Any(enumNode => string.Equals(enumNode.Name, name, StringComparison.Ordinal))
-        || program.Interfaces.Any(interfaceNode => string.Equals(interfaceNode.Name, name, StringComparison.Ordinal))
-        || program.TaggedUnions.Any(union => string.Equals(union.Name, name, StringComparison.Ordinal))
-        || program.CDeclarations.Any(declaration =>
-            declaration.TypeAliases.Any(typeAlias => string.Equals(typeAlias.Name, name, StringComparison.Ordinal))
-            || declaration.Structs.Any(structNode => string.Equals(structNode.Name, name, StringComparison.Ordinal))
-            || declaration.Enums.Any(enumNode => string.Equals(enumNode.Name, name, StringComparison.Ordinal))
-            || declaration.Unions.Any(union => string.Equals(union.Name, name, StringComparison.Ordinal)));
-
-    private static bool DefinesValue(ProgramNode program, string name) =>
-        program.GlobalVariables.Any(global => string.Equals(global.Name, name, StringComparison.Ordinal))
-        || program.Enums.Any(enumNode => enumNode.Members.Any(member => string.Equals(member.Name, name, StringComparison.Ordinal)))
-        || program.CDeclarations.Any(declaration =>
-            declaration.Constants.Any(constant => string.Equals(constant.Name, name, StringComparison.Ordinal))
-            || declaration.Enums.Any(enumNode => enumNode.Members.Any(member => string.Equals(member.Name, name, StringComparison.Ordinal))));
-
-    private bool IsKnownConstructorOrVariantCall(string name)
-    {
-        if (_program is null)
-        {
-            return false;
-        }
-
-        if (_program.Structs.Any(structNode => string.Equals(structNode.Name, name, StringComparison.Ordinal)))
-        {
-            return true;
-        }
-
-        return _program.TaggedUnions
-            .Where(union => !union.IsRaw)
-            .Any(union => union.Variants.Any(variant =>
-                string.Equals($"{union.Name}.{variant.Name}", name, StringComparison.Ordinal)
-                || string.Equals(variant.Name, name, StringComparison.Ordinal)));
     }
 
     private bool IsKnownTypeName(string name)
@@ -1123,103 +708,46 @@ public sealed class SemanticAnalyzer(
             "double" or
             "bool";
 
-    private void AnalyzeGenericCallExpression(
-        GenericCallExpressionNode call,
-        Cx.Compiler.Syntax.Location location,
-        IReadOnlyDictionary<string, string>? variables)
-    {
-        if (variables is null || _expressionTypeResolver is null || _typeCompatibility is null)
+    private static bool ContainsNullArithmetic(ExpressionNode? expression) =>
+        expression switch
         {
-            return;
-        }
+            BinaryExpressionNode { Operator: "+" or "-" or "*" or "/" or "%", Left: var left, Right: var right }
+                when IsNullLiteral(left) || IsNullLiteral(right) => true,
+            BinaryExpressionNode binary => ContainsNullArithmetic(binary.Left) || ContainsNullArithmetic(binary.Right),
+            ParenthesizedExpressionNode parenthesized => ContainsNullArithmetic(parenthesized.Expression),
+            CastExpressionNode cast => ContainsNullArithmetic(cast.Expression),
+            UnaryExpressionNode unary => ContainsNullArithmetic(unary.Operand),
+            PostfixExpressionNode postfix => ContainsNullArithmetic(postfix.Operand),
+            SizeOfExpressionNode sizeOf => ContainsNullArithmetic(sizeOf.ExpressionOperand),
+            ScalarRangeExpressionNode range => ContainsNullArithmetic(range.Start) || ContainsNullArithmetic(range.End),
+            ConditionalExpressionNode conditional =>
+                ContainsNullArithmetic(conditional.Condition)
+                || ContainsNullArithmetic(conditional.WhenTrue)
+                || ContainsNullArithmetic(conditional.WhenFalse),
+            InitializerExpressionNode initializer =>
+                initializer.Fields.Any(field => ContainsNullArithmetic(field.Value))
+                || initializer.Values.Any(ContainsNullArithmetic),
+            FunctionExpressionNode function => ContainsNullArithmetic(function.ExpressionBody),
+            AssignmentExpressionNode assignment =>
+                ContainsNullArithmetic(assignment.Target) || ContainsNullArithmetic(assignment.Value),
+            CallExpressionNode call =>
+                ContainsNullArithmetic(call.Callee) || call.Arguments.Any(ContainsNullArithmetic),
+            GenericCallExpressionNode call =>
+                ContainsNullArithmetic(call.Callee) || call.Arguments.Any(ContainsNullArithmetic),
+            MemberExpressionNode member => ContainsNullArithmetic(member.Target),
+            IndexExpressionNode index => ContainsNullArithmetic(index.Target) || ContainsNullArithmetic(index.Index),
+            _ => false,
+        };
 
-        if (ResolveCallSignature(call.Callee, TypeArguments(call.TypeArgumentNodes), call.Arguments, variables) is { } signature)
-        {
-            CheckCallArguments(location, signature, call.Arguments, variables);
-            return;
-        }
-
-        ReportUnknownCall(call.Callee, location, variables);
-    }
-
-    private CallSignature? ResolveCallSignature(
-        ExpressionNode callee,
-        IReadOnlyList<string> typeArguments,
-        IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables)
-    {
-        if (_program is null || _expressionTypeResolver is null)
-        {
-            return null;
-        }
-
-        var resolvedCall = new CallResolver(
-            _program,
-            _expressionTypeResolver.Resolve,
-            _currentTypeParameters,
-            _currentGenericConstraints).Resolve(callee, typeArguments, arguments, variables);
-        return resolvedCall is null
-            ? null
-            : new CallSignature(resolvedCall.Name, resolvedCall.ParameterTypes, resolvedCall.IsVariadic);
-    }
-
-    private void CheckCallArguments(
-        Cx.Compiler.Syntax.Location location,
-        CallSignature signature,
-        IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables)
-    {
-        if (_expressionTypeResolver is null || _typeCompatibility is null)
-        {
-            return;
-        }
-
-        if (arguments.Count < signature.ParameterTypes.Count)
-        {
-            diagnostics.Report(
-                location,
-                $"Call to '{signature.Name}' expects at least {signature.ParameterTypes.Count} argument(s), got {arguments.Count}.");
-            return;
-        }
-
-        if (!signature.IsVariadic && arguments.Count > signature.ParameterTypes.Count)
-        {
-            diagnostics.Report(
-                location,
-                $"Call to '{signature.Name}' expects {signature.ParameterTypes.Count} argument(s), got {arguments.Count}.");
-            return;
-        }
-
-        for (var i = 0; i < signature.ParameterTypes.Count && i < arguments.Count; i++)
-        {
-            var parameterType = signature.ParameterTypes[i];
-            if (IsAnyType(parameterType))
-            {
-                continue;
-            }
-
-            var argumentType = _expressionTypeResolver.ResolveTypeRef(arguments[i], variables);
-            if (!_typeCompatibility.CanAssign(parameterType, argumentType, out var reason))
-            {
-                diagnostics.Report(
-                    location,
-                    $"Argument {i + 1} for call to '{signature.Name}' has incompatible type: {reason}.");
-            }
-        }
-    }
-
-    private static bool ContainsNullArithmetic(string? expression) =>
-        expression is not null
-        && Regex.IsMatch(expression, @"(\bnull\b\s*[\+\-\*/%])|([\+\-\*/%]\s*\bnull\b)");
+    private static bool IsNullLiteral(ExpressionNode expression) =>
+        expression is LiteralExpressionNode { SourceText: "null" }
+        || expression is ParenthesizedExpressionNode parenthesized && IsNullLiteral(parenthesized.Expression);
 
     private static bool IsNullableType(string type) =>
         type.TrimEnd().EndsWith("*", StringComparison.Ordinal);
 
     private static bool IsNullableType(TypeRef? type) =>
         UnwrapAlias(type) is TypeRef.Pointer;
-
-    private static bool IsAnyType(TypeRef? type) =>
-        UnwrapAlias(type) is TypeRef.Named { Name: "any", Arguments.Count: 0 };
 
     private TypeRef ParseTypeRef(string type) =>
         _typeRefParser?.Parse(type) ?? new TypeRef.Unknown();
@@ -1237,37 +765,7 @@ public sealed class SemanticAnalyzer(
     private static string? FormatTypeRef(TypeRef? type) =>
         type is null ? null : TypeRefFormatter.ToCxString(type);
 
-    private static bool TrySplitTopLevelSpaceship(string expression, out string left, out string right)
-    {
-        var depth = 0;
-        for (var i = 0; i <= expression.Length - 3; i++)
-        {
-            depth += expression[i] switch
-            {
-                '(' or '[' or '{' => 1,
-                ')' or ']' or '}' => -1,
-                _ => 0,
-            };
-
-            if (depth != 0 || !expression.AsSpan(i, 3).SequenceEqual("<=>"))
-            {
-                continue;
-            }
-
-            left = expression[..i].Trim();
-            right = expression[(i + 3)..].Trim();
-            return left.Length > 0 && right.Length > 0;
-        }
-
-        left = string.Empty;
-        right = string.Empty;
-        return false;
-    }
-
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
-
-    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(TypeText).ToList();
 
     private string TypeText(TypeNode? typeNode)
     {
@@ -1290,10 +788,5 @@ public sealed class SemanticAnalyzer(
         var type = TypeText(typeNode);
         return string.IsNullOrWhiteSpace(type) ? null : type;
     }
-
-    private sealed record CallSignature(
-        string Name,
-        IReadOnlyList<TypeRef> ParameterTypes,
-        bool IsVariadic);
 
 }

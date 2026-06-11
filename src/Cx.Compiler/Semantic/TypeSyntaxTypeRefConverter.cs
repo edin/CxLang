@@ -32,7 +32,8 @@ internal sealed class TypeSyntaxTypeRefConverter(ProgramNode program)
             FixedArrayTypeSyntaxNode array => new TypeRef.FixedArray(Convert(array.Element, resolvingAliases), array.Length),
             FunctionTypeSyntaxNode function => new TypeRef.Function(
                 function.Parameters.Select(parameter => Convert(parameter, resolvingAliases)).ToList(),
-                Convert(function.ReturnType, resolvingAliases)),
+                Convert(function.ReturnType, resolvingAliases),
+                function.IsVariadic),
             _ => new TypeRef.Unknown(),
         };
 

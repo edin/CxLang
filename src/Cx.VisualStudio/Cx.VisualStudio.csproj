@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Cx.VisualStudio</RootNamespace>
+    <AssemblyName>Cx.VisualStudio</AssemblyName>
+    <GeneratePkgDefFile>false</GeneratePkgDefFile>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
+    <IncludeDebugSymbolsInLocalVSIXDeployment>false</IncludeDebugSymbolsInLocalVSIXDeployment>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
+    <UseCodebase>true</UseCodebase>
+    <CopyVsixManifestToOutput>false</CopyVsixManifestToOutput>
+    <TemplateOutputDirectory>$(IntermediateOutputPath)Templates\</TemplateOutputDirectory>
+    <TargetVsixContainerName>Cx.VisualStudio.vsix</TargetVsixContainerName>
+    <TargetVsixContainer>$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetVsixContainerName)</TargetVsixContainer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.9.37000" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VisualStudio.SDK.Analyzers" Version="17.7.22" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.10.2178" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="source.extension.vsixmanifest">
+      <SubType>Designer</SubType>
+    </None>
+  </ItemGroup>
+
+  <Import Project="$(NuGetPackageRoot)microsoft.vssdk.buildtools\17.10.2178\tools\vssdk\Microsoft.VsSDK.targets"
+          Condition="Exists('$(NuGetPackageRoot)microsoft.vssdk.buildtools\17.10.2178\tools\vssdk\Microsoft.VsSDK.targets')" />
+
+  <Target Name="BuildVsixContainer" AfterTargets="Build" DependsOnTargets="CreateVsixContainer" />
+
+  <Target Name="RemoveLooseVsixManifest" AfterTargets="CreateVsixContainer">
+    <Delete Files="$(MSBuildProjectDirectory)\extension.vsixmanifest" />
+  </Target>
+</Project>

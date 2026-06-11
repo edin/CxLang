@@ -34,6 +34,17 @@ public sealed class TypeRefFormatterTests
     }
 
     [Fact]
+    public void ToCxString_FormatsVariadicFunctionTypes()
+    {
+        var type = new TypeRef.Function(
+            [new TypeRef.Named("const char", [])],
+            new TypeRef.Named("int", []),
+            IsVariadic: true);
+
+        Assert.Equal("fn(const char,...)->int", TypeRefFormatter.ToCxString(type));
+    }
+
+    [Fact]
     public void ToCxString_FormatsFixedArrayTypes()
     {
         var type = new TypeRef.FixedArray(new TypeRef.Named("u8", []), "32");

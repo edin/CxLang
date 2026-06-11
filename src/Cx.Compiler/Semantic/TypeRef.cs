@@ -16,7 +16,7 @@ internal abstract record TypeRef
 
     public sealed record FixedArray(TypeRef Element, string Length) : TypeRef;
 
-    public sealed record Function(IReadOnlyList<TypeRef> Parameters, TypeRef ReturnType) : TypeRef;
+    public sealed record Function(IReadOnlyList<TypeRef> Parameters, TypeRef ReturnType, bool IsVariadic = false) : TypeRef;
 }
 
 internal sealed class TypeRefParser(ProgramNode program)
@@ -84,7 +84,8 @@ internal sealed class TypeRefParser(ProgramNode program)
                 function.Parameters
                     .Select(parameter => Parse(parameter, new HashSet<string>(resolvingAliases, StringComparer.Ordinal)))
                     .ToList(),
-                Parse(function.ReturnType, resolvingAliases)),
+                Parse(function.ReturnType, resolvingAliases),
+                function.IsVariadic),
             _ => new TypeRef.Unknown(),
         };
 
@@ -226,11 +227,18 @@ internal sealed class TypeRefParser(ProgramNode program)
             return false;
         }
 
-        var parameters = SplitTopLevel(type[3..close])
+        var parameterTypes = SplitTopLevel(type[3..close]).ToList();
+        var isVariadic = parameterTypes.Count > 0 && parameterTypes[^1] == "...";
+        if (isVariadic)
+        {
+            parameterTypes.RemoveAt(parameterTypes.Count - 1);
+        }
+
+        var parameters = parameterTypes
             .Select(parameter => Parse(parameter, new HashSet<string>(resolvingAliases, StringComparer.Ordinal)))
             .ToList();
         var returnType = Parse(type[(close + 3)..], resolvingAliases);
-        function = new TypeRef.Function(parameters, returnType);
+        function = new TypeRef.Function(parameters, returnType, isVariadic);
         return true;
     }
 
@@ -476,6 +484,7 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
         if (target is TypeRef.Function targetFunction && source is TypeRef.Function sourceFunction)
         {
             return targetFunction.Parameters.Count == sourceFunction.Parameters.Count
+                && targetFunction.IsVariadic == sourceFunction.IsVariadic
                 && targetFunction.Parameters.Zip(sourceFunction.Parameters).All(pair => IsAssignable(pair.First, pair.Second))
                 && IsAssignable(targetFunction.ReturnType, sourceFunction.ReturnType);
         }
@@ -574,7 +583,18 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
         TypeRef.Named named => $"{named.Name}<{string.Join(", ", named.Arguments.Select(Format))}>",
         TypeRef.Pointer pointer => $"{Format(pointer.Element)}*",
         TypeRef.FixedArray array => $"{Format(array.Element)}[{array.Length}]",
-        TypeRef.Function function => $"fn({string.Join(", ", function.Parameters.Select(Format))}) -> {Format(function.ReturnType)}",
+        TypeRef.Function function => $"fn({FormatFunctionParameters(function)}) -> {Format(function.ReturnType)}",
         _ => "unknown",
     };
+
+    private static string FormatFunctionParameters(TypeRef.Function function)
+    {
+        var parameters = function.Parameters.Select(Format).ToList();
+        if (function.IsVariadic)
+        {
+            parameters.Add("...");
+        }
+
+        return string.Join(", ", parameters);
+    }
 }
