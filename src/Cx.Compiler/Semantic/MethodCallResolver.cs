@@ -9,8 +9,6 @@ internal sealed record ResolvedMethodCall(
 
 internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSystem)
 {
-    private readonly TypeRefParser _typeRefParser = new(program);
-
     public ResolvedMethodCall? Resolve(
         MemberExpressionNode member,
         IReadOnlyList<string> typeArguments,
@@ -31,9 +29,10 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
                 : null;
         }
 
-        var instanceReceiverType = StripPointer(ResolveAlias(targetType));
-        return typeSystem.FindMethod(instanceReceiverType, member.MemberName, isStatic: false, argumentCount) is { } instanceMethod
-            ? new ResolvedMethodCall($"{instanceReceiverType}.{member.MemberName}", instanceMethod, SkipSelf: true)
+        var instanceReceiverType = NormalizeInstanceReceiverType(targetType);
+        return instanceReceiverType is not null
+            && typeSystem.FindMethod(instanceReceiverType, member.MemberName, isStatic: false, argumentCount) is { } instanceMethod
+            ? new ResolvedMethodCall($"{TypeRefFormatter.ToCxString(instanceReceiverType)}.{member.MemberName}", instanceMethod, SkipSelf: true)
             : null;
     }
 
@@ -56,36 +55,15 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
             : targetName;
     }
 
-    private string ResolveAlias(string type)
+    private TypeRef? NormalizeInstanceReceiverType(string type)
     {
-        var pointerSuffix = "";
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
+        var parsed = typeSystem.Parse(type);
+        if (parsed is TypeRef.Unknown)
         {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
+            return null;
         }
 
-        var aliases = program.TypeAliases
-            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => TypeText(group.First().TargetTypeNode), StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (aliases.TryGetValue(type, out var targetType) && seen.Add(type))
-        {
-            type = targetType;
-        }
-
-        return type + pointerSuffix;
-    }
-
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
+        return TypeRefFacts.UnwrapAlias(TypeRefFacts.StripPointer(TypeRefFacts.UnwrapAlias(parsed)));
     }
 
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch
@@ -95,15 +73,4 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
         MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
         _ => null,
     };
-
-    private string TypeText(TypeNode? typeNode)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
 }

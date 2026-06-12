@@ -421,13 +421,13 @@ internal sealed class DefiniteAssignmentAnalyzer(
         SwitchStatement switchStatement,
         IReadOnlyDictionary<string, string> variables)
     {
-        var expressionType = expressionTypeResolver.Resolve(switchStatement.Expression, variables);
-        if (expressionType is null)
+        var expressionType = expressionTypeResolver.ResolveTypeRef(switchStatement.Expression, variables);
+        var enumType = TypeRefFacts.GetBaseName(expressionType);
+        if (enumType is null)
         {
             return false;
         }
 
-        var enumType = StripPointer(ResolveAlias(expressionType));
         var enumNode = program.Enums.FirstOrDefault(node =>
             string.Equals(node.Name, enumType, StringComparison.Ordinal));
         if (enumNode is null || enumNode.Members.Count == 0)
@@ -575,38 +575,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
         {
             target.IntersectWith(source);
         }
-    }
-
-    private string ResolveAlias(string type)
-    {
-        var pointerSuffix = "";
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
-        }
-
-        var aliases = program.TypeAliases
-            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => TypeText(group.First().TargetTypeNode), StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (aliases.TryGetValue(type, out var targetType) && seen.Add(type))
-        {
-            type = targetType;
-        }
-
-        return type + pointerSuffix;
-    }
-
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
     }
 
     private static IEnumerable<ForeachBinding> GetForeachBindings(ForeachStatement foreachStatement)

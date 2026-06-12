@@ -13,7 +13,6 @@ internal sealed class ExpressionTypeResolver(
     private readonly TypeRefParser _typeRefParser = new(program);
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
     private CallResolver? _callResolver;
-    private readonly IReadOnlyDictionary<string, string> _typeAliases = BuildTypeAliases(program);
 
     private CallResolver CallResolver => _callResolver ??= new CallResolver(
         program,
@@ -43,7 +42,7 @@ internal sealed class ExpressionTypeResolver(
             InitializerExpressionNode initializer => ResolveInitializer(initializer, variables),
             FunctionExpressionNode functionExpression => ResolveFunctionExpression(functionExpression),
             AssignmentExpressionNode assignment => Resolve(assignment.Target, variables),
-            MemberExpressionNode member => ResolveMember(member, variables),
+            MemberExpressionNode member => FormatTypeRef(ResolveMemberTypeRef(member, variables)),
             CallExpressionNode call => ResolveCall(call, variables),
             GenericCallExpressionNode call => ResolveGenericCall(call, variables),
             IndexExpressionNode index => ResolveIndex(index, variables),
@@ -89,6 +88,7 @@ internal sealed class ExpressionTypeResolver(
             InitializerExpressionNode initializer => ResolveInitializerTypeRef(initializer, variables),
             FunctionExpressionNode functionExpression => ResolveFunctionExpressionTypeRef(functionExpression),
             AssignmentExpressionNode assignment => ResolveTypeRef(assignment.Target, variables),
+            MemberExpressionNode member => ResolveMemberTypeRef(member, variables),
             IndexExpressionNode index => ResolveIndexTypeRef(index, variables),
             _ => ParseResolvedType(Resolve(expression, variables)),
         };
@@ -169,24 +169,8 @@ internal sealed class ExpressionTypeResolver(
             ? null
             : _typeRefParser.Parse(type);
 
-    private string? ResolveUnary(UnaryExpressionNode unary, IReadOnlyDictionary<string, string> variables)
-    {
-        var operandType = Resolve(unary.Operand, variables);
-        if (operandType is null)
-        {
-            return null;
-        }
-
-        return unary.Operator switch
-        {
-            "&" => operandType + "*",
-            "*" => UnwrapPointer(operandType),
-            "!" => "bool",
-            "+" => operandType,
-            "-" => operandType,
-            _ => null,
-        };
-    }
+    private string? ResolveUnary(UnaryExpressionNode unary, IReadOnlyDictionary<string, string> variables) =>
+        FormatTypeRef(ResolveUnaryTypeRef(unary, variables));
 
     private TypeRef? ResolveUnaryTypeRef(UnaryExpressionNode unary, IReadOnlyDictionary<string, string> variables)
     {
@@ -349,58 +333,62 @@ internal sealed class ExpressionTypeResolver(
     private string GetFunctionType(IReadOnlyList<ParameterNode> parameters, string returnType) =>
         $"fn({string.Join(",", parameters.Select(parameter => TypeText(parameter.TypeNode)))})->{returnType}";
 
-    private string? ResolveMember(MemberExpressionNode member, IReadOnlyDictionary<string, string> variables)
+    private TypeRef? ResolveMemberTypeRef(MemberExpressionNode member, IReadOnlyDictionary<string, string> variables)
     {
-        var targetType = Resolve(member.Target, variables);
+        var targetType = ResolveTypeRef(member.Target, variables);
         if (targetType is null)
         {
             var staticFunctionType = ResolveStaticFunctionReference(member);
             if (staticFunctionType is not null)
             {
-                return staticFunctionType;
+                return ParseResolvedType(staticFunctionType);
             }
 
             var qualifiedName = GetQualifiedName(member);
             var global = program.GlobalVariables.FirstOrDefault(global =>
                 string.Equals(global.Name, qualifiedName, StringComparison.Ordinal));
-            return TypeTextOrNull(global?.TypeNode);
+            return ResolveTypeNode(global?.TypeNode);
         }
 
-        var isPointer = targetType.TrimEnd().EndsWith("*", StringComparison.Ordinal);
-        var normalizedType = StripPointer(ResolveAlias(targetType));
+        var normalizedType = TypeRefFacts.UnwrapAlias(TypeRefFacts.StripPointer(TypeRefFacts.UnwrapAlias(targetType)));
+        var normalizedTypeText = TypeRefFormatter.ToCxString(normalizedType);
+        var normalizedTypeName = TypeRefFacts.GetBaseName(normalizedType);
 
-        var structNode = ResolveStruct(normalizedType);
+        var structNode = ResolveStruct(normalizedTypeText);
         var field = structNode?.Fields.FirstOrDefault(field => field.Name == member.MemberName);
         if (field is not null)
         {
-            return TypeText(field.TypeNode);
+            return ResolveTypeNode(field.TypeNode);
         }
 
-        var union = program.TaggedUnions.FirstOrDefault(union => union.Name == normalizedType);
+        var union = program.TaggedUnions.FirstOrDefault(union => union.Name == normalizedTypeName);
         var variant = union?.Variants.FirstOrDefault(variant => variant.Name == member.MemberName);
         if (variant is not null)
         {
-            return TypeText(variant.TypeNode);
+            return ResolveTypeNode(variant.TypeNode);
         }
 
-        var interfaceNode = program.Interfaces.FirstOrDefault(interfaceNode => interfaceNode.Name == normalizedType);
+        var interfaceNode = program.Interfaces.FirstOrDefault(interfaceNode => interfaceNode.Name == normalizedTypeName);
         if (interfaceNode is not null)
         {
             if (member.MemberName == "state")
             {
-                return "void*";
+                return new TypeRef.Pointer(new TypeRef.Named("void", []));
             }
 
             var method = interfaceNode.Methods.FirstOrDefault(method => "v_" + method.Name == member.MemberName);
             if (method is not null)
             {
-                var parameterTypes = new[] { "void*" }
-                    .Concat(method.Parameters.Select(parameter => TypeText(parameter.TypeNode)));
-                return $"fn({string.Join(",", parameterTypes)})->{TypeText(method.ReturnTypeNode)}";
+                var parameterTypes = new[] { new TypeRef.Pointer(new TypeRef.Named("void", [])) }
+                    .Concat(method.Parameters.Select(parameter => ResolveTypeNode(parameter.TypeNode) ?? new TypeRef.Unknown()))
+                    .ToList();
+                return new TypeRef.Function(
+                    parameterTypes,
+                    ResolveTypeNode(method.ReturnTypeNode) ?? new TypeRef.Unknown());
             }
         }
 
-        return isPointer ? null : null;
+        return null;
     }
 
     private string? ResolveStaticFunctionReference(MemberExpressionNode member)
@@ -424,18 +412,9 @@ internal sealed class ExpressionTypeResolver(
 
     private string? ResolveIndex(IndexExpressionNode index, IReadOnlyDictionary<string, string> variables)
     {
-        var targetType = Resolve(index.Target, variables);
-        if (targetType is null)
-        {
-            return null;
-        }
-
-        if (TryParseFixedArrayType(targetType, out var arrayElementType, out _))
-        {
-            return arrayElementType;
-        }
-
-        return UnwrapPointer(targetType);
+        var targetType = ResolveTypeRef(index.Target, variables);
+        var elementType = targetType is null ? null : ResolveIndexTypeRef(targetType);
+        return elementType is null ? null : TypeRefFormatter.ToCxString(elementType);
     }
 
     private TypeRef? ResolveIndexTypeRef(IndexExpressionNode index, IReadOnlyDictionary<string, string> variables)
@@ -507,7 +486,7 @@ internal sealed class ExpressionTypeResolver(
                 return null;
             }
 
-            if (!TryBindType(TypeText(fixedParameters[i].TypeNode), argumentType, typeParameters, bindings))
+            if (!TryBindType(ResolveTypeNode(fixedParameters[i].TypeNode), ParseResolvedType(argumentType), typeParameters, bindings))
             {
                 return null;
             }
@@ -519,33 +498,39 @@ internal sealed class ExpressionTypeResolver(
     }
 
     private static bool TryBindType(
-        string parameterType,
-        string argumentType,
+        TypeRef? parameterType,
+        TypeRef? argumentType,
         IReadOnlyList<string> typeParameters,
         Dictionary<string, string> bindings)
     {
-        parameterType = parameterType.Trim();
-        argumentType = argumentType.Trim();
-        if (typeParameters.Contains(parameterType, StringComparer.Ordinal))
+        if (parameterType is null || argumentType is null)
         {
-            return Bind(parameterType, argumentType, bindings);
+            return true;
         }
 
-        if (parameterType.EndsWith("*", StringComparison.Ordinal)
-            && argumentType.EndsWith("*", StringComparison.Ordinal))
+        parameterType = TypeRefFacts.UnwrapAlias(parameterType);
+        argumentType = TypeRefFacts.UnwrapAlias(argumentType);
+
+        if (parameterType is TypeRef.Named { Arguments.Count: 0 } parameterNamed
+            && typeParameters.Contains(parameterNamed.Name, StringComparer.Ordinal))
         {
-            return TryBindType(
-                parameterType[..^1],
-                argumentType[..^1],
-                typeParameters,
-                bindings);
+            return Bind(parameterNamed.Name, TypeRefFormatter.ToCxString(argumentType), bindings);
         }
 
-        if (TryParseGenericUse(parameterType, out var parameterName, out var parameterArguments)
-            && TryParseGenericUse(argumentType, out var argumentName, out var argumentArguments)
-            && string.Equals(parameterName, argumentName, StringComparison.Ordinal)
-            && parameterArguments.Count == argumentArguments.Count)
+        if (parameterType is TypeRef.Pointer parameterPointer
+            && argumentType is TypeRef.Pointer argumentPointer)
         {
+            return TryBindType(parameterPointer.Element, argumentPointer.Element, typeParameters, bindings);
+        }
+
+        if (parameterType is TypeRef.Named parameterGeneric
+            && argumentType is TypeRef.Named argumentGeneric
+            && string.Equals(parameterGeneric.Name, argumentGeneric.Name, StringComparison.Ordinal)
+            && parameterGeneric.Arguments.Count > 0
+            && parameterGeneric.Arguments.Count == argumentGeneric.Arguments.Count)
+        {
+            var parameterArguments = parameterGeneric.Arguments;
+            var argumentArguments = argumentGeneric.Arguments;
             for (var i = 0; i < parameterArguments.Count; i++)
             {
                 if (!TryBindType(parameterArguments[i], argumentArguments[i], typeParameters, bindings))
@@ -555,6 +540,29 @@ internal sealed class ExpressionTypeResolver(
             }
 
             return true;
+        }
+
+        if (parameterType is TypeRef.FixedArray parameterArray
+            && argumentType is TypeRef.FixedArray argumentArray
+            && string.Equals(parameterArray.Length, argumentArray.Length, StringComparison.Ordinal))
+        {
+            return TryBindType(parameterArray.Element, argumentArray.Element, typeParameters, bindings);
+        }
+
+        if (parameterType is TypeRef.Function parameterFunction
+            && argumentType is TypeRef.Function argumentFunction
+            && parameterFunction.Parameters.Count == argumentFunction.Parameters.Count
+            && parameterFunction.IsVariadic == argumentFunction.IsVariadic)
+        {
+            for (var i = 0; i < parameterFunction.Parameters.Count; i++)
+            {
+                if (!TryBindType(parameterFunction.Parameters[i], argumentFunction.Parameters[i], typeParameters, bindings))
+                {
+                    return false;
+                }
+            }
+
+            return TryBindType(parameterFunction.ReturnType, argumentFunction.ReturnType, typeParameters, bindings);
         }
 
         return true;
@@ -570,7 +578,6 @@ internal sealed class ExpressionTypeResolver(
 
         return string.Equals(existing.Trim(), typeArgument.Trim(), StringComparison.Ordinal);
     }
-
     private string? ResolveRaw(string text, IReadOnlyDictionary<string, string> variables)
     {
         text = text.Trim();
@@ -614,58 +621,12 @@ internal sealed class ExpressionTypeResolver(
             && structNode.TypeParameters.Count == 0);
     }
 
-    private string ResolveAlias(string type)
-    {
-        var pointerSuffix = "";
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
-        }
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (_typeAliases.TryGetValue(type, out var targetType) && seen.Add(type))
-        {
-            type = targetType;
-        }
-
-        return type + pointerSuffix;
-    }
-
-    private static string? UnwrapPointer(string type)
-    {
-        type = type.Trim();
-        return type.EndsWith("*", StringComparison.Ordinal)
-            ? type[..^1].TrimEnd()
-            : null;
-    }
-
     private static TypeRef? UnwrapPointer(TypeRef type) => type switch
     {
         TypeRef.Pointer pointer => pointer.Element,
         TypeRef.Alias alias => UnwrapPointer(alias.Target),
         _ => null,
     };
-
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
-    }
-
-    //private static string GetGenericBaseName(string type)
-    //{
-    //    type = type.Trim();
-    //    var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-    //    return genericStart < 0
-    //        ? type
-    //        : type[..genericStart].Trim();
-    //}
 
     private static bool SameType(string? left, string? right) =>
         left is not null
@@ -697,14 +658,6 @@ internal sealed class ExpressionTypeResolver(
         return string.IsNullOrWhiteSpace(type) ? null : type;
     }
 
-    private static IReadOnlyDictionary<string, string> BuildTypeAliases(ProgramNode program)
-    {
-        var parser = new TypeRefParser(program);
-        return program.TypeAliases
-            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => FormatTypeNode(group.First().TargetTypeNode, parser), StringComparer.Ordinal);
-    }
-
     private static string FormatTypeNode(TypeNode? typeNode, TypeRefParser parser)
     {
         if (typeNode is null)
@@ -716,6 +669,9 @@ internal sealed class ExpressionTypeResolver(
         return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
     }
 
+    private static string? FormatTypeRef(TypeRef? type) =>
+        type is null ? null : TypeRefFormatter.ToCxString(type);
+
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch
     {
         NameExpressionNode name => name.SourceText,
@@ -724,79 +680,18 @@ internal sealed class ExpressionTypeResolver(
         _ => null,
     };
 
-    private static bool TryParseFixedArrayType(string type, out string elementType, out string length)
-    {
-        elementType = string.Empty;
-        length = string.Empty;
-        type = type.Trim();
-        if (!type.EndsWith("]", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var openBracket = type.LastIndexOf('[');
-        if (openBracket < 0)
-        {
-            return false;
-        }
-
-        elementType = type[..openBracket].Trim();
-        length = type[(openBracket + 1)..^1].Trim();
-        return !string.IsNullOrWhiteSpace(elementType) && !string.IsNullOrWhiteSpace(length);
-    }
-
     private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
     {
         name = string.Empty;
         arguments = [];
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        var genericEnd = type.LastIndexOf('>');
-        if (genericStart <= 0 || genericEnd < genericStart)
+        if (TypeSyntaxParser.Parse(type) is not GenericTypeSyntaxNode generic)
         {
             return false;
         }
 
-        name = type[..genericStart];
-        arguments = SplitGenericArguments(type[(genericStart + 1)..genericEnd]);
+        name = TypeSyntaxFormatter.ToCxString(generic.Target);
+        arguments = generic.Arguments.Select(TypeSyntaxFormatter.ToCxString).ToList();
         return true;
-    }
-
-    private static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsText))
-        {
-            return [];
-        }
-
-        var arguments = new List<string>();
-        var start = 0;
-        var angleDepth = 0;
-        var parenDepth = 0;
-        var bracketDepth = 0;
-
-        for (var i = 0; i < argumentsText.Length; i++)
-        {
-            switch (argumentsText[i])
-            {
-                case '<': angleDepth++; break;
-                case '>': angleDepth--; break;
-                case '(': parenDepth++; break;
-                case ')': parenDepth--; break;
-                case '[': bracketDepth++; break;
-                case ']': bracketDepth--; break;
-            }
-
-            if (argumentsText[i] != ',' || angleDepth != 0 || parenDepth != 0 || bracketDepth != 0)
-            {
-                continue;
-            }
-
-            arguments.Add(argumentsText[start..i].Trim());
-            start = i + 1;
-        }
-
-        arguments.Add(argumentsText[start..].Trim());
-        return arguments;
     }
 
 }

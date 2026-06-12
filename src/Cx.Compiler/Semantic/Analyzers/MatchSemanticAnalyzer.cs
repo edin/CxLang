@@ -16,13 +16,16 @@ internal sealed class MatchSemanticAnalyzer(
         MatchStatement matchStatement,
         IReadOnlyDictionary<string, string> variables)
     {
-        var matchExpressionType = expressionTypeResolver.Resolve(matchStatement.Expression, variables);
+        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
         TaggedUnionNode? matchedTaggedUnion = null;
         InterfaceNode? matchedInterface = null;
-        if (matchExpressionType is not null
-            && program.TaggedUnions.FirstOrDefault(union => union.Name == StripPointer(ResolveAlias(matchExpressionType))) is { IsRaw: true })
+        var matchedTypeName = TypeRefFacts.GetBaseName(matchExpressionType);
+        if (matchedTypeName is not null
+            && program.TaggedUnions.FirstOrDefault(union => union.Name == matchedTypeName) is { IsRaw: true })
         {
-            diagnostics.Report(matchStatement.Location, $"Cannot pattern match raw union type '{matchExpressionType}'.");
+            diagnostics.Report(
+                matchStatement.Location,
+                $"Cannot pattern match raw union type '{TypeRefFormatter.ToCxString(matchExpressionType!)}'.");
         }
         else if (ResolveMatchedTaggedUnion(matchStatement, variables) is { } taggedUnion)
         {
@@ -132,13 +135,13 @@ internal sealed class MatchSemanticAnalyzer(
         MatchStatement matchStatement,
         IReadOnlyDictionary<string, string> variables)
     {
-        var matchExpressionType = expressionTypeResolver.Resolve(matchStatement.Expression, variables);
-        if (matchExpressionType is null)
+        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
+        var normalizedType = TypeRefFacts.GetBaseName(matchExpressionType);
+        if (normalizedType is null)
         {
             return null;
         }
 
-        var normalizedType = StripPointer(ResolveAlias(matchExpressionType));
         return program.TaggedUnions.FirstOrDefault(union =>
             string.Equals(union.Name, normalizedType, StringComparison.Ordinal));
     }
@@ -147,13 +150,13 @@ internal sealed class MatchSemanticAnalyzer(
         MatchStatement matchStatement,
         IReadOnlyDictionary<string, string> variables)
     {
-        var matchExpressionType = expressionTypeResolver.Resolve(matchStatement.Expression, variables);
-        if (matchExpressionType is null)
+        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
+        var normalizedType = TypeRefFacts.GetBaseName(matchExpressionType);
+        if (normalizedType is null)
         {
             return null;
         }
 
-        var normalizedType = StripPointer(ResolveAlias(matchExpressionType));
         return program.Interfaces.FirstOrDefault(interfaceNode =>
             string.Equals(interfaceNode.Name, normalizedType, StringComparison.Ordinal));
     }
@@ -194,34 +197,4 @@ internal sealed class MatchSemanticAnalyzer(
             && structNode.Requirements.Any(requirement =>
                 string.Equals(requirement.Name, interfaceName, StringComparison.Ordinal)));
 
-    private string ResolveAlias(string type)
-    {
-        var pointerSuffix = string.Empty;
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1].TrimEnd();
-            pointerSuffix += "*";
-        }
-
-        var aliases = program.TypeAliases
-            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => typeText(group.First().TargetTypeNode), StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (aliases.TryGetValue(type, out var targetType) && seen.Add(type))
-        {
-            type = targetType;
-        }
-
-        return type + pointerSuffix;
-    }
-
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
-    }
 }

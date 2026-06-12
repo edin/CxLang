@@ -182,8 +182,7 @@ public sealed class SemanticAnalyzer(
                 _expressionTypeResolver,
                 _typeCompatibility,
                 _typeSystem,
-                _typeRefParser,
-                TypeText);
+                _typeRefParser);
 
     private ReturnSemanticAnalyzer? CreateReturnAnalyzer() =>
         _assignmentAnalyzer is null
@@ -201,13 +200,14 @@ public sealed class SemanticAnalyzer(
                 IsKnownTypeName);
 
     private ForeachSemanticAnalyzer? CreateForeachAnalyzer() =>
-        _typeSystem is null || _typeCompatibility is null || _expressionTypeResolver is null
+        _typeSystem is null || _typeCompatibility is null || _expressionTypeResolver is null || _typeRefParser is null
             ? null
             : new ForeachSemanticAnalyzer(
                 diagnostics,
                 _typeSystem,
                 _typeCompatibility,
                 _expressionTypeResolver,
+                _typeRefParser,
                 TypeTextOrNull);
 
     private ExpressionSemanticAnalyzer? CreateExpressionAnalyzer() =>
@@ -449,7 +449,7 @@ public sealed class SemanticAnalyzer(
                 AnalyzeExpression(declaration.Initializer, declaration.Location, variables, mutability);
                 if (declaration.Initializer is not null
                     && IsBareNull(declaration.Initializer)
-                    && !IsNullableType(declarationType))
+                    && !IsNullableType(ParseTypeRef(declarationType)))
                 {
                     diagnostics.Report(
                         declaration.Location,
@@ -730,9 +730,6 @@ public sealed class SemanticAnalyzer(
     private static bool IsNullLiteral(ExpressionNode expression) =>
         expression is LiteralExpressionNode { SourceText: "null" }
         || expression is ParenthesizedExpressionNode parenthesized && IsNullLiteral(parenthesized.Expression);
-
-    private static bool IsNullableType(string type) =>
-        type.TrimEnd().EndsWith("*", StringComparison.Ordinal);
 
     private static bool IsNullableType(TypeRef? type) =>
         UnwrapAlias(type) is TypeRef.Pointer;

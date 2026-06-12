@@ -49,7 +49,8 @@ internal static class GenericFunctionSpecializer
             SymbolKind.Function,
             function.ReturnTypeNode.ToTypeName(),
             function.Location,
-            function);
+            function,
+            function.ReturnTypeNode?.Semantic.Type);
     }
 
     private static StatementNode SubstituteStatement(

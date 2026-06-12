@@ -12,6 +12,7 @@ internal sealed class ForeachSemanticAnalyzer(
     TypeSystem typeSystem,
     TypeCompatibility typeCompatibility,
     ExpressionTypeResolver expressionTypeResolver,
+    TypeRefParser typeRefParser,
     Func<TypeNode?, string?> typeTextOrNull)
 {
     public ForeachAnalysisResult AnalyzeForeach(
@@ -65,7 +66,7 @@ internal sealed class ForeachSemanticAnalyzer(
                     SatisfiesRequirement(iterableType, "Contiguous"));
             }
         }
-        else if (TryParseFixedArrayType(iterableType, out var arrayElementType, out _))
+        else if (TryGetFixedArrayElementType(typeRefParser.Parse(iterableType), out var arrayElementType))
         {
             AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, arrayElementType);
         }
@@ -235,24 +236,16 @@ internal sealed class ForeachSemanticAnalyzer(
         return variables.TryGetValue(expression.Trim(), out type!);
     }
 
-    private static bool TryParseFixedArrayType(string type, out string elementType, out string length)
+    private static bool TryGetFixedArrayElementType(TypeRef type, out string elementType)
     {
         elementType = string.Empty;
-        length = string.Empty;
-        type = type.Trim();
-        if (!type.EndsWith("]", StringComparison.Ordinal))
+        type = TypeRefFacts.UnwrapAlias(type);
+        if (type is not TypeRef.FixedArray fixedArray)
         {
             return false;
         }
 
-        var openBracket = type.LastIndexOf('[');
-        if (openBracket < 0)
-        {
-            return false;
-        }
-
-        elementType = type[..openBracket].Trim();
-        length = type[(openBracket + 1)..^1].Trim();
-        return !string.IsNullOrWhiteSpace(elementType) && !string.IsNullOrWhiteSpace(length);
+        elementType = TypeRefFormatter.ToCxString(fixedArray.Element);
+        return !string.IsNullOrWhiteSpace(elementType);
     }
 }

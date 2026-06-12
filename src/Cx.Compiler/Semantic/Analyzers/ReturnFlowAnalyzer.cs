@@ -4,8 +4,6 @@ namespace Cx.Compiler.Semantic;
 
 internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeResolver expressionTypeResolver)
 {
-    private readonly TypeRefParser _typeRefParser = new(program);
-
     public bool StatementsAlwaysReturn(
         IReadOnlyList<StatementNode> statements,
         IReadOnlyDictionary<string, string> variables) =>
@@ -46,13 +44,13 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         MatchStatement matchStatement,
         IReadOnlyDictionary<string, string> variables)
     {
-        var matchExpressionType = expressionTypeResolver.Resolve(matchStatement.Expression, variables);
-        if (matchExpressionType is null)
+        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
+        var normalizedType = TypeRefFacts.GetBaseName(matchExpressionType);
+        if (normalizedType is null)
         {
             return null;
         }
 
-        var normalizedType = StripPointer(ResolveAlias(matchExpressionType));
         return program.TaggedUnions.FirstOrDefault(union =>
             string.Equals(union.Name, normalizedType, StringComparison.Ordinal));
     }
@@ -87,13 +85,13 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         SwitchStatement switchStatement,
         IReadOnlyDictionary<string, string> variables)
     {
-        var expressionType = expressionTypeResolver.Resolve(switchStatement.Expression, variables);
-        if (expressionType is null)
+        var expressionType = expressionTypeResolver.ResolveTypeRef(switchStatement.Expression, variables);
+        var enumType = TypeRefFacts.GetBaseName(expressionType);
+        if (enumType is null)
         {
             return false;
         }
 
-        var enumType = StripPointer(ResolveAlias(expressionType));
         var enumNode = program.Enums.FirstOrDefault(node =>
             string.Equals(node.Name, enumType, StringComparison.Ordinal));
         if (enumNode is null || enumNode.Members.Count == 0)
@@ -129,48 +127,5 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
             .Select(arm => arm.Pattern)
             .ToHashSet(StringComparer.Ordinal);
         return taggedUnion.Variants.All(variant => covered.Contains(variant.Name));
-    }
-
-    private string ResolveAlias(string type)
-    {
-        var pointerSuffix = "";
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
-        }
-
-        var aliases = program.TypeAliases
-            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => TypeText(group.First().TargetTypeNode), StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (aliases.TryGetValue(type, out var targetType) && seen.Add(type))
-        {
-            type = targetType;
-        }
-
-        return type + pointerSuffix;
-    }
-
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
-    }
-
-    private string TypeText(TypeNode? typeNode)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
     }
 }

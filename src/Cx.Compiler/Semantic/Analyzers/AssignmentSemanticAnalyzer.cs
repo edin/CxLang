@@ -10,8 +10,7 @@ internal sealed class AssignmentSemanticAnalyzer(
     ExpressionTypeResolver expressionTypeResolver,
     TypeCompatibility typeCompatibility,
     TypeSystem typeSystem,
-    TypeRefParser typeRefParser,
-    Func<TypeNode?, string> typeText)
+    TypeRefParser typeRefParser)
 {
     public void AnalyzeAssignmentExpression(
         AssignmentExpressionNode assignment,
@@ -99,9 +98,7 @@ internal sealed class AssignmentSemanticAnalyzer(
         }
 
         var sourceType = expressionTypeResolver.ResolveTypeRef(sourceExpression, variables);
-        var targetTypeText = FormatTypeRef(targetType);
-        var sourceTypeText = FormatTypeRef(sourceType);
-        if (targetTypeText is not null && IsTaggedUnionVariantAssignment(targetTypeText, sourceTypeText))
+        if (IsTaggedUnionVariantAssignment(targetType, sourceType))
         {
             return;
         }
@@ -111,7 +108,7 @@ internal sealed class AssignmentSemanticAnalyzer(
             return;
         }
 
-        if (targetTypeText is not null && IsSelfPointerAssignment(targetTypeText, sourceTypeText))
+        if (IsSelfPointerAssignment(targetType, sourceType))
         {
             return;
         }
@@ -182,41 +179,19 @@ internal sealed class AssignmentSemanticAnalyzer(
         return typeSystem.SatisfiesRequirement(sourceType, interfaceSymbol.Name) is { Success: true };
     }
 
-    private bool IsTaggedUnionVariantAssignment(string targetType, string? sourceType)
+    private bool IsTaggedUnionVariantAssignment(TypeRef targetType, TypeRef? sourceType)
     {
         if (sourceType is null)
         {
             return false;
         }
 
-        targetType = StripPointer(ResolveAlias(targetType));
-        sourceType = ResolveAlias(sourceType);
+        var targetTypeName = TypeRefFacts.GetBaseName(targetType);
         var taggedUnion = program.TaggedUnions.FirstOrDefault(union =>
             !union.IsRaw
-            && string.Equals(union.Name, targetType, StringComparison.Ordinal));
+            && string.Equals(union.Name, targetTypeName, StringComparison.Ordinal));
         return taggedUnion is not null
-            && taggedUnion.Variants.Any(variant => SameTypeName(ResolveAlias(typeText(variant.TypeNode)), sourceType));
-    }
-
-    private string ResolveAlias(string type)
-    {
-        var pointerSuffix = string.Empty;
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1].TrimEnd();
-            pointerSuffix += "*";
-        }
-
-        var aliases = program.TypeAliases
-            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => typeText(group.First().TargetTypeNode), StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (aliases.TryGetValue(type, out var targetType) && seen.Add(type))
-        {
-            type = targetType;
-        }
-
-        return type + pointerSuffix;
+            && taggedUnion.Variants.Any(variant => SameType(variant.TypeNode?.ToTypeRef(typeRefParser), sourceType));
     }
 
     private bool IsNumericLikeType(TypeRef type)
@@ -228,7 +203,7 @@ internal sealed class AssignmentSemanticAnalyzer(
 
     private bool IsNumericLikeType(string type)
     {
-        type = StripConst(StripPointerSuffix(ResolveAlias(type)).Trim());
+        type = StripConst(type.Trim());
         return BuiltinTypes.IsNumeric(type)
             || string.Equals(BuiltinTypes.Normalize(type), "bool", StringComparison.Ordinal);
     }
@@ -243,9 +218,9 @@ internal sealed class AssignmentSemanticAnalyzer(
         _ => null,
     };
 
-    private static bool IsSelfPointerAssignment(string targetType, string? sourceType) =>
-        string.Equals(sourceType?.Trim(), "Self*", StringComparison.Ordinal)
-        && targetType.TrimEnd().EndsWith("*", StringComparison.Ordinal);
+    private static bool IsSelfPointerAssignment(TypeRef targetType, TypeRef? sourceType) =>
+        UnwrapAlias(sourceType) is TypeRef.Pointer { Element: TypeRef.Named { Name: "Self", Arguments.Count: 0 } }
+        && UnwrapAlias(targetType) is TypeRef.Pointer;
 
     private static bool IsNullableType(TypeRef? type) =>
         UnwrapAlias(type) is TypeRef.Pointer;
@@ -266,34 +241,19 @@ internal sealed class AssignmentSemanticAnalyzer(
     private static string? FormatTypeRef(TypeRef? type) =>
         type is null ? null : TypeRefFormatter.ToCxString(type);
 
-    private static bool SameTypeName(string left, string right) =>
-        string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
+    private static bool SameType(TypeRef? left, TypeRef? right) =>
+        left is not null
+        && right is not null
+        && string.Equals(
+            TypeRefFormatter.ToCxString(UnwrapAlias(left)!),
+            TypeRefFormatter.ToCxString(UnwrapAlias(right)!),
+            StringComparison.Ordinal);
 
     private static bool IsBareNull(ExpressionNode expression) =>
         string.Equals(expression.SourceText.Trim(), "null", StringComparison.Ordinal);
-
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
-    }
 
     private static string StripConst(string type) =>
         type.StartsWith("const ", StringComparison.Ordinal)
             ? type["const ".Length..].TrimStart()
             : type;
-
-    private static string StripPointerSuffix(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
-    }
 }

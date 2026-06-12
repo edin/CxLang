@@ -128,13 +128,23 @@ internal sealed class CallResolver(
 
         if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: true } instanceMethodCall)
         {
-            return BuildMethodResolution(instanceMethodCall, typeArguments, StripPointer(ResolveAlias(targetType)));
+            var methodReceiverType = NormalizeReceiverType(targetType);
+            return BuildMethodResolution(
+                instanceMethodCall,
+                typeArguments,
+                methodReceiverType is null ? null : TypeRefFormatter.ToCxString(methodReceiverType));
         }
 
-        var receiverType = StripPointer(ResolveAlias(targetType));
-        var receiverBaseType = GetGenericBaseName(receiverType);
-        var receiverArguments = TryParseGenericUse(receiverType, out _, out var parsedReceiverArguments)
-            ? parsedReceiverArguments
+        var receiverTypeRef = NormalizeReceiverType(targetType);
+        if (receiverTypeRef is null)
+        {
+            return null;
+        }
+
+        var receiverType = TypeRefFormatter.ToCxString(receiverTypeRef);
+        var receiverBaseType = TypeRefFacts.GetBaseName(receiverTypeRef) ?? receiverType;
+        var receiverArguments = TypeRefFacts.TryGetGenericArguments(receiverTypeRef, out var parsedReceiverArguments)
+            ? parsedReceiverArguments.Select(TypeRefFormatter.ToCxString).ToList()
             : [];
         var instanceFunction = program.Functions.FirstOrDefault(function =>
             OwnerType(function) is not null
@@ -162,7 +172,7 @@ internal sealed class CallResolver(
                 instanceArguments,
                 skipSelf: true,
                 isInstance: true);
-            var selfType = Parse(receiverType);
+            var selfType = receiverTypeRef;
             return resolution with
             {
                 ReturnType = TypeRefRewriter.SubstituteSelf(resolution.ReturnType, selfType),
@@ -476,7 +486,7 @@ internal sealed class CallResolver(
                 return null;
             }
 
-            if (!TryBindType(TypeText(fixedParameters[i].TypeNode), argumentType, typeParameters, bindings))
+            if (!TryBindType(ResolveType(fixedParameters[i].TypeNode), Parse(argumentType), typeParameters, bindings))
             {
                 return null;
             }
@@ -508,26 +518,12 @@ internal sealed class CallResolver(
             ? type
             : TypeRefRewriter.Substitute(type, substitutions);
 
-    private string ResolveAlias(string type)
+    private TypeRef? NormalizeReceiverType(string type)
     {
-        var pointerSuffix = "";
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
-        }
-
-        var aliases = program.TypeAliases
-            .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => TypeText(group.First().TargetTypeNode), StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (aliases.TryGetValue(type, out var targetType) && seen.Add(type))
-        {
-            type = targetType;
-        }
-
-        return type + pointerSuffix;
+        var parsed = Parse(type);
+        return parsed is TypeRef.Unknown
+            ? null
+            : TypeRefFacts.UnwrapAlias(TypeRefFacts.StripPointer(TypeRefFacts.UnwrapAlias(parsed)));
     }
 
     private static bool MatchesGenericArguments(
@@ -543,33 +539,39 @@ internal sealed class CallResolver(
     }
 
     private static bool TryBindType(
-        string parameterType,
-        string argumentType,
+        TypeRef? parameterType,
+        TypeRef? argumentType,
         IReadOnlyList<string> typeParameters,
         Dictionary<string, string> bindings)
     {
-        parameterType = parameterType.Trim();
-        argumentType = argumentType.Trim();
-        if (typeParameters.Contains(parameterType, StringComparer.Ordinal))
+        if (parameterType is null || argumentType is null)
         {
-            return Bind(parameterType, argumentType, bindings);
+            return true;
         }
 
-        if (parameterType.EndsWith("*", StringComparison.Ordinal)
-            && argumentType.EndsWith("*", StringComparison.Ordinal))
+        parameterType = TypeRefFacts.UnwrapAlias(parameterType);
+        argumentType = TypeRefFacts.UnwrapAlias(argumentType);
+
+        if (parameterType is TypeRef.Named { Arguments.Count: 0 } parameterNamed
+            && typeParameters.Contains(parameterNamed.Name, StringComparer.Ordinal))
         {
-            return TryBindType(
-                parameterType[..^1],
-                argumentType[..^1],
-                typeParameters,
-                bindings);
+            return Bind(parameterNamed.Name, TypeRefFormatter.ToCxString(argumentType), bindings);
         }
 
-        if (TryParseGenericUse(parameterType, out var parameterName, out var parameterArguments)
-            && TryParseGenericUse(argumentType, out var argumentName, out var argumentArguments)
-            && string.Equals(parameterName, argumentName, StringComparison.Ordinal)
-            && parameterArguments.Count == argumentArguments.Count)
+        if (parameterType is TypeRef.Pointer parameterPointer
+            && argumentType is TypeRef.Pointer argumentPointer)
         {
+            return TryBindType(parameterPointer.Element, argumentPointer.Element, typeParameters, bindings);
+        }
+
+        if (parameterType is TypeRef.Named parameterGeneric
+            && argumentType is TypeRef.Named argumentGeneric
+            && string.Equals(parameterGeneric.Name, argumentGeneric.Name, StringComparison.Ordinal)
+            && parameterGeneric.Arguments.Count > 0
+            && parameterGeneric.Arguments.Count == argumentGeneric.Arguments.Count)
+        {
+            var parameterArguments = parameterGeneric.Arguments;
+            var argumentArguments = argumentGeneric.Arguments;
             for (var i = 0; i < parameterArguments.Count; i++)
             {
                 if (!TryBindType(parameterArguments[i], argumentArguments[i], typeParameters, bindings))
@@ -579,6 +581,29 @@ internal sealed class CallResolver(
             }
 
             return true;
+        }
+
+        if (parameterType is TypeRef.FixedArray parameterArray
+            && argumentType is TypeRef.FixedArray argumentArray
+            && string.Equals(parameterArray.Length, argumentArray.Length, StringComparison.Ordinal))
+        {
+            return TryBindType(parameterArray.Element, argumentArray.Element, typeParameters, bindings);
+        }
+
+        if (parameterType is TypeRef.Function parameterFunction
+            && argumentType is TypeRef.Function argumentFunction
+            && parameterFunction.Parameters.Count == argumentFunction.Parameters.Count
+            && parameterFunction.IsVariadic == argumentFunction.IsVariadic)
+        {
+            for (var i = 0; i < parameterFunction.Parameters.Count; i++)
+            {
+                if (!TryBindType(parameterFunction.Parameters[i], argumentFunction.Parameters[i], typeParameters, bindings))
+                {
+                    return false;
+                }
+            }
+
+            return TryBindType(parameterFunction.ReturnType, argumentFunction.ReturnType, typeParameters, bindings);
         }
 
         return true;

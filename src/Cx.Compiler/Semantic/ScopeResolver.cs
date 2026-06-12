@@ -45,12 +45,12 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     {
         foreach (var typeAlias in program.TypeAliases)
         {
-            DeclareTopLevel(typeAlias.Name, SymbolKind.Type, TypeText(typeAlias.TargetTypeNode), typeAlias.Location, typeAlias);
+            DeclareTopLevel(typeAlias.Name, SymbolKind.Type, typeAlias.TargetTypeNode, typeAlias.Location, typeAlias);
         }
 
         foreach (var requirement in program.Requirements)
         {
-            DeclareTopLevel(requirement.Name, SymbolKind.Type, null, requirement.Location, requirement);
+            DeclareTopLevel(requirement.Name, SymbolKind.Type, (string?)null, requirement.Location, requirement);
         }
 
         foreach (var enumNode in program.Enums)
@@ -80,17 +80,17 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
         foreach (var global in program.GlobalVariables)
         {
-            DeclareTopLevel(global.Name, SymbolKind.Global, TypeText(global.TypeNode), global.Location, global);
+            DeclareTopLevel(global.Name, SymbolKind.Global, global.TypeNode, global.Location, global);
         }
 
         foreach (var externFunction in program.ExternFunctions)
         {
-            DeclareTopLevel(externFunction.Name, SymbolKind.Function, TypeText(externFunction.ReturnTypeNode), externFunction.Location, externFunction);
+            DeclareTopLevel(externFunction.Name, SymbolKind.Function, externFunction.ReturnTypeNode, externFunction.Location, externFunction);
         }
 
         foreach (var function in _functions)
         {
-            var symbol = new Symbol(function.Name, SymbolKind.Function, TypeText(function.ReturnTypeNode), function.Location, function);
+            var symbol = CreateSymbol(function.Name, SymbolKind.Function, function.ReturnTypeNode, function.Location, function);
             function.Semantic.Symbol = symbol;
             if (OwnerType(function) is null)
             {
@@ -107,12 +107,12 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             && ownerType is not null
             && !function.Parameters.Any(parameter => string.Equals(parameter.Name, "self", StringComparison.Ordinal)))
         {
-            Declare(functionScope, "self", SymbolKind.Parameter, ownerType + "*", function.Location);
+            Declare(functionScope, "self", SymbolKind.Parameter, TypeNode.CreateFromText(function.Location, ownerType + "*"), function.Location);
         }
 
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
-            Declare(functionScope, parameter.Name, SymbolKind.Parameter, TypeText(parameter.TypeNode), parameter.Location, parameter);
+            Declare(functionScope, parameter.Name, SymbolKind.Parameter, parameter.TypeNode, parameter.Location, parameter);
         }
 
         ResolveStatements(function.Body, functionScope);
@@ -132,7 +132,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         {
             case LetStatement let:
                 ResolveExpression(let.Initializer, scope);
-                Declare(scope, let.Name, SymbolKind.Local, TypeTextOrNull(let.TypeNode), let.Location, let);
+                Declare(scope, let.Name, SymbolKind.Local, let.TypeNode, let.Location, let);
                 break;
 
             case ReturnStatement { Expression: not null } ret:
@@ -197,7 +197,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                     var armScope = scope.CreateChild();
                     if (arm.BindingName is not null)
                     {
-                        Declare(armScope, arm.BindingName, SymbolKind.MatchBinding, null, arm.Location, arm);
+                        Declare(armScope, arm.BindingName, SymbolKind.MatchBinding, (string?)null, arm.Location, arm);
                     }
 
                     ResolveStatements(arm.Body, armScope);
@@ -213,7 +213,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         {
             case ForDeclarationInitializerNode declaration:
                 ResolveExpression(declaration.Initializer, scope);
-                Declare(scope, declaration.Name, SymbolKind.Local, TypeText(declaration.TypeNode), declaration.Location, declaration);
+                Declare(scope, declaration.Name, SymbolKind.Local, declaration.TypeNode, declaration.Location, declaration);
                 break;
             case ForExpressionInitializerNode expression:
                 ResolveExpression(expression.Expression, scope);
@@ -228,7 +228,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return;
         }
 
-        Declare(scope, binding.Name, SymbolKind.ForeachBinding, TypeTextOrNull(binding.TypeNode), binding.Location, binding);
+        Declare(scope, binding.Name, SymbolKind.ForeachBinding, binding.TypeNode, binding.Location, binding);
     }
 
     private void ResolveExpression(ExpressionNode? expression, Scope scope)
@@ -288,7 +288,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 var functionScope = scope.CreateChild();
                 foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
                 {
-                    Declare(functionScope, parameter.Name, SymbolKind.Parameter, TypeText(parameter.TypeNode), parameter.Location, parameter);
+                    Declare(functionScope, parameter.Name, SymbolKind.Parameter, parameter.TypeNode, parameter.Location, parameter);
                 }
 
                 ResolveExpression(function.ExpressionBody, functionScope);
@@ -331,29 +331,39 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         }
     }
 
-    private Symbol? Declare(Scope scope, string name, SymbolKind kind, string? type, Location location, SyntaxNode? node = null)
+    private Symbol? Declare(Scope scope, string name, SymbolKind kind, TypeNode? typeNode, Location location, SyntaxNode? node = null) =>
+        Declare(scope, CreateSymbol(name, kind, typeNode, location, node), location);
+
+    private Symbol? Declare(Scope scope, string name, SymbolKind kind, string? type, Location location, SyntaxNode? node = null) =>
+        Declare(scope, CreateSymbol(name, kind, type, location, node), location);
+
+    private Symbol? Declare(Scope scope, Symbol symbol, Location location)
     {
-        var symbol = new Symbol(name, kind, type, location, node);
         if (scope.TryDeclare(symbol))
         {
-            if (node is not null)
+            if (symbol.Node is not null)
             {
-                node.Semantic.Symbol = symbol;
+                symbol.Node.Semantic.Symbol = symbol;
             }
 
             return symbol;
         }
 
-        diagnostics.Report(location, $"Duplicate {Describe(kind)} '{name}' in the same scope.");
+        diagnostics.Report(location, $"Duplicate {Describe(symbol.Kind)} '{symbol.Name}' in the same scope.");
         return null;
     }
 
-    private void DeclareTopLevel(string name, SymbolKind kind, string? type, Location location, SyntaxNode node)
+    private void DeclareTopLevel(string name, SymbolKind kind, TypeNode? typeNode, Location location, SyntaxNode node) =>
+        DeclareTopLevel(CreateSymbol(name, kind, typeNode, location, node));
+
+    private void DeclareTopLevel(string name, SymbolKind kind, string? type, Location location, SyntaxNode node) =>
+        DeclareTopLevel(CreateSymbol(name, kind, type, location, node));
+
+    private void DeclareTopLevel(Symbol symbol)
     {
-        var symbol = new Symbol(name, kind, type, location, node);
         if (model.RootScope.TryDeclare(symbol))
         {
-            node.Semantic.Symbol = symbol;
+            symbol.Node!.Semantic.Symbol = symbol;
         }
     }
 
@@ -466,18 +476,43 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         {
             foreach (var symbol in current.Symbols.Values)
             {
+                var type = TypeText(symbol);
                 if (symbol.Kind is SymbolKind.Function or SymbolKind.Type
-                    || string.IsNullOrWhiteSpace(symbol.Type)
+                    || string.IsNullOrWhiteSpace(type)
                     || variables.ContainsKey(symbol.Name))
                 {
                     continue;
                 }
 
-                variables[symbol.Name] = symbol.Type;
+                variables[symbol.Name] = type;
             }
         }
 
         return variables;
+    }
+
+    private Symbol CreateSymbol(string name, SymbolKind kind, TypeNode? typeNode, Location location, SyntaxNode? node)
+    {
+        var typeRef = TypeRefOrNull(typeNode);
+        return new Symbol(
+            name,
+            kind,
+            typeRef is null ? TypeTextOrNull(typeNode) : TypeRefFormatter.ToCxString(typeRef),
+            location,
+            node,
+            typeRef);
+    }
+
+    private Symbol CreateSymbol(string name, SymbolKind kind, string? type, Location location, SyntaxNode? node)
+    {
+        var typeRef = ParseTypeRefOrNull(type);
+        return new Symbol(
+            name,
+            kind,
+            typeRef is null ? type : TypeRefFormatter.ToCxString(typeRef),
+            location,
+            node,
+            typeRef);
     }
 
     private void BindMemberReference(MemberExpressionNode member, Scope scope)
@@ -510,12 +545,12 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
         if (member.Target is NameExpressionNode receiver
             && scope.TryResolve(receiver.SourceText, out var receiverSymbol)
-            && !string.IsNullOrWhiteSpace(receiverSymbol.Type)
-            && FindInstanceFunction(receiverSymbol.Type, member.MemberName, typeArguments) is { } instanceFunction)
+            && FindInstanceFunction(receiverSymbol, member.MemberName, typeArguments) is { } instanceFunction)
         {
+            var receiverTypeArguments = ResolveFunctionTypeArguments(instanceFunction, typeArguments, receiverSymbol);
             return new ResolvedFunction(
                 instanceFunction,
-                ResolveFunctionTypeArguments(instanceFunction, typeArguments, receiverSymbol.Type),
+                receiverTypeArguments,
                 IsInstance: true);
         }
 
@@ -545,19 +580,46 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private FunctionNode? FindInstanceFunction(string receiverType, string name, IReadOnlyList<string> typeArguments)
     {
-        var ownerType = GetGenericBaseName(StripPointer(receiverType));
+        var receiverTypeRef = ParseTypeRefOrNull(receiverType);
+        if (receiverTypeRef is null)
+        {
+            return null;
+        }
+
+        var ownerType = TypeRefFacts.GetBaseName(receiverTypeRef);
         return _functions.FirstOrDefault(function =>
             !function.IsStatic
             && OwnerType(function) is not null
             && string.Equals(OwnerType(function), ownerType, StringComparison.Ordinal)
             && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArguments, receiverType));
+            && MatchesTypeArguments(function, typeArguments, receiverTypeRef));
+    }
+
+    private FunctionNode? FindInstanceFunction(Symbol receiverSymbol, string name, IReadOnlyList<string> typeArguments)
+    {
+        if (receiverSymbol.TypeRef is not null)
+        {
+            var ownerType = TypeRefFacts.GetBaseName(receiverSymbol.TypeRef);
+            if (!string.IsNullOrWhiteSpace(ownerType))
+            {
+                return _functions.FirstOrDefault(function =>
+                    !function.IsStatic
+                    && OwnerType(function) is not null
+                    && string.Equals(OwnerType(function), ownerType, StringComparison.Ordinal)
+                    && string.Equals(function.Name, name, StringComparison.Ordinal)
+                    && MatchesTypeArguments(function, typeArguments, receiverSymbol.TypeRef));
+            }
+        }
+
+        var receiverType = TypeText(receiverSymbol);
+        return string.IsNullOrWhiteSpace(receiverType)
+            ? null
+            : FindInstanceFunction(receiverType, name, typeArguments);
     }
 
     private static bool MatchesTypeArguments(
         FunctionNode function,
-        IReadOnlyList<string> typeArguments,
-        string? receiverType = null)
+        IReadOnlyList<string> typeArguments)
     {
         if (function.TypeParameters.Count == 0)
         {
@@ -569,15 +631,31 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return typeArguments.Count == function.TypeParameters.Count;
         }
 
-        return receiverType is not null
-            && TryParseGenericUse(StripPointer(receiverType), out _, out var receiverArguments)
+        return false;
+    }
+
+    private static bool MatchesTypeArguments(
+        FunctionNode function,
+        IReadOnlyList<string> typeArguments,
+        TypeRef? receiverType)
+    {
+        if (function.TypeParameters.Count == 0)
+        {
+            return typeArguments.Count == 0;
+        }
+
+        if (typeArguments.Count > 0)
+        {
+            return typeArguments.Count == function.TypeParameters.Count;
+        }
+
+        return TypeRefFacts.TryGetGenericArguments(receiverType, out var receiverArguments)
             && receiverArguments.Count == function.TypeParameters.Count;
     }
 
     private static IReadOnlyList<string> ResolveFunctionTypeArguments(
         FunctionNode function,
-        IReadOnlyList<string> explicitTypeArguments,
-        string? receiverType = null)
+        IReadOnlyList<string> explicitTypeArguments)
     {
         if (function.TypeParameters.Count == 0)
         {
@@ -589,10 +667,35 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return explicitTypeArguments;
         }
 
-        return receiverType is not null
-            && TryParseGenericUse(StripPointer(receiverType), out _, out var receiverArguments)
-            && receiverArguments.Count == function.TypeParameters.Count
-                ? receiverArguments
+        return [];
+    }
+
+    private IReadOnlyList<string> ResolveFunctionTypeArguments(
+        FunctionNode function,
+        IReadOnlyList<string> explicitTypeArguments,
+        Symbol receiverSymbol)
+    {
+        if (function.TypeParameters.Count == 0)
+        {
+            return [];
+        }
+
+        if (explicitTypeArguments.Count > 0)
+        {
+            return explicitTypeArguments;
+        }
+
+        if (receiverSymbol.TypeRef is not null
+            && TypeRefFacts.TryGetGenericArguments(receiverSymbol.TypeRef, out var receiverArguments)
+            && receiverArguments.Count == function.TypeParameters.Count)
+        {
+            return receiverArguments.Select(TypeRefFormatter.ToCxString).ToList();
+        }
+
+        var receiverType = ParseTypeRefOrNull(TypeText(receiverSymbol));
+        return TypeRefFacts.TryGetGenericArguments(receiverType, out var fallbackArguments)
+            && fallbackArguments.Count == function.TypeParameters.Count
+                ? fallbackArguments.Select(TypeRefFormatter.ToCxString).ToList()
                 : [];
     }
 
@@ -603,7 +706,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return symbol;
         }
 
-        symbol = new Symbol(function.Name, SymbolKind.Function, TypeText(function.ReturnTypeNode), function.Location, function);
+        symbol = CreateSymbol(function.Name, SymbolKind.Function, function.ReturnTypeNode, function.Location, function);
         function.Semantic.Symbol = symbol;
         return symbol;
     }
@@ -625,11 +728,11 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(TypeText).ToList();
 
-    private string TypeText(TypeNode? typeNode)
+    private TypeRef? TypeRefOrNull(TypeNode? typeNode)
     {
         if (typeNode is null)
         {
-            return string.Empty;
+            return null;
         }
 
         if (_typeRefParser is null)
@@ -638,32 +741,38 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         }
 
         var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+        return type is TypeRef.Unknown ? null : type;
     }
+
+    private TypeRef? ParseTypeRefOrNull(string? type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return null;
+        }
+
+        if (_typeRefParser is null)
+        {
+            throw new InvalidOperationException("Scope resolver has no TypeRef parser.");
+        }
+
+        var parsed = _typeRefParser.Parse(type);
+        return parsed is TypeRef.Unknown ? null : parsed;
+    }
+
+    private string TypeText(TypeNode? typeNode)
+    {
+        var type = TypeRefOrNull(typeNode);
+        return type is null ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private static string TypeText(Symbol symbol) =>
+        symbol.TypeRef is null ? symbol.Type ?? string.Empty : TypeRefFormatter.ToCxString(symbol.TypeRef);
 
     private string? TypeTextOrNull(TypeNode? typeNode)
     {
         var type = TypeText(typeNode);
         return string.IsNullOrWhiteSpace(type) ? null : type;
-    }
-
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
-    }
-
-    private static string GetGenericBaseName(string type)
-    {
-        type = type.Trim();
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        return genericStart < 0
-            ? type
-            : type[..genericStart].Trim();
     }
 
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch
@@ -673,60 +782,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
         _ => null,
     };
-
-    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
-    {
-        name = string.Empty;
-        arguments = [];
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        var genericEnd = type.LastIndexOf('>');
-        if (genericStart <= 0 || genericEnd < genericStart)
-        {
-            return false;
-        }
-
-        name = type[..genericStart];
-        arguments = SplitGenericArguments(type[(genericStart + 1)..genericEnd]);
-        return true;
-    }
-
-    private static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsText))
-        {
-            return [];
-        }
-
-        var arguments = new List<string>();
-        var start = 0;
-        var angleDepth = 0;
-        var parenDepth = 0;
-        var bracketDepth = 0;
-
-        for (var i = 0; i < argumentsText.Length; i++)
-        {
-            switch (argumentsText[i])
-            {
-                case '<': angleDepth++; break;
-                case '>': angleDepth--; break;
-                case '(': parenDepth++; break;
-                case ')': parenDepth--; break;
-                case '[': bracketDepth++; break;
-                case ']': bracketDepth--; break;
-            }
-
-            if (argumentsText[i] != ',' || angleDepth != 0 || parenDepth != 0 || bracketDepth != 0)
-            {
-                continue;
-            }
-
-            arguments.Add(argumentsText[start..i].Trim());
-            start = i + 1;
-        }
-
-        arguments.Add(argumentsText[start..].Trim());
-        return arguments;
-    }
 
     private static string Describe(SymbolKind kind) =>
         kind switch

@@ -652,58 +652,22 @@ public sealed class RequirementMatcher
     {
         name = string.Empty;
         arguments = [];
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        var genericEnd = type.LastIndexOf('>');
-        if (genericStart <= 0 || genericEnd < genericStart)
+        if (TypeSyntaxParser.Parse(type) is not GenericTypeSyntaxNode generic)
         {
             return false;
         }
 
-        name = type[..genericStart];
-        arguments = SplitGenericArguments(type[(genericStart + 1)..genericEnd]);
+        name = TypeSyntaxFormatter.ToCxString(generic.Target);
+        arguments = generic.Arguments.Select(TypeSyntaxFormatter.ToCxString).ToList();
         return true;
     }
 
     private static string GetGenericBaseName(string type)
     {
         type = type.Trim();
-        var genericStart = type.IndexOf('<', StringComparison.Ordinal);
-        return genericStart < 0
-            ? type
-            : type[..genericStart].Trim();
-    }
-
-    private static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsText))
-        {
-            return [];
-        }
-
-        var arguments = new List<string>();
-        var start = 0;
-        var depth = 0;
-
-        for (var i = 0; i < argumentsText.Length; i++)
-        {
-            depth += argumentsText[i] switch
-            {
-                '<' => 1,
-                '>' => -1,
-                _ => 0,
-            };
-
-            if (argumentsText[i] != ',' || depth != 0)
-            {
-                continue;
-            }
-
-            arguments.Add(argumentsText[start..i].Trim());
-            start = i + 1;
-        }
-
-        arguments.Add(argumentsText[start..].Trim());
-        return arguments;
+        return TypeSyntaxParser.Parse(type) is GenericTypeSyntaxNode generic
+            ? TypeSyntaxFormatter.ToCxString(generic.Target)
+            : type;
     }
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
