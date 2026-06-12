@@ -51,6 +51,17 @@ internal sealed class ExpressionTypeResolver(
         };
     }
 
+    public string? Resolve(ExpressionNode? expression, TypeEnvironment variables)
+    {
+        if (expression is NameExpressionNode name
+            && variables.TryGet(name.SourceText, out var type))
+        {
+            return TypeRefFormatter.ToCxString(type);
+        }
+
+        return Resolve(expression, variables.ToLegacyStrings());
+    }
+
     public TypeRef? ResolveTypeRef(ExpressionNode? expression, IReadOnlyDictionary<string, string> variables)
     {
         if (expression is null)
@@ -92,6 +103,17 @@ internal sealed class ExpressionTypeResolver(
             IndexExpressionNode index => ResolveIndexTypeRef(index, variables),
             _ => ParseResolvedType(Resolve(expression, variables)),
         };
+    }
+
+    public TypeRef? ResolveTypeRef(ExpressionNode? expression, TypeEnvironment variables)
+    {
+        if (expression is NameExpressionNode name
+            && variables.TryGet(name.SourceText, out var type))
+        {
+            return type;
+        }
+
+        return ResolveTypeRef(expression, variables.ToLegacyStrings());
     }
 
     private string? ResolveName(string name, IReadOnlyDictionary<string, string> variables)
@@ -350,11 +372,11 @@ internal sealed class ExpressionTypeResolver(
             return ResolveTypeNode(global?.TypeNode);
         }
 
-        var normalizedType = TypeRefFacts.UnwrapAlias(TypeRefFacts.StripPointer(TypeRefFacts.UnwrapAlias(targetType)));
+        var normalizedType = TypeRefFacts.StripPointersAndAliases(targetType);
         var normalizedTypeText = TypeRefFormatter.ToCxString(normalizedType);
         var normalizedTypeName = TypeRefFacts.GetBaseName(normalizedType);
 
-        var structNode = ResolveStruct(normalizedTypeText);
+        var structNode = ResolveStruct(normalizedType);
         var field = structNode?.Fields.FirstOrDefault(field => field.Name == member.MemberName);
         if (field is not null)
         {
@@ -517,10 +539,10 @@ internal sealed class ExpressionTypeResolver(
             return Bind(parameterNamed.Name, TypeRefFormatter.ToCxString(argumentType), bindings);
         }
 
-        if (parameterType is TypeRef.Pointer parameterPointer
-            && argumentType is TypeRef.Pointer argumentPointer)
+        if (TypeRefFacts.TryGetPointerElement(parameterType, out var parameterElement)
+            && TypeRefFacts.TryGetPointerElement(argumentType, out var argumentElement))
         {
-            return TryBindType(parameterPointer.Element, argumentPointer.Element, typeParameters, bindings);
+            return TryBindType(parameterElement, argumentElement, typeParameters, bindings);
         }
 
         if (parameterType is TypeRef.Named parameterGeneric
@@ -586,27 +608,29 @@ internal sealed class ExpressionTypeResolver(
             : ResolveLiteral(text);
     }
 
-    private StructNode? ResolveStruct(string type)
+    private StructNode? ResolveStruct(TypeRef type)
     {
-        if (TryParseGenericUse(type, out var genericName, out var arguments))
+        if (TypeRefFacts.TryGetNamed(type, out var namedType)
+            && namedType.Arguments.Count > 0)
         {
             var definition = program.Structs.FirstOrDefault(structNode =>
-                structNode.Name == genericName
-                && structNode.TypeParameters.Count == arguments.Count);
+                structNode.Name == namedType.Name
+                && structNode.TypeParameters.Count == namedType.Arguments.Count);
             if (definition is null)
             {
                 return null;
             }
 
             var substitutions = definition.TypeParameters
-                .Zip(arguments)
+                .Zip(namedType.Arguments)
                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
             return definition with
             {
                 Fields = definition.Fields
                     .Select(field =>
                     {
-                        var substitutedType = GenericTypeStringRewriter.Substitute(TypeText(field.TypeNode), substitutions);
+                        var substitutedType = TypeRefFormatter.ToCxString(
+                            TypeRefRewriter.Substitute(ResolveTypeNode(field.TypeNode) ?? new TypeRef.Unknown(), substitutions));
                         return field with
                         {
                             TypeNode = TypeNode.CreateFromText(field.Location, substitutedType),
@@ -616,17 +640,14 @@ internal sealed class ExpressionTypeResolver(
             };
         }
 
+        var typeName = TypeRefFacts.GetBaseName(type);
         return program.Structs.FirstOrDefault(structNode =>
-            structNode.Name == type
+            structNode.Name == typeName
             && structNode.TypeParameters.Count == 0);
     }
 
-    private static TypeRef? UnwrapPointer(TypeRef type) => type switch
-    {
-        TypeRef.Pointer pointer => pointer.Element,
-        TypeRef.Alias alias => UnwrapPointer(alias.Target),
-        _ => null,
-    };
+    private static TypeRef? UnwrapPointer(TypeRef type) =>
+        TypeRefFacts.TryGetPointerElement(type, out var element) ? element : null;
 
     private static bool SameType(string? left, string? right) =>
         left is not null
@@ -634,12 +655,7 @@ internal sealed class ExpressionTypeResolver(
         && string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal);
 
     private static bool SameType(TypeRef? left, TypeRef? right) =>
-        left is not null
-        && right is not null
-        && string.Equals(
-            TypeRefFormatter.ToCxString(left),
-            TypeRefFormatter.ToCxString(right),
-            StringComparison.Ordinal);
+        TypeRefFacts.SameType(left, right);
 
     private static bool SameTypeArguments(IReadOnlyList<string> left, IReadOnlyList<string> right) =>
         left.Count == right.Count
@@ -679,19 +695,5 @@ internal sealed class ExpressionTypeResolver(
         MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
         _ => null,
     };
-
-    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
-    {
-        name = string.Empty;
-        arguments = [];
-        if (TypeSyntaxParser.Parse(type) is not GenericTypeSyntaxNode generic)
-        {
-            return false;
-        }
-
-        name = TypeSyntaxFormatter.ToCxString(generic.Target);
-        arguments = generic.Arguments.Select(TypeSyntaxFormatter.ToCxString).ToList();
-        return true;
-    }
 
 }

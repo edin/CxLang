@@ -12,6 +12,9 @@ internal static class TypeRefFacts
         return type;
     }
 
+    public static TypeRef StripPointersAndAliases(TypeRef type) =>
+        UnwrapAlias(StripPointer(UnwrapAlias(type)));
+
     public static bool TryGetNamed(TypeRef? type, out TypeRef.Named named)
     {
         named = null!;
@@ -20,7 +23,7 @@ internal static class TypeRefFacts
             return false;
         }
 
-        type = UnwrapAlias(StripPointer(UnwrapAlias(type)));
+        type = StripPointersAndAliases(type);
         if (type is not TypeRef.Named namedType)
         {
             return false;
@@ -33,6 +36,17 @@ internal static class TypeRefFacts
     public static string? GetBaseName(TypeRef? type) =>
         TryGetNamed(type, out var named) ? named.Name : null;
 
+    public static bool IsNamed(TypeRef? type, string name)
+    {
+        if (type is null)
+        {
+            return false;
+        }
+
+        return UnwrapAlias(type) is TypeRef.Named { Arguments.Count: 0 } named
+            && string.Equals(named.Name, name, StringComparison.Ordinal);
+    }
+
     public static bool TryGetGenericArguments(TypeRef? type, out IReadOnlyList<TypeRef> arguments)
     {
         arguments = [];
@@ -44,6 +58,35 @@ internal static class TypeRefFacts
         arguments = named.Arguments;
         return true;
     }
+
+    public static bool IsPointer(TypeRef? type) =>
+        TryGetPointerElement(type, out _);
+
+    public static bool TryGetPointerElement(TypeRef? type, out TypeRef element)
+    {
+        element = null!;
+        if (type is null)
+        {
+            return false;
+        }
+
+        type = UnwrapAlias(type);
+        if (type is not TypeRef.Pointer pointer)
+        {
+            return false;
+        }
+
+        element = pointer.Element;
+        return true;
+    }
+
+    public static bool SameType(TypeRef? left, TypeRef? right) =>
+        left is not null
+        && right is not null
+        && string.Equals(
+            TypeRefFormatter.ToCxString(UnwrapAlias(left)),
+            TypeRefFormatter.ToCxString(UnwrapAlias(right)),
+            StringComparison.Ordinal);
 
     public static TypeRef UnwrapAlias(TypeRef type)
     {

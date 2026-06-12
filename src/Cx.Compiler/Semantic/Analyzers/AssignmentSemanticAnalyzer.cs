@@ -196,7 +196,7 @@ internal sealed class AssignmentSemanticAnalyzer(
 
     private bool IsNumericLikeType(TypeRef type)
     {
-        var unwrapped = UnwrapAlias(type);
+        var unwrapped = TypeRefFacts.UnwrapAlias(type);
         return unwrapped is TypeRef.Named named
             && IsNumericLikeType(named.Name);
     }
@@ -219,35 +219,21 @@ internal sealed class AssignmentSemanticAnalyzer(
     };
 
     private static bool IsSelfPointerAssignment(TypeRef targetType, TypeRef? sourceType) =>
-        UnwrapAlias(sourceType) is TypeRef.Pointer { Element: TypeRef.Named { Name: "Self", Arguments.Count: 0 } }
-        && UnwrapAlias(targetType) is TypeRef.Pointer;
+        TypeRefFacts.TryGetPointerElement(sourceType, out var sourceElement)
+        && TypeRefFacts.UnwrapAlias(sourceElement) is TypeRef.Named { Name: "Self", Arguments.Count: 0 }
+        && TypeRefFacts.IsPointer(targetType);
 
     private static bool IsNullableType(TypeRef? type) =>
-        UnwrapAlias(type) is TypeRef.Pointer;
+        TypeRefFacts.IsPointer(type);
 
     private static bool IsPointerType(TypeRef type) =>
-        UnwrapAlias(type) is TypeRef.Pointer;
-
-    private static TypeRef? UnwrapAlias(TypeRef? type)
-    {
-        while (type is TypeRef.Alias alias)
-        {
-            type = alias.Target;
-        }
-
-        return type;
-    }
+        TypeRefFacts.IsPointer(type);
 
     private static string? FormatTypeRef(TypeRef? type) =>
         type is null ? null : TypeRefFormatter.ToCxString(type);
 
     private static bool SameType(TypeRef? left, TypeRef? right) =>
-        left is not null
-        && right is not null
-        && string.Equals(
-            TypeRefFormatter.ToCxString(UnwrapAlias(left)!),
-            TypeRefFormatter.ToCxString(UnwrapAlias(right)!),
-            StringComparison.Ordinal);
+        TypeRefFacts.SameType(left, right);
 
     private static bool IsBareNull(ExpressionNode expression) =>
         string.Equals(expression.SourceText.Trim(), "null", StringComparison.Ordinal);

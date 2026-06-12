@@ -34,6 +34,30 @@ public sealed class ExpressionTypeResolverTypeRefTests
     }
 
     [Fact]
+    public void ResolveTypeRef_PreservesTypeRefFromTypeEnvironment()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            type usize = unsigned long long;
+
+            fn main() -> int {
+                return value;
+            }
+            """);
+        var resolver = new ExpressionTypeResolver(program);
+        var expression = Assert.IsType<ReturnStatement>(Assert.Single(program.Functions).Body.Single()).Expression;
+        var parser = new TypeRefParser(program);
+        var environment = new TypeEnvironment();
+        var type = parser.Parse("usize");
+        environment.Set("value", type);
+
+        var resolved = resolver.ResolveTypeRef(expression, environment);
+
+        Assert.Same(type, resolved);
+        Assert.Equal("usize", resolver.Resolve(expression, environment));
+    }
+
+    [Fact]
     public void ResolveTypeRef_UsesExpressionTypeNodesWhenAvailable()
     {
         var program = CompilerTestHelpers.Parse(

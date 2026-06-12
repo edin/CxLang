@@ -190,13 +190,13 @@ public sealed class SemanticAnalyzer(
             : new ReturnSemanticAnalyzer(diagnostics, _assignmentAnalyzer);
 
     private MatchSemanticAnalyzer? CreateMatchAnalyzer(ProgramNode program) =>
-        _expressionTypeResolver is null
+        _expressionTypeResolver is null || _typeRefParser is null
             ? null
             : new MatchSemanticAnalyzer(
                 diagnostics,
                 program,
                 _expressionTypeResolver,
-                TypeText,
+                _typeRefParser,
                 IsKnownTypeName);
 
     private ForeachSemanticAnalyzer? CreateForeachAnalyzer() =>
@@ -207,8 +207,7 @@ public sealed class SemanticAnalyzer(
                 _typeSystem,
                 _typeCompatibility,
                 _expressionTypeResolver,
-                _typeRefParser,
-                TypeTextOrNull);
+                _typeRefParser);
 
     private ExpressionSemanticAnalyzer? CreateExpressionAnalyzer() =>
         _program is null || _expressionTypeResolver is null || _typeCompatibility is null
@@ -329,6 +328,7 @@ public sealed class SemanticAnalyzer(
                 var foreachScope = _foreachAnalyzer?.AnalyzeForeach(foreachStatement, variables, mutability)
                     ?? new ForeachAnalysisResult(
                         new Dictionary<string, string>(variables, StringComparer.Ordinal),
+                        TypeEnvironment.FromLegacyStrings(_typeRefParser ?? new TypeRefParser(program), variables),
                         new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal));
                 AnalyzeStatements(foreachStatement.Body, returnType, foreachScope.Variables, foreachScope.Mutability, program, inScopeTypeParameters);
                 break;
@@ -365,7 +365,7 @@ public sealed class SemanticAnalyzer(
                     var armMutability = new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal);
                     if (arm.BindingName is not null && armBinding.Type is not null)
                     {
-                        armVariables[arm.BindingName] = armBinding.Type;
+                        armVariables[arm.BindingName] = TypeRefFormatter.ToCxString(armBinding.Type);
                         armMutability[arm.BindingName] = LocalMutability.Mutable;
                     }
 
@@ -391,7 +391,7 @@ public sealed class SemanticAnalyzer(
 
 
     private static bool IsVoidType(TypeRef? type) =>
-        UnwrapAlias(type) is TypeRef.Named { Name: "void", Arguments.Count: 0 };
+        TypeRefFacts.IsNamed(type, "void");
 
     private void AnalyzeType(
         TypeNode? typeNode,
@@ -732,20 +732,10 @@ public sealed class SemanticAnalyzer(
         || expression is ParenthesizedExpressionNode parenthesized && IsNullLiteral(parenthesized.Expression);
 
     private static bool IsNullableType(TypeRef? type) =>
-        UnwrapAlias(type) is TypeRef.Pointer;
+        TypeRefFacts.IsPointer(type);
 
     private TypeRef ParseTypeRef(string type) =>
         _typeRefParser?.Parse(type) ?? new TypeRef.Unknown();
-
-    private static TypeRef? UnwrapAlias(TypeRef? type)
-    {
-        while (type is TypeRef.Alias alias)
-        {
-            type = alias.Target;
-        }
-
-        return type;
-    }
 
     private static string? FormatTypeRef(TypeRef? type) =>
         type is null ? null : TypeRefFormatter.ToCxString(type);

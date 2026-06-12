@@ -5,6 +5,7 @@ namespace Cx.Compiler.Semantic;
 
 internal sealed record ForeachAnalysisResult(
     Dictionary<string, string> Variables,
+    TypeEnvironment TypeEnvironment,
     Dictionary<string, LocalMutability> Mutability);
 
 internal sealed class ForeachSemanticAnalyzer(
@@ -12,8 +13,7 @@ internal sealed class ForeachSemanticAnalyzer(
     TypeSystem typeSystem,
     TypeCompatibility typeCompatibility,
     ExpressionTypeResolver expressionTypeResolver,
-    TypeRefParser typeRefParser,
-    Func<TypeNode?, string?> typeTextOrNull)
+    TypeRefParser typeRefParser)
 {
     public ForeachAnalysisResult AnalyzeForeach(
         ForeachStatement foreachStatement,
@@ -21,6 +21,7 @@ internal sealed class ForeachSemanticAnalyzer(
         IReadOnlyDictionary<string, LocalMutability> mutability)
     {
         var foreachVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
+        var foreachTypeEnvironment = TypeEnvironment.FromLegacyStrings(typeRefParser, variables);
         var foreachMutability = new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal);
         var iterableExpression = foreachStatement.IterableExpression.SourceText;
         if (foreachStatement.IterableExpression is ScalarRangeExpressionNode rangeExpression)
@@ -31,7 +32,12 @@ internal sealed class ForeachSemanticAnalyzer(
             }
 
             var rangeType = expressionTypeResolver.Resolve(rangeExpression, variables) ?? "int";
-            AddForeachScalarRangeBindings(foreachStatement, foreachVariables, foreachMutability, rangeType);
+            AddForeachScalarRangeBindings(
+                foreachStatement,
+                foreachVariables,
+                foreachTypeEnvironment,
+                foreachMutability,
+                typeRefParser.Parse(rangeType));
         }
         else if (!TryResolveVariableType(iterableExpression, variables, out var iterableType))
         {
@@ -49,14 +55,18 @@ internal sealed class ForeachSemanticAnalyzer(
             {
                 if (keyValueKeyType is not null)
                 {
-                    var keyBindingType = typeTextOrNull(foreachStatement.KeyBinding.TypeNode);
-                    foreachVariables[foreachStatement.KeyBinding.Name] = keyBindingType is null
-                        ? keyValueKeyType
-                        : keyBindingType;
+                    var keyBindingType = TypeRefOrNull(foreachStatement.KeyBinding.TypeNode)
+                        ?? typeRefParser.Parse(keyValueKeyType);
+                    SetVariableType(foreachVariables, foreachTypeEnvironment, foreachStatement.KeyBinding.Name, keyBindingType);
                     foreachMutability[foreachStatement.KeyBinding.Name] = LocalMutability.ForeachKey;
                 }
 
-                AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, keyValueElementType);
+                AddForeachValueBindings(
+                    foreachStatement,
+                    foreachVariables,
+                    foreachTypeEnvironment,
+                    foreachMutability,
+                    typeRefParser.Parse(keyValueElementType));
             }
             else
             {
@@ -68,7 +78,7 @@ internal sealed class ForeachSemanticAnalyzer(
         }
         else if (TryGetFixedArrayElementType(typeRefParser.Parse(iterableType), out var arrayElementType))
         {
-            AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, arrayElementType);
+            AddForeachValueBindings(foreachStatement, foreachVariables, foreachTypeEnvironment, foreachMutability, arrayElementType);
         }
         else if (TryResolveForeachTypes(
             iterableType,
@@ -76,55 +86,70 @@ internal sealed class ForeachSemanticAnalyzer(
             out var iteratorElementType,
             out _))
         {
-            AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, iteratorElementType);
+            AddForeachValueBindings(
+                foreachStatement,
+                foreachVariables,
+                foreachTypeEnvironment,
+                foreachMutability,
+                typeRefParser.Parse(iteratorElementType));
         }
         else if (SatisfiesRequirement(iterableType, "Contiguous") is { Success: true } contiguous
             && contiguous.TypeBindings.TryGetValue("T", out var contiguousElementType))
         {
-            AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, contiguousElementType);
+            AddForeachValueBindings(
+                foreachStatement,
+                foreachVariables,
+                foreachTypeEnvironment,
+                foreachMutability,
+                typeRefParser.Parse(contiguousElementType));
         }
         else if (SatisfiesRequirement(iterableType, "ContiguousRange") is { Success: true } range
             && range.TypeBindings.TryGetValue("T", out var rangeElementType))
         {
-            AddForeachValueBindings(foreachStatement, foreachVariables, foreachMutability, rangeElementType);
+            AddForeachValueBindings(
+                foreachStatement,
+                foreachVariables,
+                foreachTypeEnvironment,
+                foreachMutability,
+                typeRefParser.Parse(rangeElementType));
         }
         else if (SatisfiesRequirement(iterableType, "Contiguous") is { } match && !match.Success)
         {
             ReportForeachRequirementFailure(foreachStatement, iterableType, match);
         }
 
-        return new ForeachAnalysisResult(foreachVariables, foreachMutability);
+        return new ForeachAnalysisResult(foreachVariables, foreachTypeEnvironment, foreachMutability);
     }
 
     private void AddForeachValueBindings(
         ForeachStatement foreachStatement,
         Dictionary<string, string> variables,
+        TypeEnvironment typeEnvironment,
         Dictionary<string, LocalMutability> mutability,
-        string elementType)
+        TypeRef elementType)
     {
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
-            var declaredIndexType = typeTextOrNull(indexBinding.TypeNode);
-            var indexType = declaredIndexType is null
-                ? "usize"
-                : declaredIndexType;
-            variables[indexBinding.Name] = indexType;
+            var indexType = TypeRefOrNull(indexBinding.TypeNode)
+                ?? new TypeRef.Named("usize", []);
+            SetVariableType(variables, typeEnvironment, indexBinding.Name, indexType);
             mutability[indexBinding.Name] = LocalMutability.ForeachIndex;
         }
 
-        var valueBindingType = typeTextOrNull(foreachStatement.ValueBinding.TypeNode);
-        var declaredElementType = valueBindingType is null
-            ? elementType
-            : valueBindingType;
+        var valueBindingType = TypeRefOrNull(foreachStatement.ValueBinding.TypeNode);
+        var declaredElementType = valueBindingType ?? elementType;
         if (valueBindingType is not null
-            && !typeCompatibility.CanAssign(valueBindingType, elementType, out var reason))
+            && !typeCompatibility.CanAssign(
+                TypeRefFormatter.ToCxString(valueBindingType),
+                TypeRefFormatter.ToCxString(elementType),
+                out var reason))
         {
             diagnostics.Report(
                 foreachStatement.ValueBinding.Location,
                 $"Type mismatch for foreach value '{foreachStatement.ValueBinding.Name}': {reason}.");
         }
 
-        variables[foreachStatement.ValueBinding.Name] = declaredElementType;
+        SetVariableType(variables, typeEnvironment, foreachStatement.ValueBinding.Name, declaredElementType);
         mutability[foreachStatement.ValueBinding.Name] = foreachStatement.ValueBinding.IsConst
             ? LocalMutability.ForeachConstItem
             : LocalMutability.Mutable;
@@ -133,23 +158,20 @@ internal sealed class ForeachSemanticAnalyzer(
     private void AddForeachScalarRangeBindings(
         ForeachStatement foreachStatement,
         Dictionary<string, string> variables,
+        TypeEnvironment typeEnvironment,
         Dictionary<string, LocalMutability> mutability,
-        string elementType)
+        TypeRef elementType)
     {
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
-            var declaredIndexType = typeTextOrNull(indexBinding.TypeNode);
-            variables[indexBinding.Name] = declaredIndexType is null
-                ? "usize"
-                : declaredIndexType;
+            var indexType = TypeRefOrNull(indexBinding.TypeNode)
+                ?? new TypeRef.Named("usize", []);
+            SetVariableType(variables, typeEnvironment, indexBinding.Name, indexType);
             mutability[indexBinding.Name] = LocalMutability.ForeachIndex;
         }
 
-        var declaredValueType = typeTextOrNull(foreachStatement.ValueBinding.TypeNode);
-        var declaredElementType = declaredValueType is null
-            ? elementType
-            : declaredValueType;
-        variables[foreachStatement.ValueBinding.Name] = declaredElementType;
+        var declaredElementType = TypeRefOrNull(foreachStatement.ValueBinding.TypeNode) ?? elementType;
+        SetVariableType(variables, typeEnvironment, foreachStatement.ValueBinding.Name, declaredElementType);
         mutability[foreachStatement.ValueBinding.Name] = foreachStatement.ValueBinding.IsConst
             ? LocalMutability.ForeachConstItem
             : LocalMutability.Mutable;
@@ -236,16 +258,32 @@ internal sealed class ForeachSemanticAnalyzer(
         return variables.TryGetValue(expression.Trim(), out type!);
     }
 
-    private static bool TryGetFixedArrayElementType(TypeRef type, out string elementType)
+    private TypeRef? TypeRefOrNull(TypeNode? typeNode)
     {
-        elementType = string.Empty;
+        var type = typeNode.ToTypeRef(typeRefParser);
+        return type is TypeRef.Unknown ? null : type;
+    }
+
+    private static void SetVariableType(
+        Dictionary<string, string> variables,
+        TypeEnvironment typeEnvironment,
+        string name,
+        TypeRef type)
+    {
+        variables[name] = TypeRefFormatter.ToCxString(type);
+        typeEnvironment.Set(name, type);
+    }
+
+    private static bool TryGetFixedArrayElementType(TypeRef type, out TypeRef elementType)
+    {
+        elementType = null!;
         type = TypeRefFacts.UnwrapAlias(type);
         if (type is not TypeRef.FixedArray fixedArray)
         {
             return false;
         }
 
-        elementType = TypeRefFormatter.ToCxString(fixedArray.Element);
-        return !string.IsNullOrWhiteSpace(elementType);
+        elementType = fixedArray.Element;
+        return true;
     }
 }

@@ -42,20 +42,10 @@ internal sealed class ReturnSemanticAnalyzer(
     }
 
     private static bool IsVoidType(TypeRef? type) =>
-        UnwrapAlias(type) is TypeRef.Named { Name: "void", Arguments.Count: 0 };
+        TypeRefFacts.IsNamed(type, "void");
 
     private static bool IsNullableType(TypeRef? type) =>
-        UnwrapAlias(type) is TypeRef.Pointer;
-
-    private static TypeRef? UnwrapAlias(TypeRef? type)
-    {
-        while (type is TypeRef.Alias alias)
-        {
-            type = alias.Target;
-        }
-
-        return type;
-    }
+        TypeRefFacts.IsPointer(type);
 
     private static string? FormatTypeRef(TypeRef? type) =>
         type is null ? null : TypeRefFormatter.ToCxString(type);

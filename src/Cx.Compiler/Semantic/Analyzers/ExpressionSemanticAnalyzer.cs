@@ -305,17 +305,7 @@ internal sealed class ExpressionSemanticAnalyzer(
     }
 
     private static bool IsAnyType(TypeRef? type) =>
-        UnwrapAlias(type) is TypeRef.Named { Name: "any", Arguments.Count: 0 };
-
-    private static TypeRef? UnwrapAlias(TypeRef? type)
-    {
-        while (type is TypeRef.Alias alias)
-        {
-            type = alias.Target;
-        }
-
-        return type;
-    }
+        TypeRefFacts.IsNamed(type, "any");
 
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch
     {

@@ -3,13 +3,13 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
 
-internal sealed record MatchArmBinding(MatchArmNode Arm, string? Type);
+internal sealed record MatchArmBinding(MatchArmNode Arm, TypeRef? Type);
 
 internal sealed class MatchSemanticAnalyzer(
     DiagnosticBag diagnostics,
     ProgramNode program,
     ExpressionTypeResolver expressionTypeResolver,
-    Func<TypeNode?, string> typeText,
+    TypeRefParser typeRefParser,
     Func<string, bool> isKnownTypeName)
 {
     public IReadOnlyList<MatchArmBinding> AnalyzeMatch(
@@ -43,7 +43,7 @@ internal sealed class MatchSemanticAnalyzer(
             .ToList();
     }
 
-    private string? ResolveArmBindingType(
+    private TypeRef? ResolveArmBindingType(
         MatchArmNode arm,
         TaggedUnionNode? matchedTaggedUnion,
         InterfaceNode? matchedInterface)
@@ -55,12 +55,12 @@ internal sealed class MatchSemanticAnalyzer(
 
         if (matchedTaggedUnion?.Variants.FirstOrDefault(variant => variant.Name == arm.Pattern) is { } variant)
         {
-            return typeText(variant.TypeNode);
+            return variant.TypeNode.ToTypeRef(typeRefParser);
         }
 
         if (matchedInterface is not null && InterfaceImplementationExists(arm.Pattern, matchedInterface.Name))
         {
-            return arm.Pattern + "*";
+            return new TypeRef.Pointer(new TypeRef.Named(arm.Pattern, []));
         }
 
         return null;

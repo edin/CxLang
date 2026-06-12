@@ -415,9 +415,8 @@ public sealed class RequirementMatcher
 
     private bool TryResolveStruct(string type, out StructNode structNode)
     {
-        var resolvedTypeRef = TypeRefFacts.UnwrapAlias(
-            TypeRefFacts.StripPointer(
-                TypeRefFacts.UnwrapAlias(ResolveAlias(_typeRefParser.Parse(type), new HashSet<string>(StringComparer.Ordinal)))));
+        var resolvedTypeRef = TypeRefFacts.StripPointersAndAliases(
+            ResolveAlias(_typeRefParser.Parse(type), new HashSet<string>(StringComparer.Ordinal)));
         var resolvedType = TypeRefFormatter.ToCxString(resolvedTypeRef);
         var loweredType = LowerType(resolvedType);
         if (_concreteStructs.TryGetValue(loweredType, out structNode!))
@@ -536,10 +535,10 @@ public sealed class RequirementMatcher
         expectedPattern = TypeRefFacts.UnwrapAlias(expectedPattern);
         actualType = TypeRefFacts.UnwrapAlias(actualType);
 
-        if (expectedPattern is TypeRef.Pointer expectedPointer
-            && actualType is TypeRef.Pointer actualPointer)
+        if (TypeRefFacts.TryGetPointerElement(expectedPattern, out var expectedElement)
+            && TypeRefFacts.TryGetPointerElement(actualType, out var actualElement))
         {
-            return Unify(expectedPointer.Element, actualPointer.Element, bindings);
+            return Unify(expectedElement, actualElement, bindings);
         }
 
         if (expectedPattern is TypeRef.Named { Arguments.Count: 0 } expectedParameter)

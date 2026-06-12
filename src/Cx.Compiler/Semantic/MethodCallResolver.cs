@@ -63,7 +63,7 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
             return null;
         }
 
-        return TypeRefFacts.UnwrapAlias(TypeRefFacts.StripPointer(TypeRefFacts.UnwrapAlias(parsed)));
+        return TypeRefFacts.StripPointersAndAliases(parsed);
     }
 
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch

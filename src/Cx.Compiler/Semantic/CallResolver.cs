@@ -532,7 +532,7 @@ internal sealed class CallResolver(
         var parsed = Parse(type);
         return parsed is TypeRef.Unknown
             ? null
-            : TypeRefFacts.UnwrapAlias(TypeRefFacts.StripPointer(TypeRefFacts.UnwrapAlias(parsed)));
+            : TypeRefFacts.StripPointersAndAliases(parsed);
     }
 
     private static bool MatchesGenericArguments(
@@ -567,10 +567,10 @@ internal sealed class CallResolver(
             return Bind(parameterNamed.Name, TypeRefFormatter.ToCxString(argumentType), bindings);
         }
 
-        if (parameterType is TypeRef.Pointer parameterPointer
-            && argumentType is TypeRef.Pointer argumentPointer)
+        if (TypeRefFacts.TryGetPointerElement(parameterType, out var parameterElement)
+            && TypeRefFacts.TryGetPointerElement(argumentType, out var argumentElement))
         {
-            return TryBindType(parameterPointer.Element, argumentPointer.Element, typeParameters, bindings);
+            return TryBindType(parameterElement, argumentElement, typeParameters, bindings);
         }
 
         if (parameterType is TypeRef.Named parameterGeneric
