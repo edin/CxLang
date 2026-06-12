@@ -376,33 +376,39 @@ internal sealed class CallResolver(
             return explicitTypeArguments;
         }
 
-        if (receiverType is not null
-            && TryResolveAdapterBaseArguments(function, receiverType) is { } adapterBaseArguments)
+        var receiverTypeRef = receiverType is null ? null : NormalizeReceiverType(receiverType);
+        if (receiverTypeRef is not null
+            && TryResolveAdapterBaseArguments(function, receiverTypeRef) is { } adapterBaseArguments)
         {
             return adapterBaseArguments;
         }
 
-        return receiverType is not null
-            && TryParseGenericUse(StripPointer(receiverType), out _, out var receiverArguments)
+        return receiverTypeRef is not null
+            && TypeRefFacts.TryGetGenericArguments(receiverTypeRef, out var receiverArguments)
             && receiverArguments.Count == function.TypeParameters.Count
-                ? receiverArguments
+                ? receiverArguments.Select(TypeRefFormatter.ToCxString).ToList()
                 : [];
     }
 
     private IReadOnlyList<string>? TryResolveAdapterBaseArguments(
         FunctionNode function,
-        string receiverType)
+        TypeRef receiverType)
     {
-        var currentType = StripPointer(receiverType);
+        var currentType = receiverType;
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (seen.Add(currentType))
+        while (seen.Add(TypeRefFormatter.ToCxString(currentType)))
         {
-            var currentName = GetGenericBaseName(currentType);
+            var currentName = TypeRefFacts.GetBaseName(currentType);
+            if (currentName is null)
+            {
+                return null;
+            }
+
             if (string.Equals(OwnerType(function), currentName, StringComparison.Ordinal)
-                && TryParseGenericUse(currentType, out _, out var currentArguments)
+                && TypeRefFacts.TryGetGenericArguments(currentType, out var currentArguments)
                 && currentArguments.Count == function.TypeParameters.Count)
             {
-                return currentArguments;
+                return currentArguments.Select(TypeRefFormatter.ToCxString).ToList();
             }
 
             var adapter = program.TypeAdapters.FirstOrDefault(adapter =>
@@ -412,16 +418,19 @@ internal sealed class CallResolver(
                 return null;
             }
 
-            var receiverArguments = TryParseGenericUse(currentType, out _, out var parsedReceiverArguments)
+            var receiverArguments = TypeRefFacts.TryGetGenericArguments(currentType, out var parsedReceiverArguments)
                 ? parsedReceiverArguments
                 : [];
-            currentType = TypeText(adapter.BaseTypeNode);
             if (adapter.TypeParameters.Count == receiverArguments.Count)
             {
                 var substitutions = adapter.TypeParameters
                     .Zip(receiverArguments)
                     .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-                currentType = GenericTypeStringRewriter.Substitute(currentType, substitutions);
+                currentType = TypeRefRewriter.Substitute(ResolveType(adapter.BaseTypeNode), substitutions);
+            }
+            else
+            {
+                currentType = ResolveType(adapter.BaseTypeNode);
             }
         }
 
@@ -620,24 +629,6 @@ internal sealed class CallResolver(
         return string.Equals(existing.Trim(), typeArgument.Trim(), StringComparison.Ordinal);
     }
 
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
-    }
-
-    private static string GetGenericBaseName(string type)
-    {
-        type = type.Trim();
-        return TypeSyntaxParser.Parse(type) is GenericTypeSyntaxNode generic
-            ? TypeSyntaxFormatter.ToCxString(generic.Target)
-            : type;
-    }
-
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch
     {
         NameExpressionNode name => name.SourceText,
@@ -645,20 +636,6 @@ internal sealed class CallResolver(
         MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
         _ => null,
     };
-
-    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
-    {
-        name = string.Empty;
-        arguments = [];
-        if (TypeSyntaxParser.Parse(type) is not GenericTypeSyntaxNode generic)
-        {
-            return false;
-        }
-
-        name = TypeSyntaxFormatter.ToCxString(generic.Target);
-        arguments = generic.Arguments.Select(TypeSyntaxFormatter.ToCxString).ToList();
-        return true;
-    }
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 

@@ -230,22 +230,28 @@ public sealed class RequirementMatcher
 
     public string ResolveAlias(string type)
     {
-        var pointerSuffix = "";
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
-        }
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (_typeAliases.TryGetValue(type, out var targetType) && seen.Add(type))
-        {
-            type = targetType;
-        }
-
-        return type + pointerSuffix;
+        var resolved = ResolveAlias(_typeRefParser.Parse(type), new HashSet<string>(StringComparer.Ordinal));
+        return TypeRefFormatter.ToCxString(resolved);
     }
+
+    private TypeRef ResolveAlias(TypeRef type, HashSet<string> seen) =>
+        type switch
+        {
+            TypeRef.Alias alias => ResolveAlias(alias.Target, seen),
+            TypeRef.Named named when named.Arguments.Count == 0
+                && _typeAliases.TryGetValue(named.Name, out var targetType)
+                && seen.Add(named.Name) => ResolveAlias(_typeRefParser.Parse(targetType), seen),
+            TypeRef.Named named => new TypeRef.Named(
+                named.Name,
+                named.Arguments.Select(argument => ResolveAlias(argument, new HashSet<string>(seen, StringComparer.Ordinal))).ToList()),
+            TypeRef.Pointer pointer => new TypeRef.Pointer(ResolveAlias(pointer.Element, seen)),
+            TypeRef.FixedArray fixedArray => new TypeRef.FixedArray(ResolveAlias(fixedArray.Element, seen), fixedArray.Length),
+            TypeRef.Function function => new TypeRef.Function(
+                function.Parameters.Select(parameter => ResolveAlias(parameter, new HashSet<string>(seen, StringComparer.Ordinal))).ToList(),
+                ResolveAlias(function.ReturnType, seen),
+                function.IsVariadic),
+            _ => type,
+        };
 
     private void MatchField(
         RequirementFieldNode field,
@@ -385,41 +391,6 @@ public sealed class RequirementMatcher
         }
     }
 
-    private Dictionary<string, string> BuildCandidateBindings(
-        FunctionNode candidate,
-        string ownerType,
-        IReadOnlyDictionary<string, string> currentBindings)
-    {
-        var bindings = new Dictionary<string, string>(currentBindings, StringComparer.Ordinal);
-        var candidateOwnerType = OwnerType(candidate);
-        if (candidateOwnerType is null)
-        {
-            return bindings;
-        }
-
-        var normalizedOwnerType = StripPointer(ResolveAlias(ownerType));
-        if (!TryParseGenericUse(normalizedOwnerType, out var ownerName, out var ownerArguments)
-            || !string.Equals(ownerName, candidateOwnerType, StringComparison.Ordinal))
-        {
-            return bindings;
-        }
-
-        var ownerDefinition = _program.Structs.FirstOrDefault(structNode =>
-            string.Equals(structNode.Name, candidateOwnerType, StringComparison.Ordinal)
-            && structNode.TypeParameters.Count == ownerArguments.Count);
-        if (ownerDefinition is null)
-        {
-            return bindings;
-        }
-
-        foreach (var (parameter, argument) in ownerDefinition.TypeParameters.Zip(ownerArguments))
-        {
-            bindings[parameter] = Substitute(ResolveAlias(argument), bindings);
-        }
-
-        return bindings;
-    }
-
     private bool FunctionMatches(
         FunctionNode candidate,
         RequirementFunctionNode requirement,
@@ -444,14 +415,18 @@ public sealed class RequirementMatcher
 
     private bool TryResolveStruct(string type, out StructNode structNode)
     {
-        var resolvedType = StripPointer(ResolveAlias(type));
+        var resolvedTypeRef = TypeRefFacts.UnwrapAlias(
+            TypeRefFacts.StripPointer(
+                TypeRefFacts.UnwrapAlias(ResolveAlias(_typeRefParser.Parse(type), new HashSet<string>(StringComparer.Ordinal)))));
+        var resolvedType = TypeRefFormatter.ToCxString(resolvedTypeRef);
         var loweredType = LowerType(resolvedType);
         if (_concreteStructs.TryGetValue(loweredType, out structNode!))
         {
             return true;
         }
 
-        if (!TryParseGenericUse(resolvedType, out var genericName, out var arguments))
+        if (!TypeRefFacts.TryGetNamed(resolvedTypeRef, out var namedType)
+            || namedType.Arguments.Count == 0)
         {
             structNode = null!;
             return false;
@@ -460,8 +435,8 @@ public sealed class RequirementMatcher
         var definition = _program.Structs.FirstOrDefault(structNode =>
             !structNode.IsHeaderDeclaration
             &&
-            structNode.Name == genericName
-            && structNode.TypeParameters.Count == arguments.Count);
+            structNode.Name == namedType.Name
+            && structNode.TypeParameters.Count == namedType.Arguments.Count);
         if (definition is null)
         {
             structNode = null!;
@@ -469,12 +444,13 @@ public sealed class RequirementMatcher
         }
 
         var substitutions = definition.TypeParameters
-            .Zip(arguments)
+            .Zip(namedType.Arguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
         var fields = definition.Fields
             .Select(field =>
             {
-                var substitutedType = Substitute(TypeText(field.TypeNode), substitutions);
+                var substitutedType = TypeRefFormatter.ToCxString(
+                    TypeRefRewriter.Substitute(field.TypeNode.ToTypeRef(_typeRefParser), substitutions));
                 return new StructFieldNode(
                     field.Location,
                     field.Name,
@@ -510,21 +486,7 @@ public sealed class RequirementMatcher
 
     private ResolvedType ResolveConcreteDefinition(string type)
     {
-        var pointerDepth = 0;
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerDepth++;
-            type = type[..^1].TrimEnd();
-        }
-
-        var resolved = _typeResolver.ResolveDefinition(_typeRefParser.Parse(type));
-        for (var i = 0; i < pointerDepth; i++)
-        {
-            resolved = resolved with { Type = new TypeRef.Pointer(resolved.Type), Symbol = null, Substitutions = new Dictionary<string, TypeRef>(StringComparer.Ordinal) };
-        }
-
-        return resolved;
+        return _typeResolver.ResolveDefinition(_typeRefParser.Parse(type));
     }
 
     private IReadOnlyList<ResolvedMethod> ResolveMethods(string type)
@@ -535,16 +497,8 @@ public sealed class RequirementMatcher
 
     private string NormalizeSelfType(string type)
     {
-        var pointerSuffix = "";
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
-        }
-
         var resolved = _typeResolver.ResolveDefinition(_typeRefParser.Parse(type));
-        return TypeRefFormatter.ToCxString(resolved.Type) + pointerSuffix;
+        return TypeRefFormatter.ToCxString(resolved.Type);
     }
 
     private bool Unify(string expectedPattern, string actualType, Dictionary<string, string> bindings)
@@ -567,20 +521,54 @@ public sealed class RequirementMatcher
             return true;
         }
 
-        if (expectedPattern.EndsWith("*", StringComparison.Ordinal)
-            && actualType.EndsWith("*", StringComparison.Ordinal))
+        var expectedType = _typeRefParser.Parse(expectedPattern);
+        var actualTypeRef = _typeRefParser.Parse(actualType);
+        if (Unify(expectedType, actualTypeRef, bindings))
         {
-            return Unify(expectedPattern[..^1].TrimEnd(), actualType[..^1].TrimEnd(), bindings);
+            return true;
         }
 
-        if (TryParseGenericUse(expectedPattern, out var expectedName, out var expectedArguments)
-            && TryParseGenericUse(actualType, out var actualName, out var actualArguments)
-            && expectedName == actualName
-            && expectedArguments.Count == actualArguments.Count)
+        return SameType(expectedPattern, actualType);
+    }
+
+    private bool Unify(TypeRef expectedPattern, TypeRef actualType, Dictionary<string, string> bindings)
+    {
+        expectedPattern = TypeRefFacts.UnwrapAlias(expectedPattern);
+        actualType = TypeRefFacts.UnwrapAlias(actualType);
+
+        if (expectedPattern is TypeRef.Pointer expectedPointer
+            && actualType is TypeRef.Pointer actualPointer)
         {
-            for (var i = 0; i < expectedArguments.Count; i++)
+            return Unify(expectedPointer.Element, actualPointer.Element, bindings);
+        }
+
+        if (expectedPattern is TypeRef.Named { Arguments.Count: 0 } expectedParameter)
+        {
+            var actualTypeText = TypeRefFormatter.ToCxString(actualType);
+            if (bindings.TryGetValue(expectedParameter.Name, out var existing))
             {
-                if (!Unify(expectedArguments[i], actualArguments[i], bindings))
+                return SameType(existing, actualTypeText);
+            }
+
+            var unboundParameter = _program.Requirements
+                .SelectMany(requirement => requirement.TypeParameters)
+                .Distinct(StringComparer.Ordinal)
+                .FirstOrDefault(parameter => string.Equals(expectedParameter.Name, parameter, StringComparison.Ordinal));
+            if (unboundParameter is not null)
+            {
+                bindings[unboundParameter] = actualTypeText;
+                return true;
+            }
+        }
+
+        if (expectedPattern is TypeRef.Named expectedNamed
+            && actualType is TypeRef.Named actualNamed
+            && string.Equals(expectedNamed.Name, actualNamed.Name, StringComparison.Ordinal)
+            && expectedNamed.Arguments.Count == actualNamed.Arguments.Count)
+        {
+            for (var i = 0; i < expectedNamed.Arguments.Count; i++)
+            {
+                if (!Unify(expectedNamed.Arguments[i], actualNamed.Arguments[i], bindings))
                 {
                     return false;
                 }
@@ -589,22 +577,32 @@ public sealed class RequirementMatcher
             return true;
         }
 
-        return SameType(expectedPattern, actualType);
-    }
-
-    private bool IsCandidateOwner(FunctionNode candidate, string ownerType)
-    {
-        var candidateOwnerType = OwnerType(candidate);
-        if (candidateOwnerType is null)
+        if (expectedPattern is TypeRef.FixedArray expectedArray
+            && actualType is TypeRef.FixedArray actualArray
+            && string.Equals(expectedArray.Length, actualArray.Length, StringComparison.Ordinal))
         {
-            return false;
+            return Unify(expectedArray.Element, actualArray.Element, bindings);
         }
 
-        var normalizedOwnerType = StripPointer(ResolveAlias(ownerType));
-        var ownerBaseName = GetGenericBaseName(normalizedOwnerType);
-        return string.Equals(candidateOwnerType, ownerBaseName, StringComparison.Ordinal)
-            || SameType(candidateOwnerType, normalizedOwnerType);
+        if (expectedPattern is TypeRef.Function expectedFunction
+            && actualType is TypeRef.Function actualFunction
+            && expectedFunction.Parameters.Count == actualFunction.Parameters.Count
+            && expectedFunction.IsVariadic == actualFunction.IsVariadic)
+        {
+            for (var i = 0; i < expectedFunction.Parameters.Count; i++)
+            {
+                if (!Unify(expectedFunction.Parameters[i], actualFunction.Parameters[i], bindings))
+                {
+                    return false;
+                }
+            }
+
+            return Unify(expectedFunction.ReturnType, actualFunction.ReturnType, bindings);
+        }
+
+        return false;
     }
+
 
     private static string Substitute(string type, IReadOnlyDictionary<string, string> bindings)
         => GenericTypeStringRewriter.Substitute(type, bindings);
@@ -612,33 +610,18 @@ public sealed class RequirementMatcher
     private bool SameType(string left, string right) =>
         LowerType(ResolveAlias(left)) == LowerType(ResolveAlias(right));
 
-    private static string StripPointer(string type)
-    {
-        while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
+    private string LowerType(string type) =>
+        LowerType(_typeRefParser.Parse(type));
+
+    private static string LowerType(TypeRef type) =>
+        type switch
         {
-            type = type.TrimEnd()[..^1];
-        }
-
-        return type.TrimEnd();
-    }
-
-    private static string LowerType(string type)
-    {
-        var pointerSuffix = "";
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
-        }
-
-        if (!TryParseGenericUse(type, out var name, out var arguments))
-        {
-            return type + pointerSuffix;
-        }
-
-        return $"{name}_{string.Join("_", arguments.Select(LowerType).Select(SanitizeTypeName))}{pointerSuffix}";
-    }
+            TypeRef.Alias alias => LowerType(alias.Target),
+            TypeRef.Pointer pointer => LowerType(pointer.Element) + "*",
+            TypeRef.Named { Arguments.Count: 0 } named => named.Name,
+            TypeRef.Named named => $"{named.Name}_{string.Join("_", named.Arguments.Select(LowerType).Select(SanitizeTypeName))}",
+            _ => TypeRefFormatter.ToCxString(type),
+        };
 
     private static string SanitizeTypeName(string type) =>
         type
@@ -647,28 +630,6 @@ public sealed class RequirementMatcher
             .Replace("<", "_", StringComparison.Ordinal)
             .Replace(">", "", StringComparison.Ordinal)
             .Replace(",", "_", StringComparison.Ordinal);
-
-    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
-    {
-        name = string.Empty;
-        arguments = [];
-        if (TypeSyntaxParser.Parse(type) is not GenericTypeSyntaxNode generic)
-        {
-            return false;
-        }
-
-        name = TypeSyntaxFormatter.ToCxString(generic.Target);
-        arguments = generic.Arguments.Select(TypeSyntaxFormatter.ToCxString).ToList();
-        return true;
-    }
-
-    private static string GetGenericBaseName(string type)
-    {
-        type = type.Trim();
-        return TypeSyntaxParser.Parse(type) is GenericTypeSyntaxNode generic
-            ? TypeSyntaxFormatter.ToCxString(generic.Target)
-            : type;
-    }
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
