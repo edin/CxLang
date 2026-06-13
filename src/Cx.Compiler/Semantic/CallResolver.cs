@@ -27,15 +27,27 @@ internal sealed class CallResolver(
         ExpressionNode callee,
         IReadOnlyList<string> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables)
+        IReadOnlyDictionary<string, string> variables) =>
+        Resolve(
+            callee,
+            typeArguments,
+            arguments,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+
+    public CallResolution? Resolve(
+        ExpressionNode callee,
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables)
     {
+        var legacyVariables = variables.ToLegacyStrings();
         if (callee is MemberExpressionNode member)
         {
             return ResolveMemberCall(member, typeArguments, arguments, variables);
         }
 
         var name = GetQualifiedName(callee);
-        if (name is not null && !variables.ContainsKey(name))
+        if (name is not null && !variables.Types.ContainsKey(name))
         {
             if (ResolveFunction(name, typeArguments, arguments, variables) is { } directFunctionResolution)
             {
@@ -48,7 +60,7 @@ internal sealed class CallResolver(
             }
         }
 
-        var calleeType = resolveExpressionType(callee, variables);
+        var calleeType = resolveExpressionType(callee, legacyVariables);
         if (Parse(calleeType) is TypeRef.Function functionPointer)
         {
             return new CallResolution(
@@ -75,22 +87,23 @@ internal sealed class CallResolver(
         MemberExpressionNode member,
         IReadOnlyList<string> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables)
+        TypeEnvironment variables)
     {
+        var legacyVariables = variables.ToLegacyStrings();
         var targetName = GetQualifiedName(member.Target);
         if (targetName is null)
         {
             return null;
         }
 
-        if (!variables.TryGetValue(targetName, out var targetType))
+        if (!variables.TryGet(targetName, out var targetType))
         {
             if (ResolveStaticRequirementCall(targetName, member.MemberName) is { } requirementCall)
             {
                 return requirementCall;
             }
 
-            if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: false } staticMethodCall)
+            if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, legacyVariables) is { SkipSelf: false } staticMethodCall)
             {
                 return BuildMethodResolution(
                     staticMethodCall,
@@ -126,7 +139,7 @@ internal sealed class CallResolver(
                 isInstance: false);
         }
 
-        if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: true } instanceMethodCall)
+        if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, legacyVariables) is { SkipSelf: true } instanceMethodCall)
         {
             var methodReceiverType = NormalizeReceiverType(targetType);
             return BuildMethodResolution(
@@ -202,7 +215,7 @@ internal sealed class CallResolver(
         string name,
         IReadOnlyList<string> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables)
+        TypeEnvironment variables)
     {
         var function = program.Functions.FirstOrDefault(function =>
             OwnerType(function) is null
@@ -234,7 +247,7 @@ internal sealed class CallResolver(
         string name,
         IReadOnlyList<string> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables)
+        TypeEnvironment variables)
     {
         var function = program.ExternFunctions.FirstOrDefault(function =>
             string.Equals(function.Name, name, StringComparison.Ordinal)
@@ -462,6 +475,21 @@ internal sealed class CallResolver(
         IReadOnlyList<ExpressionNode> arguments,
         IReadOnlyDictionary<string, string> variables,
         bool skipSelf,
+        IReadOnlyList<string>? seedArguments = null) =>
+        InferFunctionTypeArguments(
+            typeParameters,
+            parameters,
+            arguments,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables),
+            skipSelf,
+            seedArguments);
+
+    public IReadOnlyList<string>? InferFunctionTypeArguments(
+        IReadOnlyList<string> typeParameters,
+        IReadOnlyList<ParameterNode> parameters,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables,
+        bool skipSelf,
         IReadOnlyList<string>? seedArguments = null)
     {
         if (typeParameters.Count == 0)
@@ -478,32 +506,44 @@ internal sealed class CallResolver(
             return null;
         }
 
-        var bindings = new Dictionary<string, string>(StringComparer.Ordinal);
+        var bindings = new TypeBindings();
         if (seedArguments is not null && seedArguments.Count == typeParameters.Count)
         {
             foreach (var (parameter, argument) in typeParameters.Zip(seedArguments))
             {
-                bindings[parameter] = argument;
+                bindings.Set(parameter, Parse(argument));
             }
         }
 
         for (var i = 0; i < fixedParameters.Count; i++)
         {
-            var argumentType = resolveExpressionType(arguments[i], variables);
+            var argumentType = ResolveArgumentType(arguments[i], variables);
             if (argumentType is null)
             {
                 return null;
             }
 
-            if (!TryBindType(ResolveType(fixedParameters[i].TypeNode), Parse(argumentType), typeParameters, bindings))
+            if (!TryBindType(ResolveType(fixedParameters[i].TypeNode), argumentType, typeParameters, bindings))
             {
                 return null;
             }
         }
 
-        return typeParameters.All(bindings.ContainsKey)
-            ? typeParameters.Select(parameter => bindings[parameter]).ToList()
+        return typeParameters.All(parameter => bindings.Bindings.ContainsKey(parameter))
+            ? typeParameters.Select(parameter => TypeRefFormatter.ToCxString(bindings.Bindings[parameter])).ToList()
             : null;
+    }
+
+    private TypeRef? ResolveArgumentType(ExpressionNode argument, TypeEnvironment variables)
+    {
+        if (argument is NameExpressionNode name
+            && variables.TryGet(name.SourceText, out var type))
+        {
+            return type;
+        }
+
+        var argumentType = resolveExpressionType(argument, variables.ToLegacyStrings());
+        return argumentType is null ? null : Parse(argumentType);
     }
 
     private TypeRef Parse(string? type) =>
@@ -535,6 +575,9 @@ internal sealed class CallResolver(
             : TypeRefFacts.StripPointersAndAliases(parsed);
     }
 
+    private static TypeRef? NormalizeReceiverType(TypeRef type) =>
+        type is TypeRef.Unknown ? null : TypeRefFacts.StripPointersAndAliases(type);
+
     private static bool MatchesGenericArguments(
         IReadOnlyList<string> typeParameters,
         IReadOnlyList<string> explicitArguments)
@@ -551,7 +594,7 @@ internal sealed class CallResolver(
         TypeRef? parameterType,
         TypeRef? argumentType,
         IReadOnlyList<string> typeParameters,
-        Dictionary<string, string> bindings)
+        TypeBindings bindings)
     {
         if (parameterType is null || argumentType is null)
         {
@@ -564,7 +607,7 @@ internal sealed class CallResolver(
         if (parameterType is TypeRef.Named { Arguments.Count: 0 } parameterNamed
             && typeParameters.Contains(parameterNamed.Name, StringComparer.Ordinal))
         {
-            return Bind(parameterNamed.Name, TypeRefFormatter.ToCxString(argumentType), bindings);
+            return Bind(parameterNamed.Name, argumentType, bindings);
         }
 
         if (TypeRefFacts.TryGetPointerElement(parameterType, out var parameterElement)
@@ -618,15 +661,15 @@ internal sealed class CallResolver(
         return true;
     }
 
-    private static bool Bind(string typeParameter, string typeArgument, Dictionary<string, string> bindings)
+    private static bool Bind(string typeParameter, TypeRef typeArgument, TypeBindings bindings)
     {
-        if (!bindings.TryGetValue(typeParameter, out var existing))
+        if (!bindings.TryGet(typeParameter, out var existing))
         {
-            bindings[typeParameter] = typeArgument;
+            bindings.Set(typeParameter, typeArgument);
             return true;
         }
 
-        return string.Equals(existing.Trim(), typeArgument.Trim(), StringComparison.Ordinal);
+        return TypeRefFacts.SameType(existing, typeArgument);
     }
 
     private static string? GetQualifiedName(ExpressionNode expression) => expression switch

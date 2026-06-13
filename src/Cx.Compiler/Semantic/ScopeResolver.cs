@@ -55,27 +55,27 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
         foreach (var enumNode in program.Enums)
         {
-            DeclareTopLevel(enumNode.Name, SymbolKind.Type, enumNode.Name, enumNode.Location, enumNode);
+            DeclareTopLevel(CreateNamedTypeSymbol(enumNode.Name, enumNode.Location, enumNode));
         }
 
         foreach (var interfaceNode in program.Interfaces)
         {
-            DeclareTopLevel(interfaceNode.Name, SymbolKind.Type, interfaceNode.Name, interfaceNode.Location, interfaceNode);
+            DeclareTopLevel(CreateNamedTypeSymbol(interfaceNode.Name, interfaceNode.Location, interfaceNode));
         }
 
         foreach (var structNode in program.Structs)
         {
-            DeclareTopLevel(structNode.Name, SymbolKind.Type, structNode.Name, structNode.Location, structNode);
+            DeclareTopLevel(CreateNamedTypeSymbol(structNode.Name, structNode.Location, structNode));
         }
 
         foreach (var adapter in program.TypeAdapters)
         {
-            DeclareTopLevel(adapter.Name, SymbolKind.Type, adapter.Name, adapter.Location, adapter);
+            DeclareTopLevel(CreateNamedTypeSymbol(adapter.Name, adapter.Location, adapter));
         }
 
         foreach (var union in program.TaggedUnions)
         {
-            DeclareTopLevel(union.Name, SymbolKind.Type, union.Name, union.Location, union);
+            DeclareTopLevel(CreateNamedTypeSymbol(union.Name, union.Location, union));
         }
 
         foreach (var global in program.GlobalVariables)
@@ -441,7 +441,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         }
 
         var resolver = new CallResolver(_program, _expressionTypeResolver.Resolve);
-        var variables = BuildVariableMap(scope);
+        var variables = BuildTypeEnvironment(scope);
         var resolved = resolver.Resolve(callee, typeArguments, arguments, variables);
         if (resolved?.Function is null)
         {
@@ -469,51 +469,68 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         return true;
     }
 
-    private static IReadOnlyDictionary<string, string> BuildVariableMap(Scope scope)
+    private TypeEnvironment BuildTypeEnvironment(Scope scope)
     {
-        var variables = new Dictionary<string, string>(StringComparer.Ordinal);
+        var environment = new TypeEnvironment();
         for (var current = scope; current is not null; current = current.Parent)
         {
             foreach (var symbol in current.Symbols.Values)
             {
-                var type = TypeText(symbol);
                 if (symbol.Kind is SymbolKind.Function or SymbolKind.Type
-                    || string.IsNullOrWhiteSpace(type)
-                    || variables.ContainsKey(symbol.Name))
+                    || environment.Types.ContainsKey(symbol.Name))
                 {
                     continue;
                 }
 
-                variables[symbol.Name] = type;
+                if (symbol.TypeRef is not null)
+                {
+                    environment.Set(symbol.Name, symbol.TypeRef);
+                }
+                else if (!string.IsNullOrWhiteSpace(symbol.Type))
+                {
+                    var typeRef = ParseTypeRefOrNull(symbol.Type);
+                    if (typeRef is not null)
+                    {
+                        environment.Set(symbol.Name, typeRef);
+                    }
+                }
             }
         }
 
-        return variables;
+        return environment;
     }
 
     private Symbol CreateSymbol(string name, SymbolKind kind, TypeNode? typeNode, Location location, SyntaxNode? node)
     {
         var typeRef = TypeRefOrNull(typeNode);
-        return new Symbol(
+        return Symbol.FromLegacyType(
             name,
             kind,
-            typeRef is null ? TypeTextOrNull(typeNode) : TypeRefFormatter.ToCxString(typeRef),
+            TypeTextOrNull(typeNode),
+            typeRef,
             location,
-            node,
-            typeRef);
+            node);
     }
 
     private Symbol CreateSymbol(string name, SymbolKind kind, string? type, Location location, SyntaxNode? node)
     {
         var typeRef = ParseTypeRefOrNull(type);
-        return new Symbol(
+        return Symbol.FromLegacyType(
             name,
             kind,
-            typeRef is null ? type : TypeRefFormatter.ToCxString(typeRef),
+            type,
+            typeRef,
             location,
-            node,
-            typeRef);
+            node);
     }
+
+    private static Symbol CreateNamedTypeSymbol(string name, Location location, SyntaxNode node) =>
+        Symbol.FromTypeRef(
+            name,
+            SymbolKind.Type,
+            new TypeRef.Named(name, []),
+            location,
+            node);
 
     private void BindMemberReference(MemberExpressionNode member, Scope scope)
     {
@@ -611,7 +628,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             }
         }
 
-        var receiverType = TypeText(receiverSymbol);
+        var receiverType = receiverSymbol.TypeText;
         return string.IsNullOrWhiteSpace(receiverType)
             ? null
             : FindInstanceFunction(receiverType, name, typeArguments);
@@ -692,7 +709,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return receiverArguments.Select(TypeRefFormatter.ToCxString).ToList();
         }
 
-        var receiverType = ParseTypeRefOrNull(TypeText(receiverSymbol));
+        var receiverType = ParseTypeRefOrNull(receiverSymbol.TypeText);
         return TypeRefFacts.TryGetGenericArguments(receiverType, out var fallbackArguments)
             && fallbackArguments.Count == function.TypeParameters.Count
                 ? fallbackArguments.Select(TypeRefFormatter.ToCxString).ToList()
@@ -765,9 +782,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         var type = TypeRefOrNull(typeNode);
         return type is null ? string.Empty : TypeRefFormatter.ToCxString(type);
     }
-
-    private static string TypeText(Symbol symbol) =>
-        symbol.TypeRef is null ? symbol.Type ?? string.Empty : TypeRefFormatter.ToCxString(symbol.TypeRef);
 
     private string? TypeTextOrNull(TypeNode? typeNode)
     {

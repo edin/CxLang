@@ -4,6 +4,7 @@ using Cx.Compiler.Syntax.Nodes;
 namespace Cx.Compiler.Semantic;
 
 internal sealed record ForeachAnalysisResult(
+    [property: Cx.Compiler.LegacyStringType("Compatibility foreach scope map. Prefer TypeEnvironment.")]
     Dictionary<string, string> Variables,
     TypeEnvironment TypeEnvironment,
     Dictionary<string, LocalMutability> Mutability);

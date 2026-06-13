@@ -15,6 +15,7 @@ internal sealed class CLoweringScope(
 
     private IReadOnlySet<string> PointerParameters { get; } = pointerParameters;
 
+    [Cx.Compiler.LegacyStringType("Compatibility lowering scope map. Prefer VariableTypes.")]
     private IReadOnlyDictionary<string, string> Variables { get; } = variables;
 
     private IReadOnlyDictionary<string, TypeRef> VariableTypes { get; } = variableTypes;

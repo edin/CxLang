@@ -655,8 +655,10 @@ public sealed class RequirementMatcher
 
 public sealed record RequirementMatch(
     bool Success,
+    [property: Cx.Compiler.LegacyStringType("Compatibility concrete type text. Prefer a TypeRef-backed match result.")]
     string ConcreteType,
     string RequirementName,
+    [property: Cx.Compiler.LegacyStringType("Compatibility type binding text. Prefer TypeBindings once consumers are migrated.")]
     IReadOnlyDictionary<string, string> TypeBindings,
     IReadOnlyList<string> Failures)
 {

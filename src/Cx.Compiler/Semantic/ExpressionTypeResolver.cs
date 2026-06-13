@@ -22,6 +22,13 @@ internal sealed class ExpressionTypeResolver(
 
     public string? Resolve(ExpressionNode? expression, IReadOnlyDictionary<string, string> variables)
     {
+        return Resolve(
+            expression,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    public string? Resolve(ExpressionNode? expression, TypeEnvironment variables)
+    {
         if (expression is null)
         {
             return null;
@@ -51,18 +58,14 @@ internal sealed class ExpressionTypeResolver(
         };
     }
 
-    public string? Resolve(ExpressionNode? expression, TypeEnvironment variables)
+    public TypeRef? ResolveTypeRef(ExpressionNode? expression, IReadOnlyDictionary<string, string> variables)
     {
-        if (expression is NameExpressionNode name
-            && variables.TryGet(name.SourceText, out var type))
-        {
-            return TypeRefFormatter.ToCxString(type);
-        }
-
-        return Resolve(expression, variables.ToLegacyStrings());
+        return ResolveTypeRef(
+            expression,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
     }
 
-    public TypeRef? ResolveTypeRef(ExpressionNode? expression, IReadOnlyDictionary<string, string> variables)
+    public TypeRef? ResolveTypeRef(ExpressionNode? expression, TypeEnvironment variables)
     {
         if (expression is null)
         {
@@ -105,17 +108,6 @@ internal sealed class ExpressionTypeResolver(
         };
     }
 
-    public TypeRef? ResolveTypeRef(ExpressionNode? expression, TypeEnvironment variables)
-    {
-        if (expression is NameExpressionNode name
-            && variables.TryGet(name.SourceText, out var type))
-        {
-            return type;
-        }
-
-        return ResolveTypeRef(expression, variables.ToLegacyStrings());
-    }
-
     private string? ResolveName(string name, IReadOnlyDictionary<string, string> variables)
     {
         if (variables.TryGetValue(name, out var type))
@@ -138,6 +130,16 @@ internal sealed class ExpressionTypeResolver(
         return externFunction is null
             ? null
             : GetFunctionType(externFunction.Parameters, TypeText(externFunction.ReturnTypeNode));
+    }
+
+    private string? ResolveName(string name, TypeEnvironment variables)
+    {
+        if (variables.TryGet(name, out var type))
+        {
+            return TypeRefFormatter.ToCxString(type);
+        }
+
+        return ResolveName(name, variables.ToLegacyStrings());
     }
 
     private static string? ResolveLiteral(string text)
@@ -181,6 +183,11 @@ internal sealed class ExpressionTypeResolver(
             ? ParseResolvedType(type)
             : ParseResolvedType(ResolveName(name, variables));
 
+    private TypeRef? ResolveNameTypeRef(string name, TypeEnvironment variables) =>
+        variables.TryGet(name, out var type)
+            ? type
+            : ParseResolvedType(ResolveName(name, variables.ToLegacyStrings()));
+
     private TypeRef? ResolveTypeNode(TypeNode? typeNode) =>
         typeNode?.Semantic.Type
         ?? (typeNode?.Syntax is null ? null : _typeSyntaxConverter.Convert(typeNode))
@@ -194,7 +201,17 @@ internal sealed class ExpressionTypeResolver(
     private string? ResolveUnary(UnaryExpressionNode unary, IReadOnlyDictionary<string, string> variables) =>
         FormatTypeRef(ResolveUnaryTypeRef(unary, variables));
 
+    private string? ResolveUnary(UnaryExpressionNode unary, TypeEnvironment variables) =>
+        FormatTypeRef(ResolveUnaryTypeRef(unary, variables));
+
     private TypeRef? ResolveUnaryTypeRef(UnaryExpressionNode unary, IReadOnlyDictionary<string, string> variables)
+    {
+        return ResolveUnaryTypeRef(
+            unary,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private TypeRef? ResolveUnaryTypeRef(UnaryExpressionNode unary, TypeEnvironment variables)
     {
         var operandType = ResolveTypeRef(unary.Operand, variables);
         if (operandType is null)
@@ -215,6 +232,13 @@ internal sealed class ExpressionTypeResolver(
 
     private string? ResolveBinary(BinaryExpressionNode binary, IReadOnlyDictionary<string, string> variables)
     {
+        return ResolveBinary(
+            binary,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private string? ResolveBinary(BinaryExpressionNode binary, TypeEnvironment variables)
+    {
         if (binary.Operator is "==" or "!=" or "<" or "<=" or ">" or ">=" or "&&" or "||")
         {
             return "bool";
@@ -231,6 +255,13 @@ internal sealed class ExpressionTypeResolver(
     }
 
     private TypeRef? ResolveBinaryTypeRef(BinaryExpressionNode binary, IReadOnlyDictionary<string, string> variables)
+    {
+        return ResolveBinaryTypeRef(
+            binary,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private TypeRef? ResolveBinaryTypeRef(BinaryExpressionNode binary, TypeEnvironment variables)
     {
         if (binary.Operator is "==" or "!=" or "<" or "<=" or ">" or ">=" or "&&" or "||")
         {
@@ -249,6 +280,13 @@ internal sealed class ExpressionTypeResolver(
 
     private string? ResolveConditional(ConditionalExpressionNode conditional, IReadOnlyDictionary<string, string> variables)
     {
+        return ResolveConditional(
+            conditional,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private string? ResolveConditional(ConditionalExpressionNode conditional, TypeEnvironment variables)
+    {
         var whenTrue = Resolve(conditional.WhenTrue, variables);
         var whenFalse = Resolve(conditional.WhenFalse, variables);
         return SameType(whenTrue, whenFalse) ? whenTrue : whenTrue ?? whenFalse;
@@ -256,12 +294,26 @@ internal sealed class ExpressionTypeResolver(
 
     private TypeRef? ResolveConditionalTypeRef(ConditionalExpressionNode conditional, IReadOnlyDictionary<string, string> variables)
     {
+        return ResolveConditionalTypeRef(
+            conditional,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private TypeRef? ResolveConditionalTypeRef(ConditionalExpressionNode conditional, TypeEnvironment variables)
+    {
         var whenTrue = ResolveTypeRef(conditional.WhenTrue, variables);
         var whenFalse = ResolveTypeRef(conditional.WhenFalse, variables);
         return SameType(whenTrue, whenFalse) ? whenTrue : whenTrue ?? whenFalse;
     }
 
     private string? ResolveRange(ScalarRangeExpressionNode range, IReadOnlyDictionary<string, string> variables)
+    {
+        return ResolveRange(
+            range,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private string? ResolveRange(ScalarRangeExpressionNode range, TypeEnvironment variables)
     {
         var start = Resolve(range.Start, variables);
         var end = Resolve(range.End, variables);
@@ -286,11 +338,21 @@ internal sealed class ExpressionTypeResolver(
     private TypeRef? ResolveRangeTypeRef(ScalarRangeExpressionNode range, IReadOnlyDictionary<string, string> variables) =>
         ParseResolvedType(ResolveRange(range, variables));
 
+    private TypeRef? ResolveRangeTypeRef(ScalarRangeExpressionNode range, TypeEnvironment variables) =>
+        ParseResolvedType(ResolveRange(range, variables));
+
     private static bool IsIntegerLiteral(ExpressionNode expression) =>
         expression is LiteralExpressionNode literal
         && Regex.IsMatch(literal.SourceText.Trim(), @"^-?\d+$");
 
     private string? ResolveInitializer(InitializerExpressionNode initializer, IReadOnlyDictionary<string, string> variables)
+    {
+        return ResolveInitializer(
+            initializer,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private string? ResolveInitializer(InitializerExpressionNode initializer, TypeEnvironment variables)
     {
         if (initializer.TypeNameNode is not null)
         {
@@ -312,6 +374,13 @@ internal sealed class ExpressionTypeResolver(
     }
 
     private TypeRef? ResolveInitializerTypeRef(InitializerExpressionNode initializer, IReadOnlyDictionary<string, string> variables)
+    {
+        return ResolveInitializerTypeRef(
+            initializer,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private TypeRef? ResolveInitializerTypeRef(InitializerExpressionNode initializer, TypeEnvironment variables)
     {
         if (initializer.TypeNameNode is not null)
         {
@@ -356,6 +425,13 @@ internal sealed class ExpressionTypeResolver(
         $"fn({string.Join(",", parameters.Select(parameter => TypeText(parameter.TypeNode)))})->{returnType}";
 
     private TypeRef? ResolveMemberTypeRef(MemberExpressionNode member, IReadOnlyDictionary<string, string> variables)
+    {
+        return ResolveMemberTypeRef(
+            member,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private TypeRef? ResolveMemberTypeRef(MemberExpressionNode member, TypeEnvironment variables)
     {
         var targetType = ResolveTypeRef(member.Target, variables);
         if (targetType is null)
@@ -434,12 +510,26 @@ internal sealed class ExpressionTypeResolver(
 
     private string? ResolveIndex(IndexExpressionNode index, IReadOnlyDictionary<string, string> variables)
     {
+        return ResolveIndex(
+            index,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private string? ResolveIndex(IndexExpressionNode index, TypeEnvironment variables)
+    {
         var targetType = ResolveTypeRef(index.Target, variables);
         var elementType = targetType is null ? null : ResolveIndexTypeRef(targetType);
         return elementType is null ? null : TypeRefFormatter.ToCxString(elementType);
     }
 
     private TypeRef? ResolveIndexTypeRef(IndexExpressionNode index, IReadOnlyDictionary<string, string> variables)
+    {
+        return ResolveIndexTypeRef(
+            index,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+    }
+
+    private TypeRef? ResolveIndexTypeRef(IndexExpressionNode index, TypeEnvironment variables)
     {
         var targetType = ResolveTypeRef(index.Target, variables);
         return targetType switch
@@ -460,11 +550,17 @@ internal sealed class ExpressionTypeResolver(
     };
 
     private string? ResolveCall(CallExpressionNode call, IReadOnlyDictionary<string, string> variables) =>
+        ResolveCall(call, TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+
+    private string? ResolveCall(CallExpressionNode call, TypeEnvironment variables) =>
         CallResolver.Resolve(call.Callee, [], call.Arguments, variables) is { } resolvedCall
             ? TypeRefFormatter.ToCxString(resolvedCall.ReturnType)
             : null;
 
     private string? ResolveGenericCall(GenericCallExpressionNode call, IReadOnlyDictionary<string, string> variables) =>
+        ResolveGenericCall(call, TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+
+    private string? ResolveGenericCall(GenericCallExpressionNode call, TypeEnvironment variables) =>
         CallResolver.Resolve(call.Callee, TypeArguments(call.TypeArgumentNodes), call.Arguments, variables) is { } resolvedCall
             ? TypeRefFormatter.ToCxString(resolvedCall.ReturnType)
             : null;
@@ -474,6 +570,21 @@ internal sealed class ExpressionTypeResolver(
         IReadOnlyList<ParameterNode> parameters,
         IReadOnlyList<ExpressionNode> arguments,
         IReadOnlyDictionary<string, string> variables,
+        bool skipSelf,
+        IReadOnlyList<string>? seedArguments = null) =>
+        InferFunctionTypeArguments(
+            typeParameters,
+            parameters,
+            arguments,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables),
+            skipSelf,
+            seedArguments);
+
+    public IReadOnlyList<string>? InferFunctionTypeArguments(
+        IReadOnlyList<string> typeParameters,
+        IReadOnlyList<ParameterNode> parameters,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables,
         bool skipSelf,
         IReadOnlyList<string>? seedArguments = null)
     {
@@ -491,31 +602,31 @@ internal sealed class ExpressionTypeResolver(
             return null;
         }
 
-        var bindings = new Dictionary<string, string>(StringComparer.Ordinal);
+        var bindings = new TypeBindings();
         if (seedArguments is not null && seedArguments.Count == typeParameters.Count)
         {
             foreach (var (parameter, argument) in typeParameters.Zip(seedArguments))
             {
-                bindings[parameter] = argument;
+                bindings.Set(parameter, ParseResolvedType(argument) ?? new TypeRef.Unknown());
             }
         }
 
         for (var i = 0; i < fixedParameters.Count; i++)
         {
-            var argumentType = Resolve(arguments[i], variables);
+            var argumentType = ResolveTypeRef(arguments[i], variables);
             if (argumentType is null)
             {
                 return null;
             }
 
-            if (!TryBindType(ResolveTypeNode(fixedParameters[i].TypeNode), ParseResolvedType(argumentType), typeParameters, bindings))
+            if (!TryBindType(ResolveTypeNode(fixedParameters[i].TypeNode), argumentType, typeParameters, bindings))
             {
                 return null;
             }
         }
 
-        return typeParameters.All(bindings.ContainsKey)
-            ? typeParameters.Select(parameter => bindings[parameter]).ToList()
+        return typeParameters.All(parameter => bindings.Bindings.ContainsKey(parameter))
+            ? typeParameters.Select(parameter => TypeRefFormatter.ToCxString(bindings.Bindings[parameter])).ToList()
             : null;
     }
 
@@ -523,7 +634,7 @@ internal sealed class ExpressionTypeResolver(
         TypeRef? parameterType,
         TypeRef? argumentType,
         IReadOnlyList<string> typeParameters,
-        Dictionary<string, string> bindings)
+        TypeBindings bindings)
     {
         if (parameterType is null || argumentType is null)
         {
@@ -536,7 +647,7 @@ internal sealed class ExpressionTypeResolver(
         if (parameterType is TypeRef.Named { Arguments.Count: 0 } parameterNamed
             && typeParameters.Contains(parameterNamed.Name, StringComparer.Ordinal))
         {
-            return Bind(parameterNamed.Name, TypeRefFormatter.ToCxString(argumentType), bindings);
+            return Bind(parameterNamed.Name, argumentType, bindings);
         }
 
         if (TypeRefFacts.TryGetPointerElement(parameterType, out var parameterElement)
@@ -590,21 +701,29 @@ internal sealed class ExpressionTypeResolver(
         return true;
     }
 
-    private static bool Bind(string typeParameter, string typeArgument, Dictionary<string, string> bindings)
+    private static bool Bind(string typeParameter, TypeRef typeArgument, TypeBindings bindings)
     {
-        if (!bindings.TryGetValue(typeParameter, out var existing))
+        if (!bindings.TryGet(typeParameter, out var existing))
         {
-            bindings[typeParameter] = typeArgument;
+            bindings.Set(typeParameter, typeArgument);
             return true;
         }
 
-        return string.Equals(existing.Trim(), typeArgument.Trim(), StringComparison.Ordinal);
+        return TypeRefFacts.SameType(existing, typeArgument);
     }
     private string? ResolveRaw(string text, IReadOnlyDictionary<string, string> variables)
     {
         text = text.Trim();
         return variables.TryGetValue(text, out var type)
             ? type
+            : ResolveLiteral(text);
+    }
+
+    private string? ResolveRaw(string text, TypeEnvironment variables)
+    {
+        text = text.Trim();
+        return variables.TryGet(text, out var type)
+            ? TypeRefFormatter.ToCxString(type)
             : ResolveLiteral(text);
     }
 

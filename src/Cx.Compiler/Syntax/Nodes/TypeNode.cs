@@ -2,6 +2,7 @@ namespace Cx.Compiler.Syntax.Nodes;
 
 public sealed record TypeNode(
     Location Location,
+    [property: Cx.Compiler.LegacyStringType("Compatibility text for parsed type syntax. Prefer Syntax or Semantic.Type.")]
     string TypeName,
     TypeSyntaxNode? Syntax = null) : SyntaxNode(Location)
 {

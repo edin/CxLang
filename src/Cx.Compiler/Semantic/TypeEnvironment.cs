@@ -16,6 +16,7 @@ internal sealed class TypeEnvironment
 
     public IReadOnlyDictionary<string, TypeRef> Types => _types;
 
+    [Cx.Compiler.LegacyStringType("Adapter for legacy string type maps during the TypeEnvironment migration.")]
     public static TypeEnvironment FromLegacyStrings(
         TypeRefParser parser,
         IReadOnlyDictionary<string, string> types)
@@ -44,6 +45,7 @@ internal sealed class TypeEnvironment
     public bool Remove(string name) =>
         _types.Remove(name);
 
+    [Cx.Compiler.LegacyStringType("Adapter for legacy string type consumers during the TypeEnvironment migration.")]
     public IReadOnlyDictionary<string, string> ToLegacyStrings() =>
         _types.ToDictionary(
             pair => pair.Key,
@@ -70,6 +72,7 @@ internal sealed class TypeBindings
 
     public IReadOnlyDictionary<string, TypeRef> Bindings => _bindings;
 
+    [Cx.Compiler.LegacyStringType("Adapter for legacy string type bindings during the TypeBindings migration.")]
     public static TypeBindings FromLegacyStrings(
         TypeRefParser parser,
         IReadOnlyDictionary<string, string> bindings)
@@ -98,6 +101,7 @@ internal sealed class TypeBindings
     public bool Remove(string name) =>
         _bindings.Remove(name);
 
+    [Cx.Compiler.LegacyStringType("Adapter for legacy string type binding consumers during the TypeBindings migration.")]
     public IReadOnlyDictionary<string, string> ToLegacyStrings() =>
         _bindings.ToDictionary(
             pair => pair.Key,

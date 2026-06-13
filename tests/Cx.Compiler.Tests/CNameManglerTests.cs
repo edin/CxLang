@@ -39,7 +39,12 @@ public sealed class CNameManglerTests
     {
         var mangler = CreateMangler();
 
-        Assert.Equal("printf", mangler.SymbolName(new Symbol("printf", SymbolKind.Function, "int", Location())));
+        Assert.Equal("printf", mangler.SymbolName(Symbol.FromTypeRef(
+            "printf",
+            SymbolKind.Function,
+            new TypeRef.Named("int", []),
+            Location(),
+            node: null)));
     }
 
     [Fact]

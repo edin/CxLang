@@ -44,13 +44,13 @@ internal static class GenericFunctionSpecializer
             return;
         }
 
-        function.Semantic.Symbol = new Symbol(
+        function.Semantic.Symbol = Symbol.FromLegacyType(
             function.Name,
             SymbolKind.Function,
             function.ReturnTypeNode.ToTypeName(),
+            function.ReturnTypeNode?.Semantic.Type,
             function.Location,
-            function,
-            function.ReturnTypeNode?.Semantic.Type);
+            function);
     }
 
     private static StatementNode SubstituteStatement(
