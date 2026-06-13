@@ -146,7 +146,7 @@ public sealed class SemanticAnalyzer(
             _matchAnalyzer = CreateMatchAnalyzer(program);
             _foreachAnalyzer = CreateForeachAnalyzer();
             _expressionAnalyzer = CreateExpressionAnalyzer();
-            definiteAssignment.AnalyzeFunction(function, globalVariables);
+            definiteAssignment.AnalyzeFunction(function, globalVariables, globalTypeEnvironment);
             if (!IsVoidType(functionReturnType) && !returnFlow.StatementsAlwaysReturn(function.Body, typeEnvironment))
             {
                 diagnostics.Report(
