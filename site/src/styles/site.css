@@ -665,6 +665,135 @@ code {
   background: var(--blue);
 }
 
+.blog-list {
+  display: grid;
+  gap: 18px;
+}
+
+.blog-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.blog-card h2 {
+  margin-top: 6px;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.05;
+}
+
+.blog-card h2 a {
+  text-decoration: none;
+}
+
+.blog-card h2 a:hover {
+  color: var(--accent);
+}
+
+.blog-card p:not(.blog-date):not(.blog-author) {
+  max-width: 760px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.blog-date,
+.blog-author,
+.post-meta {
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.blog-author {
+  margin-top: 10px;
+  color: var(--blue);
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag-list li {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: #29323a;
+  background: #f7f8f5;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+
+.blog-post-hero h1 {
+  max-width: 980px;
+  font-size: clamp(44px, 7vw, 96px);
+}
+
+.post-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+  color: #ffcfbf;
+}
+
+.blog-post {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.blog-post h2,
+.blog-post h3 {
+  margin-top: 42px;
+}
+
+.blog-post h2 {
+  font-size: clamp(28px, 4vw, 44px);
+}
+
+.blog-post p,
+.blog-post li {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.blog-post p {
+  margin: 18px 0 0;
+}
+
+.blog-post ul,
+.blog-post ol {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding-left: 24px;
+}
+
+.blog-post pre {
+  margin-top: 22px;
+  padding: 20px;
+  border-radius: 8px;
+  background: var(--code);
+  color: #dce7ef;
+  box-shadow: 0 18px 54px rgba(16, 19, 22, 0.12);
+}
+
 @media (max-width: 900px) {
   .site-header {
     position: absolute;
@@ -697,8 +826,13 @@ code {
   .example-grid,
   .feature-sample-grid,
   .status-grid-section,
-  .stdlib-reference {
+  .stdlib-reference,
+  .blog-card {
     grid-template-columns: 1fr;
+  }
+
+  .tag-list {
+    justify-content: flex-start;
   }
 
   .closing {

@@ -1,0 +1,67 @@
+---
+import { getCollection, render, type CollectionEntry } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+export async function getStaticPaths() {
+  const posts = await getCollection("blog", ({ data }) => !data.draft);
+  return posts.map((post) => ({
+    params: { slug: post.id.replace(/\.md$/, "") },
+    props: { post }
+  }));
+}
+
+type Props = {
+  post: CollectionEntry<"blog">;
+};
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+const formatDate = (date: Date) =>
+  date.toLocaleDateString("en", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+---
+
+<BaseLayout
+  title={`${post.data.title} | CX Blog`}
+  description={post.data.description}
+>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="CX home">
+      <span>CX Lang</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="/">Home</a>
+      <a href="/features">Features</a>
+      <a href="/status">Status</a>
+      <a href="/blog">Blog</a>
+      <a href="/#cli">CLI</a>
+      <a href="https://github.com/edin/cxlang">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <article>
+      <header class="page-hero feature-page-hero blog-post-hero">
+        <p class="eyebrow">CX blog</p>
+        <h1>{post.data.title}</h1>
+        <p>{post.data.description}</p>
+        <div class="post-meta">
+          <time datetime={post.data.pubDate.toISOString()}>{formatDate(post.data.pubDate)}</time>
+          <span>
+            By {post.data.author}{post.data.coAuthor ? `, co-authored with ${post.data.coAuthor}` : ""}
+          </span>
+          {post.data.updatedDate && (
+            <span>Updated {formatDate(post.data.updatedDate)}</span>
+          )}
+        </div>
+      </header>
+
+      <div class="blog-post section-band light">
+        <Content />
+      </div>
+    </article>
+  </main>
+</BaseLayout>

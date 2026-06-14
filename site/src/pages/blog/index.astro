@@ -1,0 +1,68 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const posts = (await getCollection("blog", ({ data }) => !data.draft))
+  .sort((left, right) => right.data.pubDate.getTime() - left.data.pubDate.getTime());
+
+const postSlug = (id: string) => id.replace(/\.md$/, "");
+
+const formatDate = (date: Date) =>
+  date.toLocaleDateString("en", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+---
+
+<BaseLayout
+  title="CX Blog"
+  description="Development notes and release updates for the CX language experiment."
+>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="CX home">
+      <span>CX Lang</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="/">Home</a>
+      <a href="/features">Features</a>
+      <a href="/status">Status</a>
+      <a href="/blog">Blog</a>
+      <a href="/#cli">CLI</a>
+      <a href="https://github.com/edin/cxlang">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-hero feature-page-hero" aria-labelledby="blog-title">
+      <p class="eyebrow">Development notes</p>
+      <h1 id="blog-title">CX Blog</h1>
+      <p>
+        Short updates about the compiler, standard library, tooling, and design
+        direction as CX changes.
+      </p>
+    </section>
+
+    <section class="blog-list section-band light" aria-label="Blog posts">
+      {posts.map((post) => (
+        <article class="blog-card">
+          <div>
+            <p class="blog-date">{formatDate(post.data.pubDate)}</p>
+            <h2>
+              <a href={`/blog/${postSlug(post.id)}`}>{post.data.title}</a>
+            </h2>
+            <p class="blog-author">
+              By {post.data.author}{post.data.coAuthor ? `, co-authored with ${post.data.coAuthor}` : ""}
+            </p>
+            <p>{post.data.description}</p>
+          </div>
+          {post.data.tags.length > 0 && (
+            <ul class="tag-list" aria-label="Post tags">
+              {post.data.tags.map((tag) => <li>{tag}</li>)}
+            </ul>
+          )}
+        </article>
+      ))}
+    </section>
+  </main>
+</BaseLayout>
