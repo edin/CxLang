@@ -10,7 +10,6 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     private TypeSystem? _typeSystem;
     private TypeRefParser? _typeRefParser;
     private ProgramNode? _program;
-    private IReadOnlyDictionary<string, string> _globals = new Dictionary<string, string>(StringComparer.Ordinal);
     private TypeEnvironment _globalTypeEnvironment = new();
 
     public ProgramNode Apply(ProgramNode program)
@@ -24,11 +23,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         _typeRefParser = new TypeRefParser(programWithGlobals);
         _resolver = new ExpressionTypeResolver(programWithGlobals);
         _typeSystem = new TypeSystem(programWithGlobals);
-        _globals = globalVariables
-            .Where(global => !string.IsNullOrWhiteSpace(TypeText(global.TypeNode)))
-            .GroupBy(global => global.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => TypeText(group.First().TypeNode), StringComparer.Ordinal);
-        _globalTypeEnvironment = TypeEnvironment.FromLegacyStrings(_typeRefParser, _globals);
+        _globalTypeEnvironment = BuildGlobalTypeEnvironment(globalVariables);
 
         return programWithGlobals with
         {
@@ -46,28 +41,27 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private IReadOnlyList<GlobalVariableNode> InferGlobalVariables(IReadOnlyList<GlobalVariableNode> globals)
     {
-        var variables = globals
-            .Where(global => !string.IsNullOrWhiteSpace(TypeText(global.TypeNode)))
-            .GroupBy(global => global.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => TypeText(group.First().TypeNode), StringComparer.Ordinal);
-        var typeEnvironment = TypeEnvironment.FromLegacyStrings(RequireTypeRefParser(), variables);
+        var typeEnvironment = BuildGlobalTypeEnvironment(globals);
         var inferred = new List<GlobalVariableNode>();
 
         foreach (var global in globals)
         {
-            var initializer = InferExpression(global.Initializer, variables, typeEnvironment);
+        var declaredTypeRef = TypeRefOrUnknown(global.TypeNode);
+        var initializer = InferExpression(
+            global.Initializer,
+            typeEnvironment,
+            declaredTypeRef is TypeRef.Unknown ? null : declaredTypeRef);
             var type = InferVariableType(
                 global.Location,
                 global.Name,
                 TypeText(global.TypeNode),
                 initializer,
-                variables,
                 typeEnvironment,
                 "global");
 
             if (!string.IsNullOrWhiteSpace(type))
             {
-                SetVariableType(variables, typeEnvironment, global.Name, ParseTypeRef(type));
+                SetVariableType(typeEnvironment, global.Name, ParseTypeRef(type));
             }
 
             inferred.Add(global with
@@ -80,35 +74,44 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         return inferred;
     }
 
+    private TypeEnvironment BuildGlobalTypeEnvironment(IEnumerable<GlobalVariableNode> globals)
+    {
+        var typeEnvironment = new TypeEnvironment();
+        foreach (var global in globals)
+        {
+            var type = TypeRefOrUnknown(global.TypeNode);
+            if (type is not TypeRef.Unknown)
+            {
+                typeEnvironment.Set(global.Name, type);
+            }
+        }
+
+        return typeEnvironment;
+    }
+
     private FunctionNode InferFunction(FunctionNode function)
     {
-        var variables = _globals
-            .Concat(function.Parameters
-            .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => new KeyValuePair<string, string>(parameter.Name, TypeText(parameter.TypeNode))))
-            .GroupBy(pair => pair.Key, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First().Value, StringComparer.Ordinal);
         var typeEnvironment = _globalTypeEnvironment.Clone();
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
-            SetVariableType(variables, typeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
+            SetVariableType(typeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
         }
 
         return function with
         {
-            Body = InferStatements(function.Body, variables, typeEnvironment),
+            Body = InferStatements(function.Body, typeEnvironment, TypeRefOrUnknown(function.ReturnTypeNode)),
         };
     }
 
     private IReadOnlyList<StatementNode> InferStatements(
         IReadOnlyList<StatementNode> statements,
-        Dictionary<string, string> variables,
-        TypeEnvironment typeEnvironment)
+        TypeEnvironment typeEnvironment,
+        TypeRef? functionReturnType = null)
     {
         var inferred = new List<StatementNode>();
         foreach (var statement in statements)
         {
-            inferred.Add(InferStatement(statement, variables, typeEnvironment));
+            inferred.Add(InferStatement(statement, typeEnvironment, functionReturnType));
         }
 
         return inferred;
@@ -116,47 +119,47 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private StatementNode InferStatement(
         StatementNode statement,
-        Dictionary<string, string> variables,
-        TypeEnvironment typeEnvironment) => statement switch
+        TypeEnvironment typeEnvironment,
+        TypeRef? functionReturnType = null) => statement switch
     {
-        LetStatement let => InferLetStatement(let, variables, typeEnvironment),
-        ReturnStatement ret => ret with { Expression = InferExpression(ret.Expression, variables, typeEnvironment) },
-        CStatement c => c with { Expression = InferExpression(c.Expression, variables, typeEnvironment)! },
+        LetStatement let => InferLetStatement(let, typeEnvironment),
+        ReturnStatement ret => ret with { Expression = InferExpression(ret.Expression, typeEnvironment, functionReturnType) },
+        CStatement c => c with { Expression = InferExpression(c.Expression, typeEnvironment)! },
         IfStatement ifStatement => ifStatement with
         {
-            Condition = InferExpression(ifStatement.Condition, variables, typeEnvironment)!,
-            ThenBody = InferStatements(ifStatement.ThenBody, CopyVariables(variables), typeEnvironment.Clone()),
+            Condition = InferExpression(ifStatement.Condition, typeEnvironment)!,
+            ThenBody = InferStatements(ifStatement.ThenBody, typeEnvironment.Clone(), functionReturnType),
             ElseBranch = ifStatement.ElseBranch is null
                 ? null
-                : InferStatement(ifStatement.ElseBranch, CopyVariables(variables), typeEnvironment.Clone()),
+                : InferStatement(ifStatement.ElseBranch, typeEnvironment.Clone(), functionReturnType),
         },
         ElseBlockStatement elseBlock => elseBlock with
         {
-            Body = InferStatements(elseBlock.Body, CopyVariables(variables), typeEnvironment.Clone()),
+            Body = InferStatements(elseBlock.Body, typeEnvironment.Clone(), functionReturnType),
         },
         WhileStatement whileStatement => whileStatement with
         {
-            Condition = InferExpression(whileStatement.Condition, variables, typeEnvironment)!,
-            Body = InferStatements(whileStatement.Body, CopyVariables(variables), typeEnvironment.Clone()),
+            Condition = InferExpression(whileStatement.Condition, typeEnvironment)!,
+            Body = InferStatements(whileStatement.Body, typeEnvironment.Clone(), functionReturnType),
         },
-        ForStatement forStatement => InferForStatement(forStatement, variables, typeEnvironment),
-        ForeachStatement foreachStatement => InferForeachStatement(foreachStatement, variables, typeEnvironment),
+        ForStatement forStatement => InferForStatement(forStatement, typeEnvironment, functionReturnType),
+        ForeachStatement foreachStatement => InferForeachStatement(foreachStatement, typeEnvironment, functionReturnType),
         SwitchStatement switchStatement => switchStatement with
         {
-            Expression = InferExpression(switchStatement.Expression, variables, typeEnvironment)!,
+            Expression = InferExpression(switchStatement.Expression, typeEnvironment)!,
             Cases = switchStatement.Cases.Select(switchCase => switchCase with
             {
-                Pattern = InferExpression(switchCase.Pattern, variables, typeEnvironment)!,
-                Body = InferStatements(switchCase.Body, CopyVariables(variables), typeEnvironment.Clone()),
+                Pattern = InferExpression(switchCase.Pattern, typeEnvironment)!,
+                Body = InferStatements(switchCase.Body, typeEnvironment.Clone(), functionReturnType),
             }).ToList(),
-            DefaultBody = InferStatements(switchStatement.DefaultBody, CopyVariables(variables), typeEnvironment.Clone()),
+            DefaultBody = InferStatements(switchStatement.DefaultBody, typeEnvironment.Clone(), functionReturnType),
         },
         MatchStatement matchStatement => matchStatement with
         {
-            Expression = InferExpression(matchStatement.Expression, variables, typeEnvironment)!,
+            Expression = InferExpression(matchStatement.Expression, typeEnvironment)!,
             Arms = matchStatement.Arms.Select(arm => arm with
             {
-                Body = InferStatements(arm.Body, CopyVariables(variables), typeEnvironment.Clone()),
+                Body = InferStatements(arm.Body, typeEnvironment.Clone(), functionReturnType),
             }).ToList(),
         },
         _ => statement,
@@ -164,14 +167,17 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private LetStatement InferLetStatement(
         LetStatement let,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment)
     {
-        var initializer = InferExpression(let.Initializer, variables, typeEnvironment);
-        var type = InferVariableType(let.Location, let.Name, TypeText(let.TypeNode), initializer, variables, typeEnvironment, "local");
+        var declaredTypeRef = TypeRefOrUnknown(let.TypeNode);
+        var initializer = InferExpression(
+            let.Initializer,
+            typeEnvironment,
+            declaredTypeRef is TypeRef.Unknown ? null : declaredTypeRef);
+        var type = InferVariableType(let.Location, let.Name, TypeText(let.TypeNode), initializer, typeEnvironment, "local");
         if (!string.IsNullOrWhiteSpace(type))
         {
-            SetVariableType(variables, typeEnvironment, let.Name, ParseTypeRef(type));
+            SetVariableType(typeEnvironment, let.Name, ParseTypeRef(type));
         }
 
         return let with
@@ -183,51 +189,56 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private ForStatement InferForStatement(
         ForStatement forStatement,
-        Dictionary<string, string> variables,
-        TypeEnvironment typeEnvironment)
+        TypeEnvironment typeEnvironment,
+        TypeRef? functionReturnType)
     {
-        var forVariables = CopyVariables(variables);
         var forTypeEnvironment = typeEnvironment.Clone();
-        var initializer = InferForInitializer(forStatement.Initializer, forVariables, forTypeEnvironment);
+        var cachedRangeEndInitializer = InferOptionalForDeclarationInitializer(forStatement.CachedRangeEndInitializer, forTypeEnvironment);
+        var counterInitializer = InferOptionalForDeclarationInitializer(forStatement.CounterInitializer, forTypeEnvironment);
+        var initializer = InferForInitializer(forStatement.Initializer, forTypeEnvironment);
         return forStatement with
         {
+            CachedRangeEndInitializer = cachedRangeEndInitializer,
+            CounterInitializer = counterInitializer,
             Initializer = initializer,
-            Condition = InferExpression(forStatement.Condition, forVariables, forTypeEnvironment)!,
-            Increment = InferExpression(forStatement.Increment, forVariables, forTypeEnvironment)!,
-            Body = InferStatements(forStatement.Body, forVariables, forTypeEnvironment),
+            Condition = InferExpression(forStatement.Condition, forTypeEnvironment)!,
+            Increment = InferExpression(forStatement.Increment, forTypeEnvironment)!,
+            CounterIncrement = InferExpression(forStatement.CounterIncrement, forTypeEnvironment),
+            Body = InferStatements(forStatement.Body, forTypeEnvironment, functionReturnType),
         };
     }
 
     private ForInitializerNode InferForInitializer(
         ForInitializerNode initializer,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment) => initializer switch
     {
-        ForDeclarationInitializerNode declaration => InferForDeclarationInitializer(declaration, variables, typeEnvironment),
+        ForDeclarationInitializerNode declaration => InferForDeclarationInitializer(declaration, typeEnvironment),
         ForExpressionInitializerNode expression => expression with
         {
-            Expression = InferExpression(expression.Expression, variables, typeEnvironment)!,
+            Expression = InferExpression(expression.Expression, typeEnvironment)!,
         },
         _ => initializer,
     };
 
     private ForDeclarationInitializerNode InferForDeclarationInitializer(
         ForDeclarationInitializerNode declaration,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment)
     {
-        var initializer = InferExpression(declaration.Initializer, variables, typeEnvironment);
+        var declaredTypeRef = TypeRefOrUnknown(declaration.TypeNode);
+        var initializer = InferExpression(
+            declaration.Initializer,
+            typeEnvironment,
+            declaredTypeRef is TypeRef.Unknown ? null : declaredTypeRef);
         var type = InferVariableType(
             declaration.Location,
             declaration.Name,
             TypeText(declaration.TypeNode),
             initializer,
-            variables,
             typeEnvironment,
             "for variable");
         if (!string.IsNullOrWhiteSpace(type))
         {
-            SetVariableType(variables, typeEnvironment, declaration.Name, ParseTypeRef(type));
+            SetVariableType(typeEnvironment, declaration.Name, ParseTypeRef(type));
         }
 
         return declaration with
@@ -237,18 +248,34 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         };
     }
 
+    private ForDeclarationInitializerNode? InferOptionalForDeclarationInitializer(
+        ForDeclarationInitializerNode? declaration,
+        TypeEnvironment typeEnvironment) =>
+        declaration is null ? null : InferForDeclarationInitializer(declaration, typeEnvironment);
+
     private static TypeNode? CreateInferredTypeNode(Location location, string type) =>
         string.IsNullOrWhiteSpace(type)
             ? null
             : TypeNode.CreateFromText(location, type);
 
+    private static TypeNode? CreateInferredTypeNode(Location location, TypeRef? type)
+    {
+        if (type is null or TypeRef.Unknown)
+        {
+            return null;
+        }
+
+        var typeNode = TypeNode.CreateFromText(location, TypeRefFormatter.ToCxString(type));
+        typeNode.Semantic.Type = type;
+        return typeNode;
+    }
+
     private ForeachStatement InferForeachStatement(
         ForeachStatement foreachStatement,
-        Dictionary<string, string> variables,
-        TypeEnvironment typeEnvironment)
+        TypeEnvironment typeEnvironment,
+        TypeRef? functionReturnType)
     {
-        var iterableExpression = InferExpression(foreachStatement.IterableExpression, variables, typeEnvironment);
-        var foreachVariables = CopyVariables(variables);
+        var iterableExpression = InferExpression(foreachStatement.IterableExpression, typeEnvironment);
         var foreachTypeEnvironment = typeEnvironment.Clone();
         var iterableType = _resolver?.Resolve(iterableExpression, typeEnvironment);
         string? elementType = null;
@@ -256,7 +283,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         if (iterableExpression is ScalarRangeExpressionNode && iterableType is not null)
         {
             elementType = iterableType;
-            AddForeachBindings(foreachStatement, foreachVariables, foreachTypeEnvironment, elementType);
+            AddForeachBindings(foreachStatement, foreachTypeEnvironment, elementType);
         }
         else if (iterableType is not null
             && TryResolveForeachTypes(foreachStatement, iterableType, out elementType, out keyType))
@@ -265,13 +292,12 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             {
                 var keyBindingType = TypeTextOrNull(keyBinding.TypeNode);
                 SetVariableType(
-                    foreachVariables,
                     foreachTypeEnvironment,
                     keyBinding.Name,
                     ParseTypeRef(keyBindingType ?? keyType));
             }
 
-            AddForeachBindings(foreachStatement, foreachVariables, foreachTypeEnvironment, elementType);
+            AddForeachBindings(foreachStatement, foreachTypeEnvironment, elementType);
         }
 
         var typedForeachStatement = elementType is null
@@ -284,7 +310,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             IndexBinding = typedForeachStatement.IndexBinding,
             KeyBinding = typedForeachStatement.KeyBinding,
             ValueBinding = typedForeachStatement.ValueBinding,
-            Body = InferStatements(foreachStatement.Body, foreachVariables, foreachTypeEnvironment),
+            Body = InferStatements(foreachStatement.Body, foreachTypeEnvironment, functionReturnType),
         };
     }
 
@@ -312,21 +338,20 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private void AddForeachBindings(
         ForeachStatement foreachStatement,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         string elementType)
     {
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
             var indexBindingType = TypeTextOrNull(indexBinding.TypeNode);
-            SetVariableType(variables, typeEnvironment, indexBinding.Name, ParseTypeRef(indexBindingType ?? "usize"));
+            SetVariableType(typeEnvironment, indexBinding.Name, ParseTypeRef(indexBindingType ?? "usize"));
         }
 
         var valueBindingType = TypeTextOrNull(foreachStatement.ValueBinding.TypeNode);
         var valueType = valueBindingType is null
             ? elementType
             : valueBindingType;
-        SetVariableType(variables, typeEnvironment, foreachStatement.ValueBinding.Name, ParseTypeRef(valueType));
+        SetVariableType(typeEnvironment, foreachStatement.ValueBinding.Name, ParseTypeRef(valueType));
     }
 
     private bool TryResolveForeachTypes(
@@ -350,7 +375,6 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         string name,
         string declaredType,
         ExpressionNode? initializer,
-        IReadOnlyDictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         string subject)
     {
@@ -382,7 +406,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         {
             diagnostics.Report(
                 location,
-                BuildUnknownExpressionTypeDiagnostic(subject, name, initializer, variables, typeEnvironment));
+                BuildUnknownExpressionTypeDiagnostic(subject, name, initializer, typeEnvironment));
             return declaredType;
         }
 
@@ -393,10 +417,9 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         string subject,
         string name,
         ExpressionNode initializer,
-        IReadOnlyDictionary<string, string> variables,
         TypeEnvironment typeEnvironment)
     {
-        if (TryBuildGenericInferenceDiagnostic(subject, name, initializer, variables, typeEnvironment) is { } diagnostic)
+        if (TryBuildGenericInferenceDiagnostic(subject, name, initializer, typeEnvironment) is { } diagnostic)
         {
             return diagnostic;
         }
@@ -408,7 +431,6 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         string subject,
         string name,
         ExpressionNode initializer,
-        IReadOnlyDictionary<string, string> variables,
         TypeEnvironment typeEnvironment)
     {
         if (_program is null || _resolver is null)
@@ -442,7 +464,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             return null;
         }
 
-        if (!variables.TryGetValue(targetName, out _))
+        if (!typeEnvironment.Types.ContainsKey(targetName))
         {
             var staticFunction = _program.Functions.FirstOrDefault(function =>
                 function.IsStatic
@@ -524,8 +546,8 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private ExpressionNode? InferExpression(
         ExpressionNode? expression,
-        IReadOnlyDictionary<string, string> variables,
-        TypeEnvironment typeEnvironment)
+        TypeEnvironment typeEnvironment,
+        TypeRef? expectedType = null)
     {
         if (expression is null)
         {
@@ -536,78 +558,78 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         {
             ParenthesizedExpressionNode parenthesized => parenthesized with
             {
-                Expression = InferExpression(parenthesized.Expression, variables, typeEnvironment)!,
+                Expression = InferExpression(parenthesized.Expression, typeEnvironment, expectedType)!,
             },
             CastExpressionNode cast => cast with
             {
-                Expression = InferExpression(cast.Expression, variables, typeEnvironment)!,
+                Expression = InferExpression(cast.Expression, typeEnvironment)!,
             },
             UnaryExpressionNode unary => unary with
             {
-                Operand = InferExpression(unary.Operand, variables, typeEnvironment)!,
+                Operand = InferExpression(unary.Operand, typeEnvironment)!,
             },
             PostfixExpressionNode postfix => postfix with
             {
-                Operand = InferExpression(postfix.Operand, variables, typeEnvironment)!,
+                Operand = InferExpression(postfix.Operand, typeEnvironment)!,
             },
             SizeOfExpressionNode sizeOf => sizeOf with
             {
-                ExpressionOperand = InferExpression(sizeOf.ExpressionOperand, variables, typeEnvironment),
+                ExpressionOperand = InferExpression(sizeOf.ExpressionOperand, typeEnvironment),
             },
             BinaryExpressionNode binary => binary with
             {
-                Left = InferExpression(binary.Left, variables, typeEnvironment)!,
-                Right = InferExpression(binary.Right, variables, typeEnvironment)!,
+                Left = InferExpression(binary.Left, typeEnvironment)!,
+                Right = InferExpression(binary.Right, typeEnvironment)!,
             },
             ScalarRangeExpressionNode range => range with
             {
-                Start = InferExpression(range.Start, variables, typeEnvironment)!,
-                End = InferExpression(range.End, variables, typeEnvironment)!,
+                Start = InferExpression(range.Start, typeEnvironment)!,
+                End = InferExpression(range.End, typeEnvironment)!,
             },
             ConditionalExpressionNode conditional => conditional with
             {
-                Condition = InferExpression(conditional.Condition, variables, typeEnvironment)!,
-                WhenTrue = InferExpression(conditional.WhenTrue, variables, typeEnvironment)!,
-                WhenFalse = InferExpression(conditional.WhenFalse, variables, typeEnvironment)!,
+                Condition = InferExpression(conditional.Condition, typeEnvironment)!,
+                WhenTrue = InferExpression(conditional.WhenTrue, typeEnvironment, expectedType)!,
+                WhenFalse = InferExpression(conditional.WhenFalse, typeEnvironment, expectedType)!,
             },
             InitializerExpressionNode initializer => initializer with
             {
                 Fields = initializer.Fields.Select(field => field with
                 {
-                    Value = InferExpression(field.Value, variables, typeEnvironment)!,
+                    Value = InferExpression(field.Value, typeEnvironment)!,
                 }).ToList(),
                 Values = initializer.Values
-                    .Select(value => InferExpression(value, variables, typeEnvironment)!)
+                    .Select(value => InferExpression(value, typeEnvironment)!)
                     .ToList(),
             },
-            FunctionExpressionNode function => InferFunctionExpression(function, variables, typeEnvironment),
+            FunctionExpressionNode function => InferFunctionExpression(function, typeEnvironment, expectedType),
             AssignmentExpressionNode assignment => assignment with
             {
-                Target = InferExpression(assignment.Target, variables, typeEnvironment)!,
-                Value = InferExpression(assignment.Value, variables, typeEnvironment)!,
+                Target = InferExpression(assignment.Target, typeEnvironment)!,
+                Value = InferExpression(assignment.Value, typeEnvironment)!,
             },
             CallExpressionNode call => call with
             {
-                Callee = InferExpression(call.Callee, variables, typeEnvironment)!,
+                Callee = InferExpression(call.Callee, typeEnvironment)!,
                 Arguments = call.Arguments
-                    .Select(argument => InferExpression(argument, variables, typeEnvironment)!)
+                    .Select(argument => InferExpression(argument, typeEnvironment)!)
                     .ToList(),
             },
             GenericCallExpressionNode call => call with
             {
-                Callee = InferExpression(call.Callee, variables, typeEnvironment)!,
+                Callee = InferExpression(call.Callee, typeEnvironment)!,
                 Arguments = call.Arguments
-                    .Select(argument => InferExpression(argument, variables, typeEnvironment)!)
+                    .Select(argument => InferExpression(argument, typeEnvironment)!)
                     .ToList(),
             },
             MemberExpressionNode member => member with
             {
-                Target = InferExpression(member.Target, variables, typeEnvironment)!,
+                Target = InferExpression(member.Target, typeEnvironment)!,
             },
             IndexExpressionNode index => index with
             {
-                Target = InferExpression(index.Target, variables, typeEnvironment)!,
-                Index = InferExpression(index.Index, variables, typeEnvironment)!,
+                Target = InferExpression(index.Target, typeEnvironment)!,
+                Index = InferExpression(index.Index, typeEnvironment)!,
             },
             _ => expression,
         };
@@ -615,27 +637,29 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private FunctionExpressionNode InferFunctionExpression(
         FunctionExpressionNode function,
-        IReadOnlyDictionary<string, string> variables,
-        TypeEnvironment typeEnvironment)
+        TypeEnvironment typeEnvironment,
+        TypeRef? expectedType)
     {
-        var functionVariables = CopyVariables(variables);
+        var inferredReturnType = function.ReturnTypeNode is null && expectedType is TypeRef.Function expectedFunction
+            ? expectedFunction.ReturnType
+            : null;
+        var returnTypeNode = function.ReturnTypeNode ?? CreateInferredTypeNode(function.Location, inferredReturnType);
+        var functionReturnType = TypeRefOrUnknown(returnTypeNode);
         var functionTypeEnvironment = typeEnvironment.Clone();
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
-            SetVariableType(functionVariables, functionTypeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
+            SetVariableType(functionTypeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
         }
 
         return function with
         {
-            ExpressionBody = InferExpression(function.ExpressionBody, functionVariables, functionTypeEnvironment),
+            ReturnTypeNode = returnTypeNode,
+            ExpressionBody = InferExpression(function.ExpressionBody, functionTypeEnvironment, functionReturnType),
             BlockBody = function.BlockBody is null
                 ? null
-                : InferStatements(function.BlockBody, functionVariables, functionTypeEnvironment),
+                : InferStatements(function.BlockBody, functionTypeEnvironment, functionReturnType),
         };
     }
-
-    private static Dictionary<string, string> CopyVariables(IReadOnlyDictionary<string, string> variables) =>
-        new(variables, StringComparer.Ordinal);
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
@@ -671,12 +695,10 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         _typeRefParser ?? throw new InvalidOperationException("Type inference has no TypeRef parser.");
 
     private static void SetVariableType(
-        IDictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         string name,
         TypeRef type)
     {
-        variables[name] = type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
         typeEnvironment.Set(name, type);
     }
 

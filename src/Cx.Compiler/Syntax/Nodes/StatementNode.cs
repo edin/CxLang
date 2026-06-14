@@ -39,7 +39,10 @@ public sealed record ForStatement(
     ForInitializerNode Initializer,
     ExpressionNode Condition,
     ExpressionNode Increment,
-    IReadOnlyList<StatementNode> Body) : StatementNode(Location);
+    IReadOnlyList<StatementNode> Body,
+    ForDeclarationInitializerNode? CachedRangeEndInitializer = null,
+    ForDeclarationInitializerNode? CounterInitializer = null,
+    ExpressionNode? CounterIncrement = null) : StatementNode(Location);
 
 public abstract record ForInitializerNode(Location Location) : SyntaxNode(Location);
 

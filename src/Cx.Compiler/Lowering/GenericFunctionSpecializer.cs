@@ -84,9 +84,12 @@ internal static class GenericFunctionSpecializer
             },
             ForStatement forStatement => forStatement with
             {
+                CachedRangeEndInitializer = SubstituteOptionalForDeclarationInitializer(forStatement.CachedRangeEndInitializer, substitutions, typeSubstitutions),
+                CounterInitializer = SubstituteOptionalForDeclarationInitializer(forStatement.CounterInitializer, substitutions, typeSubstitutions),
                 Initializer = SubstituteForInitializer(forStatement.Initializer, substitutions, typeSubstitutions),
                 Condition = SubstituteExpression(forStatement.Condition, substitutions, typeSubstitutions),
                 Increment = SubstituteExpression(forStatement.Increment, substitutions, typeSubstitutions),
+                CounterIncrement = SubstituteOptionalExpression(forStatement.CounterIncrement, substitutions, typeSubstitutions),
                 Body = forStatement.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
             },
             ForeachStatement foreachStatement => foreachStatement with
@@ -141,6 +144,18 @@ internal static class GenericFunctionSpecializer
         },
         _ => initializer,
     };
+
+    private static ForDeclarationInitializerNode? SubstituteOptionalForDeclarationInitializer(
+        ForDeclarationInitializerNode? initializer,
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
+        initializer is null
+            ? null
+            : initializer with
+            {
+                TypeNode = SubstituteTypeNode(initializer.TypeNode, substitutions, typeSubstitutions),
+                Initializer = SubstituteOptionalExpression(initializer.Initializer, substitutions, typeSubstitutions),
+            };
 
     private static ForeachBinding? SubstituteForeachBinding(
         ForeachBinding? binding,

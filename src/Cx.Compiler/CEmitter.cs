@@ -489,17 +489,49 @@ public sealed partial class CEmitter
                 .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 2))
                 .ToList());
 
-    private static CForStatement ToCForStatement(
+    private static CStatementNode ToCForStatement(
         ForStatement forStatement,
         ImportedNameLowerer nameLowerer,
-        int rawIndentLevel) =>
-        new(
+        int rawIndentLevel)
+    {
+        var body = forStatement.Body
+            .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 1))
+            .ToList();
+        if (forStatement.CounterIncrement is not null)
+        {
+            body.Add(new CExpressionStatement(nameLowerer.LowerExpression(forStatement.CounterIncrement)));
+        }
+
+        var loop = new CForStatement(
             ToCForInitializer(forStatement.Initializer, nameLowerer),
             nameLowerer.LowerExpression(forStatement.Condition),
             nameLowerer.LowerExpression(forStatement.Increment),
-            forStatement.Body
-                .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 1))
-                .ToList());
+            body);
+
+        var prefix = new List<CStatementNode>();
+        if (forStatement.CachedRangeEndInitializer is not null)
+        {
+            prefix.Add(ToCLocalDeclaration(forStatement.CachedRangeEndInitializer, nameLowerer));
+        }
+
+        if (forStatement.CounterInitializer is not null)
+        {
+            prefix.Add(ToCLocalDeclaration(forStatement.CounterInitializer, nameLowerer));
+        }
+
+        return prefix.Count == 0
+            ? loop
+            : new CBlockStatement(prefix.Concat([loop]).ToList());
+    }
+
+    private static CLocalDeclarationStatement ToCLocalDeclaration(
+        ForDeclarationInitializerNode declaration,
+        ImportedNameLowerer nameLowerer) =>
+        new(
+            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)}",
+            declaration.Initializer is null
+                ? null
+                : nameLowerer.LowerInitializerExpression(declaration.TypeNode?.Semantic.Type, ForDeclarationInitializerTypeText(declaration), declaration.Initializer));
 
     private static CForInitializerNode ToCForInitializer(
         ForInitializerNode initializer,
@@ -521,11 +553,6 @@ public sealed partial class CEmitter
         int rawIndentLevel)
     {
         var iterableExpression = ExpressionText(foreachStatement.IterableExpression);
-
-        if (foreachStatement.IterableExpression is ScalarRangeExpressionNode rangeExpression)
-        {
-            return ToCScalarRangeForeachStatement(foreachStatement, rangeExpression, nameLowerer, rawIndentLevel);
-        }
 
         if (foreachStatement.KeyBinding is not null)
         {
@@ -671,94 +698,6 @@ public sealed partial class CEmitter
 
         return new CBlockStatement(block);
     }
-
-    private static CStatementNode ToCScalarRangeForeachStatement(
-        ForeachStatement foreachStatement,
-        ScalarRangeExpressionNode rangeExpression,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel)
-    {
-        if (foreachStatement.KeyBinding is not null)
-        {
-            return new CRawStatement(IndentLine("/* key/value foreach is not supported for scalar ranges */", rawIndentLevel));
-        }
-
-        var itemType = GetForeachValueType(foreachStatement, InferScalarRangeType(rangeExpression, nameLowerer));
-        var itemName = foreachStatement.ItemName;
-        var bodyLowerer = nameLowerer.WithLocal(itemName, itemType);
-        var indexName = foreachStatement.IndexBinding?.Name ?? $"__cx_i{rawIndentLevel}";
-        var loopIndexName = foreachStatement.IndexBinding is null
-            ? indexName
-            : $"__cx_i{rawIndentLevel}";
-        if (foreachStatement.IndexBinding is { } indexBinding)
-        {
-            bodyLowerer = bodyLowerer.WithLocal(indexBinding.Name, GetForeachIndexType(foreachStatement));
-        }
-
-        var body = new List<CStatementNode>();
-        if (foreachStatement.IndexBinding is not null)
-        {
-            body.Add(new CLocalDeclarationStatement(
-                "const " + LowerDeclaration(GetForeachIndexType(foreachStatement), indexName),
-                new CNameExpression(loopIndexName)));
-        }
-
-        body.AddRange(foreachStatement.Body.Select(statement => ToCStatement(statement, bodyLowerer, rawIndentLevel + 1)));
-
-        var conditionOperator = rangeExpression.IsInclusive ? "<=" : "<";
-        var forStatement = new CForStatement(
-            new CDeclarationForInitializer(
-                LowerDeclaration(itemType, itemName, nameLowerer.SelfType),
-                nameLowerer.LowerExpression(rangeExpression.Start)),
-            new CBinaryExpression(
-                new CNameExpression(itemName),
-                conditionOperator,
-                nameLowerer.LowerExpression(rangeExpression.End)),
-            new CPostfixExpression(new CNameExpression(itemName), "++"),
-            body);
-
-        if (foreachStatement.IndexBinding is null)
-        {
-            return forStatement;
-        }
-
-        return new CBlockStatement(
-        [
-            new CLocalDeclarationStatement(
-                LowerDeclaration(GetForeachIndexType(foreachStatement), loopIndexName),
-                new CLiteralExpression("0")),
-            forStatement with
-            {
-                Body = body.Concat([new CExpressionStatement(new CPostfixExpression(new CNameExpression(loopIndexName), "++"))]).ToList(),
-            },
-        ]);
-    }
-
-    private static string InferScalarRangeType(ScalarRangeExpressionNode rangeExpression, ImportedNameLowerer nameLowerer)
-    {
-        var startType = nameLowerer.ResolveExpressionTypeForLowering(rangeExpression.Start);
-        var endType = nameLowerer.ResolveExpressionTypeForLowering(rangeExpression.End);
-        if (string.Equals(startType, endType, StringComparison.Ordinal))
-        {
-            return startType ?? "int";
-        }
-
-        if (startType == "int" && IsIntegerLiteral(rangeExpression.Start) && endType is not null)
-        {
-            return endType;
-        }
-
-        if (endType == "int" && IsIntegerLiteral(rangeExpression.End) && startType is not null)
-        {
-            return startType;
-        }
-
-        return startType ?? endType ?? "int";
-    }
-
-    private static bool IsIntegerLiteral(ExpressionNode expression) =>
-        expression is LiteralExpressionNode literal
-        && Regex.IsMatch(literal.SourceText.Trim(), @"^-?\d+$");
 
     private static string GetForeachIndexType(ForeachStatement foreachStatement) =>
         foreachStatement.IndexBinding is { } indexBinding && !string.IsNullOrWhiteSpace(ForeachBindingTypeText(indexBinding))
@@ -1109,9 +1048,12 @@ public sealed partial class CEmitter
                     }
                     break;
                 case ForStatement forStatement:
-                    foreach (var type in EnumerateForInitializerTypeReferences(forStatement.Initializer)
+                    foreach (var type in EnumerateForInitializerTypeReferences(forStatement.CachedRangeEndInitializer)
+                        .Concat(EnumerateForInitializerTypeReferences(forStatement.CounterInitializer))
+                        .Concat(EnumerateForInitializerTypeReferences(forStatement.Initializer))
                         .Concat(EnumerateExpressionTypeReferences(forStatement.Condition))
                         .Concat(EnumerateExpressionTypeReferences(forStatement.Increment))
+                        .Concat(EnumerateExpressionTypeReferences(forStatement.CounterIncrement))
                         .Concat(EnumerateStatementTypeReferences(forStatement.Body)))
                     {
                         yield return type;
@@ -1160,7 +1102,7 @@ public sealed partial class CEmitter
         }
     }
 
-    private static IEnumerable<string> EnumerateForInitializerTypeReferences(ForInitializerNode initializer) => initializer switch
+    private static IEnumerable<string> EnumerateForInitializerTypeReferences(ForInitializerNode? initializer) => initializer switch
     {
         ForDeclarationInitializerNode declaration => [ForDeclarationInitializerTypeText(declaration), .. EnumerateExpressionTypeReferences(declaration.Initializer)],
         ForExpressionInitializerNode expression => EnumerateExpressionTypeReferences(expression.Expression),
@@ -1361,6 +1303,22 @@ public sealed partial class CEmitter
                     }
                     break;
                 case ForStatement forStatement:
+                    if (forStatement.CachedRangeEndInitializer is { Initializer: not null } cachedRangeEnd)
+                    {
+                        foreach (var expression in EnumerateExpressionNodes(cachedRangeEnd.Initializer))
+                        {
+                            yield return expression;
+                        }
+                    }
+
+                    if (forStatement.CounterInitializer is { Initializer: not null } counter)
+                    {
+                        foreach (var expression in EnumerateExpressionNodes(counter.Initializer))
+                        {
+                            yield return expression;
+                        }
+                    }
+
                     if (forStatement.Initializer is ForDeclarationInitializerNode { Initializer: not null } declaration)
                     {
                         foreach (var expression in EnumerateExpressionNodes(declaration.Initializer))
@@ -1384,6 +1342,14 @@ public sealed partial class CEmitter
                     foreach (var expression in EnumerateExpressionNodes(forStatement.Increment))
                     {
                         yield return expression;
+                    }
+
+                    if (forStatement.CounterIncrement is not null)
+                    {
+                        foreach (var expression in EnumerateExpressionNodes(forStatement.CounterIncrement))
+                        {
+                            yield return expression;
+                        }
                     }
 
                     foreach (var expression in EnumerateExpressionNodes(forStatement.Body))
@@ -1564,6 +1530,16 @@ public sealed partial class CEmitter
                     }
                     break;
                 case ForStatement forStatement:
+                    if (forStatement.CachedRangeEndInitializer is not null)
+                    {
+                        yield return (forStatement.CachedRangeEndInitializer.Name, ForDeclarationInitializerTypeText(forStatement.CachedRangeEndInitializer));
+                    }
+
+                    if (forStatement.CounterInitializer is not null)
+                    {
+                        yield return (forStatement.CounterInitializer.Name, ForDeclarationInitializerTypeText(forStatement.CounterInitializer));
+                    }
+
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
                         yield return (declaration.Name, ForDeclarationInitializerTypeText(declaration));
@@ -1739,10 +1715,7 @@ public sealed partial class CEmitter
                 EmitBlock(builder, whileStatement.Body, nameLowerer, indentLevel);
                 break;
             case ForStatement forStatement:
-                AppendIndent(builder, indentLevel);
-                builder.AppendLine(
-                    $"for ({EmitForInitializer(forStatement.Initializer, nameLowerer)}; {nameLowerer.Lower(forStatement.Condition)}; {nameLowerer.Lower(forStatement.Increment)})");
-                EmitBlock(builder, forStatement.Body, nameLowerer, indentLevel);
+                EmitForStatement(builder, forStatement, nameLowerer, indentLevel);
                 break;
             case ForeachStatement foreachStatement:
                 EmitForeachStatement(builder, foreachStatement, nameLowerer, indentLevel);
@@ -1773,6 +1746,55 @@ public sealed partial class CEmitter
         ForExpressionInitializerNode expression => nameLowerer.Lower(expression.Expression),
         _ => string.Empty,
     };
+
+    private static void EmitForStatement(
+        StringBuilder builder,
+        ForStatement forStatement,
+        ImportedNameLowerer nameLowerer,
+        int indentLevel)
+    {
+        var hasPrefix = forStatement.CachedRangeEndInitializer is not null
+            || forStatement.CounterInitializer is not null;
+        if (hasPrefix)
+        {
+            AppendIndent(builder, indentLevel);
+            builder.AppendLine("{");
+            indentLevel++;
+            if (forStatement.CachedRangeEndInitializer is not null)
+            {
+                AppendIndent(builder, indentLevel);
+                builder.AppendLine(EmitForDeclarationAsStatement(forStatement.CachedRangeEndInitializer, nameLowerer));
+            }
+
+            if (forStatement.CounterInitializer is not null)
+            {
+                AppendIndent(builder, indentLevel);
+                builder.AppendLine(EmitForDeclarationAsStatement(forStatement.CounterInitializer, nameLowerer));
+            }
+        }
+
+        AppendIndent(builder, indentLevel);
+        builder.AppendLine(
+            $"for ({EmitForInitializer(forStatement.Initializer, nameLowerer)}; {nameLowerer.Lower(forStatement.Condition)}; {nameLowerer.Lower(forStatement.Increment)})");
+        var body = forStatement.CounterIncrement is null
+            ? forStatement.Body
+            : forStatement.Body.Concat([new CStatement(forStatement.CounterIncrement.Location, forStatement.CounterIncrement)]).ToList();
+        EmitBlock(builder, body, nameLowerer, indentLevel);
+
+        if (hasPrefix)
+        {
+            indentLevel--;
+            AppendIndent(builder, indentLevel);
+            builder.AppendLine("}");
+        }
+    }
+
+    private static string EmitForDeclarationAsStatement(
+        ForDeclarationInitializerNode declaration,
+        ImportedNameLowerer nameLowerer) =>
+        declaration.Initializer is null
+            ? $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)};"
+            : $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)} = {nameLowerer.LowerInitializer(ForDeclarationInitializerTypeText(declaration), declaration.Initializer)};";
 
     private static void EmitForeachStatement(
         StringBuilder builder,
@@ -2373,8 +2395,11 @@ public sealed partial class CEmitter
         WhileStatement whileStatement => ContainsNull(whileStatement.Condition)
             || whileStatement.Body.Any(StatementUsesNull),
         ForStatement forStatement => ContainsNull(forStatement.Initializer)
+            || ContainsNull(forStatement.CachedRangeEndInitializer)
+            || ContainsNull(forStatement.CounterInitializer)
             || ContainsNull(forStatement.Condition)
             || ContainsNull(forStatement.Increment)
+            || ContainsNull(forStatement.CounterIncrement)
             || forStatement.Body.Any(StatementUsesNull),
         ForeachStatement foreachStatement => ContainsNull(foreachStatement.IterableExpression)
             || foreachStatement.Body.Any(StatementUsesNull),
@@ -2387,7 +2412,7 @@ public sealed partial class CEmitter
         _ => false,
     };
 
-    private static bool ContainsNull(ForInitializerNode initializer) => initializer switch
+    private static bool ContainsNull(ForInitializerNode? initializer) => initializer switch
     {
         ForDeclarationInitializerNode declaration => ContainsNull(declaration.Initializer),
         ForExpressionInitializerNode expression => ContainsNull(expression.Expression),

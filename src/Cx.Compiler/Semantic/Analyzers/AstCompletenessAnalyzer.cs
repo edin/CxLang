@@ -77,9 +77,12 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
                     AnalyzeStatements(whileStatement.Body);
                     break;
                 case ForStatement forStatement:
+                    AnalyzeForInitializer(forStatement.CachedRangeEndInitializer);
+                    AnalyzeForInitializer(forStatement.CounterInitializer);
                     AnalyzeForInitializer(forStatement.Initializer);
                     AnalyzeExpression(forStatement.Condition);
                     AnalyzeExpression(forStatement.Increment);
+                    AnalyzeExpression(forStatement.CounterIncrement);
                     AnalyzeStatements(forStatement.Body);
                     break;
                 case ForeachStatement foreachStatement:
@@ -108,7 +111,7 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
         }
     }
 
-    private void AnalyzeForInitializer(ForInitializerNode initializer)
+    private void AnalyzeForInitializer(ForInitializerNode? initializer)
     {
         switch (initializer)
         {

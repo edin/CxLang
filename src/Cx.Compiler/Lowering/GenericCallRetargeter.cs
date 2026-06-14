@@ -111,9 +111,16 @@ internal static class GenericCallRetargeter
                     foreach (var expression in EnumerateExpressions(whileStatement.Body)) yield return expression;
                     break;
                 case ForStatement forStatement:
+                    foreach (var expression in EnumerateForInitializerExpressions(forStatement.CachedRangeEndInitializer)) yield return expression;
+                    foreach (var expression in EnumerateForInitializerExpressions(forStatement.CounterInitializer)) yield return expression;
                     foreach (var expression in EnumerateForInitializerExpressions(forStatement.Initializer)) yield return expression;
                     foreach (var expression in EnumerateExpressions(forStatement.Condition)) yield return expression;
                     foreach (var expression in EnumerateExpressions(forStatement.Increment)) yield return expression;
+                    if (forStatement.CounterIncrement is not null)
+                    {
+                        foreach (var expression in EnumerateExpressions(forStatement.CounterIncrement)) yield return expression;
+                    }
+
                     foreach (var expression in EnumerateExpressions(forStatement.Body)) yield return expression;
                     break;
                 case ForeachStatement foreachStatement:
@@ -140,7 +147,7 @@ internal static class GenericCallRetargeter
         }
     }
 
-    private static IEnumerable<ExpressionNode> EnumerateForInitializerExpressions(ForInitializerNode initializer) => initializer switch
+    private static IEnumerable<ExpressionNode> EnumerateForInitializerExpressions(ForInitializerNode? initializer) => initializer switch
     {
         ForDeclarationInitializerNode { Initializer: not null } declaration => EnumerateExpressions(declaration.Initializer),
         ForExpressionInitializerNode expression => EnumerateExpressions(expression.Expression),

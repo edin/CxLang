@@ -140,9 +140,16 @@ internal sealed class SymbolUsageCollector
                     CollectStatements(whileStatement.Body, builder);
                     break;
                 case ForStatement forStatement:
+                    CollectForInitializer(forStatement.CachedRangeEndInitializer, builder);
+                    CollectForInitializer(forStatement.CounterInitializer, builder);
                     CollectForInitializer(forStatement.Initializer, builder);
                     CollectExpression(forStatement.Condition, builder);
                     CollectExpression(forStatement.Increment, builder);
+                    if (forStatement.CounterIncrement is not null)
+                    {
+                        CollectExpression(forStatement.CounterIncrement, builder);
+                    }
+
                     CollectStatements(forStatement.Body, builder);
                     break;
                 case ForeachStatement foreachStatement:
@@ -175,9 +182,14 @@ internal sealed class SymbolUsageCollector
     }
 
     private static void CollectForInitializer(
-        ForInitializerNode initializer,
+        ForInitializerNode? initializer,
         SymbolUsageReportBuilder builder)
     {
+        if (initializer is null)
+        {
+            return;
+        }
+
         CollectSemantic(initializer, builder);
         switch (initializer)
         {

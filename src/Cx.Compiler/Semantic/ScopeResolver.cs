@@ -164,9 +164,12 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
             case ForStatement forStatement:
                 var forScope = scope.CreateChild();
+                ResolveOptionalForInitializer(forStatement.CachedRangeEndInitializer, forScope);
+                ResolveOptionalForInitializer(forStatement.CounterInitializer, forScope);
                 ResolveForInitializer(forStatement.Initializer, forScope);
                 ResolveExpression(forStatement.Condition, forScope);
                 ResolveExpression(forStatement.Increment, forScope);
+                ResolveExpression(forStatement.CounterIncrement, forScope);
                 ResolveStatements(forStatement.Body, forScope.CreateChild());
                 break;
 
@@ -218,6 +221,14 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             case ForExpressionInitializerNode expression:
                 ResolveExpression(expression.Expression, scope);
                 break;
+        }
+    }
+
+    private void ResolveOptionalForInitializer(ForInitializerNode? initializer, Scope scope)
+    {
+        if (initializer is not null)
+        {
+            ResolveForInitializer(initializer, scope);
         }
     }
 

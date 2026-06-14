@@ -472,9 +472,16 @@ internal sealed class GenericUseCollector(ProgramNode program)
                     foreach (var expression in EnumerateExpressions(whileStatement.Body)) yield return expression;
                     break;
                 case ForStatement forStatement:
+                    foreach (var expression in EnumerateForInitializerExpressions(forStatement.CachedRangeEndInitializer)) yield return expression;
+                    foreach (var expression in EnumerateForInitializerExpressions(forStatement.CounterInitializer)) yield return expression;
                     foreach (var expression in EnumerateForInitializerExpressions(forStatement.Initializer)) yield return expression;
                     foreach (var expression in EnumerateExpressions(forStatement.Condition)) yield return expression;
                     foreach (var expression in EnumerateExpressions(forStatement.Increment)) yield return expression;
+                    if (forStatement.CounterIncrement is not null)
+                    {
+                        foreach (var expression in EnumerateExpressions(forStatement.CounterIncrement)) yield return expression;
+                    }
+
                     foreach (var expression in EnumerateExpressions(forStatement.Body)) yield return expression;
                     break;
                 case ForeachStatement foreachStatement:
@@ -501,7 +508,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
-    private static IEnumerable<ExpressionNode> EnumerateForInitializerExpressions(ForInitializerNode initializer) => initializer switch
+    private static IEnumerable<ExpressionNode> EnumerateForInitializerExpressions(ForInitializerNode? initializer) => initializer switch
     {
         ForDeclarationInitializerNode { Initializer: not null } declaration => EnumerateExpressions(declaration.Initializer),
         ForExpressionInitializerNode expression => EnumerateExpressions(expression.Expression),
@@ -636,12 +643,25 @@ internal sealed class GenericUseCollector(ProgramNode program)
                     }
                     break;
                 case ForStatement forStatement:
+                    foreach (var expression in EnumerateForInitializerTexts(forStatement.CachedRangeEndInitializer))
+                    {
+                        yield return expression;
+                    }
+                    foreach (var expression in EnumerateForInitializerTexts(forStatement.CounterInitializer))
+                    {
+                        yield return expression;
+                    }
                     foreach (var expression in EnumerateForInitializerTexts(forStatement.Initializer))
                     {
                         yield return expression;
                     }
                     yield return forStatement.Condition.SourceText;
                     yield return forStatement.Increment.SourceText;
+                    if (forStatement.CounterIncrement is not null)
+                    {
+                        yield return forStatement.CounterIncrement.SourceText;
+                    }
+
                     foreach (var nested in EnumerateExpressionTexts(forStatement.Body))
                     {
                         yield return nested;
@@ -683,7 +703,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
-    private static IEnumerable<string> EnumerateForInitializerTexts(ForInitializerNode initializer) => initializer switch
+    private static IEnumerable<string> EnumerateForInitializerTexts(ForInitializerNode? initializer) => initializer switch
     {
         ForDeclarationInitializerNode declaration when declaration.Initializer is not null =>
             [declaration.Initializer.SourceText],
@@ -726,6 +746,14 @@ internal sealed class GenericUseCollector(ProgramNode program)
                     }
                     break;
                 case ForStatement forStatement:
+                    if (forStatement.CachedRangeEndInitializer is not null)
+                    {
+                        yield return (forStatement.CachedRangeEndInitializer.Name, TypeText(forStatement.CachedRangeEndInitializer.TypeNode));
+                    }
+                    if (forStatement.CounterInitializer is not null)
+                    {
+                        yield return (forStatement.CounterInitializer.Name, TypeText(forStatement.CounterInitializer.TypeNode));
+                    }
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
                         yield return (declaration.Name, TypeText(declaration.TypeNode));

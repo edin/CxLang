@@ -369,9 +369,12 @@ public sealed class CxCompiler
         },
         ForStatement forStatement => forStatement with
         {
+            CachedRangeEndInitializer = RewriteTestForDeclarationInitializer(forStatement.CachedRangeEndInitializer),
+            CounterInitializer = RewriteTestForDeclarationInitializer(forStatement.CounterInitializer),
             Initializer = RewriteTestForInitializer(forStatement.Initializer),
             Condition = RewriteTestExpression(forStatement.Condition),
             Increment = RewriteTestExpression(forStatement.Increment),
+            CounterIncrement = forStatement.CounterIncrement is null ? null : RewriteTestExpression(forStatement.CounterIncrement),
             Body = RewriteTestStatements(forStatement.Body),
         },
         ForeachStatement foreachStatement => foreachStatement with
@@ -409,6 +412,14 @@ public sealed class CxCompiler
         },
         _ => initializer,
     };
+
+    private static ForDeclarationInitializerNode? RewriteTestForDeclarationInitializer(ForDeclarationInitializerNode? initializer) =>
+        initializer is null
+            ? null
+            : initializer with
+            {
+                Initializer = initializer.Initializer is null ? null : RewriteTestExpression(initializer.Initializer),
+            };
 
     private static ExpressionNode RewriteTestExpression(ExpressionNode expression) => expression switch
     {

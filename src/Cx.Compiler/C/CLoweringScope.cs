@@ -186,6 +186,16 @@ internal sealed class CLoweringScope(
                     }
                     break;
                 case ForStatement forStatement:
+                    if (forStatement.CachedRangeEndInitializer is not null)
+                    {
+                        yield return (forStatement.CachedRangeEndInitializer.Name, forStatement.CachedRangeEndInitializer.TypeNode.ToTypeRef(TypeRefParser));
+                    }
+
+                    if (forStatement.CounterInitializer is not null)
+                    {
+                        yield return (forStatement.CounterInitializer.Name, forStatement.CounterInitializer.TypeNode.ToTypeRef(TypeRefParser));
+                    }
+
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
                         yield return (declaration.Name, declaration.TypeNode.ToTypeRef(TypeRefParser));

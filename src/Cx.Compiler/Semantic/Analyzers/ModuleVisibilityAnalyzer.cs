@@ -135,9 +135,12 @@ internal sealed class ModuleVisibilityAnalyzer(
                     AnalyzeStatements(whileStatement.Body, visibility, locals);
                     break;
                 case ForStatement forStatement:
+                    AnalyzeForInitializer(forStatement.CachedRangeEndInitializer, visibility, locals);
+                    AnalyzeForInitializer(forStatement.CounterInitializer, visibility, locals);
                     AnalyzeForInitializer(forStatement.Initializer, visibility, locals);
                     AnalyzeExpression(forStatement.Condition, visibility, locals);
                     AnalyzeExpression(forStatement.Increment, visibility, locals);
+                    AnalyzeExpression(forStatement.CounterIncrement, visibility, locals);
                     AnalyzeStatements(forStatement.Body, visibility, locals);
                     break;
                 case ForeachStatement foreachStatement:
@@ -170,7 +173,7 @@ internal sealed class ModuleVisibilityAnalyzer(
     }
 
     private void AnalyzeForInitializer(
-        ForInitializerNode initializer,
+        ForInitializerNode? initializer,
         ModuleVisibility visibility,
         IReadOnlySet<string> locals)
     {

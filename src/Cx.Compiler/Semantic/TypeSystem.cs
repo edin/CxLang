@@ -101,8 +101,8 @@ internal sealed class TypeSystem
         {
             var keyValueMatch = SatisfiesRequirement(iterableType, "KeyValueIterable");
             if (!keyValueMatch.Success
-                || !keyValueMatch.TypeBindings.TryGetValue("K", out var matchedKeyType)
-                || !keyValueMatch.TypeBindings.TryGetValue("V", out var matchedValueType))
+                || !keyValueMatch.TryGetTypeBindingText("K", out var matchedKeyType)
+                || !keyValueMatch.TryGetTypeBindingText("V", out var matchedValueType))
             {
                 return false;
             }
@@ -119,21 +119,21 @@ internal sealed class TypeSystem
         }
 
         var iterable = SatisfiesRequirement(iterableType, "Iterable");
-        if (iterable.Success && iterable.TypeBindings.TryGetValue("T", out var iterableElementType))
+        if (iterable.Success && iterable.TryGetTypeBindingText("T", out var iterableElementType))
         {
             valueType = iterableElementType;
             return true;
         }
 
         var contiguous = SatisfiesRequirement(iterableType, "Contiguous");
-        if (contiguous.Success && contiguous.TypeBindings.TryGetValue("T", out var contiguousElementType))
+        if (contiguous.Success && contiguous.TryGetTypeBindingText("T", out var contiguousElementType))
         {
             valueType = contiguousElementType;
             return true;
         }
 
         var range = SatisfiesRequirement(iterableType, "ContiguousRange");
-        if (range.Success && range.TypeBindings.TryGetValue("T", out var rangeElementType))
+        if (range.Success && range.TryGetTypeBindingText("T", out var rangeElementType))
         {
             valueType = rangeElementType;
             return true;

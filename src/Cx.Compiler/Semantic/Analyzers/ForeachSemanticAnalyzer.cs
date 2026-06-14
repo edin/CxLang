@@ -109,24 +109,24 @@ internal sealed class ForeachSemanticAnalyzer(
                     typeRefParser.Parse(iteratorElementType));
             }
             else if (SatisfiesRequirement(iterableType, "Contiguous") is { Success: true } contiguous
-                && contiguous.TypeBindings.TryGetValue("T", out var contiguousElementType))
+                && contiguous.TryGetTypeBinding("T", out var contiguousElementType))
             {
                 AddForeachValueBindings(
                     foreachStatement,
                     foreachVariables,
                     foreachTypeEnvironment,
                     foreachMutability,
-                    typeRefParser.Parse(contiguousElementType));
+                    contiguousElementType);
             }
             else if (SatisfiesRequirement(iterableType, "ContiguousRange") is { Success: true } range
-                && range.TypeBindings.TryGetValue("T", out var rangeElementType))
+                && range.TryGetTypeBinding("T", out var rangeElementType))
             {
                 AddForeachValueBindings(
                     foreachStatement,
                     foreachVariables,
                     foreachTypeEnvironment,
                     foreachMutability,
-                    typeRefParser.Parse(rangeElementType));
+                    rangeElementType);
             }
             else if (SatisfiesRequirement(iterableType, "Contiguous") is { } match && !match.Success)
             {
@@ -227,7 +227,7 @@ internal sealed class ForeachSemanticAnalyzer(
         {
             parts.Add($"{iterableRequirementDisplay}: " + FormatRequirementFailures(iteratorMatch.Failures));
         }
-        else if (!iteratorMatch.TypeBindings.TryGetValue("I", out var iteratorType))
+        else if (!iteratorMatch.TryGetTypeBindingText("I", out var iteratorType))
         {
             parts.Add($"{iterableRequirementDisplay}: could not infer iterator type 'I' from iterator().");
         }

@@ -191,9 +191,12 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
                 ResolveStatements(whileStatement.Body);
                 break;
             case ForStatement forStatement:
+                ResolveOptionalForInitializer(forStatement.CachedRangeEndInitializer);
+                ResolveOptionalForInitializer(forStatement.CounterInitializer);
                 ResolveForInitializer(forStatement.Initializer);
                 ResolveExpression(forStatement.Condition);
                 ResolveExpression(forStatement.Increment);
+                ResolveExpression(forStatement.CounterIncrement);
                 ResolveStatements(forStatement.Body);
                 break;
             case ForeachStatement foreachStatement:
@@ -235,6 +238,14 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             case ForExpressionInitializerNode expression:
                 ResolveExpression(expression.Expression);
                 break;
+        }
+    }
+
+    private void ResolveOptionalForInitializer(ForInitializerNode? initializer)
+    {
+        if (initializer is not null)
+        {
+            ResolveForInitializer(initializer);
         }
     }
 

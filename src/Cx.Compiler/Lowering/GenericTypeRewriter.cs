@@ -293,9 +293,12 @@ internal static class GenericTypeRewriter
             },
             ForStatement forStatement => forStatement with
             {
+                CachedRangeEndInitializer = RewriteForDeclarationInitializer(forStatement.CachedRangeEndInitializer, concreteStructNames),
+                CounterInitializer = RewriteForDeclarationInitializer(forStatement.CounterInitializer, concreteStructNames),
                 Initializer = RewriteForInitializer(forStatement.Initializer, concreteStructNames),
                 Condition = RewriteExpression(forStatement.Condition, concreteStructNames),
                 Increment = RewriteExpression(forStatement.Increment, concreteStructNames),
+                CounterIncrement = RewriteOptionalExpression(forStatement.CounterIncrement, concreteStructNames),
                 Body = forStatement.Body
                     .Select(nested => RewriteStatement(nested, concreteStructNames))
                     .ToList(),
@@ -364,6 +367,23 @@ internal static class GenericTypeRewriter
                 Expression = RewriteExpression(expression.Expression, concreteStructNames),
             },
             _ => initializer,
+        };
+        return CopySemantic(initializer, rewritten);
+    }
+
+    private static ForDeclarationInitializerNode? RewriteForDeclarationInitializer(
+        ForDeclarationInitializerNode? initializer,
+        IReadOnlySet<string> concreteStructNames)
+    {
+        if (initializer is null)
+        {
+            return null;
+        }
+
+        var rewritten = initializer with
+        {
+            TypeNode = RewriteTypeNode(initializer.TypeNode, concreteStructNames),
+            Initializer = RewriteOptionalExpression(initializer.Initializer, concreteStructNames),
         };
         return CopySemantic(initializer, rewritten);
     }

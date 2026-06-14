@@ -327,9 +327,12 @@ public sealed class SemanticAnalyzer(
                 var forVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
                 var forTypeEnvironment = typeEnvironment.Clone();
                 var forMutability = new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal);
+                AnalyzeForDeclarationInitializer(forStatement.CachedRangeEndInitializer, forVariables, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
+                AnalyzeForDeclarationInitializer(forStatement.CounterInitializer, forVariables, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
                 AnalyzeForInitializer(forStatement.Initializer, forVariables, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
                 AnalyzeExpression(forStatement.Condition, forStatement.Location, forVariables, forTypeEnvironment, forMutability);
                 AnalyzeExpression(forStatement.Increment, forStatement.Location, forVariables, forTypeEnvironment, forMutability);
+                AnalyzeExpression(forStatement.CounterIncrement, forStatement.Location, forVariables, forTypeEnvironment, forMutability);
                 AnalyzeStatements(forStatement.Body, returnType, forVariables, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
                 break;
 
@@ -490,6 +493,20 @@ public sealed class SemanticAnalyzer(
             case ForExpressionInitializerNode expression:
                 AnalyzeExpression(expression.Expression, expression.Location, variables, typeEnvironment, mutability);
                 break;
+        }
+    }
+
+    private void AnalyzeForDeclarationInitializer(
+        ForDeclarationInitializerNode? initializer,
+        Dictionary<string, string> variables,
+        TypeEnvironment typeEnvironment,
+        Dictionary<string, LocalMutability> mutability,
+        ProgramNode program,
+        IReadOnlyList<string> inScopeTypeParameters)
+    {
+        if (initializer is not null)
+        {
+            AnalyzeForInitializer(initializer, variables, typeEnvironment, mutability, program, inScopeTypeParameters);
         }
     }
 

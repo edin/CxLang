@@ -144,6 +144,8 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 var forVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
                 var forTypeEnvironment = typeEnvironment.Clone();
                 var forAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
+                AnalyzeOptionalForInitializer(forStatement.CachedRangeEndInitializer, forVariables, forTypeEnvironment, forAssigned);
+                AnalyzeOptionalForInitializer(forStatement.CounterInitializer, forVariables, forTypeEnvironment, forAssigned);
                 AnalyzeForInitializer(forStatement.Initializer, forVariables, forTypeEnvironment, forAssigned);
                 foreach (var name in variables.Keys.Where(forAssigned.Contains))
                 {
@@ -152,6 +154,11 @@ internal sealed class DefiniteAssignmentAnalyzer(
 
                 AnalyzeExpression(forStatement.Condition, forTypeEnvironment, forAssigned);
                 AnalyzeExpression(forStatement.Increment, forTypeEnvironment, forAssigned);
+                if (forStatement.CounterIncrement is not null)
+                {
+                    AnalyzeExpression(forStatement.CounterIncrement, forTypeEnvironment, forAssigned);
+                }
+
                 AnalyzeStatements(
                     forStatement.Body,
                     forVariables,
@@ -262,6 +269,18 @@ internal sealed class DefiniteAssignmentAnalyzer(
             case ForExpressionInitializerNode expression:
                 AnalyzeExpression(expression.Expression, typeEnvironment, assigned);
                 break;
+        }
+    }
+
+    private void AnalyzeOptionalForInitializer(
+        ForInitializerNode? initializer,
+        Dictionary<string, string> variables,
+        TypeEnvironment typeEnvironment,
+        HashSet<string> assigned)
+    {
+        if (initializer is not null)
+        {
+            AnalyzeForInitializer(initializer, variables, typeEnvironment, assigned);
         }
     }
 

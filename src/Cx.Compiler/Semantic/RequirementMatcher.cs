@@ -9,7 +9,7 @@ public sealed class RequirementMatcher
     private readonly TypeResolver _typeResolver;
     private readonly ResolvedTypeMemberResolver _memberResolver;
     private readonly IReadOnlyDictionary<string, StructNode> _concreteStructs;
-    private readonly IReadOnlyDictionary<string, string> _typeAliases;
+    private readonly IReadOnlyDictionary<string, TypeRef> _typeAliases;
 
     public RequirementMatcher(ProgramNode program, IReadOnlyList<StructNode>? concreteStructs = null)
     {
@@ -23,7 +23,7 @@ public sealed class RequirementMatcher
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         _typeAliases = program.TypeAliases
             .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => TypeText(group.First().TargetTypeNode), StringComparer.Ordinal);
+            .ToDictionary(group => group.Key, group => group.First().TargetTypeNode.ToTypeRef(_typeRefParser), StringComparer.Ordinal);
     }
 
     public RequirementMatch Match(
@@ -50,11 +50,10 @@ public sealed class RequirementMatcher
             return RequirementMatch.Failed(concreteType, requirementName, [$"Unknown requirement '{requirementName}'."]);
         }
 
-        var bindings = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["Self"] = NormalizeSelfType(concreteType),
-        };
-        var matchKey = $"{bindings["Self"]}:{requirementName}<{string.Join(",", requirementArguments ?? [])}>";
+        var bindings = new TypeBindings();
+        bindings.Set("Self", NormalizeSelfTypeRef(concreteType));
+        var selfType = GetBindingText(bindings, "Self");
+        var matchKey = $"{selfType}:{requirementName}<{string.Join(",", requirementArguments ?? [])}>";
         if (!activeMatches.Add(matchKey))
         {
             return RequirementMatch.Succeeded(concreteType, requirementName, bindings);
@@ -63,13 +62,14 @@ public sealed class RequirementMatcher
         requirementArguments ??= [];
         for (var i = 0; i < requirementArguments.Count && i < requirement.TypeParameters.Count; i++)
         {
-            var argument = ResolveAlias(requirementArguments[i]);
-            if (string.Equals(argument, requirement.TypeParameters[i], StringComparison.Ordinal))
+            var argument = ResolveAliasRef(requirementArguments[i]);
+            if (argument is TypeRef.Named { Arguments.Count: 0 } named
+                && string.Equals(named.Name, requirement.TypeParameters[i], StringComparison.Ordinal))
             {
                 continue;
             }
 
-            bindings[requirement.TypeParameters[i]] = argument;
+            bindings.Set(requirement.TypeParameters[i], argument);
         }
 
         var hasStructMembers = requirement.Members.Any(member => member is RequirementFieldNode);
@@ -128,10 +128,8 @@ public sealed class RequirementMatcher
                 [$"Interface '{interfaceNode.Name}' does not take type arguments."]);
         }
 
-        var bindings = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["Self"] = NormalizeSelfType(concreteType),
-        };
+        var bindings = new TypeBindings();
+        bindings.Set("Self", NormalizeSelfTypeRef(concreteType));
         var failures = new List<string>();
 
         foreach (var method in interfaceNode.Methods)
@@ -146,10 +144,10 @@ public sealed class RequirementMatcher
 
     private void MatchInterfaceMethod(
         InterfaceMethodNode interfaceMethod,
-        Dictionary<string, string> bindings,
+        TypeBindings bindings,
         List<string> failures)
     {
-        var ownerType = bindings["Self"];
+        var ownerType = GetBindingText(bindings, "Self");
         var expectedParameterCount = interfaceMethod.Parameters.Count + 1;
         var method = ResolveMethods(ownerType)
             .FirstOrDefault(candidate =>
@@ -163,7 +161,7 @@ public sealed class RequirementMatcher
             return;
         }
 
-        var candidateBindings = new Dictionary<string, string>(bindings, StringComparer.Ordinal);
+        var candidateBindings = bindings.Clone();
         var receiver = method.ParameterTypes[0];
         if (!Unify("Self*", TypeRefFormatter.ToCxString(receiver), candidateBindings))
         {
@@ -193,18 +191,19 @@ public sealed class RequirementMatcher
 
     private void MatchRequirementConstraints(
         RequirementNode requirement,
-        Dictionary<string, string> bindings,
+        TypeBindings bindings,
         List<string> failures,
         HashSet<string> activeMatches)
     {
         foreach (var constraint in requirement.GenericConstraints)
         {
-            if (!bindings.TryGetValue(constraint.TypeParameter, out var constrainedType))
+            if (!bindings.TryGet(constraint.TypeParameter, out var constrainedTypeRef))
             {
                 failures.Add($"Could not infer type parameter '{constraint.TypeParameter}' required by where clause.");
                 continue;
             }
 
+            var constrainedType = TypeRefFormatter.ToCxString(constrainedTypeRef);
             foreach (var required in constraint.Requirements)
             {
                 var arguments = TypeArguments(required.TypeArgumentNodes)
@@ -213,7 +212,7 @@ public sealed class RequirementMatcher
                 var match = Match(constrainedType, required.Name, arguments, activeMatches);
                 if (match.Success)
                 {
-                    MergeBindings(bindings, match.TypeBindings);
+                    MergeBindings(bindings, match.TypedTypeBindings);
                     continue;
                 }
 
@@ -240,7 +239,7 @@ public sealed class RequirementMatcher
             TypeRef.Alias alias => ResolveAlias(alias.Target, seen),
             TypeRef.Named named when named.Arguments.Count == 0
                 && _typeAliases.TryGetValue(named.Name, out var targetType)
-                && seen.Add(named.Name) => ResolveAlias(_typeRefParser.Parse(targetType), seen),
+                && seen.Add(named.Name) => ResolveAlias(targetType, seen),
             TypeRef.Named named => new TypeRef.Named(
                 named.Name,
                 named.Arguments.Select(argument => ResolveAlias(argument, new HashSet<string>(seen, StringComparer.Ordinal))).ToList()),
@@ -256,7 +255,7 @@ public sealed class RequirementMatcher
     private void MatchField(
         RequirementFieldNode field,
         IReadOnlyList<ResolvedField> fields,
-        Dictionary<string, string> bindings,
+        TypeBindings bindings,
         List<string> failures)
     {
         var actualField = fields.FirstOrDefault(candidate => candidate.Name == field.Name);
@@ -276,7 +275,7 @@ public sealed class RequirementMatcher
 
     private void MatchFunction(
         RequirementFunctionNode function,
-        Dictionary<string, string> bindings,
+        TypeBindings bindings,
         List<string> failures)
     {
         if (function.IsStatic)
@@ -285,7 +284,7 @@ public sealed class RequirementMatcher
             return;
         }
 
-        var ownerType = bindings["Self"];
+        var ownerType = GetBindingText(bindings, "Self");
         var method = ResolveMethods(ownerType)
             .FirstOrDefault(candidate =>
                 !candidate.Declaration.IsStatic
@@ -309,7 +308,7 @@ public sealed class RequirementMatcher
             return;
         }
 
-        var candidateBindings = new Dictionary<string, string>(bindings, StringComparer.Ordinal);
+        var candidateBindings = bindings.Clone();
         var failureStart = failures.Count;
         for (var i = 0; i < function.Parameters.Count; i++)
         {
@@ -338,10 +337,10 @@ public sealed class RequirementMatcher
 
     private void MatchStaticFunction(
         RequirementFunctionNode function,
-        Dictionary<string, string> bindings,
+        TypeBindings bindings,
         List<string> failures)
     {
-        var ownerType = bindings["Self"];
+        var ownerType = GetBindingText(bindings, "Self");
         var method = ResolveMethods(ownerType)
             .FirstOrDefault(candidate =>
                 candidate.Declaration.IsStatic
@@ -354,7 +353,7 @@ public sealed class RequirementMatcher
             return;
         }
 
-        var candidateBindings = new Dictionary<string, string>(bindings, StringComparer.Ordinal);
+        var candidateBindings = bindings.Clone();
         var failureStart = failures.Count;
         for (var i = 0; i < function.Parameters.Count; i++)
         {
@@ -382,21 +381,21 @@ public sealed class RequirementMatcher
     }
 
     private static void MergeBindings(
-        Dictionary<string, string> target,
-        IReadOnlyDictionary<string, string> source)
+        TypeBindings target,
+        TypeBindings source)
     {
-        foreach (var (name, value) in source)
+        foreach (var (name, value) in source.Bindings)
         {
-            target[name] = value;
+            target.Set(name, value);
         }
     }
 
     private bool FunctionMatches(
         FunctionNode candidate,
         RequirementFunctionNode requirement,
-        IReadOnlyDictionary<string, string> currentBindings)
+        TypeBindings currentBindings)
     {
-        var bindings = new Dictionary<string, string>(currentBindings, StringComparer.Ordinal);
+        var bindings = currentBindings.Clone();
         foreach (var parameter in candidate.TypeParameters)
         {
             bindings.Remove(parameter);
@@ -500,14 +499,25 @@ public sealed class RequirementMatcher
         return TypeRefFormatter.ToCxString(resolved.Type);
     }
 
-    private bool Unify(string expectedPattern, string actualType, Dictionary<string, string> bindings)
+    private TypeRef NormalizeSelfTypeRef(string type) =>
+        _typeResolver.ResolveDefinition(_typeRefParser.Parse(type)).Type;
+
+    private TypeRef ResolveAliasRef(string type) =>
+        ResolveAlias(_typeRefParser.Parse(type), new HashSet<string>(StringComparer.Ordinal));
+
+    private static string GetBindingText(TypeBindings bindings, string name) =>
+        bindings.TryGet(name, out var type)
+            ? TypeRefFormatter.ToCxString(type)
+            : string.Empty;
+
+    private bool Unify(string expectedPattern, string actualType, TypeBindings bindings)
     {
         expectedPattern = Substitute(ResolveAlias(expectedPattern), bindings);
         actualType = Substitute(ResolveAlias(actualType), bindings);
 
-        if (bindings.ContainsKey(expectedPattern))
+        if (bindings.TryGet(expectedPattern, out var existingBinding))
         {
-            return SameType(bindings[expectedPattern], actualType);
+            return SameType(TypeRefFormatter.ToCxString(existingBinding), actualType);
         }
 
         var unboundParameter = _program.Requirements
@@ -516,7 +526,7 @@ public sealed class RequirementMatcher
             .FirstOrDefault(parameter => expectedPattern == parameter);
         if (unboundParameter is not null)
         {
-            bindings[unboundParameter] = actualType;
+            bindings.Set(unboundParameter, _typeRefParser.Parse(actualType));
             return true;
         }
 
@@ -530,7 +540,7 @@ public sealed class RequirementMatcher
         return SameType(expectedPattern, actualType);
     }
 
-    private bool Unify(TypeRef expectedPattern, TypeRef actualType, Dictionary<string, string> bindings)
+    private bool Unify(TypeRef expectedPattern, TypeRef actualType, TypeBindings bindings)
     {
         expectedPattern = TypeRefFacts.UnwrapAlias(expectedPattern);
         actualType = TypeRefFacts.UnwrapAlias(actualType);
@@ -544,9 +554,9 @@ public sealed class RequirementMatcher
         if (expectedPattern is TypeRef.Named { Arguments.Count: 0 } expectedParameter)
         {
             var actualTypeText = TypeRefFormatter.ToCxString(actualType);
-            if (bindings.TryGetValue(expectedParameter.Name, out var existing))
+            if (bindings.TryGet(expectedParameter.Name, out var existing))
             {
-                return SameType(existing, actualTypeText);
+                return SameType(TypeRefFormatter.ToCxString(existing), actualTypeText);
             }
 
             var unboundParameter = _program.Requirements
@@ -555,7 +565,7 @@ public sealed class RequirementMatcher
                 .FirstOrDefault(parameter => string.Equals(expectedParameter.Name, parameter, StringComparison.Ordinal));
             if (unboundParameter is not null)
             {
-                bindings[unboundParameter] = actualTypeText;
+                bindings.Set(unboundParameter, actualType);
                 return true;
             }
         }
@@ -603,8 +613,8 @@ public sealed class RequirementMatcher
     }
 
 
-    private static string Substitute(string type, IReadOnlyDictionary<string, string> bindings)
-        => GenericTypeStringRewriter.Substitute(type, bindings);
+    private static string Substitute(string type, TypeBindings bindings)
+        => GenericTypeStringRewriter.Substitute(type, bindings.ToLegacyStrings());
 
     private bool SameType(string left, string right) =>
         LowerType(ResolveAlias(left)) == LowerType(ResolveAlias(right));
@@ -662,16 +672,67 @@ public sealed record RequirementMatch(
     IReadOnlyDictionary<string, string> TypeBindings,
     IReadOnlyList<string> Failures)
 {
+    internal Cx.Compiler.Semantic.TypeBindings TypedTypeBindings { get; init; } = new();
+
+    internal bool TryGetTypeBinding(string name, out TypeRef type) =>
+        TypedTypeBindings.TryGet(name, out type);
+
+    internal bool TryGetTypeBindingText(string name, out string type)
+    {
+        if (TryGetTypeBinding(name, out var typedType))
+        {
+            type = TypeRefFormatter.ToCxString(typedType);
+            return true;
+        }
+
+        type = string.Empty;
+        return false;
+    }
+
     public static RequirementMatch Succeeded(
         string concreteType,
         string requirementName,
         IReadOnlyDictionary<string, string> typeBindings) =>
         new(true, concreteType, requirementName, typeBindings, []);
 
+    internal static RequirementMatch Succeeded(
+        string concreteType,
+        string requirementName,
+        TypeBindings typedTypeBindings) =>
+        new RequirementMatch(
+            true,
+            concreteType,
+            requirementName,
+            typedTypeBindings.ToLegacyStrings(),
+            [])
+        {
+            TypedTypeBindings = typedTypeBindings.Clone(),
+        };
+
     public static RequirementMatch Failed(
         string concreteType,
         string requirementName,
         IReadOnlyList<string> failures,
         IReadOnlyDictionary<string, string>? typeBindings = null) =>
-        new(false, concreteType, requirementName, typeBindings ?? new Dictionary<string, string>(), failures);
+        new(
+            false,
+            concreteType,
+            requirementName,
+            typeBindings ?? new Dictionary<string, string>(),
+            failures);
+
+    internal static RequirementMatch Failed(
+        string concreteType,
+        string requirementName,
+        IReadOnlyList<string> failures,
+        TypeBindings typedTypeBindings) =>
+        new RequirementMatch(
+            false,
+            concreteType,
+            requirementName,
+            typedTypeBindings.ToLegacyStrings(),
+            failures)
+        {
+            TypedTypeBindings = typedTypeBindings.Clone(),
+        };
 }
