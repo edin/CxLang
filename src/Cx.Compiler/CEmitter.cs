@@ -387,241 +387,13 @@ public sealed partial class CEmitter
         ImportedNameLowerer nameLowerer)
     {
         var declaration = ToCFunctionDeclaration(function);
+        var statementLowerer = new CStatementLoweringPipeline(nameLowerer);
         return new CFunctionDefinition(
             declaration.ReturnType,
             declaration.Name,
             declaration.ParameterDeclarations,
-            function.Body.Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel: 1)).ToList());
+            statementLowerer.LowerBlock(function.Body, rawIndentLevel: 1));
     }
-
-    private static CStatementNode ToCStatement(
-        StatementNode statement,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel) => statement switch
-    {
-        LetStatement let => ToCLocalDeclaration(let, nameLowerer),
-        ReturnStatement ret => new CReturnStatement(ret.Expression is null ? null : nameLowerer.LowerExpression(ret.Expression)),
-        BreakStatement => new CBreakStatement(),
-        ContinueStatement => new CContinueStatement(),
-        CStatement c => new CExpressionStatement(nameLowerer.LowerExpression(c.Expression)),
-        IfStatement ifStatement => ToCIfStatement(ifStatement, nameLowerer, rawIndentLevel),
-        WhileStatement whileStatement => ToCWhileStatement(whileStatement, nameLowerer, rawIndentLevel),
-        ForStatement forStatement => ToCForStatement(forStatement, nameLowerer, rawIndentLevel),
-        ForeachStatement foreachStatement => ToCForeachStatement(foreachStatement, nameLowerer, rawIndentLevel),
-        SwitchStatement switchStatement => ToCSwitchStatement(switchStatement, nameLowerer, rawIndentLevel),
-        MatchStatement matchStatement => ToCMatchStatement(matchStatement, nameLowerer, rawIndentLevel),
-        _ => ToRawCStatement(statement, nameLowerer, rawIndentLevel),
-    };
-
-    private static CStatementNode ToCMatchStatement(
-        MatchStatement matchStatement,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel)
-    {
-        var matchExpression = ExpressionText(matchStatement.Expression);
-        var matchInfo = nameLowerer.ResolveMatch(matchExpression);
-        if (matchInfo is null)
-        {
-            return new CRawStatement(IndentLine($"/* unable to lower match {matchExpression} */", rawIndentLevel));
-        }
-
-        var cases = new List<CSwitchCase>();
-        var defaultBody = new List<CStatementNode>();
-        foreach (var arm in matchStatement.Arms)
-        {
-            var body = ToCMatchArmBody(arm, matchInfo, nameLowerer, rawIndentLevel);
-            if (arm.Pattern == "_")
-            {
-                defaultBody.AddRange(body);
-                continue;
-            }
-
-            cases.Add(new CSwitchCase(matchInfo.CaseLabel(arm.Pattern), body));
-        }
-
-        return new CSwitchStatement(ToCSimpleAccessExpression(matchInfo.TagAccess), cases, defaultBody);
-    }
-
-    private static IReadOnlyList<CStatementNode> ToCMatchArmBody(
-        MatchArmNode arm,
-        MatchInfo matchInfo,
-        ImportedNameLowerer matchLowerer,
-        int rawIndentLevel)
-    {
-        var body = new List<CStatementNode>();
-        var armLowerer = matchLowerer;
-        if (arm.BindingName is not null && arm.Pattern != "_")
-        {
-            if (matchInfo.BindingType(arm.Pattern) is { } bindingType
-                && matchInfo.BindingExpression(arm.Pattern) is { } bindingExpression)
-            {
-                body.Add(new CLocalDeclarationStatement(
-                    LowerDeclaration(bindingType, arm.BindingName, matchLowerer.SelfType),
-                    bindingExpression));
-                armLowerer = matchLowerer.WithLocal(arm.BindingName, bindingType);
-            }
-        }
-
-        body.AddRange(arm.Body.Select(statement => ToCStatement(statement, armLowerer, rawIndentLevel + 2)));
-        if (!ArmAlwaysTransfers(arm.Body))
-        {
-            body.Add(new CBreakStatement());
-        }
-
-        return body;
-    }
-
-    private static CSwitchStatement ToCSwitchStatement(
-        SwitchStatement switchStatement,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel) =>
-        new(
-            nameLowerer.LowerExpression(switchStatement.Expression),
-            switchStatement.Cases
-                .Select(switchCase => new CSwitchCase(
-                    nameLowerer.Lower(switchCase.Pattern),
-                    switchCase.Body
-                        .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 2))
-                        .ToList()))
-                .ToList(),
-            switchStatement.DefaultBody
-                .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 2))
-                .ToList());
-
-    private static CStatementNode ToCForStatement(
-        ForStatement forStatement,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel)
-    {
-        var body = forStatement.Body
-            .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 1))
-            .ToList();
-        if (forStatement.CounterIncrement is not null)
-        {
-            body.Add(new CExpressionStatement(nameLowerer.LowerExpression(forStatement.CounterIncrement)));
-        }
-
-        var loop = new CForStatement(
-            ToCForInitializer(forStatement.Initializer, nameLowerer),
-            nameLowerer.LowerExpression(forStatement.Condition),
-            nameLowerer.LowerExpression(forStatement.Increment),
-            body);
-
-        var prefix = new List<CStatementNode>();
-        if (forStatement.CachedRangeEndInitializer is not null)
-        {
-            prefix.Add(ToCLocalDeclaration(forStatement.CachedRangeEndInitializer, nameLowerer));
-        }
-
-        if (forStatement.CounterInitializer is not null)
-        {
-            prefix.Add(ToCLocalDeclaration(forStatement.CounterInitializer, nameLowerer));
-        }
-
-        return prefix.Count == 0
-            ? loop
-            : new CBlockStatement(prefix.Concat([loop]).ToList());
-    }
-
-    private static CLocalDeclarationStatement ToCLocalDeclaration(
-        ForDeclarationInitializerNode declaration,
-        ImportedNameLowerer nameLowerer) =>
-        new(
-            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)}",
-            declaration.Initializer is null
-                ? null
-                : nameLowerer.LowerInitializerExpression(declaration.TypeNode?.Semantic.Type, ForDeclarationInitializerTypeText(declaration), declaration.Initializer));
-
-    private static CForInitializerNode ToCForInitializer(
-        ForInitializerNode initializer,
-        ImportedNameLowerer nameLowerer) => initializer switch
-    {
-        ForDeclarationInitializerNode declaration => new CDeclarationForInitializer(
-            $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)}",
-            declaration.Initializer is null
-                ? null
-                : nameLowerer.LowerInitializerExpression(declaration.TypeNode?.Semantic.Type, ForDeclarationInitializerTypeText(declaration), declaration.Initializer)),
-        ForExpressionInitializerNode expression => new CExpressionForInitializer(
-            nameLowerer.LowerExpression(expression.Expression)),
-        _ => new CEmptyForInitializer(),
-    };
-
-    private static CStatementNode ToCForeachStatement(
-        ForeachStatement foreachStatement,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel)
-    {
-        var iterableExpression = ExpressionText(foreachStatement.IterableExpression);
-        return new CRawStatement(IndentLine($"/* foreach should be lowered before C emission: {foreachStatement.ItemName} in {iterableExpression} */", rawIndentLevel));
-    }
-
-    private static CExpression ToCSimpleAccessExpression(string expression)
-    {
-        expression = expression.Trim();
-        if (Regex.IsMatch(expression, @"^\d+$"))
-        {
-            return new CLiteralExpression(expression);
-        }
-
-        var tokens = Regex.Matches(expression, @"(->|\.|[A-Za-z_][A-Za-z0-9_]*)")
-            .Select(match => match.Value)
-            .ToList();
-        if (tokens.Count == 0 || tokens[0] is "." or "->")
-        {
-            throw InvalidSimpleAccessExpression(expression);
-        }
-
-        CExpression result = new CNameExpression(tokens[0]);
-        for (var i = 1; i < tokens.Count; i += 2)
-        {
-            if (i + 1 >= tokens.Count || tokens[i] is not ("." or "->"))
-            {
-                throw InvalidSimpleAccessExpression(expression);
-            }
-
-            result = new CMemberExpression(result, tokens[i], tokens[i + 1]);
-        }
-
-        return result;
-    }
-
-    private static InvalidOperationException InvalidSimpleAccessExpression(string expression) =>
-        new($"Internal C emission error: expected simple C access expression, got '{expression}'.");
-
-    private static CWhileStatement ToCWhileStatement(
-        WhileStatement whileStatement,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel) =>
-        new(
-            nameLowerer.LowerExpression(whileStatement.Condition),
-            whileStatement.Body
-                .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 1))
-                .ToList());
-
-    private static CIfStatement ToCIfStatement(
-        IfStatement ifStatement,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel) =>
-        new(
-            nameLowerer.LowerExpression(ifStatement.Condition),
-            ifStatement.ThenBody
-                .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 1))
-                .ToList(),
-            ToCElseClause(ifStatement.ElseBranch, nameLowerer, rawIndentLevel));
-
-    private static CElseClause? ToCElseClause(
-        StatementNode? elseBranch,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel) => elseBranch switch
-    {
-        null => null,
-        IfStatement elseIf => new CElseIfClause(ToCIfStatement(elseIf, nameLowerer, rawIndentLevel)),
-        ElseBlockStatement elseBlock => new CElseBlockClause(
-            elseBlock.Body
-                .Select(statement => ToCStatement(statement, nameLowerer, rawIndentLevel + 1))
-                .ToList()),
-        _ => new CElseBlockClause([ToRawCStatement(elseBranch, nameLowerer, rawIndentLevel + 1)]),
-    };
 
     private static CLocalDeclarationStatement ToCLocalDeclaration(
         LetStatement let,
@@ -876,14 +648,6 @@ public sealed partial class CEmitter
                         yield return type;
                     }
                     break;
-                case ForeachStatement foreachStatement:
-                    foreach (var type in EnumerateExpressionTypeReferences(foreachStatement.IterableExpression)
-                        .Concat(EnumerateForeachBindingTypeReferences(foreachStatement))
-                        .Concat(EnumerateStatementTypeReferences(foreachStatement.Body)))
-                    {
-                        yield return type;
-                    }
-                    break;
                 case SwitchStatement switchStatement:
                     foreach (var type in EnumerateExpressionTypeReferences(switchStatement.Expression))
                     {
@@ -900,19 +664,6 @@ public sealed partial class CEmitter
                     foreach (var type in EnumerateStatementTypeReferences(switchStatement.DefaultBody))
                     {
                         yield return type;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var type in EnumerateExpressionTypeReferences(matchStatement.Expression))
-                    {
-                        yield return type;
-                    }
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var type in EnumerateStatementTypeReferences(arm.Body))
-                        {
-                            yield return type;
-                        }
                     }
                     break;
             }
@@ -946,18 +697,6 @@ public sealed partial class CEmitter
                 case SizeOfExpressionNode { TypeOperandNode: not null } sizeOf:
                     yield return SizeOfExpressionTypeOperandText(sizeOf);
                     break;
-            }
-        }
-    }
-
-    private static IEnumerable<string> EnumerateForeachBindingTypeReferences(ForeachStatement foreachStatement)
-    {
-        foreach (var binding in new[] { foreachStatement.IndexBinding, foreachStatement.KeyBinding, foreachStatement.ValueBinding })
-        {
-            var type = binding is null ? null : ForeachBindingTypeText(binding);
-            if (!string.IsNullOrWhiteSpace(type))
-            {
-                yield return type;
             }
         }
     }
@@ -1174,17 +913,6 @@ public sealed partial class CEmitter
                         yield return expression;
                     }
                     break;
-                case ForeachStatement foreachStatement:
-                    foreach (var expression in EnumerateExpressionNodes(foreachStatement.IterableExpression))
-                    {
-                        yield return expression;
-                    }
-
-                    foreach (var expression in EnumerateExpressionNodes(foreachStatement.Body))
-                    {
-                        yield return expression;
-                    }
-                    break;
                 case SwitchStatement switchStatement:
                     foreach (var expression in EnumerateExpressionNodes(switchStatement.Expression))
                     {
@@ -1207,20 +935,6 @@ public sealed partial class CEmitter
                     foreach (var expression in EnumerateExpressionNodes(switchStatement.DefaultBody))
                     {
                         yield return expression;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var expression in EnumerateExpressionNodes(matchStatement.Expression))
-                    {
-                        yield return expression;
-                    }
-
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var expression in EnumerateExpressionNodes(arm.Body))
-                        {
-                            yield return expression;
-                        }
                     }
                     break;
             }
@@ -1367,12 +1081,6 @@ public sealed partial class CEmitter
                         yield return variable;
                     }
                     break;
-                case ForeachStatement foreachStatement:
-                    foreach (var variable in CollectLocalVariables(foreachStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
                 case SwitchStatement switchStatement:
                     foreach (var switchCase in switchStatement.Cases)
                     {
@@ -1385,15 +1093,6 @@ public sealed partial class CEmitter
                     foreach (var variable in CollectLocalVariables(switchStatement.DefaultBody))
                     {
                         yield return variable;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var variable in CollectLocalVariables(arm.Body))
-                        {
-                            yield return variable;
-                        }
                     }
                     break;
             }
@@ -1534,14 +1233,8 @@ public sealed partial class CEmitter
             case ForStatement forStatement:
                 EmitForStatement(builder, forStatement, nameLowerer, indentLevel);
                 break;
-            case ForeachStatement foreachStatement:
-                EmitForeachStatement(builder, foreachStatement, nameLowerer, indentLevel);
-                break;
             case SwitchStatement switchStatement:
                 EmitSwitchStatement(builder, switchStatement, nameLowerer, indentLevel);
-                break;
-            case MatchStatement matchStatement:
-                EmitMatchStatement(builder, matchStatement, nameLowerer, indentLevel);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown statement node {statement.GetType().Name}.");
@@ -1612,17 +1305,6 @@ public sealed partial class CEmitter
         declaration.Initializer is null
             ? $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)};"
             : $"{(declaration.IsConst ? "const " : "")}{LowerDeclaration(declaration.TypeNode, ForDeclarationInitializerTypeText(declaration), declaration.Name, nameLowerer.SelfType)} = {nameLowerer.LowerInitializer(ForDeclarationInitializerTypeText(declaration), declaration.Initializer)};";
-
-    private static void EmitForeachStatement(
-        StringBuilder builder,
-        ForeachStatement foreachStatement,
-        ImportedNameLowerer nameLowerer,
-        int indentLevel)
-    {
-        var iterableExpression = ExpressionText(foreachStatement.IterableExpression);
-        AppendIndent(builder, indentLevel);
-        builder.AppendLine($"/* foreach should be lowered before C emission: {foreachStatement.ItemName} in {iterableExpression} */");
-    }
 
     private static void EmitSwitchStatement(
         StringBuilder builder,
@@ -1742,75 +1424,6 @@ public sealed partial class CEmitter
         AppendIndent(builder, indentLevel);
         builder.AppendLine("}");
     }
-
-    private static void EmitMatchStatement(
-        StringBuilder builder,
-        MatchStatement matchStatement,
-        ImportedNameLowerer nameLowerer,
-        int indentLevel)
-    {
-        var matchExpression = ExpressionText(matchStatement.Expression);
-        var matchInfo = nameLowerer.ResolveMatch(matchExpression);
-        if (matchInfo is null)
-        {
-            AppendIndent(builder, indentLevel);
-            builder.AppendLine($"/* unable to lower match {matchExpression} */");
-            return;
-        }
-
-        AppendIndent(builder, indentLevel);
-        builder.AppendLine($"switch ({matchInfo.TagAccess})");
-        AppendIndent(builder, indentLevel);
-        builder.AppendLine("{");
-
-        foreach (var arm in matchStatement.Arms)
-        {
-            if (arm.Pattern == "_")
-            {
-                AppendIndent(builder, indentLevel + 1);
-                builder.AppendLine("default:");
-            }
-            else
-            {
-                AppendIndent(builder, indentLevel + 1);
-                builder.AppendLine($"case {matchInfo.CaseLabel(arm.Pattern)}:");
-            }
-
-            AppendIndent(builder, indentLevel + 1);
-            builder.AppendLine("{");
-
-            if (arm.BindingName is not null && arm.Pattern != "_")
-            {
-                if (matchInfo.BindingType(arm.Pattern) is { } bindingType
-                    && matchInfo.BindingExpression(arm.Pattern) is { } bindingExpression)
-                {
-                    AppendIndent(builder, indentLevel + 2);
-                    builder.AppendLine($"{LowerDeclaration(bindingType, arm.BindingName, nameLowerer.SelfType)} = {new CExpressionEmitter().Emit(bindingExpression)};");
-                    nameLowerer = nameLowerer.WithLocal(arm.BindingName, bindingType);
-                }
-            }
-
-            foreach (var statement in arm.Body)
-            {
-                EmitStatement(builder, statement, nameLowerer, indentLevel + 2);
-            }
-
-            if (!ArmAlwaysTransfers(arm.Body))
-            {
-                AppendIndent(builder, indentLevel + 2);
-                builder.AppendLine("break;");
-            }
-
-            AppendIndent(builder, indentLevel + 1);
-            builder.AppendLine("}");
-        }
-
-        AppendIndent(builder, indentLevel);
-        builder.AppendLine("}");
-    }
-
-    private static bool ArmAlwaysTransfers(IReadOnlyList<StatementNode> body) =>
-        body.LastOrDefault() is ReturnStatement;
 
     private static int FindMatchingGenericClose(string type, int openIndex)
     {
@@ -1950,11 +1563,6 @@ public sealed partial class CEmitter
         let.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
             : let.TypeNode.ToTypeName();
-
-    private static string ForeachBindingTypeText(ForeachBinding binding) =>
-        binding.TypeNode?.Semantic.Type is { } type
-            ? TypeRefFormatter.ToCxString(type)
-            : binding.TypeNode.ToTypeName();
 
     private static string CastExpressionTargetTypeText(CastExpressionNode cast) =>
         cast.TargetTypeNode?.Semantic.Type is { } type
@@ -2168,14 +1776,10 @@ public sealed partial class CEmitter
             || ContainsNull(forStatement.Increment)
             || ContainsNull(forStatement.CounterIncrement)
             || forStatement.Body.Any(StatementUsesNull),
-        ForeachStatement foreachStatement => ContainsNull(foreachStatement.IterableExpression)
-            || foreachStatement.Body.Any(StatementUsesNull),
         SwitchStatement switchStatement => ContainsNull(switchStatement.Expression)
             || switchStatement.Cases.Any(switchCase =>
                 ContainsNull(switchCase.Pattern) || switchCase.Body.Any(StatementUsesNull))
             || switchStatement.DefaultBody.Any(StatementUsesNull),
-        MatchStatement matchStatement => ContainsNull(matchStatement.Expression)
-            || matchStatement.Arms.Any(arm => arm.Body.Any(StatementUsesNull)),
         _ => false,
     };
 

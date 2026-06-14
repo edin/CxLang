@@ -206,21 +206,6 @@ internal sealed class CLoweringScope(
                         yield return variable;
                     }
                     break;
-                case ForeachStatement foreachStatement:
-                    if (foreachStatement.IndexBinding is not null)
-                    {
-                        yield return (foreachStatement.IndexBinding.Name, foreachStatement.IndexBinding.TypeNode.ToTypeRef(TypeRefParser));
-                    }
-                    if (foreachStatement.KeyBinding is not null)
-                    {
-                        yield return (foreachStatement.KeyBinding.Name, foreachStatement.KeyBinding.TypeNode.ToTypeRef(TypeRefParser));
-                    }
-                    yield return (foreachStatement.ValueBinding.Name, foreachStatement.ValueBinding.TypeNode.ToTypeRef(TypeRefParser));
-                    foreach (var variable in CollectLocalVariableTypes(foreachStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
                 case SwitchStatement switchStatement:
                     foreach (var switchCase in switchStatement.Cases)
                     {
@@ -233,15 +218,6 @@ internal sealed class CLoweringScope(
                     foreach (var variable in CollectLocalVariableTypes(switchStatement.DefaultBody))
                     {
                         yield return variable;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var variable in CollectLocalVariableTypes(arm.Body))
-                        {
-                            yield return variable;
-                        }
                     }
                     break;
             }

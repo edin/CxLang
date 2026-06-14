@@ -15,7 +15,6 @@ public sealed partial class CEmitter
         private readonly CExpressionEmitter _expressionEmitter = new();
         private readonly CExpressionLoweringPipeline _expressionLoweringPipeline;
         private readonly GenericCallResolver _genericCallResolver;
-        private readonly MatchResolver _matchResolver;
         private readonly InterfaceValueBuilder _interfaceValueBuilder;
         private readonly TaggedUnionValueBuilder _taggedUnionValueBuilder;
         private readonly StructValueBuilder _structValueBuilder;
@@ -75,7 +74,6 @@ public sealed partial class CEmitter
             SelfApiType = selfApiType;
             _genericCallResolver = _context.CreateGenericCallResolver(ResolveExpressionType, CanAssign);
             _expressionTypeResolver = CreateExpressionTypeResolver();
-            _matchResolver = new MatchResolver(_scope, _context);
             _interfaceValueBuilder = new InterfaceValueBuilder(
                 _context,
                 _scope,
@@ -210,9 +208,6 @@ public sealed partial class CEmitter
                 SelfType,
                 SelfApiType);
         }
-
-        public MatchInfo? ResolveMatch(string expression) =>
-            _matchResolver.ResolveMatch(expression);
 
         public string LowerInitializer(string targetType, ExpressionNode expression)
         {

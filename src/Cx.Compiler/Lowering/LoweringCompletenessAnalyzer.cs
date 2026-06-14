@@ -91,6 +91,9 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                     AnalyzeStatements(switchStatement.DefaultBody);
                     break;
                 case MatchStatement matchStatement:
+                    diagnostics.Report(
+                        matchStatement.Location,
+                        "Internal lowering error: match statement remains after post-semantic lowering.");
                     AnalyzeExpression(matchStatement.Expression);
                     foreach (var arm in matchStatement.Arms)
                     {

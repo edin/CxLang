@@ -41,6 +41,33 @@ public sealed class LoweringCompletenessAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_ReportsMatchThatRemainsAfterLowering()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            union Result {
+                Ok: int;
+                Error: int;
+            }
+
+            fn main(result: Result) -> void {
+                match result {
+                    Ok: value => {
+                    }
+                    Error: value => {
+                    }
+                }
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        new LoweringCompletenessAnalyzer(diagnostics).Analyze(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("match statement remains after post-semantic lowering", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Analyze_ReportsFunctionExpressionThatRemainsAfterLowering()
     {
         var program = CompilerTestHelpers.Parse(

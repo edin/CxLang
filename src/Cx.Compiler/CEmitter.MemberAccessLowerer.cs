@@ -37,6 +37,11 @@ public sealed partial class CEmitter
                 return member.MemberName;
             }
 
+            if (TryLowerInterfaceVTableTypeIdText(member) is { } interfaceTypeIdAccess)
+            {
+                return interfaceTypeIdAccess;
+            }
+
             if (TryGetNamedTarget(member, out var targetName, out var targetType, out var targetIsImplicitReference))
             {
                 if (TryGetTaggedUnionAccess(member, targetType, targetIsImplicitReference) is { } taggedUnionAccess)
@@ -78,6 +83,11 @@ public sealed partial class CEmitter
                 return new CNameExpression(member.MemberName);
             }
 
+            if (TryLowerInterfaceVTableTypeIdExpression(member) is { } interfaceTypeIdAccess)
+            {
+                return interfaceTypeIdAccess;
+            }
+
             if (TryGetNamedTarget(member, out var targetName, out var targetType, out var targetIsImplicitReference))
             {
                 if (TryGetTaggedUnionAccess(member, targetType, targetIsImplicitReference) is { } taggedUnionAccess)
@@ -95,6 +105,68 @@ public sealed partial class CEmitter
             }
 
             return new CMemberExpression(lowerExpression(member.Target), ".", member.MemberName);
+        }
+
+        private string? TryLowerInterfaceVTableTypeIdText(MemberExpressionNode member)
+        {
+            if (!IsInterfaceVTableTypeIdAccess(member, out var interfaceValue, out var access))
+            {
+                return null;
+            }
+
+            return $"{lowerText(interfaceValue)}{access}vtable->type_id";
+        }
+
+        private CExpression? TryLowerInterfaceVTableTypeIdExpression(MemberExpressionNode member)
+        {
+            if (!IsInterfaceVTableTypeIdAccess(member, out var interfaceValue, out var access))
+            {
+                return null;
+            }
+
+            return new CMemberExpression(
+                new CMemberExpression(lowerExpression(interfaceValue), access, "vtable"),
+                "->",
+                "type_id");
+        }
+
+        private bool IsInterfaceVTableTypeIdAccess(
+            MemberExpressionNode member,
+            out ExpressionNode interfaceValue,
+            out string access)
+        {
+            interfaceValue = null!;
+            access = ".";
+            if (member is not { MemberName: "type_id", Target: MemberExpressionNode { MemberName: "vtable" } vtableAccess })
+            {
+                return false;
+            }
+
+            var targetType = ResolveExpressionType(vtableAccess.Target);
+            if (targetType is null || !context.TryGetInterface(NormalizeType(targetType), out _))
+            {
+                return false;
+            }
+
+            interfaceValue = vtableAccess.Target;
+            access = IsPointerLike(vtableAccess.Target, targetType) ? "->" : ".";
+            return true;
+        }
+
+        private bool IsPointerLike(ExpressionNode expression, string type) =>
+            type.TrimEnd().EndsWith("*", StringComparison.Ordinal)
+            || expression is NameExpressionNode name && scope.IsImplicitReferenceLocal(name.SourceText);
+
+        private string? ResolveExpressionType(ExpressionNode expression)
+        {
+            if (expression.Semantic.Type is { } semanticType)
+            {
+                return TypeRefFormatter.ToCxString(semanticType);
+            }
+
+            return expression is NameExpressionNode name && scope.TryGetVariableType(name.SourceText, out var type)
+                ? type
+                : null;
         }
 
         private bool TryGetNamedTarget(

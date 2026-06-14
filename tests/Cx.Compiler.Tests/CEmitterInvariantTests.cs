@@ -1,7 +1,5 @@
-using Cx.Compiler.C;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
-using System.Reflection;
 
 namespace Cx.Compiler.Tests;
 
@@ -36,31 +34,34 @@ public sealed class CEmitterInvariantTests
     }
 
     [Fact]
-    public void ToCSimpleAccessExpression_LowersMemberPathToCAst()
+    public void Emit_ThrowsWhenMatchStatementReachesCEmission()
     {
-        var expression = InvokeToCSimpleAccessExpression("value.vtable->type_id");
+        var location = Location.Synthetic("<c-emitter-invariant-test>");
+        var program = new ProgramNode(
+            location,
+            [
+                new FunctionNode(
+                    location,
+                    IsStatic: false,
+                    "main",
+                    TypeParameters: [],
+                    GenericConstraints: [],
+                    Parameters: [],
+                    Body:
+                    [
+                        new MatchStatement(
+                            location,
+                            new NameExpressionNode(location, "value"),
+                            [
+                                new MatchArmNode(location, "_", BindingName: null, Body: []),
+                            ])
+                    ],
+                    Attributes: [],
+                    ReturnTypeNode: TypeNode.CreateFromText(location, "void")),
+            ]);
 
-        var member = Assert.IsType<CMemberExpression>(expression);
-        Assert.Equal("->", member.AccessOperator);
-        Assert.Equal("type_id", member.MemberName);
-    }
-
-    [Fact]
-    public void ToCSimpleAccessExpression_ThrowsForInvalidAccessPath()
-    {
-        var exception = Assert.Throws<TargetInvocationException>(
-            () => InvokeToCSimpleAccessExpression(".tag"));
-
-        var inner = Assert.IsType<InvalidOperationException>(exception.InnerException);
-        Assert.Contains("expected simple C access expression", inner.Message);
-    }
-
-    private static object InvokeToCSimpleAccessExpression(string expression)
-    {
-        var method = typeof(CEmitter).GetMethod(
-            "ToCSimpleAccessExpression",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-        return method.Invoke(null, [expression])!;
+        var exception = Assert.Throws<InvalidOperationException>(() => new CEmitter().Emit(program));
+        Assert.Contains("match at", exception.Message);
+        Assert.Contains("reached C statement lowering", exception.Message);
     }
 }
