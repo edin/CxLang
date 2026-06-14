@@ -140,41 +140,23 @@ public sealed class CExpressionLowererTests
         public CExpression LowerExpression(ExpressionNode expression) =>
             new CExpressionLowerer(this).LowerSimple(expression);
 
-        public string Lower(ExpressionNode expression) =>
-            new CExpressionEmitter().Emit(LowerExpression(expression));
-
         public CExpression LowerNameExpression(NameExpressionNode name) =>
             new CNameExpression(name.SourceText);
 
         public CExpression LowerAddressOfExpression(ExpressionNode operand) =>
             new CUnaryExpression("&", LowerExpression(operand));
 
-        public string LowerRawText(string text) => text;
-
-        public string LowerType(string type) => typePrefix + type;
-
         public string LowerType(TypeRef type) => typeRefPrefix + TypeRefFormatter.ToCxString(type);
 
         public string LowerType(TypeNode? typeNode) =>
             typeNode?.Semantic.Type is { } type
                 ? LowerType(type)
-                : LowerType(typeNode?.TypeName ?? string.Empty);
+                : typePrefix + (typeNode?.TypeName ?? string.Empty);
 
-        public string LowerType(TypeNode? typeNode, string fallbackType) => LowerType(fallbackType);
-
-        public bool ShouldUseRawLowering(string text) => false;
-
-        public bool ShouldUseRawAssignmentLowering(string text) => false;
+        public string LowerType(TypeNode? typeNode, string fallbackType) => typePrefix + fallbackType;
 
         public CExpression? TryWrapAssignmentValue(AssignmentExpressionNode assignment, CExpression value) => null;
 
-        public string? TryWrapAssignmentValueText(AssignmentExpressionNode assignment, string loweredValue) => null;
-
-        public CExpression? TryRepairAssignmentTarget(CExpression target) => null;
-
         public CExpression? TryLowerMemberExpression(MemberExpressionNode member) => memberOverride;
-
-        public string? TryLowerMemberText(MemberExpressionNode member) =>
-            memberOverride is null ? null : new CExpressionEmitter().Emit(memberOverride);
     }
 }

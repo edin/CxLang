@@ -12,9 +12,10 @@ public sealed partial class CEmitter
         GenericCallResolver genericCallResolver,
         ResolvedCallLowerer resolvedCallLowerer,
         MemberCallLowerer memberCallLowerer,
+        StructValueBuilder structValueBuilder,
         AdapterExposeResolver adapterExposeResolver,
         Func<string, string> lowerName,
-        Func<ExpressionNode, string> lowerText,
+        Func<string, string> lowerType,
         Func<ExpressionNode, CExpression> lowerExpression)
     {
         public CExpression? TryLower(GenericCallExpressionNode call)
@@ -39,7 +40,19 @@ public sealed partial class CEmitter
 
             if (context.IsGenericMacro(calleeName))
             {
-                return new CRawExpression($"{lowerName(calleeName)}({string.Join(", ", call.Arguments.Select(lowerText))})");
+                return new CCallExpression(
+                    new CFunctionName(lowerName(calleeName)),
+                    call.Arguments.Select(lowerExpression).ToList());
+            }
+
+            var loweredGenericType = lowerType($"{calleeName}<{string.Join(", ", typeArguments)}>");
+            if (context.TryGetStruct(calleeName, out var structNode)
+                || context.TryGetStruct(loweredGenericType, out structNode))
+            {
+                return structValueBuilder.BuildStructConstructorExpression(
+                    structNode,
+                    loweredGenericType,
+                    call.Arguments);
             }
 
             var freeMatch = genericCallResolver.FindFreeExact(calleeName, typeArguments);

@@ -14,26 +14,6 @@ public sealed partial class CEmitter
         Func<TypeRef, string> lowerTypeRef,
         Func<TypeRef?> selfTypeProvider)
     {
-        public string? TryWrap(string targetType, string sourceExpression, string loweredExpression)
-        {
-            if (TryWrapExpression(targetType, sourceExpression, new CRawExpression(loweredExpression)) is not { } expression)
-            {
-                return null;
-            }
-
-            return new CExpressionEmitter().Emit(expression);
-        }
-
-        public string? TryWrap(TypeRef targetType, string sourceExpression, string loweredExpression)
-        {
-            if (TryWrapExpression(targetType, sourceExpression, new CRawExpression(loweredExpression)) is not { } expression)
-            {
-                return null;
-            }
-
-            return new CExpressionEmitter().Emit(expression);
-        }
-
         public CExpression? TryWrapExpression(
             string targetType,
             string sourceExpression,
@@ -82,16 +62,6 @@ public sealed partial class CEmitter
                 taggedUnion.Name,
                 variant.Name,
                 buildPayload(VariantTypeText(variant), arguments));
-        }
-
-        public string BuildConstructorText(
-            TaggedUnionNode taggedUnion,
-            TaggedUnionVariantNode variant,
-            IReadOnlyList<string> arguments,
-            Func<string, IReadOnlyList<string>, string> buildPayload)
-        {
-            var payload = buildPayload(VariantTypeText(variant), arguments);
-            return $"({taggedUnion.Name}){{ .tag = {taggedUnion.Name}_Tag_{variant.Name}, .as.{variant.Name} = {payload} }}";
         }
 
         public CExpression? TryWrapExpression(

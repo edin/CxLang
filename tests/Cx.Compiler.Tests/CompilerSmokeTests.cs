@@ -20,6 +20,27 @@ public sealed class CompilerSmokeTests
     }
 
     [Fact]
+    public void CompileToC_EmitsLoweredForeachWithoutEmitterFallback()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn sum(values: int[4]) -> int {
+                let total: int = 0;
+                foreach value: int in values {
+                    total += value;
+                }
+                return total;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.DoesNotContain("foreach should be lowered before C emission", result.Output);
+        Assert.Contains("__cx_foreach_data_", result.Output);
+        Assert.Contains("__cx_foreach_length_", result.Output);
+        Assert.Contains("__cx_foreach_index_", result.Output);
+    }
+
+    [Fact]
     public void CompileToC_NamedModuleDoesNotPrefixCNamesYet()
     {
         var result = CompilerTestHelpers.Compile(

@@ -22,8 +22,7 @@ public sealed partial class CEmitter
         IReadOnlyDictionary<string, string> EnumMemberAliases,
         IReadOnlyDictionary<string, string> TypeAliases,
         IReadOnlyDictionary<string, AdapterExposeInfo> AdapterExposes,
-        TypeRefParser TypeRefParser,
-        RequirementMatcher RequirementMatcher)
+        TypeRefParser TypeRefParser)
     {
         public bool IsGenericMacro(string name) =>
             GenericMacroNames.Contains(name);
@@ -36,9 +35,6 @@ public sealed partial class CEmitter
                 resolveExpressionType,
                 canAssign,
                 function => TypeTextOrNull(function.OwnerTypeNode, TypeRefParser));
-
-        public RequirementLookup CreateRequirementLookup() =>
-            new(RequirementMatcher);
 
         public bool TryGetMethod(string key, out CLoweringMethodInfo method)
         {
@@ -184,8 +180,7 @@ public sealed partial class CEmitter
 
         public static CLoweringContext Create(
             ProgramNode program,
-            IReadOnlyList<StructNode> concreteStructs,
-            RequirementMatcher requirementMatcher)
+            IReadOnlyList<StructNode> concreteStructs)
         {
             var typeRefParser = new TypeRefParser(program);
 
@@ -278,8 +273,7 @@ public sealed partial class CEmitter
                         TypeTextOrNull(expose.ReturnTypeNode, typeRefParser))))
                     .GroupBy(expose => $"{expose.AdapterName}.{expose.ExposedName}", StringComparer.Ordinal)
                     .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal),
-                typeRefParser,
-                requirementMatcher);
+                typeRefParser);
         }
 
         private static string? ResolveSelfType(FunctionNode function, TypeRefParser typeRefParser)

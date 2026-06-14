@@ -21,7 +21,6 @@ internal sealed class CUsageCollector
     {
         switch (expression)
         {
-            case CRawExpression:
             case CLiteralExpression:
             case CNameExpression:
             case CSizeOfTypeExpression:

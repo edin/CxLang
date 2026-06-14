@@ -13,54 +13,8 @@ public sealed partial class CEmitter
         StructValueBuilder structValueBuilder,
         TaggedUnionValueBuilder taggedUnionValueBuilder,
         Func<NameExpressionNode, string> lowerFunctionReferenceName,
-        Func<ExpressionNode, string> lowerText,
-        Func<ExpressionNode, CExpression> lowerExpression,
-        Func<string, IReadOnlyList<string>, string> lowerPayloadConstructorText,
-        Func<StructNode, IReadOnlyList<string>, string> lowerStructConstructorText)
+        Func<ExpressionNode, CExpression> lowerExpression)
     {
-        private readonly CExpressionEmitter _expressionEmitter = new();
-
-        public string? TryLowerText(CallExpressionNode call)
-        {
-            if (resolvedCallLowerer.TryLowerStatic(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
-            {
-                return _expressionEmitter.Emit(resolvedCall);
-            }
-
-            if (call.Callee is MemberExpressionNode member)
-            {
-                var memberCall = memberCallLowerer.TryLower(member, call.Arguments);
-                return memberCall is null ? null : _expressionEmitter.Emit(memberCall);
-            }
-
-            if (call.Callee is NameExpressionNode name)
-            {
-                if (context.TryGetStruct(name.SourceText, out var structNode))
-                {
-                    return lowerStructConstructorText(
-                        structNode,
-                        call.Arguments.Select(argument => argument.SourceText).ToList());
-                }
-
-                if (context.IsTaggedUnion(name.SourceText))
-                {
-                    return null;
-                }
-
-                var genericCall = genericCallResolver.FindInferredCall(null, name.SourceText, call.Arguments, skipSelf: false);
-                if (genericCall is not null)
-                {
-                    return EmitCall(
-                        new CResolvedFunction(GetFunctionModule(genericCall.OwnerType, genericCall.Name), genericCall.CName),
-                        call.Arguments);
-                }
-
-                return EmitCall(new CFunctionName(lowerFunctionReferenceName(name)), call.Arguments);
-            }
-
-            return null;
-        }
-
         public CExpression? TryLowerExpression(CallExpressionNode call)
         {
             if (resolvedCallLowerer.TryLowerStatic(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
@@ -82,7 +36,7 @@ public sealed partial class CEmitter
             {
                 if (context.TryGetStruct(name.SourceText, out var structNode))
                 {
-                    return structValueBuilder.BuildStructConstructorExpression(structNode, call.Arguments, lowerStructConstructorText);
+                    return structValueBuilder.BuildStructConstructorExpression(structNode, call.Arguments);
                 }
 
                 if (context.IsTaggedUnion(name.SourceText))
@@ -125,12 +79,7 @@ public sealed partial class CEmitter
         private CExpression LowerPayloadConstructorExpression(
             string payloadType,
             IReadOnlyList<ExpressionNode> arguments) =>
-            structValueBuilder.BuildPayloadExpression(payloadType, arguments, lowerPayloadConstructorText);
-
-        private string EmitCall(CFunctionReference function, IReadOnlyList<ExpressionNode> arguments) =>
-            _expressionEmitter.Emit(new CCallExpression(
-                function,
-                arguments.Select(argument => new CRawExpression(lowerText(argument))).ToList()));
+            structValueBuilder.BuildPayloadExpression(payloadType, arguments);
 
         private static string GetFunctionModule(string? ownerType, string name) =>
             ownerType is null ? name : ownerType;

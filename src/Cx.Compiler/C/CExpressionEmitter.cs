@@ -4,7 +4,6 @@ internal sealed class CExpressionEmitter
 {
     public string Emit(CExpression expression) => expression switch
     {
-        CRawExpression raw => raw.Text,
         CLiteralExpression literal => literal.Text,
         CNameExpression name => name.Name,
         CParenthesizedExpression parenthesized => $"({Emit(parenthesized.Expression)})",
@@ -18,6 +17,7 @@ internal sealed class CExpressionEmitter
         CAssignmentExpression assignment => $"{Emit(assignment.Target)} {assignment.Operator} {Emit(assignment.Value)}",
         CMemberExpression member => $"{Emit(member.Target)}{member.AccessOperator}{member.MemberName}",
         CIndexExpression index => $"{Emit(index.Target)}[{Emit(index.Index)}]",
+        CCommaExpression comma => string.Join(", ", comma.Expressions.Select(Emit)),
         CInitializerExpression initializer => EmitInitializer(initializer),
         CCallExpression call => EmitCall(call),
         _ => throw new InvalidOperationException($"Unexpected C expression node {expression.GetType().Name}."),

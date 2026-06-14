@@ -146,9 +146,6 @@ internal sealed class CRawAuditCollector
     {
         switch (expression)
         {
-            case CRawExpression raw:
-                Add("RawExpression", path, raw.Text);
-                break;
             case CParenthesizedExpression parenthesized:
                 VisitExpression(parenthesized.Expression, path + ".inner");
                 break;

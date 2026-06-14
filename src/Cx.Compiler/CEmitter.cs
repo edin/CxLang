@@ -174,8 +174,7 @@ public sealed partial class CEmitter
             items.Add(new CBlankLine());
         }
 
-        var requirementMatcher = new RequirementMatcher(emitProgram, structsToEmit);
-        var nameLowerer = new ImportedNameLowerer(emitProgram, structsToEmit, requirementMatcher);
+        var nameLowerer = new ImportedNameLowerer(emitProgram, structsToEmit);
 
         foreach (var implementation in interfaceImplementations)
         {
@@ -553,192 +552,7 @@ public sealed partial class CEmitter
         int rawIndentLevel)
     {
         var iterableExpression = ExpressionText(foreachStatement.IterableExpression);
-
-        if (foreachStatement.KeyBinding is not null)
-        {
-            return nameLowerer.ResolveIteratorIterable(foreachStatement.IterableExpression, keyValue: true) is { } keyValueIterable
-                ? ToCIteratorForeachStatement(foreachStatement, keyValueIterable, nameLowerer, rawIndentLevel)
-                : new CRawStatement(IndentLine($"/* key/value foreach requires KeyValueIterable for {iterableExpression} */", rawIndentLevel));
-        }
-
-        if (nameLowerer.ResolveIteratorIterable(foreachStatement.IterableExpression, keyValue: false) is { } iteratorIterable)
-        {
-            return ToCIteratorForeachStatement(foreachStatement, iteratorIterable, nameLowerer, rawIndentLevel);
-        }
-
-        var iterable = nameLowerer.ResolveContiguousIterable(iterableExpression);
-        if (iterable is null)
-        {
-            return new CRawStatement(IndentLine($"/* unable to lower foreach {foreachStatement.ItemName} in {iterableExpression} */", rawIndentLevel));
-        }
-
-        var indexName = foreachStatement.IndexBinding?.Name ?? $"__cx_i{rawIndentLevel}";
-        var loopIndexName = foreachStatement.IndexBinding is null
-            ? indexName
-            : $"__cx_i{rawIndentLevel}";
-        var itemType = GetForeachValueType(foreachStatement, iterable.ElementType);
-        var itemStorageType = GetForeachValueStorageType(foreachStatement, iterable.ElementType);
-        var bodyLowerer = nameLowerer.WithImplicitReferenceLocal(
-            foreachStatement.ItemName,
-            itemType,
-            itemStorageType,
-            foreachStatement.ValueBinding.IsConst);
-        if (foreachStatement.IndexBinding is { } indexBinding)
-        {
-            var indexType = string.IsNullOrWhiteSpace(ForeachBindingTypeText(indexBinding)) ? "usize" : ForeachBindingTypeText(indexBinding);
-            bodyLowerer = bodyLowerer.WithLocal(indexBinding.Name, indexType);
-        }
-
-        var body = new List<CStatementNode>
-        {
-        };
-
-        if (foreachStatement.IndexBinding is not null)
-        {
-            body.Add(new CLocalDeclarationStatement(
-                "const " + LowerDeclaration(GetForeachIndexType(foreachStatement), indexName),
-                new CNameExpression(loopIndexName)));
-        }
-
-        body.Add(new CLocalDeclarationStatement(
-            LowerDeclaration(itemStorageType, foreachStatement.ItemName, nameLowerer.SelfType),
-            new CUnaryExpression(
-                "&",
-                new CIndexExpression(ToCSimpleAccessExpression(iterable.DataAccess), new CNameExpression(loopIndexName)))));
-
-        body.AddRange(foreachStatement.Body.Select(statement => ToCStatement(statement, bodyLowerer, rawIndentLevel + 1)));
-
-        return new CForStatement(
-            new CDeclarationForInitializer(
-                LowerDeclaration(GetForeachIndexType(foreachStatement), loopIndexName),
-                new CLiteralExpression("0")),
-            new CBinaryExpression(
-                new CNameExpression(loopIndexName),
-                "<",
-                ToCSimpleAccessExpression(iterable.LengthAccess)),
-            new CPostfixExpression(new CNameExpression(loopIndexName), "++"),
-            body);
-    }
-
-    private static CStatementNode ToCIteratorForeachStatement(
-        ForeachStatement foreachStatement,
-        IteratorIterableInfo iteratorIterable,
-        ImportedNameLowerer nameLowerer,
-        int rawIndentLevel)
-    {
-        var iteratorName = $"__cx_it{rawIndentLevel}";
-        var indexName = foreachStatement.IndexBinding?.Name ?? $"__cx_i{rawIndentLevel}";
-        var loopIndexName = foreachStatement.IndexBinding is null
-            ? indexName
-            : $"__cx_i{rawIndentLevel}";
-        var indexType = GetForeachIndexType(foreachStatement);
-        var iteratorLowerer = nameLowerer.WithLocal(iteratorName, iteratorIterable.IteratorType);
-        var itemType = GetForeachValueType(foreachStatement, iteratorIterable.ValueType);
-        var itemStorageType = GetForeachValueStorageType(foreachStatement, iteratorIterable.ValueType);
-        var bodyLowerer = iteratorLowerer.WithImplicitReferenceLocal(
-            foreachStatement.ItemName,
-            itemType,
-            itemStorageType,
-            foreachStatement.ValueBinding.IsConst);
-
-        if (foreachStatement.KeyBinding is { } keyBinding && iteratorIterable.KeyType is { } keyElementType)
-        {
-            var keyType = GetForeachBindingValueType(keyBinding, keyElementType);
-            var keyStorageType = GetForeachBindingStorageType(keyBinding, keyElementType, forceConst: true);
-            bodyLowerer = bodyLowerer.WithImplicitReferenceLocal(keyBinding.Name, keyType, keyStorageType, isConst: true);
-        }
-
-        if (foreachStatement.IndexBinding is { } indexBinding)
-        {
-            bodyLowerer = bodyLowerer.WithLocal(indexBinding.Name, indexType);
-        }
-
-        var block = new List<CStatementNode>
-        {
-            new CLocalDeclarationStatement(
-                LowerDeclaration(iteratorIterable.IteratorType, iteratorName, nameLowerer.SelfType),
-                iteratorIterable.IteratorInitializer),
-        };
-
-        if (foreachStatement.IndexBinding is not null)
-        {
-            block.Add(new CLocalDeclarationStatement(
-                LowerDeclaration(indexType, loopIndexName),
-                new CLiteralExpression("0")));
-        }
-
-        var whileBody = new List<CStatementNode>();
-        if (foreachStatement.IndexBinding is not null)
-        {
-            whileBody.Add(new CLocalDeclarationStatement(
-                "const " + LowerDeclaration(indexType, indexName),
-                new CNameExpression(loopIndexName)));
-        }
-
-        if (foreachStatement.KeyBinding is { } key && iteratorIterable.KeyType is { } keyIteratorElementType)
-        {
-            whileBody.Add(new CLocalDeclarationStatement(
-                LowerDeclaration(GetForeachBindingStorageType(key, keyIteratorElementType, forceConst: true), key.Name, nameLowerer.SelfType),
-                iteratorLowerer.LowerExpression(SyntheticMemberCall(foreachStatement.Location, iteratorName, "key"))));
-        }
-
-        whileBody.Add(new CLocalDeclarationStatement(
-            LowerDeclaration(itemStorageType, foreachStatement.ItemName, nameLowerer.SelfType),
-            iteratorLowerer.LowerExpression(SyntheticMemberCall(foreachStatement.Location, iteratorName, "value"))));
-
-        whileBody.AddRange(foreachStatement.Body.Select(statement => ToCStatement(statement, bodyLowerer, rawIndentLevel + 1)));
-        if (foreachStatement.IndexBinding is not null)
-        {
-            whileBody.Add(new CExpressionStatement(new CPostfixExpression(new CNameExpression(loopIndexName), "++")));
-        }
-
-        block.Add(new CWhileStatement(
-            iteratorLowerer.LowerExpression(SyntheticMemberCall(foreachStatement.Location, iteratorName, "next")),
-            whileBody));
-
-        return new CBlockStatement(block);
-    }
-
-    private static string GetForeachIndexType(ForeachStatement foreachStatement) =>
-        foreachStatement.IndexBinding is { } indexBinding && !string.IsNullOrWhiteSpace(ForeachBindingTypeText(indexBinding))
-            ? ForeachBindingTypeText(indexBinding)
-            : "usize";
-
-    private static string GetForeachValueType(ForeachStatement foreachStatement, string elementType) =>
-        string.IsNullOrWhiteSpace(ForeachBindingTypeText(foreachStatement.ValueBinding))
-            ? elementType
-            : ForeachBindingTypeText(foreachStatement.ValueBinding);
-
-    private static string GetForeachBindingValueType(ForeachBinding binding, string elementType) =>
-        string.IsNullOrWhiteSpace(ForeachBindingTypeText(binding))
-            ? elementType
-            : ForeachBindingTypeText(binding);
-
-    private static string GetForeachValueStorageType(ForeachStatement foreachStatement, string elementType)
-        => GetForeachBindingStorageType(foreachStatement.ValueBinding, elementType, forceConst: false);
-
-    private static string GetForeachBindingStorageType(ForeachBinding binding, string elementType, bool forceConst)
-    {
-        var declaredType = GetForeachBindingValueType(binding, elementType);
-        if ((forceConst || binding.IsConst)
-            && !declaredType.TrimStart().StartsWith("const ", StringComparison.Ordinal))
-        {
-            declaredType = "const " + declaredType;
-        }
-
-        return declaredType.TrimEnd().EndsWith("*", StringComparison.Ordinal)
-            ? declaredType
-            : declaredType + "*";
-    }
-
-    private static CallExpressionNode SyntheticMemberCall(
-        Cx.Compiler.Syntax.Location location,
-        string targetName,
-        string methodName)
-    {
-        var target = new NameExpressionNode(location, targetName);
-        var callee = new MemberExpressionNode(location, targetName + "." + methodName, target, methodName);
-        return new CallExpressionNode(location, targetName + "." + methodName + "()", callee, []);
+        return new CRawStatement(IndentLine($"/* foreach should be lowered before C emission: {foreachStatement.ItemName} in {iterableExpression} */", rawIndentLevel));
     }
 
     private static CExpression ToCSimpleAccessExpression(string expression)
@@ -754,7 +568,7 @@ public sealed partial class CEmitter
             .ToList();
         if (tokens.Count == 0 || tokens[0] is "." or "->")
         {
-            return new CRawExpression(expression);
+            throw InvalidSimpleAccessExpression(expression);
         }
 
         CExpression result = new CNameExpression(tokens[0]);
@@ -762,7 +576,7 @@ public sealed partial class CEmitter
         {
             if (i + 1 >= tokens.Count || tokens[i] is not ("." or "->"))
             {
-                return new CRawExpression(expression);
+                throw InvalidSimpleAccessExpression(expression);
             }
 
             result = new CMemberExpression(result, tokens[i], tokens[i + 1]);
@@ -770,6 +584,9 @@ public sealed partial class CEmitter
 
         return result;
     }
+
+    private static InvalidOperationException InvalidSimpleAccessExpression(string expression) =>
+        new($"Internal C emission error: expected simple C access expression, got '{expression}'.");
 
     private static CWhileStatement ToCWhileStatement(
         WhileStatement whileStatement,
@@ -1803,58 +1620,8 @@ public sealed partial class CEmitter
         int indentLevel)
     {
         var iterableExpression = ExpressionText(foreachStatement.IterableExpression);
-        if (foreachStatement.KeyBinding is not null)
-        {
-            AppendIndent(builder, indentLevel);
-            builder.AppendLine($"/* key/value foreach lowering is not supported yet for {iterableExpression} */");
-            return;
-        }
-
-        var iterable = nameLowerer.ResolveContiguousIterable(iterableExpression);
-        if (iterable is null)
-        {
-            AppendIndent(builder, indentLevel);
-            builder.AppendLine($"/* unable to lower foreach {foreachStatement.ItemName} in {iterableExpression} */");
-            return;
-        }
-
-        var indexName = foreachStatement.IndexBinding?.Name ?? $"__cx_i{indentLevel}";
-        var loopIndexName = foreachStatement.IndexBinding is null
-            ? indexName
-            : $"__cx_i{indentLevel}";
-        var indexType = GetForeachIndexType(foreachStatement);
-        var itemType = GetForeachValueType(foreachStatement, iterable.ElementType);
-        var itemStorageType = GetForeachValueStorageType(foreachStatement, iterable.ElementType);
         AppendIndent(builder, indentLevel);
-        builder.AppendLine($"for ({LowerDeclaration(indexType, loopIndexName, nameLowerer.SelfType)} = 0; {loopIndexName} < {iterable.LengthAccess}; {loopIndexName}++)");
-        AppendIndent(builder, indentLevel);
-        builder.AppendLine("{");
-        if (foreachStatement.IndexBinding is not null)
-        {
-            AppendIndent(builder, indentLevel + 1);
-            builder.AppendLine($"const {LowerDeclaration(indexType, indexName, nameLowerer.SelfType)} = {loopIndexName};");
-        }
-
-        AppendIndent(builder, indentLevel + 1);
-        builder.AppendLine($"{LowerDeclaration(itemStorageType, foreachStatement.ItemName, nameLowerer.SelfType)} = &{iterable.DataAccess}[{loopIndexName}];");
-
-        var bodyLowerer = nameLowerer.WithImplicitReferenceLocal(
-            foreachStatement.ItemName,
-            itemType,
-            itemStorageType,
-            foreachStatement.ValueBinding.IsConst);
-        if (foreachStatement.IndexBinding is { } indexBinding)
-        {
-            bodyLowerer = bodyLowerer.WithLocal(indexBinding.Name, indexType);
-        }
-
-        foreach (var statement in foreachStatement.Body)
-        {
-            EmitStatement(builder, statement, bodyLowerer, indentLevel + 1);
-        }
-
-        AppendIndent(builder, indentLevel);
-        builder.AppendLine("}");
+        builder.AppendLine($"/* foreach should be lowered before C emission: {foreachStatement.ItemName} in {iterableExpression} */");
     }
 
     private static void EmitSwitchStatement(
@@ -2454,14 +2221,4 @@ public sealed partial class CEmitter
         bool TakesPointerSelf,
         bool IsStatic);
 
-    private sealed record IteratorIterableInfo(
-        string IteratorType,
-        string ValueType,
-        string? KeyType,
-        CExpression IteratorInitializer);
-
-    private sealed record ContiguousIterableInfo(
-        string ElementType,
-        string LengthAccess,
-        string DataAccess);
 }

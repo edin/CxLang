@@ -2,8 +2,6 @@ namespace Cx.Compiler.C;
 
 internal abstract record CExpression;
 
-internal sealed record CRawExpression(string Text) : CExpression;
-
 internal sealed record CLiteralExpression(string Text) : CExpression;
 
 internal sealed record CNameExpression(string Name) : CExpression;
@@ -43,6 +41,9 @@ internal sealed record CMemberExpression(
 internal sealed record CIndexExpression(
     CExpression Target,
     CExpression Index) : CExpression;
+
+internal sealed record CCommaExpression(
+    IReadOnlyList<CExpression> Expressions) : CExpression;
 
 internal sealed record CInitializerExpression(
     string? TypeName,

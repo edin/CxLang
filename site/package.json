@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "deploy": "powershell -ExecutionPolicy Bypass -File ../scripts/deploy-site.ps1"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",

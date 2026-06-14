@@ -321,7 +321,7 @@ public sealed class CxCompiler
                 location,
                 IsConst: false,
                 Name: "runner",
-                Initializer: new RawExpressionNode(location, "TestRunner.create()"),
+                Initializer: StaticCall(location, "TestRunner", "create", []),
                 TypeNode: RewriteTypeNode(null, "TestRunner")),
         };
 
@@ -329,20 +329,60 @@ public sealed class CxCompiler
         {
             body.Add(new CStatement(
                 test.Location,
-                new RawExpressionNode(test.Location, $"runner.begin(\"{EscapeStringLiteral(test.Name)}\")")));
+                RunnerCall(test.Location, "begin", [new LiteralExpressionNode(test.Location, $"\"{EscapeStringLiteral(test.Name)}\"")])));
             body.Add(new CStatement(
                 test.Location,
-                new RawExpressionNode(test.Location, $"{generatedNames[test]}(&runner)")));
+                new CallExpressionNode(
+                    test.Location,
+                    $"{generatedNames[test]}(&runner)",
+                    new NameExpressionNode(test.Location, generatedNames[test]),
+                    [AddressOf(test.Location, "runner")])));
             body.Add(new CStatement(
                 test.Location,
-                new RawExpressionNode(test.Location, "runner.end()")));
+                RunnerCall(test.Location, "end", [])));
         }
 
         body.Add(new ReturnStatement(
             location,
-            new RawExpressionNode(location, "runner.result()")));
+            RunnerCall(location, "result", [])));
         return body;
     }
+
+    private static CallExpressionNode RunnerCall(
+        Location location,
+        string methodName,
+        IReadOnlyList<ExpressionNode> arguments) =>
+        new(
+            location,
+            $"runner.{methodName}()",
+            new MemberExpressionNode(
+                location,
+                $"runner.{methodName}",
+                new NameExpressionNode(location, "runner"),
+                methodName),
+            arguments);
+
+    private static CallExpressionNode StaticCall(
+        Location location,
+        string typeName,
+        string methodName,
+        IReadOnlyList<ExpressionNode> arguments) =>
+        new(
+            location,
+            $"{typeName}.{methodName}()",
+            new MemberExpressionNode(
+                location,
+                $"{typeName}.{methodName}",
+                new NameExpressionNode(location, typeName),
+                methodName),
+            arguments);
+
+    private static UnaryExpressionNode AddressOf(Location location, string name) =>
+        new(
+            location,
+            "&" + name,
+            "&",
+            new NameExpressionNode(location, name));
 
     private static IReadOnlyList<StatementNode> RewriteTestStatements(IReadOnlyList<StatementNode> statements) =>
         statements.Select(RewriteTestStatement).ToList();

@@ -8,14 +8,12 @@ public sealed partial class CEmitter
     private sealed class StructValueBuilder(
         CLoweringContext context,
         Func<ExpressionNode, CExpression> lowerExpression,
-        Func<string, string> lowerText,
         Func<string, string?> inferExpressionType,
         Func<string, string> lowerCxType)
     {
         public CExpression BuildPayloadExpression(
             string payloadType,
-            IReadOnlyList<ExpressionNode> arguments,
-            Func<string, IReadOnlyList<string>, string> buildPayloadText)
+            IReadOnlyList<ExpressionNode> arguments)
         {
             var normalizedPayloadType = NormalizeType(payloadType);
             if (context.TryGetStruct(normalizedPayloadType, out var structNode))
@@ -34,52 +32,37 @@ public sealed partial class CEmitter
 
             return arguments.Count == 1
                 ? lowerExpression(arguments[0])
-                : new CRawExpression(buildPayloadText(payloadType, arguments.Select(argument => argument.SourceText).ToList()));
+                : new CCommaExpression(arguments.Select(lowerExpression).ToList());
         }
 
         public CExpression BuildStructConstructorExpression(
             StructNode structNode,
-            IReadOnlyList<ExpressionNode> arguments,
-            Func<StructNode, IReadOnlyList<string>, string> buildStructConstructorText)
+            IReadOnlyList<ExpressionNode> arguments)
         {
             return TryBuildStructConstructorExpression(structNode, arguments, out var initializer)
                 ? initializer
-                : new CRawExpression(buildStructConstructorText(structNode, arguments.Select(argument => argument.SourceText).ToList()));
+                : BuildStructConstructorCall(structNode, arguments);
         }
 
-        public string BuildPayloadText(
-            string payloadType,
-            IReadOnlyList<string> arguments,
-            Func<StructNode, IReadOnlyList<string>, string> buildStructConstructorText)
+        public CExpression BuildStructConstructorExpression(
+            StructNode structNode,
+            string loweredStructType,
+            IReadOnlyList<ExpressionNode> arguments)
         {
-            var normalizedPayloadType = NormalizeType(payloadType);
-            if (context.TryGetStruct(normalizedPayloadType, out var structNode))
-            {
-                if (arguments.Count == 1 && inferExpressionType(arguments[0]) == normalizedPayloadType)
-                {
-                    return lowerText(arguments[0]);
-                }
-
-                return buildStructConstructorText(structNode, arguments);
-            }
-
-            return arguments.Count == 1 ? lowerText(arguments[0]) : string.Join(", ", arguments.Select(lowerText));
-        }
-
-        public string BuildStructConstructorText(StructNode structNode, IReadOnlyList<string> arguments)
-        {
-            if (arguments.Count != structNode.Fields.Count)
-            {
-                return $"{structNode.Name}({string.Join(", ", arguments)})";
-            }
-
-            var fields = structNode.Fields
-                .Zip(arguments, (field, argument) => $".{field.Name} = {lowerText(argument)}");
-            return $"({structNode.Name}){{ {string.Join(", ", fields)} }}";
+            return TryBuildStructConstructorExpression(structNode, loweredStructType, arguments, out var initializer)
+                ? initializer
+                : BuildStructConstructorCall(structNode, arguments);
         }
 
         private bool TryBuildStructConstructorExpression(
             StructNode structNode,
+            IReadOnlyList<ExpressionNode> arguments,
+            out CExpression initializer) =>
+            TryBuildStructConstructorExpression(structNode, lowerCxType(structNode.Name), arguments, out initializer);
+
+        private bool TryBuildStructConstructorExpression(
+            StructNode structNode,
+            string loweredStructType,
             IReadOnlyList<ExpressionNode> arguments,
             out CExpression initializer)
         {
@@ -90,12 +73,19 @@ public sealed partial class CEmitter
             }
 
             initializer = new CInitializerExpression(
-                lowerCxType(structNode.Name),
+                loweredStructType,
                 structNode.Fields
                     .Zip(arguments, (field, argument) => new CInitializerField(field.Name, lowerExpression(argument)))
                     .ToList(),
                 []);
             return true;
         }
+
+        private CExpression BuildStructConstructorCall(
+            StructNode structNode,
+            IReadOnlyList<ExpressionNode> arguments) =>
+            new CCallExpression(
+                new CFunctionName(structNode.Name),
+                arguments.Select(lowerExpression).ToList());
     }
 }
