@@ -606,17 +606,17 @@ internal sealed class GenericUseCollector(ProgramNode program)
                     yield return let.TypeNode.ToTypeName();
                     if (let.Initializer is not null)
                     {
-                        yield return let.Initializer.SourceText;
+                        yield return let.Initializer.ToSourceText();
                     }
                     break;
                 case ReturnStatement { Expression: not null } ret:
-                    yield return ret.Expression.SourceText;
+                    yield return ret.Expression.ToSourceText();
                     break;
                 case CStatement c:
-                    yield return c.Expression.SourceText;
+                    yield return c.Expression.ToSourceText();
                     break;
                 case IfStatement ifStatement:
-                    yield return ifStatement.Condition.SourceText;
+                    yield return ifStatement.Condition.ToSourceText();
                     foreach (var nested in EnumerateExpressionTexts(ifStatement.ThenBody))
                     {
                         yield return nested;
@@ -636,7 +636,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                     }
                     break;
                 case WhileStatement whileStatement:
-                    yield return whileStatement.Condition.SourceText;
+                    yield return whileStatement.Condition.ToSourceText();
                     foreach (var nested in EnumerateExpressionTexts(whileStatement.Body))
                     {
                         yield return nested;
@@ -655,11 +655,11 @@ internal sealed class GenericUseCollector(ProgramNode program)
                     {
                         yield return expression;
                     }
-                    yield return forStatement.Condition.SourceText;
-                    yield return forStatement.Increment.SourceText;
+                    yield return forStatement.Condition.ToSourceText();
+                    yield return forStatement.Increment.ToSourceText();
                     if (forStatement.CounterIncrement is not null)
                     {
-                        yield return forStatement.CounterIncrement.SourceText;
+                        yield return forStatement.CounterIncrement.ToSourceText();
                     }
 
                     foreach (var nested in EnumerateExpressionTexts(forStatement.Body))
@@ -668,17 +668,17 @@ internal sealed class GenericUseCollector(ProgramNode program)
                     }
                     break;
                 case ForeachStatement foreachStatement:
-                    yield return foreachStatement.IterableExpression.SourceText;
+                    yield return foreachStatement.IterableExpression.ToSourceText();
                     foreach (var nested in EnumerateExpressionTexts(foreachStatement.Body))
                     {
                         yield return nested;
                     }
                     break;
                 case SwitchStatement switchStatement:
-                    yield return switchStatement.Expression.SourceText;
+                    yield return switchStatement.Expression.ToSourceText();
                     foreach (var switchCase in switchStatement.Cases)
                     {
-                        yield return switchCase.Pattern.SourceText;
+                        yield return switchCase.Pattern.ToSourceText();
                         foreach (var nested in EnumerateExpressionTexts(switchCase.Body))
                         {
                             yield return nested;
@@ -690,7 +690,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                     }
                     break;
                 case MatchStatement matchStatement:
-                    yield return matchStatement.Expression.SourceText;
+                    yield return matchStatement.Expression.ToSourceText();
                     foreach (var arm in matchStatement.Arms)
                     {
                         foreach (var nested in EnumerateExpressionTexts(arm.Body))
@@ -706,8 +706,8 @@ internal sealed class GenericUseCollector(ProgramNode program)
     private static IEnumerable<string> EnumerateForInitializerTexts(ForInitializerNode? initializer) => initializer switch
     {
         ForDeclarationInitializerNode declaration when declaration.Initializer is not null =>
-            [declaration.Initializer.SourceText],
-        ForExpressionInitializerNode expression => [expression.Expression.SourceText],
+            [declaration.Initializer.ToSourceText()],
+        ForExpressionInitializerNode expression => [expression.Expression.ToSourceText()],
         _ => [],
     };
 

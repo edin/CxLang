@@ -17,21 +17,21 @@ internal static class CEmissionGuards
         new($"Internal C emission error: unsupported else branch '{elseBranch.GetType().Name}' at {elseBranch.Location} reached C statement lowering.");
 
     public static InvalidOperationException RawExpressionAfterLowering(RawExpressionNode raw) =>
-        new($"Raw expression reached C emission after lowering: '{TrimForDiagnostic(raw.SourceText)}'.");
+        new($"Raw expression reached C emission after lowering: '{TrimForDiagnostic(raw.RawText)}'.");
 
     public static InvalidOperationException UnsupportedRawExpressionLowering(ExpressionNode expression) =>
-        new($"Internal C emission error: expression requires unsupported raw C lowering: '{TrimForDiagnostic(expression.SourceText)}'.");
+        new($"Internal C emission error: expression requires unsupported raw C lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
 
     public static InvalidOperationException UnsupportedCExpressionLowering(ExpressionNode expression) =>
-        new($"Internal C emission error: expression requires unsupported C expression lowering: '{TrimForDiagnostic(expression.SourceText)}'.");
+        new($"Internal C emission error: expression requires unsupported C expression lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
 
     public static InvalidOperationException UnsupportedExpressionTextLowering(ExpressionNode expression) =>
-        new($"Internal C emission error: expression requires unsupported legacy text lowering: '{TrimForDiagnostic(expression.SourceText)}'.");
+        new($"Internal C emission error: expression requires unsupported legacy text lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
 
     public static InvalidOperationException UnsupportedInitializerTextFallback(ExpressionNode expression, string loweredText) =>
         new(
             "Internal C emission error: initializer lowered differently through legacy text path and cannot be represented as C AST: "
-            + $"'{TrimForDiagnostic(expression.SourceText)}' -> '{TrimForDiagnostic(loweredText)}'.");
+            + $"'{TrimForDiagnostic(expression.ToSourceText())}' -> '{TrimForDiagnostic(loweredText)}'.");
 
     private static string TrimForDiagnostic(string text)
     {

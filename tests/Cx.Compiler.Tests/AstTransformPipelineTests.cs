@@ -20,7 +20,7 @@ public sealed class AstTransformPipelineTests
             .Run(program);
 
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(rewritten.Functions).Body.Single());
-        Assert.Equal("after", Assert.IsType<NameExpressionNode>(ret.Expression).SourceText);
+        Assert.Equal("after", Assert.IsType<NameExpressionNode>(ret.Expression).Name);
     }
 
     [Fact]
@@ -64,7 +64,6 @@ public sealed class AstTransformPipelineTests
                 location,
                 new ParenthesizedExpressionNode(
                     location,
-                    "(before)",
                     new NameExpressionNode(location, "before"))),
         ]);
 
@@ -100,8 +99,8 @@ public sealed class AstTransformPipelineTests
     private sealed class RenameExpressionTransform(string from, string to) : IAstNodeTransform<NameExpressionNode>
     {
         public AstTransformResult Transform(NameExpressionNode node, AstTransformContext context) =>
-            string.Equals(node.SourceText, from, StringComparison.Ordinal)
-                ? AstTransformResult.ReplaceExpression(node with { SourceText = to })
+            string.Equals(node.Name, from, StringComparison.Ordinal)
+                ? AstTransformResult.ReplaceExpression(node with { Name = to })
                 : AstTransformResult.Unchanged;
     }
 
@@ -132,6 +131,6 @@ public sealed class AstTransformPipelineTests
         public AstTransformResult Transform(ParenthesizedExpressionNode node, AstTransformContext context) =>
             AstTransformResult.ReplaceExpression(new RawExpressionNode(
                 node.Location,
-                $"wrapped({node.Expression.SourceText})"));
+                $"wrapped({node.Expression.ToSourceText()})"));
     }
 }

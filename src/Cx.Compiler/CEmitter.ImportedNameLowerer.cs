@@ -218,7 +218,7 @@ public sealed partial class CEmitter
             var lowered = expression is InitializerExpressionNode initializer
                 ? _expressionLoweringPipeline.LowerInitializer(initializer, targetType)
                 : LowerExpression(expression);
-            if (TryBuildInterfaceValue(targetType, expression.SourceText, out var interfaceInitializer))
+            if (TryBuildInterfaceValue(targetType, expression.ToSourceText(), out var interfaceInitializer))
             {
                 return interfaceInitializer;
             }
@@ -237,7 +237,7 @@ public sealed partial class CEmitter
             var lowered = expression is InitializerExpressionNode initializer
                 ? _expressionLoweringPipeline.LowerInitializer(initializer, TypeRefFormatter.ToCxString(targetType))
                 : LowerExpression(expression);
-            if (TryBuildInterfaceValue(targetType, expression.SourceText, out var interfaceInitializer))
+            if (TryBuildInterfaceValue(targetType, expression.ToSourceText(), out var interfaceInitializer))
             {
                 return interfaceInitializer;
             }
@@ -251,7 +251,7 @@ public sealed partial class CEmitter
             var direct = expression is InitializerExpressionNode initializer
                 ? _expressionLoweringPipeline.LowerInitializer(initializer, targetType)
                 : LowerExpression(expression);
-            if (TryBuildInterfaceValueExpression(targetType, expression.SourceText) is { } interfaceInitializer)
+            if (TryBuildInterfaceValueExpression(targetType, expression.ToSourceText()) is { } interfaceInitializer)
             {
                 return interfaceInitializer;
             }
@@ -280,7 +280,7 @@ public sealed partial class CEmitter
             var direct = expression is InitializerExpressionNode initializer
                 ? _expressionLoweringPipeline.LowerInitializer(initializer, TypeRefFormatter.ToCxString(targetType))
                 : LowerExpression(expression);
-            if (TryBuildInterfaceValueExpression(targetType, expression.SourceText) is { } interfaceInitializer)
+            if (TryBuildInterfaceValueExpression(targetType, expression.ToSourceText()) is { } interfaceInitializer)
             {
                 return interfaceInitializer;
             }

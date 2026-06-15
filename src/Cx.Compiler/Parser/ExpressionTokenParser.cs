@@ -61,7 +61,6 @@ internal sealed class ExpressionTokenParser
 
                 left = new ConditionalExpressionNode(
                     left.Location,
-                    SourceBetween(FirstTokenOf(left), LastTokenOf(whenFalse)),
                     left,
                     whenTrue,
                     whenFalse);
@@ -103,7 +102,6 @@ internal sealed class ExpressionTokenParser
 
             return new UnaryExpressionNode(
                 operatorToken.Location,
-                SourceBetween(operatorToken, LastTokenOf(operand)),
                 operatorToken.Value,
                 operand);
         }
@@ -113,7 +111,6 @@ internal sealed class ExpressionTokenParser
 
     private ExpressionNode CreateInfixExpression(ExpressionNode left, Token operatorToken, ExpressionNode right)
     {
-        var sourceText = SourceBetween(FirstTokenOf(left), LastTokenOf(right));
         return operatorToken.Type switch
         {
             TokenType.Equals
@@ -123,28 +120,24 @@ internal sealed class ExpressionTokenParser
                 or TokenType.SlashEquals
                 or TokenType.PercentEquals => new AssignmentExpressionNode(
                     left.Location,
-                    sourceText,
                     left,
                     operatorToken.Value,
                     right),
 
             TokenType.DotDot => new ScalarRangeExpressionNode(
                 left.Location,
-                sourceText,
                 left,
                 right,
                 IsInclusive: false),
 
             TokenType.Ellipsis => new ScalarRangeExpressionNode(
                 left.Location,
-                sourceText,
                 left,
                 right,
                 IsInclusive: true),
 
             _ => new BinaryExpressionNode(
                 left.Location,
-                sourceText,
                 left,
                 operatorToken.Value,
                 right)
@@ -171,7 +164,6 @@ internal sealed class ExpressionTokenParser
 
                 expression = new MemberExpressionNode(
                     expression.Location,
-                    SourceFrom(expression, member),
                     expression,
                     member.Value);
                 continue;
@@ -187,7 +179,6 @@ internal sealed class ExpressionTokenParser
 
                 expression = new IndexExpressionNode(
                     expression.Location,
-                    SourceFrom(expression, PreviousOr(openBracket)),
                     expression,
                     index);
                 continue;
@@ -208,7 +199,6 @@ internal sealed class ExpressionTokenParser
 
                 expression = new CallExpressionNode(
                     expression.Location,
-                    SourceFrom(expression, PreviousOr(openParen)),
                     expression,
                     arguments);
                 continue;
@@ -225,7 +215,6 @@ internal sealed class ExpressionTokenParser
                 var operatorToken = Advance();
                 expression = new PostfixExpressionNode(
                     expression.Location,
-                    SourceBetween(FirstTokenOf(expression), operatorToken),
                     expression,
                     operatorToken.Value);
                 continue;
@@ -259,7 +248,6 @@ internal sealed class ExpressionTokenParser
 
             var memberExpression = new MemberExpressionNode(
                 target.Location,
-                SourceFrom(target, member),
                 target,
                 member.Value);
 
@@ -274,7 +262,6 @@ internal sealed class ExpressionTokenParser
 
                 expression = new GenericCallExpressionNode(
                     target.Location,
-                    SourceFrom(target, PreviousOr(memberOpenParen)),
                     memberExpression,
                     memberArguments,
                     typeArguments);
@@ -296,7 +283,6 @@ internal sealed class ExpressionTokenParser
 
             expression = new GenericCallExpressionNode(
                 target.Location,
-                SourceFrom(target, PreviousOr(openParen)),
                 target,
                 arguments,
                 typeArguments);
@@ -486,7 +472,6 @@ internal sealed class ExpressionTokenParser
 
             return new ParenthesizedExpressionNode(
                 openParen.Location,
-                SourceBetween(openParen, PreviousOr(openParen)),
                 expression);
         }
 
@@ -539,7 +524,6 @@ internal sealed class ExpressionTokenParser
 
             expression = new FunctionExpressionNode(
                 fnToken.Location,
-                SourceBetween(fnToken, closeBrace),
                 parameters,
                 ExpressionBody: null,
                 BlockBody: ParseFunctionExpressionBlock(
@@ -572,7 +556,6 @@ internal sealed class ExpressionTokenParser
 
         expression = new FunctionExpressionNode(
             fnToken.Location,
-            SourceBetween(fnToken, LastTokenOf(body)),
             parameters,
             body,
             BlockBody: null,
@@ -775,7 +758,6 @@ internal sealed class ExpressionTokenParser
         var typeNode = TypeTokenParser.Parse(typeTokens);
         expression = new CastExpressionNode(
             openParen.Location,
-            SourceBetween(openParen, LastTokenOf(operand)),
             operand,
             typeNode);
         return true;
@@ -936,7 +918,6 @@ internal sealed class ExpressionTokenParser
             : TypeTokenParser.Parse(typeTokens);
         expression = new InitializerExpressionNode(
             typeNode?.Location ?? openBrace.Location,
-            SourceBetween(typeTokens.Count == 0 ? openBrace : typeTokens[0], PreviousOr(openBrace)),
             fields,
             values,
             typeNode);
@@ -1149,15 +1130,13 @@ internal sealed class ExpressionTokenParser
             return false;
         }
 
-        var sourceText = SourceBetween(sizeOfToken, PreviousOr(sizeOfToken));
         if (IsAmbiguousSizeOfIdentifier(operandTokens, out var expressionCandidate))
         {
             expression = new SizeOfExpressionNode(
                 sizeOfToken.Location,
-                sourceText,
                 expressionCandidate,
                 TypeOperandNode: null,
-                new SizeOfUnresolvedOperandNode(
+                OperandNode: new SizeOfUnresolvedOperandNode(
                     operandTokens[0].Location,
                     TokenText.ToSourceText(operandTokens),
                     expressionCandidate));
@@ -1168,9 +1147,8 @@ internal sealed class ExpressionTokenParser
         {
             expression = new SizeOfExpressionNode(
                 sizeOfToken.Location,
-                sourceText,
                 ExpressionOperand: null,
-                TypeTokenParser.Parse(operandTokens));
+                TypeOperandNode: TypeTokenParser.Parse(operandTokens));
             return true;
         }
 
@@ -1183,7 +1161,6 @@ internal sealed class ExpressionTokenParser
 
         expression = new SizeOfExpressionNode(
             sizeOfToken.Location,
-            sourceText,
             operandExpression);
         return true;
     }
@@ -1329,7 +1306,7 @@ internal sealed class ExpressionTokenParser
 
     private Token LastTokenOf(ExpressionNode expression)
     {
-        var sourceText = expression.SourceText;
+        var sourceText = expression.ToSourceText();
         for (var i = _tokens.Count - 1; i >= 0; i--)
         {
             var candidate = SourceRange(IndexOf(FirstTokenOf(expression)), i);

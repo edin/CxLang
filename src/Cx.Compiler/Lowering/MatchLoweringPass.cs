@@ -152,7 +152,6 @@ internal static class MatchLoweringPass
                     arm.BindingName,
                     new CastExpressionNode(
                         arm.Location,
-                        $"({arm.Pattern}*){Member(source, "state").SourceText}",
                         Member(source, "state"),
                         targetType),
                     targetType));
@@ -214,7 +213,6 @@ internal static class MatchLoweringPass
         private static MemberExpressionNode Member(ExpressionNode target, string memberName) =>
             new(
                 target.Location,
-                $"{target.SourceText}.{memberName}",
                 target,
                 memberName);
     }

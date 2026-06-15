@@ -1,49 +1,55 @@
 namespace Cx.Compiler.Syntax.Nodes;
 
-public abstract record ExpressionNode(Location Location, string SourceText) : SyntaxNode(Location);
+public abstract record ExpressionNode(Location Location) : SyntaxNode(Location)
+{
+    [Cx.Compiler.LegacyStringType("Compatibility text rebuilt from expression nodes. Prefer node-specific properties or ToSourceText().")]
+    public virtual string SourceText => this.ToSourceText();
+}
 
 public sealed record RawExpressionNode(
     Location Location,
-    string SourceText) : ExpressionNode(Location, SourceText);
+    string RawText) : ExpressionNode(Location)
+{
+    public override string SourceText => RawText;
+}
 
 public sealed record LiteralExpressionNode(
     Location Location,
-    string SourceText) : ExpressionNode(Location, SourceText)
+    string LiteralText) : ExpressionNode(Location)
 {
-    public string LiteralText => SourceText;
+    public override string SourceText => LiteralText;
 }
 
 public sealed record NameExpressionNode(
     Location Location,
-    string SourceText) : ExpressionNode(Location, SourceText)
+    string Name) : ExpressionNode(Location)
 {
-    public string Name => SourceText;
+    public override string SourceText => Name;
 }
 
 public sealed record ParenthesizedExpressionNode(
     Location Location,
-    string SourceText,
-    ExpressionNode Expression) : ExpressionNode(Location, SourceText);
+    ExpressionNode Expression) : ExpressionNode(Location);
 
 public sealed record CastExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Expression,
-    TypeNode? TargetTypeNode = null) : ExpressionNode(Location, SourceText);
+    TypeNode? TargetTypeNode = null) : ExpressionNode(Location);
 
 public sealed record UnaryExpressionNode(
     Location Location,
-    string SourceText,
     string Operator,
-    ExpressionNode Operand) : ExpressionNode(Location, SourceText);
+    ExpressionNode Operand) : ExpressionNode(Location);
 
 public sealed record PostfixExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Operand,
-    string Operator) : ExpressionNode(Location, SourceText);
+    string Operator) : ExpressionNode(Location);
 
-public abstract record SizeOfOperandNode(Location Location, string SourceText);
+public abstract record SizeOfOperandNode(
+    Location Location,
+    [property: Cx.Compiler.LegacyStringType("Compatibility text for sizeof operand source. Prefer TypeNode, Expression, or ToSourceText().")]
+    string SourceText);
 
 public sealed record SizeOfTypeOperandNode(
     Location Location,
@@ -64,11 +70,10 @@ public sealed record SizeOfExpressionNode : ExpressionNode
 {
     public SizeOfExpressionNode(
         Location Location,
-        string SourceText,
         ExpressionNode? ExpressionOperand,
         TypeNode? TypeOperandNode = null,
         SizeOfOperandNode? OperandNode = null)
-        : base(Location, SourceText)
+        : base(Location)
     {
         this.ExpressionOperand = ExpressionOperand;
         this.TypeOperandNode = TypeOperandNode;
@@ -89,37 +94,33 @@ public sealed record SizeOfExpressionNode : ExpressionNode
         typeOperandNode is not null
             ? new SizeOfTypeOperandNode(typeOperandNode.Location, typeOperandNode.TypeName, typeOperandNode)
             : expressionOperand is not null
-                ? new SizeOfExpressionOperandNode(expressionOperand.Location, expressionOperand.SourceText, expressionOperand)
+                ? new SizeOfExpressionOperandNode(expressionOperand.Location, expressionOperand.ToSourceText(), expressionOperand)
                 : new SizeOfUnresolvedOperandNode(location, string.Empty);
 }
 
 public sealed record BinaryExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Left,
     string Operator,
-    ExpressionNode Right) : ExpressionNode(Location, SourceText);
+    ExpressionNode Right) : ExpressionNode(Location);
 
 public sealed record ConditionalExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Condition,
     ExpressionNode WhenTrue,
-    ExpressionNode WhenFalse) : ExpressionNode(Location, SourceText);
+    ExpressionNode WhenFalse) : ExpressionNode(Location);
 
 public sealed record ScalarRangeExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Start,
     ExpressionNode End,
-    bool IsInclusive) : ExpressionNode(Location, SourceText);
+    bool IsInclusive) : ExpressionNode(Location);
 
 public sealed record InitializerExpressionNode(
     Location Location,
-    string SourceText,
     IReadOnlyList<InitializerFieldNode> Fields,
     IReadOnlyList<ExpressionNode> Values,
-    TypeNode? TypeNameNode = null) : ExpressionNode(Location, SourceText);
+    TypeNode? TypeNameNode = null) : ExpressionNode(Location);
 
 public sealed record InitializerFieldNode(
     string Name,
@@ -127,41 +128,35 @@ public sealed record InitializerFieldNode(
 
 public sealed record FunctionExpressionNode(
     Location Location,
-    string SourceText,
     IReadOnlyList<ParameterNode> Parameters,
     ExpressionNode? ExpressionBody,
     IReadOnlyList<StatementNode>? BlockBody,
-    TypeNode? ReturnTypeNode = null) : ExpressionNode(Location, SourceText);
+    TypeNode? ReturnTypeNode = null) : ExpressionNode(Location);
 
 public sealed record AssignmentExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Target,
     string Operator,
-    ExpressionNode Value) : ExpressionNode(Location, SourceText);
+    ExpressionNode Value) : ExpressionNode(Location);
 
 public sealed record CallExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Callee,
-    IReadOnlyList<ExpressionNode> Arguments) : ExpressionNode(Location, SourceText);
+    IReadOnlyList<ExpressionNode> Arguments) : ExpressionNode(Location);
 
 public sealed record GenericCallExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Callee,
     IReadOnlyList<ExpressionNode> Arguments,
-    IReadOnlyList<TypeNode> TypeArgumentNodes) : ExpressionNode(Location, SourceText)
+    IReadOnlyList<TypeNode> TypeArgumentNodes) : ExpressionNode(Location)
 {
     public GenericCallExpressionNode(
         Location Location,
-        string SourceText,
         ExpressionNode Callee,
         IReadOnlyList<string> TypeArguments,
         IReadOnlyList<ExpressionNode> Arguments)
         : this(
             Location,
-            SourceText,
             Callee,
             Arguments,
             TypeArguments.Select(type => TypeNode.CreateFromText(Location, type)).ToList())
@@ -171,12 +166,106 @@ public sealed record GenericCallExpressionNode(
 
 public sealed record MemberExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Target,
-    string MemberName) : ExpressionNode(Location, SourceText);
+    string MemberName) : ExpressionNode(Location);
 
 public sealed record IndexExpressionNode(
     Location Location,
-    string SourceText,
     ExpressionNode Target,
-    ExpressionNode Index) : ExpressionNode(Location, SourceText);
+    ExpressionNode Index) : ExpressionNode(Location);
+
+public static class ExpressionNodeExtensions
+{
+    public static string ToSourceText(this ExpressionNode expression) => expression switch
+    {
+        RawExpressionNode raw => raw.RawText,
+        LiteralExpressionNode literal => literal.LiteralText,
+        NameExpressionNode name => name.Name,
+        ParenthesizedExpressionNode parenthesized => $"({parenthesized.Expression.ToSourceText()})",
+        CastExpressionNode cast => $"({cast.TargetTypeNode.ToTypeName()}){cast.Expression.ToSourceText()}",
+        UnaryExpressionNode unary => unary.Operator + unary.Operand.ToSourceText(),
+        PostfixExpressionNode postfix => postfix.Operand.ToSourceText() + postfix.Operator,
+        SizeOfExpressionNode sizeOf => $"sizeof({sizeOf.OperandNode.ToSourceText()})",
+        BinaryExpressionNode binary => $"{binary.Left.ToSourceText()} {binary.Operator} {binary.Right.ToSourceText()}",
+        ConditionalExpressionNode conditional =>
+            $"{conditional.Condition.ToSourceText()} ? {conditional.WhenTrue.ToSourceText()} : {conditional.WhenFalse.ToSourceText()}",
+        ScalarRangeExpressionNode range =>
+            $"{range.Start.ToSourceText()}{(range.IsInclusive ? "..." : "..")}{range.End.ToSourceText()}",
+        InitializerExpressionNode initializer => FormatInitializer(initializer),
+        FunctionExpressionNode function => FormatFunctionExpression(function),
+        AssignmentExpressionNode assignment =>
+            $"{assignment.Target.ToSourceText()} {assignment.Operator} {assignment.Value.ToSourceText()}",
+        GenericCallExpressionNode call => FormatGenericCall(call),
+        CallExpressionNode call => FormatCall(call),
+        MemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.MemberName}",
+        IndexExpressionNode index => $"{index.Target.ToSourceText()}[{index.Index.ToSourceText()}]",
+        _ => expression.SourceText,
+    };
+
+    public static string ToSourceText(this SizeOfOperandNode operand) => operand switch
+    {
+        SizeOfTypeOperandNode type => type.TypeNode.ToTypeName(),
+        SizeOfExpressionOperandNode expression => expression.Expression.ToSourceText(),
+        SizeOfUnresolvedOperandNode { ExpressionCandidate: not null } unresolved => unresolved.ExpressionCandidate.ToSourceText(),
+        SizeOfUnresolvedOperandNode unresolved => unresolved.SourceText,
+        _ => operand.SourceText,
+    };
+
+    public static ExpressionNode WithSourceText(this ExpressionNode expression, string sourceText) => expression switch
+    {
+        RawExpressionNode raw => raw with { RawText = sourceText },
+        LiteralExpressionNode literal => literal with { LiteralText = sourceText },
+        NameExpressionNode name => name with { Name = sourceText },
+        ParenthesizedExpressionNode parenthesized => parenthesized,
+        CastExpressionNode cast => cast,
+        UnaryExpressionNode unary => unary,
+        PostfixExpressionNode postfix => postfix,
+        SizeOfExpressionNode sizeOf => sizeOf,
+        BinaryExpressionNode binary => binary,
+        ConditionalExpressionNode conditional => conditional,
+        ScalarRangeExpressionNode range => range,
+        InitializerExpressionNode initializer => initializer,
+        FunctionExpressionNode function => function,
+        AssignmentExpressionNode assignment => assignment,
+        GenericCallExpressionNode genericCall => genericCall,
+        CallExpressionNode call => call,
+        MemberExpressionNode member => member,
+        IndexExpressionNode index => index,
+        _ => expression,
+    };
+
+    private static string FormatInitializer(InitializerExpressionNode initializer)
+    {
+        var fields = initializer.Fields.Select(field => $"{field.Name}: {field.Value.ToSourceText()}");
+        var values = initializer.Values.Select(value => value.ToSourceText());
+        var prefix = initializer.TypeNameNode.ToTypeName();
+        return prefix + "{" + string.Join(", ", fields.Concat(values)) + "}";
+    }
+
+    private static string FormatFunctionExpression(FunctionExpressionNode function)
+    {
+        var parameters = string.Join(", ", function.Parameters.Select(FormatParameter));
+        var returnType = function.ReturnTypeNode is null ? string.Empty : " -> " + function.ReturnTypeNode.ToTypeName();
+        if (function.ExpressionBody is not null)
+        {
+            return $"fn({parameters}){returnType} => {function.ExpressionBody.ToSourceText()}";
+        }
+
+        return $"fn({parameters}){returnType} {{...}}";
+    }
+
+    private static string FormatParameter(ParameterNode parameter) =>
+        parameter.Name + (parameter.TypeNode is null ? string.Empty : ": " + parameter.TypeNode.ToTypeName());
+
+    private static string FormatGenericCall(GenericCallExpressionNode call)
+    {
+        var typeArguments = string.Join(", ", call.TypeArgumentNodes.Select(type => type.ToTypeName()));
+        return $"{call.Callee.ToSourceText()}<{typeArguments}>({FormatArguments(call.Arguments)})";
+    }
+
+    private static string FormatCall(CallExpressionNode call) =>
+        $"{call.Callee.ToSourceText()}({FormatArguments(call.Arguments)})";
+
+    private static string FormatArguments(IEnumerable<ExpressionNode> arguments) =>
+        string.Join(", ", arguments.Select(argument => argument.ToSourceText()));
+}

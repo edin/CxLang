@@ -507,9 +507,9 @@ internal static class GenericTypeRewriter
     private static string LowerTypeName(string type)
     {
         type = type.Trim();
-        foreach (var use in FindGenericStructUses(type).OrderByDescending(use => use.SourceText.Length))
+        foreach (var use in FindGenericStructUses(type).OrderByDescending(use => use.Text.Length))
         {
-            type = type.Replace(use.SourceText, LowerGenericTypeName(use.Name, use.Arguments), StringComparison.Ordinal);
+            type = type.Replace(use.Text, LowerGenericTypeName(use.Name, use.Arguments), StringComparison.Ordinal);
         }
 
         return SanitizeTypeName(type
@@ -522,7 +522,7 @@ internal static class GenericTypeRewriter
         string type,
         IReadOnlySet<string> concreteStructNames)
     {
-        foreach (var use in FindGenericStructUses(type).OrderByDescending(use => use.SourceText.Length))
+        foreach (var use in FindGenericStructUses(type).OrderByDescending(use => use.Text.Length))
         {
             var concreteName = LowerGenericTypeName(use.Name, use.Arguments);
             if (!concreteStructNames.Contains(concreteName))
@@ -530,7 +530,7 @@ internal static class GenericTypeRewriter
                 continue;
             }
 
-            type = type.Replace(use.SourceText, concreteName, StringComparison.Ordinal);
+            type = type.Replace(use.Text, concreteName, StringComparison.Ordinal);
         }
 
         return type;
@@ -634,4 +634,4 @@ internal static class GenericTypeRewriter
         => SyntaxNode.CloneSemantic(source, target);
 }
 
-internal sealed record GenericStructUse(string Name, IReadOnlyList<string> Arguments, string SourceText);
+internal sealed record GenericStructUse(string Name, IReadOnlyList<string> Arguments, string Text);

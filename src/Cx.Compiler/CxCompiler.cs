@@ -334,7 +334,6 @@ public sealed class CxCompiler
                 test.Location,
                 new CallExpressionNode(
                     test.Location,
-                    $"{generatedNames[test]}(&runner)",
                     new NameExpressionNode(test.Location, generatedNames[test]),
                     [AddressOf(test.Location, "runner")])));
             body.Add(new CStatement(
@@ -354,10 +353,8 @@ public sealed class CxCompiler
         IReadOnlyList<ExpressionNode> arguments) =>
         new(
             location,
-            $"runner.{methodName}()",
             new MemberExpressionNode(
                 location,
-                $"runner.{methodName}",
                 new NameExpressionNode(location, "runner"),
                 methodName),
             arguments);
@@ -369,10 +366,8 @@ public sealed class CxCompiler
         IReadOnlyList<ExpressionNode> arguments) =>
         new(
             location,
-            $"{typeName}.{methodName}()",
             new MemberExpressionNode(
                 location,
-                $"{typeName}.{methodName}",
                 new NameExpressionNode(location, typeName),
                 methodName),
             arguments);
@@ -380,7 +375,6 @@ public sealed class CxCompiler
     private static UnaryExpressionNode AddressOf(Location location, string name) =>
         new(
             location,
-            "&" + name,
             "&",
             new NameExpressionNode(location, name));
 
@@ -469,8 +463,7 @@ public sealed class CxCompiler
             Arguments.Count: 1,
         } call => call with
         {
-            SourceText = string.Empty,
-            Callee = new MemberExpressionNode(call.Callee.Location, "runner.expect", new NameExpressionNode(call.Callee.Location, "runner"), "expect"),
+            Callee = new MemberExpressionNode(call.Callee.Location, new NameExpressionNode(call.Callee.Location, "runner"), "expect"),
             Arguments = call.Arguments
                 .Select(RewriteTestExpression)
                 .Append(new LiteralExpressionNode(call.Location, "\"expect failed\""))
@@ -591,10 +584,8 @@ public sealed class CxCompiler
             Target = RewriteTestExpression(index.Target),
             Index = RewriteTestExpression(index.Index),
         },
-        RawExpressionNode raw when raw.SourceText.TrimStart().StartsWith("expect(", StringComparison.Ordinal) => raw with
-        {
-            SourceText = "runner.expect(" + raw.SourceText.Trim()[7..^1] + ", \"expect failed\")",
-        },
+        RawExpressionNode raw when raw.RawText.TrimStart().StartsWith("expect(", StringComparison.Ordinal) =>
+            raw.WithSourceText("runner.expect(" + raw.RawText.Trim()[7..^1] + ", \"expect failed\")"),
         _ => expression,
     };
 
@@ -603,10 +594,8 @@ public sealed class CxCompiler
         string methodName,
         string message) => call with
         {
-            SourceText = string.Empty,
             Callee = new MemberExpressionNode(
                 call.Callee.Location,
-                "runner." + methodName,
                 new NameExpressionNode(call.Callee.Location, "runner"),
                 methodName),
             Arguments = call.Arguments

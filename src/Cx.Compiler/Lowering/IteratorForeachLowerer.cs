@@ -164,29 +164,24 @@ internal static class IteratorForeachLowerer
         private static UnaryExpressionNode Dereference(ExpressionNode expression) =>
             new(
                 expression.Location,
-                "*" + expression.SourceText,
                 "*",
                 expression);
 
         private static CallExpressionNode MemberCall(ExpressionNode target, string memberName)
         {
-            var source = $"{target.SourceText}.{memberName}";
             return new CallExpressionNode(
                 target.Location,
-                source + "()",
-                new MemberExpressionNode(target.Location, source, target, memberName),
+                new MemberExpressionNode(target.Location, target, memberName),
                 []);
         }
 
         private static AssignmentExpressionNode IncrementExpression(Location location, string name) =>
             new(
                 location,
-                $"{name} = {name} + 1",
                 new NameExpressionNode(location, name),
                 "=",
                 new BinaryExpressionNode(
                     location,
-                    $"{name} + 1",
                     new NameExpressionNode(location, name),
                     "+",
                     new LiteralExpressionNode(location, "1")));

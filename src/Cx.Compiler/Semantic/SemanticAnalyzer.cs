@@ -689,7 +689,7 @@ public sealed class SemanticAnalyzer(
     private static bool IsBareNull(ExpressionNode expression) =>
         IsBareNull(ExpressionText(expression));
 
-    private static string ExpressionText(ExpressionNode expression) => expression.SourceText;
+    private static string ExpressionText(ExpressionNode expression) => expression.ToSourceText();
 
     private void AnalyzeExpression(
         ExpressionNode? expression,

@@ -13,7 +13,6 @@ public sealed class CExpressionLowererTests
         var location = TestLocation();
         var expression = new BinaryExpressionNode(
             location,
-            "a + 1",
             new NameExpressionNode(location, "a"),
             "+",
             new LiteralExpressionNode(location, "1"));
@@ -35,14 +34,12 @@ public sealed class CExpressionLowererTests
 
         var cast = lowerer.LowerSimple(new CastExpressionNode(
             location,
-            "(Vec<int>*)value",
             new NameExpressionNode(location, "value"),
             TypeNode.CreateFromText(location, "Vec<int>*")));
         var sizeOf = lowerer.LowerSimple(new SizeOfExpressionNode(
             location,
-            "sizeof(Vec<int>)",
             ExpressionOperand: null,
-            TypeNode.CreateFromText(location, "Vec<int>")));
+            TypeOperandNode: TypeNode.CreateFromText(location, "Vec<int>")));
 
         Assert.Equal("lowered_Vec<int>*", Assert.IsType<CCastExpression>(cast).TargetType);
         Assert.Equal("lowered_Vec<int>", Assert.IsType<CSizeOfTypeExpression>(sizeOf).TypeName);
@@ -60,17 +57,14 @@ public sealed class CExpressionLowererTests
 
         var cast = lowerer.LowerSimple(new CastExpressionNode(
             location,
-            "(StaleText)value",
             new NameExpressionNode(location, "value"),
             typeNode));
         var sizeOf = lowerer.LowerSimple(new SizeOfExpressionNode(
             location,
-            "sizeof(StaleText)",
             ExpressionOperand: null,
             TypeOperandNode: typeNode));
         var initializer = lowerer.LowerSimple(new InitializerExpressionNode(
             location,
-            "StaleText {}",
             [],
             [],
             typeNode));
@@ -88,13 +82,11 @@ public sealed class CExpressionLowererTests
 
         var initializer = lowerer.LowerSimple(new InitializerExpressionNode(
             location,
-            "Point { x: 1 }",
             [new InitializerFieldNode("x", new LiteralExpressionNode(location, "1"))],
             [],
             TypeNode.CreateFromText(location, "Point")));
         var assignment = lowerer.LowerSimple(new AssignmentExpressionNode(
             location,
-            "value = 1",
             new NameExpressionNode(location, "value"),
             "=",
             new LiteralExpressionNode(location, "1")));
@@ -112,12 +104,10 @@ public sealed class CExpressionLowererTests
         var location = TestLocation();
         var fallback = new CExpressionLowerer(new TestContext()).LowerSimple(new MemberExpressionNode(
             location,
-            "point.x",
             new NameExpressionNode(location, "point"),
             "x"));
         var overridden = new CExpressionLowerer(new TestContext(memberOverride: new CNameExpression("POINT_X"))).LowerSimple(new MemberExpressionNode(
             location,
-            "point.x",
             new NameExpressionNode(location, "point"),
             "x"));
 
@@ -141,7 +131,7 @@ public sealed class CExpressionLowererTests
             new CExpressionLowerer(this).LowerSimple(expression);
 
         public CExpression LowerNameExpression(NameExpressionNode name) =>
-            new CNameExpression(name.SourceText);
+            new CNameExpression(name.Name);
 
         public CExpression LowerAddressOfExpression(ExpressionNode operand) =>
             new CUnaryExpression("&", LowerExpression(operand));

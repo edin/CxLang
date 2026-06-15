@@ -176,7 +176,7 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         }
 
         var covered = switchStatement.Cases
-            .Select(switchCase => switchCase.Pattern.SourceText)
+            .Select(switchCase => switchCase.Pattern.ToSourceText())
             .ToHashSet(StringComparer.Ordinal);
         return enumNode.Members.All(member => covered.Contains(member.Name));
     }

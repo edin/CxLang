@@ -15,7 +15,6 @@ public sealed class AstRewriterTests
                 location,
                 new BinaryExpressionNode(
                     location,
-                    "a + b",
                     new NameExpressionNode(location, "a"),
                     "+",
                     new NameExpressionNode(location, "b"))),
@@ -25,8 +24,8 @@ public sealed class AstRewriterTests
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(rewritten.Functions).Body.Single());
         var binary = Assert.IsType<BinaryExpressionNode>(ret.Expression);
 
-        Assert.Equal("renamed", Assert.IsType<NameExpressionNode>(binary.Left).SourceText);
-        Assert.Equal("b", Assert.IsType<NameExpressionNode>(binary.Right).SourceText);
+        Assert.Equal("renamed", Assert.IsType<NameExpressionNode>(binary.Left).Name);
+        Assert.Equal("b", Assert.IsType<NameExpressionNode>(binary.Right).Name);
     }
 
     [Fact]
@@ -108,8 +107,8 @@ public sealed class AstRewriterTests
     private sealed class RenameExpressionRewriter(string from, string to) : AstRewriter
     {
         protected override ExpressionNode RewriteNameExpression(NameExpressionNode name) =>
-            string.Equals(name.SourceText, from, StringComparison.Ordinal)
-                ? name with { SourceText = to }
+            string.Equals(name.Name, from, StringComparison.Ordinal)
+                ? name with { Name = to }
                 : name;
     }
 

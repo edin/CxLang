@@ -82,7 +82,6 @@ internal static class ContiguousForeachLowerer
                     TypeNode.CreateFromText(node.Location, "usize")),
                 new BinaryExpressionNode(
                     node.Location,
-                    $"{indexName} < {lengthName}",
                     new NameExpressionNode(node.Location, indexName),
                     "<",
                     new NameExpressionNode(node.Location, lengthName)),
@@ -196,7 +195,6 @@ internal static class ContiguousForeachLowerer
             var end = Member(source, "end");
             return new BinaryExpressionNode(
                 source.Location,
-                $"{end.SourceText} - {start.SourceText}",
                 end,
                 "-",
                 start);
@@ -204,33 +202,28 @@ internal static class ContiguousForeachLowerer
 
         private static MemberExpressionNode Member(ExpressionNode target, string memberName)
         {
-            var source = $"{target.SourceText}.{memberName}";
-            return new MemberExpressionNode(target.Location, source, target, memberName);
+            return new MemberExpressionNode(target.Location, target, memberName);
         }
 
         private static IndexExpressionNode Index(ExpressionNode target, ExpressionNode index) =>
             new(
                 target.Location,
-                $"{target.SourceText}[{index.SourceText}]",
                 target,
                 index);
 
         private static UnaryExpressionNode AddressOf(ExpressionNode expression) =>
             new(
                 expression.Location,
-                "&" + expression.SourceText,
                 "&",
                 expression);
 
         private static AssignmentExpressionNode IncrementExpression(Location location, string name) =>
             new(
                 location,
-                $"{name} = {name} + 1",
                 new NameExpressionNode(location, name),
                 "=",
                 new BinaryExpressionNode(
                     location,
-                    $"{name} + 1",
                     new NameExpressionNode(location, name),
                     "+",
                     new LiteralExpressionNode(location, "1")));

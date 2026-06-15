@@ -53,7 +53,7 @@ internal sealed class ExpressionTypeResolver(
             CallExpressionNode call => ResolveCall(call, variables),
             GenericCallExpressionNode call => ResolveGenericCall(call, variables),
             IndexExpressionNode index => ResolveIndex(index, variables),
-            RawExpressionNode raw => ResolveRaw(raw.SourceText, variables),
+            RawExpressionNode raw => ResolveRaw(raw.RawText, variables),
             _ => null,
         };
     }

@@ -493,7 +493,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         }
 
         var covered = switchStatement.Cases
-            .Select(switchCase => switchCase.Pattern.SourceText)
+            .Select(switchCase => switchCase.Pattern.ToSourceText())
             .ToHashSet(StringComparer.Ordinal);
         return enumNode.Members.All(member => covered.Contains(member.Name));
     }
@@ -587,7 +587,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         switch (expression)
         {
             case NameExpressionNode root:
-                name = root.SourceText;
+                name = root.ToSourceText();
                 return true;
             case MemberExpressionNode member:
                 return TryGetAssignmentRootName(member.Target, out name);

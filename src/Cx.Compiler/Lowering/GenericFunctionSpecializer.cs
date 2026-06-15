@@ -173,65 +173,55 @@ internal static class GenericFunctionSpecializer
         IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions)
     {
-        var sourceText = GenericTypeStringRewriter.Substitute(expression.SourceText, substitutions);
-        return expression switch
+        var sourceText = GenericTypeStringRewriter.Substitute(expression.ToSourceText(), substitutions);
+        var substituted = expression switch
         {
             ParenthesizedExpressionNode parenthesized => parenthesized with
             {
-                SourceText = sourceText,
                 Expression = SubstituteExpression(parenthesized.Expression, substitutions, typeSubstitutions),
             },
             CastExpressionNode cast => cast with
             {
-                SourceText = sourceText,
                 TargetTypeNode = SubstituteTypeNode(cast.TargetTypeNode, substitutions, typeSubstitutions),
                 Expression = SubstituteExpression(cast.Expression, substitutions, typeSubstitutions),
             },
             UnaryExpressionNode unary => unary with
             {
-                SourceText = sourceText,
                 Operand = SubstituteExpression(unary.Operand, substitutions, typeSubstitutions),
             },
             PostfixExpressionNode postfix => postfix with
             {
-                SourceText = sourceText,
                 Operand = SubstituteExpression(postfix.Operand, substitutions, typeSubstitutions),
             },
             SizeOfExpressionNode sizeOf => sizeOf with
             {
-                SourceText = sourceText,
                 TypeOperandNode = SubstituteTypeNode(sizeOf.TypeOperandNode, substitutions, typeSubstitutions),
                 ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, substitutions, typeSubstitutions),
             },
             BinaryExpressionNode binary => binary with
             {
-                SourceText = sourceText,
                 Left = SubstituteExpression(binary.Left, substitutions, typeSubstitutions),
                 Right = SubstituteExpression(binary.Right, substitutions, typeSubstitutions),
             },
             ScalarRangeExpressionNode range => range with
             {
-                SourceText = sourceText,
                 Start = SubstituteExpression(range.Start, substitutions, typeSubstitutions),
                 End = SubstituteExpression(range.End, substitutions, typeSubstitutions),
             },
             ConditionalExpressionNode conditional => conditional with
             {
-                SourceText = sourceText,
                 Condition = SubstituteExpression(conditional.Condition, substitutions, typeSubstitutions),
                 WhenTrue = SubstituteExpression(conditional.WhenTrue, substitutions, typeSubstitutions),
                 WhenFalse = SubstituteExpression(conditional.WhenFalse, substitutions, typeSubstitutions),
             },
             InitializerExpressionNode initializer => initializer with
             {
-                SourceText = sourceText,
                 TypeNameNode = SubstituteTypeNode(initializer.TypeNameNode, substitutions, typeSubstitutions),
                 Fields = initializer.Fields.Select(field => field with { Value = SubstituteExpression(field.Value, substitutions, typeSubstitutions) }).ToList(),
                 Values = initializer.Values.Select(value => SubstituteExpression(value, substitutions, typeSubstitutions)).ToList(),
             },
             FunctionExpressionNode functionExpression => functionExpression with
             {
-                SourceText = sourceText,
                 Parameters = functionExpression.Parameters
                     .Select(parameter => parameter with
                     {
@@ -244,19 +234,16 @@ internal static class GenericFunctionSpecializer
             },
             AssignmentExpressionNode assignment => assignment with
             {
-                SourceText = sourceText,
                 Target = SubstituteExpression(assignment.Target, substitutions, typeSubstitutions),
                 Value = SubstituteExpression(assignment.Value, substitutions, typeSubstitutions),
             },
             CallExpressionNode call => call with
             {
-                SourceText = sourceText,
                 Callee = SubstituteExpression(call.Callee, substitutions, typeSubstitutions),
                 Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions, typeSubstitutions)).ToList(),
             },
             GenericCallExpressionNode call => call with
             {
-                SourceText = sourceText,
                 Callee = SubstituteExpression(call.Callee, substitutions, typeSubstitutions),
                 TypeArgumentNodes = call.TypeArgumentNodes
                     .Select(typeNode => SubstituteTypeNode(typeNode, substitutions, typeSubstitutions)!)
@@ -265,17 +252,17 @@ internal static class GenericFunctionSpecializer
             },
             MemberExpressionNode member => member with
             {
-                SourceText = sourceText,
                 Target = SubstituteExpression(member.Target, substitutions, typeSubstitutions),
             },
             IndexExpressionNode index => index with
             {
-                SourceText = sourceText,
                 Target = SubstituteExpression(index.Target, substitutions, typeSubstitutions),
                 Index = SubstituteExpression(index.Index, substitutions, typeSubstitutions),
             },
-            _ => expression with { SourceText = sourceText },
+            _ => expression,
         };
+
+        return substituted.WithSourceText(sourceText);
     }
 
     private static TypeNode? SubstituteTypeNode(

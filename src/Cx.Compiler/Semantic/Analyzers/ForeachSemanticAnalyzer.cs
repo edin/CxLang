@@ -33,7 +33,7 @@ internal sealed class ForeachSemanticAnalyzer(
         var foreachTypeEnvironment = variables.Clone();
         var foreachVariables = new Dictionary<string, string>(foreachTypeEnvironment.ToLegacyStrings(), StringComparer.Ordinal);
         var foreachMutability = new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal);
-        var iterableExpression = foreachStatement.IterableExpression.SourceText;
+        var iterableExpression = foreachStatement.IterableExpression.ToSourceText();
         if (foreachStatement.IterableExpression is ScalarRangeExpressionNode rangeExpression)
         {
             if (foreachStatement.KeyBinding is not null)

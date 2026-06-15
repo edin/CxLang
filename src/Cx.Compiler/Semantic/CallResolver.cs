@@ -64,7 +64,7 @@ internal sealed class CallResolver(
         if (Parse(calleeType) is TypeRef.Function functionPointer)
         {
             return new CallResolution(
-                callee.SourceText,
+                callee.ToSourceText(),
                 functionPointer.ReturnType,
                 functionPointer.Parameters,
                 functionPointer.IsVariadic);

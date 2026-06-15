@@ -94,7 +94,6 @@ public sealed class ExpressionTypeResolverTypeRefTests
         var typeNode = new TypeNode(location, "StaleTypeText", new PointerTypeSyntaxNode(new NamedTypeSyntaxNode("int")));
         var cast = new CastExpressionNode(
             location,
-            "(StaleTypeText)value",
             new NameExpressionNode(location, "value"),
             typeNode);
         var resolver = new ExpressionTypeResolver(CompilerTestHelpers.Parse("fn main() -> int { return 0; }"));

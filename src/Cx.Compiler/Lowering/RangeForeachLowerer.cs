@@ -40,7 +40,6 @@ internal static class RangeForeachLowerer
 
             var condition = new BinaryExpressionNode(
                 range.Location,
-                $"{node.ValueBinding.Name} {(range.IsInclusive ? "<=" : "<")} {range.End.SourceText}",
                 new NameExpressionNode(node.ValueBinding.Location, node.ValueBinding.Name),
                 range.IsInclusive ? "<=" : "<",
                 new NameExpressionNode(range.End.Location, endName));
@@ -84,12 +83,10 @@ internal static class RangeForeachLowerer
         private static AssignmentExpressionNode IncrementExpression(Location location, string name) =>
             new(
                 location,
-                $"{name} = {name} + 1",
                 new NameExpressionNode(location, name),
                 "=",
                 new BinaryExpressionNode(
                     location,
-                    $"{name} + 1",
                     new NameExpressionNode(location, name),
                     "+",
                     new LiteralExpressionNode(location, "1")));
