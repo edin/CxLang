@@ -13,7 +13,7 @@ internal sealed record CallResolution(
 
 internal sealed class CallResolver(
     ProgramNode program,
-    Func<ExpressionNode, IReadOnlyDictionary<string, string>, string?> resolveExpressionType,
+    Func<ExpressionNode, TypeEnvironment, TypeRef?> resolveExpressionType,
     IReadOnlyList<string>? currentTypeParameters = null,
     IReadOnlyList<GenericConstraintNode>? currentGenericConstraints = null)
 {
@@ -60,8 +60,7 @@ internal sealed class CallResolver(
             }
         }
 
-        var calleeType = resolveExpressionType(callee, legacyVariables);
-        if (Parse(calleeType) is TypeRef.Function functionPointer)
+        if (resolveExpressionType(callee, variables) is TypeRef.Function functionPointer)
         {
             return new CallResolution(
                 callee.ToSourceText(),
@@ -542,8 +541,7 @@ internal sealed class CallResolver(
             return type;
         }
 
-        var argumentType = resolveExpressionType(argument, variables.ToLegacyStrings());
-        return argumentType is null ? null : Parse(argumentType);
+        return resolveExpressionType(argument, variables);
     }
 
     private TypeRef Parse(string? type) =>

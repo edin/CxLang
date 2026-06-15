@@ -216,5 +216,5 @@ public sealed class CallResolverTests
     }
 
     private static CallResolver CreateResolver(ProgramNode program) =>
-        new(program, new ExpressionTypeResolver(program).Resolve);
+        new(program, new ExpressionTypeResolver(program).ResolveTypeRef);
 }

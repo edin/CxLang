@@ -173,9 +173,13 @@ internal static class GenericFunctionSpecializer
         IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions)
     {
-        var sourceText = GenericTypeStringRewriter.Substitute(expression.ToSourceText(), substitutions);
-        var substituted = expression switch
+        return expression switch
         {
+            RawExpressionNode raw => raw,
+            LiteralExpressionNode literal => literal,
+            NameExpressionNode name => substitutions.TryGetValue(name.Name, out var substitutedName)
+                ? name with { Name = substitutedName }
+                : name,
             ParenthesizedExpressionNode parenthesized => parenthesized with
             {
                 Expression = SubstituteExpression(parenthesized.Expression, substitutions, typeSubstitutions),
@@ -197,6 +201,7 @@ internal static class GenericFunctionSpecializer
             {
                 TypeOperandNode = SubstituteTypeNode(sizeOf.TypeOperandNode, substitutions, typeSubstitutions),
                 ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, substitutions, typeSubstitutions),
+                OperandNode = SubstituteSizeOfOperand(sizeOf.OperandNode, substitutions, typeSubstitutions),
             },
             BinaryExpressionNode binary => binary with
             {
@@ -261,9 +266,28 @@ internal static class GenericFunctionSpecializer
             },
             _ => expression,
         };
-
-        return substituted.WithSourceText(sourceText);
     }
+
+    private static SizeOfOperandNode SubstituteSizeOfOperand(
+        SizeOfOperandNode operand,
+        IReadOnlyDictionary<string, string> substitutions,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
+        operand switch
+        {
+            SizeOfTypeOperandNode typeOperand => typeOperand with
+            {
+                TypeNode = SubstituteTypeNode(typeOperand.TypeNode, substitutions, typeSubstitutions)!,
+            },
+            SizeOfExpressionOperandNode expressionOperand => expressionOperand with
+            {
+                Expression = SubstituteExpression(expressionOperand.Expression, substitutions, typeSubstitutions),
+            },
+            SizeOfUnresolvedOperandNode unresolved => unresolved with
+            {
+                ExpressionCandidate = SubstituteOptionalExpression(unresolved.ExpressionCandidate, substitutions, typeSubstitutions),
+            },
+            _ => operand,
+        };
 
     private static TypeNode? SubstituteTypeNode(
         TypeNode? typeNode,

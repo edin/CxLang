@@ -46,25 +46,20 @@ public sealed record PostfixExpressionNode(
     ExpressionNode Operand,
     string Operator) : ExpressionNode(Location);
 
-public abstract record SizeOfOperandNode(
-    Location Location,
-    [property: Cx.Compiler.LegacyStringType("Compatibility text for sizeof operand source. Prefer TypeNode, Expression, or ToSourceText().")]
-    string SourceText);
+public abstract record SizeOfOperandNode(Location Location);
 
 public sealed record SizeOfTypeOperandNode(
     Location Location,
-    string SourceText,
-    TypeNode TypeNode) : SizeOfOperandNode(Location, SourceText);
+    TypeNode TypeNode) : SizeOfOperandNode(Location);
 
 public sealed record SizeOfExpressionOperandNode(
     Location Location,
-    string SourceText,
-    ExpressionNode Expression) : SizeOfOperandNode(Location, SourceText);
+    ExpressionNode Expression) : SizeOfOperandNode(Location);
 
 public sealed record SizeOfUnresolvedOperandNode(
     Location Location,
-    string SourceText,
-    ExpressionNode? ExpressionCandidate = null) : SizeOfOperandNode(Location, SourceText);
+    string FallbackText,
+    ExpressionNode? ExpressionCandidate = null) : SizeOfOperandNode(Location);
 
 public sealed record SizeOfExpressionNode : ExpressionNode
 {
@@ -92,9 +87,9 @@ public sealed record SizeOfExpressionNode : ExpressionNode
         ExpressionNode? expressionOperand,
         TypeNode? typeOperandNode) =>
         typeOperandNode is not null
-            ? new SizeOfTypeOperandNode(typeOperandNode.Location, typeOperandNode.TypeName, typeOperandNode)
+            ? new SizeOfTypeOperandNode(typeOperandNode.Location, typeOperandNode)
             : expressionOperand is not null
-                ? new SizeOfExpressionOperandNode(expressionOperand.Location, expressionOperand.ToSourceText(), expressionOperand)
+                ? new SizeOfExpressionOperandNode(expressionOperand.Location, expressionOperand)
                 : new SizeOfUnresolvedOperandNode(location, string.Empty);
 }
 
@@ -207,31 +202,8 @@ public static class ExpressionNodeExtensions
         SizeOfTypeOperandNode type => type.TypeNode.ToTypeName(),
         SizeOfExpressionOperandNode expression => expression.Expression.ToSourceText(),
         SizeOfUnresolvedOperandNode { ExpressionCandidate: not null } unresolved => unresolved.ExpressionCandidate.ToSourceText(),
-        SizeOfUnresolvedOperandNode unresolved => unresolved.SourceText,
-        _ => operand.SourceText,
-    };
-
-    public static ExpressionNode WithSourceText(this ExpressionNode expression, string sourceText) => expression switch
-    {
-        RawExpressionNode raw => raw with { RawText = sourceText },
-        LiteralExpressionNode literal => literal with { LiteralText = sourceText },
-        NameExpressionNode name => name with { Name = sourceText },
-        ParenthesizedExpressionNode parenthesized => parenthesized,
-        CastExpressionNode cast => cast,
-        UnaryExpressionNode unary => unary,
-        PostfixExpressionNode postfix => postfix,
-        SizeOfExpressionNode sizeOf => sizeOf,
-        BinaryExpressionNode binary => binary,
-        ConditionalExpressionNode conditional => conditional,
-        ScalarRangeExpressionNode range => range,
-        InitializerExpressionNode initializer => initializer,
-        FunctionExpressionNode function => function,
-        AssignmentExpressionNode assignment => assignment,
-        GenericCallExpressionNode genericCall => genericCall,
-        CallExpressionNode call => call,
-        MemberExpressionNode member => member,
-        IndexExpressionNode index => index,
-        _ => expression,
+        SizeOfUnresolvedOperandNode unresolved => unresolved.FallbackText,
+        _ => string.Empty,
     };
 
     private static string FormatInitializer(InitializerExpressionNode initializer)

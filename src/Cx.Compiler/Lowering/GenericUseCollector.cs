@@ -46,19 +46,13 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var selfType = ResolveSelfType(function);
         var selfApiType = ResolveSelfApiType(function);
         var scopeSelfType = selfApiType ?? selfType;
-        var variables = function.Parameters
-            .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => (parameter.Name, Type: GenericTypeStringRewriter.SubstituteSelf(TypeText(parameter.TypeNode), scopeSelfType)))
-            .Concat(CollectLocalVariables(function.Body)
-                .Select(local => (local.Name, Type: GenericTypeStringRewriter.SubstituteSelf(local.Type, scopeSelfType))))
-            .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !string.IsNullOrWhiteSpace(item.Type))
-            .GroupBy(item => item.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal);
+        var variables = BuildFunctionVariables(function, scopeSelfType);
+        var legacyVariables = variables.ToLegacyStrings();
 
         var knownUses = new HashSet<GenericFunctionUseKey>();
         foreach (var expression in EnumerateExpressions(function.Body))
         {
-            foreach (var use in CollectExpressionGenericUses(expression, variables, selfApiType))
+            foreach (var use in CollectExpressionGenericUses(expression, legacyVariables, selfApiType))
             {
                 if (TryRemember(use, knownUses))
                 {
@@ -78,16 +72,22 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     private IEnumerable<GenericFunctionUse> CollectGlobals(ProgramNode program)
     {
-        var variables = program.GlobalVariables
-            .Select(global => (global.Name, Type: TypeText(global.TypeNode)))
-            .Where(global => !string.IsNullOrWhiteSpace(global.Name) && !string.IsNullOrWhiteSpace(global.Type))
-            .GroupBy(global => global.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal);
+        var variables = new TypeEnvironment();
+        foreach (var global in program.GlobalVariables.Where(global => !string.IsNullOrWhiteSpace(global.Name)))
+        {
+            var type = TypeRefOrUnknown(global.TypeNode);
+            if (type is not TypeRef.Unknown)
+            {
+                variables.Set(global.Name, type);
+            }
+        }
+
+        var legacyVariables = variables.ToLegacyStrings();
 
         var knownUses = new HashSet<GenericFunctionUseKey>();
         foreach (var global in program.GlobalVariables.Where(global => global.Initializer is not null))
         {
-            foreach (var use in CollectExpressionGenericUses(global.Initializer!, variables))
+            foreach (var use in CollectExpressionGenericUses(global.Initializer!, legacyVariables))
             {
                 if (TryRemember(use, knownUses))
                 {
@@ -128,7 +128,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     private IEnumerable<GenericFunctionUse> FindForeachIteratorGenericUses(
         IEnumerable<StatementNode> statements,
-        IReadOnlyDictionary<string, string> variables)
+        TypeEnvironment variables)
     {
         foreach (var statement in statements)
         {
@@ -136,24 +136,28 @@ internal sealed class GenericUseCollector(ProgramNode program)
             {
                 case ForeachStatement foreachStatement:
                     if (foreachStatement.IterableExpression is NameExpressionNode name
-                        && variables.TryGetValue(name.Name, out var iterableType)
-                        && TypeSyntaxFacts.TryParseGenericUse(iterableType, out var ownerName, out var ownerArguments))
+                        && variables.TryGet(name.Name, out var iterableType)
+                        && TypeRefFacts.TryGetNamed(iterableType, out var iterableNamed)
+                        && iterableNamed.Arguments.Count > 0)
                     {
+                        var ownerArguments = FormatTypeArguments(iterableNamed.Arguments);
                         foreach (var iteratorFunction in _genericFunctions.Where(function =>
-                            OwnerType(function) == ownerName
+                            OwnerType(function) == iterableNamed.Name
                             && function.Name == "iterator"
                             && function.TypeParameters.Count == ownerArguments.Count))
                         {
                             yield return new GenericFunctionUse(iteratorFunction, ownerArguments);
 
                             var substitutions = iteratorFunction.TypeParameters
-                                .Zip(ownerArguments)
+                                .Zip(iterableNamed.Arguments)
                                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-                            var iteratorType = GenericTypeStringRewriter.Substitute(TypeText(iteratorFunction.ReturnTypeNode), substitutions);
-                            if (TypeSyntaxFacts.TryParseGenericUse(iteratorType, out var iteratorOwner, out var iteratorArguments))
+                            var iteratorType = TypeRefRewriter.Substitute(TypeRefOrUnknown(iteratorFunction.ReturnTypeNode), substitutions);
+                            if (TypeRefFacts.TryGetNamed(iteratorType, out var iteratorNamed)
+                                && iteratorNamed.Arguments.Count > 0)
                             {
+                                var iteratorArguments = FormatTypeArguments(iteratorNamed.Arguments);
                                 foreach (var iteratorMember in _genericFunctions.Where(function =>
-                                    OwnerType(function) == iteratorOwner
+                                    OwnerType(function) == iteratorNamed.Name
                                     && function.TypeParameters.Count == iteratorArguments.Count
                                     && (function.Name == "next"
                                         || function.Name == "value"
@@ -287,7 +291,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             resolverVariables = mappedVariables;
         }
 
-        var resolved = new CallResolver(program, _resolver.Resolve)
+        var resolved = new CallResolver(program, _resolver.ResolveTypeRef)
             .Resolve(callee, typeArguments, arguments, resolverVariables);
         if (resolved?.Function is { TypeParameters.Count: > 0 } function
             && resolved.TypeArguments is { } resolvedTypeArguments
@@ -596,129 +600,30 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
-    private static IEnumerable<string> EnumerateExpressionTexts(IEnumerable<StatementNode> statements)
+    private TypeEnvironment BuildFunctionVariables(FunctionNode function, string? selfType)
     {
-        foreach (var statement in statements)
+        var variables = new TypeEnvironment();
+        foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
-            switch (statement)
-            {
-                case LetStatement let:
-                    yield return let.TypeNode.ToTypeName();
-                    if (let.Initializer is not null)
-                    {
-                        yield return let.Initializer.ToSourceText();
-                    }
-                    break;
-                case ReturnStatement { Expression: not null } ret:
-                    yield return ret.Expression.ToSourceText();
-                    break;
-                case CStatement c:
-                    yield return c.Expression.ToSourceText();
-                    break;
-                case IfStatement ifStatement:
-                    yield return ifStatement.Condition.ToSourceText();
-                    foreach (var nested in EnumerateExpressionTexts(ifStatement.ThenBody))
-                    {
-                        yield return nested;
-                    }
-                    if (ifStatement.ElseBranch is not null)
-                    {
-                        foreach (var nested in EnumerateExpressionTexts([ifStatement.ElseBranch]))
-                        {
-                            yield return nested;
-                        }
-                    }
-                    break;
-                case ElseBlockStatement elseBlock:
-                    foreach (var nested in EnumerateExpressionTexts(elseBlock.Body))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case WhileStatement whileStatement:
-                    yield return whileStatement.Condition.ToSourceText();
-                    foreach (var nested in EnumerateExpressionTexts(whileStatement.Body))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case ForStatement forStatement:
-                    foreach (var expression in EnumerateForInitializerTexts(forStatement.CachedRangeEndInitializer))
-                    {
-                        yield return expression;
-                    }
-                    foreach (var expression in EnumerateForInitializerTexts(forStatement.CounterInitializer))
-                    {
-                        yield return expression;
-                    }
-                    foreach (var expression in EnumerateForInitializerTexts(forStatement.Initializer))
-                    {
-                        yield return expression;
-                    }
-                    yield return forStatement.Condition.ToSourceText();
-                    yield return forStatement.Increment.ToSourceText();
-                    if (forStatement.CounterIncrement is not null)
-                    {
-                        yield return forStatement.CounterIncrement.ToSourceText();
-                    }
-
-                    foreach (var nested in EnumerateExpressionTexts(forStatement.Body))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case ForeachStatement foreachStatement:
-                    yield return foreachStatement.IterableExpression.ToSourceText();
-                    foreach (var nested in EnumerateExpressionTexts(foreachStatement.Body))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case SwitchStatement switchStatement:
-                    yield return switchStatement.Expression.ToSourceText();
-                    foreach (var switchCase in switchStatement.Cases)
-                    {
-                        yield return switchCase.Pattern.ToSourceText();
-                        foreach (var nested in EnumerateExpressionTexts(switchCase.Body))
-                        {
-                            yield return nested;
-                        }
-                    }
-                    foreach (var nested in EnumerateExpressionTexts(switchStatement.DefaultBody))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    yield return matchStatement.Expression.ToSourceText();
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var nested in EnumerateExpressionTexts(arm.Body))
-                        {
-                            yield return nested;
-                        }
-                    }
-                    break;
-            }
+            SetVariable(variables, parameter.Name, SubstituteSelf(TypeRefOrUnknown(parameter.TypeNode), selfType));
         }
+
+        foreach (var local in CollectLocalVariables(function.Body))
+        {
+            SetVariable(variables, local.Name, SubstituteSelf(local.Type, selfType));
+        }
+
+        return variables;
     }
 
-    private static IEnumerable<string> EnumerateForInitializerTexts(ForInitializerNode? initializer) => initializer switch
-    {
-        ForDeclarationInitializerNode declaration when declaration.Initializer is not null =>
-            [declaration.Initializer.ToSourceText()],
-        ForExpressionInitializerNode expression => [expression.Expression.ToSourceText()],
-        _ => [],
-    };
-
-    private IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
+    private IEnumerable<(string Name, TypeRef Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
             switch (statement)
             {
                 case LetStatement let:
-                    yield return (let.Name, TypeText(let.TypeNode));
+                    yield return (let.Name, TypeRefOrUnknown(let.TypeNode));
                     break;
                 case IfStatement ifStatement:
                     foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
@@ -748,15 +653,15 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 case ForStatement forStatement:
                     if (forStatement.CachedRangeEndInitializer is not null)
                     {
-                        yield return (forStatement.CachedRangeEndInitializer.Name, TypeText(forStatement.CachedRangeEndInitializer.TypeNode));
+                        yield return (forStatement.CachedRangeEndInitializer.Name, TypeRefOrUnknown(forStatement.CachedRangeEndInitializer.TypeNode));
                     }
                     if (forStatement.CounterInitializer is not null)
                     {
-                        yield return (forStatement.CounterInitializer.Name, TypeText(forStatement.CounterInitializer.TypeNode));
+                        yield return (forStatement.CounterInitializer.Name, TypeRefOrUnknown(forStatement.CounterInitializer.TypeNode));
                     }
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
-                        yield return (declaration.Name, TypeText(declaration.TypeNode));
+                        yield return (declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
                     }
                     foreach (var variable in CollectLocalVariables(forStatement.Body))
                     {
@@ -766,13 +671,13 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 case ForeachStatement foreachStatement:
                     if (foreachStatement.IndexBinding is not null)
                     {
-                        yield return (foreachStatement.IndexBinding.Name, TypeText(foreachStatement.IndexBinding.TypeNode));
+                        yield return (foreachStatement.IndexBinding.Name, TypeRefOrUnknown(foreachStatement.IndexBinding.TypeNode));
                     }
                     if (foreachStatement.KeyBinding is not null)
                     {
-                        yield return (foreachStatement.KeyBinding.Name, TypeText(foreachStatement.KeyBinding.TypeNode));
+                        yield return (foreachStatement.KeyBinding.Name, TypeRefOrUnknown(foreachStatement.KeyBinding.TypeNode));
                     }
-                    yield return (foreachStatement.ValueBinding.Name, TypeText(foreachStatement.ValueBinding.TypeNode));
+                    yield return (foreachStatement.ValueBinding.Name, TypeRefOrUnknown(foreachStatement.ValueBinding.TypeNode));
                     foreach (var variable in CollectLocalVariables(foreachStatement.Body))
                     {
                         yield return variable;
@@ -895,6 +800,9 @@ internal sealed class GenericUseCollector(ProgramNode program)
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode>? typeArgumentNodes) =>
         (typeArgumentNodes ?? []).Select(TypeText).ToList();
 
+    private static IReadOnlyList<string> FormatTypeArguments(IReadOnlyList<TypeRef> typeArguments) =>
+        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
+
     private string TypeText(TypeNode? typeNode)
     {
         if (typeNode is null)
@@ -904,6 +812,30 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
         var type = typeNode.ToTypeRef(_typeRefParser);
         return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
+        typeNode.ToTypeRef(_typeRefParser);
+
+    private TypeRef SubstituteSelf(TypeRef type, string? selfType)
+    {
+        if (string.IsNullOrWhiteSpace(selfType))
+        {
+            return type;
+        }
+
+        var selfTypeRef = _typeRefParser.Parse(selfType);
+        return selfTypeRef is TypeRef.Unknown
+            ? type
+            : TypeRefRewriter.SubstituteSelf(type, selfTypeRef);
+    }
+
+    private static void SetVariable(TypeEnvironment variables, string name, TypeRef type)
+    {
+        if (!string.IsNullOrWhiteSpace(name) && type is not TypeRef.Unknown)
+        {
+            variables.Set(name, type);
+        }
     }
 
 }

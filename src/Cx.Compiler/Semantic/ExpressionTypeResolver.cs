@@ -16,7 +16,7 @@ internal sealed class ExpressionTypeResolver(
 
     private CallResolver CallResolver => _callResolver ??= new CallResolver(
         program,
-        Resolve,
+        ResolveTypeRef,
         _currentTypeParameters,
         _currentGenericConstraints);
 

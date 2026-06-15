@@ -226,7 +226,7 @@ internal sealed class ExpressionSemanticAnalyzer(
     {
         var resolvedCall = new CallResolver(
             program,
-            expressionTypeResolver.Resolve,
+            expressionTypeResolver.ResolveTypeRef,
             currentTypeParameters,
             currentGenericConstraints);
 

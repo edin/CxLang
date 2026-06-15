@@ -368,7 +368,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             var typeNode = TypeNode.CreateFromText(unresolved.Location, unresolved.ToSourceText());
             sizeOf.TypeOperandNode = typeNode;
             sizeOf.ExpressionOperand = null;
-            sizeOf.OperandNode = new SizeOfTypeOperandNode(typeNode.Location, typeNode.TypeName, typeNode);
+            sizeOf.OperandNode = new SizeOfTypeOperandNode(typeNode.Location, typeNode);
         }
 
         if (sizeOf.TypeOperandNode is not null)

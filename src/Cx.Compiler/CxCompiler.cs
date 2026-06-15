@@ -585,7 +585,7 @@ public sealed class CxCompiler
             Index = RewriteTestExpression(index.Index),
         },
         RawExpressionNode raw when raw.RawText.TrimStart().StartsWith("expect(", StringComparison.Ordinal) =>
-            raw.WithSourceText("runner.expect(" + raw.RawText.Trim()[7..^1] + ", \"expect failed\")"),
+            raw with { RawText = "runner.expect(" + raw.RawText.Trim()[7..^1] + ", \"expect failed\")" },
         _ => expression,
     };
 

@@ -451,7 +451,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return false;
         }
 
-        var resolver = new CallResolver(_program, _expressionTypeResolver.Resolve);
+        var resolver = new CallResolver(_program, _expressionTypeResolver.ResolveTypeRef);
         var variables = BuildTypeEnvironment(scope);
         var resolved = resolver.Resolve(callee, typeArguments, arguments, variables);
         if (resolved?.Function is null)
