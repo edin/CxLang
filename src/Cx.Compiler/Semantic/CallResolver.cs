@@ -537,7 +537,7 @@ internal sealed class CallResolver(
     private TypeRef? ResolveArgumentType(ExpressionNode argument, TypeEnvironment variables)
     {
         if (argument is NameExpressionNode name
-            && variables.TryGet(name.SourceText, out var type))
+            && variables.TryGet(name.Name, out var type))
         {
             return type;
         }

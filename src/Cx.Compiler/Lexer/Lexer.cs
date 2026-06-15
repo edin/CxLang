@@ -105,12 +105,13 @@ public sealed class Lexer
     public IReadOnlyList<Token> Tokenize()
     {
         var tokens = new List<Token>();
+        var leadingTrivia = new List<TokenTrivia>();
 
         while (!IsAtEnd)
         {
             if (char.IsWhiteSpace(Current))
             {
-                Advance();
+                leadingTrivia.Add(ReadWhitespaceTrivia());
                 continue;
             }
 
@@ -123,7 +124,17 @@ public sealed class Lexer
                 var match = definition.Match(this);
                 if (match is not null)
                 {
-                    tokens.Add(match);
+                    if (TokenMetadataProvider.ByType[match.Type].Class == TokenClass.Trivia)
+                    {
+                        leadingTrivia.Add(ToTrivia(match));
+                        tokens.Add(match);
+                    }
+                    else
+                    {
+                        tokens.Add(WithLeadingTrivia(match, leadingTrivia));
+                        leadingTrivia.Clear();
+                    }
+
                     goto NextToken;
                 }
 
@@ -139,7 +150,37 @@ public sealed class Lexer
             ;
         }
 
-        tokens.Add(new Token(TokenType.Eof, string.Empty, _position, Location));
+        tokens.Add(WithLeadingTrivia(new Token(TokenType.Eof, Location, 0), leadingTrivia));
         return tokens;
+    }
+
+    private TokenTrivia ReadWhitespaceTrivia()
+    {
+        var location = Location;
+        var start = _position;
+
+        while (!IsAtEnd && char.IsWhiteSpace(Current))
+        {
+            Advance();
+        }
+
+        return new TokenTrivia(TokenTriviaKind.Whitespace, location, _position - start);
+    }
+
+    private static Token WithLeadingTrivia(Token token, List<TokenTrivia> leadingTrivia) =>
+        leadingTrivia.Count == 0
+            ? token
+            : token with { LeadingTrivia = leadingTrivia.ToArray() };
+
+    private static TokenTrivia ToTrivia(Token token)
+    {
+        var kind = token.Type switch
+        {
+            TokenType.Comment => TokenTriviaKind.Comment,
+            TokenType.MultilineComment => TokenTriviaKind.MultilineComment,
+            _ => throw new InvalidOperationException($"Token '{token.Type}' is not trivia.")
+        };
+
+        return new TokenTrivia(kind, token.Location, token.Length);
     }
 }

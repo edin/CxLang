@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace Cx.Compiler.Lexer;
 
 public sealed class StringTokenMatcher : ITokenMatcher
@@ -12,20 +10,17 @@ public sealed class StringTokenMatcher : ITokenMatcher
         }
 
         var location = lexer.Location;
-        var builder = new StringBuilder();
-        builder.Append(lexer.Current);
+        var start = lexer.Position;
         lexer.Advance();
 
         while (!lexer.IsAtEnd)
         {
             if (lexer.Current == '\\')
             {
-                builder.Append(lexer.Current);
                 lexer.Advance();
 
                 if (!lexer.IsAtEnd)
                 {
-                    builder.Append(lexer.Current);
                     lexer.Advance();
                 }
 
@@ -34,16 +29,14 @@ public sealed class StringTokenMatcher : ITokenMatcher
 
             if (lexer.Current == '"')
             {
-                builder.Append(lexer.Current);
                 lexer.Advance();
-                return new Token(TokenType.String, builder.ToString(), location.Position, location);
+                return new Token(TokenType.String, location, lexer.Position - start);
             }
 
-            builder.Append(lexer.Current);
             lexer.Advance();
         }
 
         lexer.Diagnostics.Report(location, "Unterminated string.");
-        return new Token(TokenType.String, builder.ToString(), location.Position, location);
+        return new Token(TokenType.String, location, lexer.Position - start);
     }
 }

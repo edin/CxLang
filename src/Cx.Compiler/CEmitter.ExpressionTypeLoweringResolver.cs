@@ -15,8 +15,8 @@ public sealed partial class CEmitter
     {
         public string? Resolve(ExpressionNode expression) => expression switch
         {
-            LiteralExpressionNode literal => ResolveLiteralType(literal.SourceText),
-            NameExpressionNode name => scope.GetVariableTypeOrDefault(name.SourceText),
+            LiteralExpressionNode literal => ResolveLiteralType(literal.LiteralText),
+            NameExpressionNode name => scope.GetVariableTypeOrDefault(name.Name),
             ParenthesizedExpressionNode parenthesized => Resolve(parenthesized.Expression),
             CastExpressionNode cast => TypeText(cast.TargetTypeNode),
             UnaryExpressionNode { Operator: "&" } unary when Resolve(unary.Operand) is { } operandType => operandType + "*",
@@ -36,7 +36,7 @@ public sealed partial class CEmitter
         {
             if (call.Callee is NameExpressionNode name)
             {
-                return genericCallResolver.FindInferredCall(null, name.SourceText, call.Arguments, skipSelf: false)?.ReturnType;
+                return genericCallResolver.FindInferredCall(null, name.Name, call.Arguments, skipSelf: false)?.ReturnType;
             }
 
             if (call.Callee is MemberExpressionNode member)
@@ -84,7 +84,7 @@ public sealed partial class CEmitter
             IReadOnlyList<ExpressionNode> arguments)
         {
             if (member.Target is not NameExpressionNode targetName
-                || !scope.TryGetVariableType(targetName.SourceText, out var targetType))
+                || !scope.TryGetVariableType(targetName.Name, out var targetType))
             {
                 return null;
             }

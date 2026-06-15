@@ -5,23 +5,24 @@ public sealed class CommentTokenMatcher : ITokenMatcher
     public Token? Match(Lexer lexer)
     {
         var location = lexer.Location;
+        var start = lexer.Position;
 
         if (lexer.TryTake("//"))
         {
-            var value = lexer.TakeWhile(ch => ch is not '\r' and not '\n');
-            return new Token(TokenType.Comment, value, location.Position, location);
+            lexer.TakeWhile(ch => ch is not '\r' and not '\n');
+            return new Token(TokenType.Comment, location, lexer.Position - start);
         }
 
         if (lexer.TryTake("/*"))
         {
-            var value = lexer.TakeUntil("*/");
+            lexer.TakeUntil("*/");
             if (lexer.TryTake("*/"))
             {
-                return new Token(TokenType.MultilineComment, value, location.Position, location);
+                return new Token(TokenType.MultilineComment, location, lexer.Position - start);
             }
 
             lexer.Diagnostics.Report(location, "Unterminated multiline comment.");
-            return new Token(TokenType.MultilineComment, value, location.Position, location);
+            return new Token(TokenType.MultilineComment, location, lexer.Position - start);
         }
 
         return null;

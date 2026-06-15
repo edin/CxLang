@@ -35,19 +35,10 @@ public sealed partial class CEmitter
             IfStatement ifStatement => _conditionalLowerer.LowerIf(ifStatement),
             WhileStatement whileStatement => _loopLowerer.LowerWhile(whileStatement),
             ForStatement forStatement => _loopLowerer.LowerFor(forStatement),
-            ForeachStatement foreachStatement => throw UnexpectedUnloweredForeach(foreachStatement),
+            ForeachStatement foreachStatement => throw CEmissionGuards.UnloweredForeach(foreachStatement),
             SwitchStatement switchStatement => _switchLowerer.LowerSwitch(switchStatement),
-            MatchStatement matchStatement => throw UnexpectedUnloweredMatch(matchStatement),
-            _ => throw UnsupportedStatement(statement),
+            MatchStatement matchStatement => throw CEmissionGuards.UnloweredMatch(matchStatement),
+            _ => throw CEmissionGuards.UnsupportedStatement(statement),
         };
-
-        private static InvalidOperationException UnsupportedStatement(StatementNode statement) =>
-            new($"Internal C emission error: unsupported CX statement '{statement.GetType().Name}' at {statement.Location} reached C statement lowering.");
-
-        private static InvalidOperationException UnexpectedUnloweredForeach(ForeachStatement foreachStatement) =>
-            new($"Internal C emission error: foreach '{foreachStatement.ItemName}' reached C statement lowering.");
-
-        private static InvalidOperationException UnexpectedUnloweredMatch(MatchStatement matchStatement) =>
-            new($"Internal C emission error: match at {matchStatement.Location} reached C statement lowering.");
     }
 }

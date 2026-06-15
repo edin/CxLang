@@ -36,8 +36,8 @@ internal sealed class ExpressionTypeResolver(
 
         return expression switch
         {
-            LiteralExpressionNode literal => ResolveLiteral(literal.SourceText),
-            NameExpressionNode name => ResolveName(name.SourceText, variables),
+            LiteralExpressionNode literal => ResolveLiteral(literal.LiteralText),
+            NameExpressionNode name => ResolveName(name.Name, variables),
             ParenthesizedExpressionNode parenthesized => Resolve(parenthesized.Expression, variables),
             CastExpressionNode cast => TypeText(cast.TargetTypeNode),
             UnaryExpressionNode unary => ResolveUnary(unary, variables),
@@ -89,8 +89,8 @@ internal sealed class ExpressionTypeResolver(
 
         return expression switch
         {
-            LiteralExpressionNode literal => ParseResolvedType(ResolveLiteral(literal.SourceText)),
-            NameExpressionNode name => ResolveNameTypeRef(name.SourceText, variables),
+            LiteralExpressionNode literal => ParseResolvedType(ResolveLiteral(literal.LiteralText)),
+            NameExpressionNode name => ResolveNameTypeRef(name.Name, variables),
             ParenthesizedExpressionNode parenthesized => ResolveTypeRef(parenthesized.Expression, variables),
             CastExpressionNode cast => ResolveTypeNode(cast.TargetTypeNode),
             UnaryExpressionNode unary => ResolveUnaryTypeRef(unary, variables),
@@ -343,7 +343,7 @@ internal sealed class ExpressionTypeResolver(
 
     private static bool IsIntegerLiteral(ExpressionNode expression) =>
         expression is LiteralExpressionNode literal
-        && Regex.IsMatch(literal.SourceText.Trim(), @"^-?\d+$");
+        && Regex.IsMatch(literal.LiteralText.Trim(), @"^-?\d+$");
 
     private string? ResolveInitializer(InitializerExpressionNode initializer, IReadOnlyDictionary<string, string> variables)
     {

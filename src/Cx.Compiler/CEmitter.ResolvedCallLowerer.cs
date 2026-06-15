@@ -37,7 +37,7 @@ public sealed partial class CEmitter
             if (resolvedCall is not { IsInstance: true } resolved
                 || member.Target is not NameExpressionNode targetName
                 || OwnerType(resolved.Function) is not { } ownerType
-                || !TryGetReceiverPointerInfo(targetName.SourceText, out var isPointerReceiver))
+                || !TryGetReceiverPointerInfo(targetName.Name, out var isPointerReceiver))
             {
                 return null;
             }
@@ -60,7 +60,7 @@ public sealed partial class CEmitter
 
             var loweredArguments = arguments.Select(lowerExpression).ToList();
             loweredArguments.Insert(0, receiverExpressionBuilder.Build(
-                targetName.SourceText,
+                targetName.Name,
                 isPointerReceiver,
                 takesPointerSelf.Value));
             return new CCallExpression(functionReference, loweredArguments);

@@ -27,11 +27,12 @@ public sealed class IdentifierTokenMatcher : ITokenMatcher
         }
 
         var location = lexer.Location;
+        var start = lexer.Position;
         var value = lexer.TakeWhile(ch => char.IsLetterOrDigit(ch) || ch == '_');
         var type = _tokenMap.TryGetValue(value, out var mappedType)
             ? mappedType
             : TokenType.Identifier;
 
-        return new Token(type, value, location.Position, location);
+        return new Token(type, location, lexer.Position - start);
     }
 }

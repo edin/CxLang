@@ -15,7 +15,7 @@ public sealed partial class CEmitter
         InterfaceMemberCallLowerer interfaceMemberCallLowerer,
         AdapterExposeResolver adapterExposeResolver,
         ReceiverExpressionBuilder receiverExpressionBuilder,
-        Func<ExpressionNode, string?> resolveExpressionType,
+        Func<ExpressionNode, TypeRef?> resolveExpressionType,
         Func<ExpressionNode, CExpression> lowerExpression)
     {
         public CExpression? TryLower(
@@ -37,7 +37,7 @@ public sealed partial class CEmitter
                 return null;
             }
 
-            var target = targetName.SourceText;
+            var target = targetName.Name;
             if (!TryGetReceiverType(target, out var targetType))
             {
                 return TryLowerStaticOrModuleCall(target, member.MemberName, arguments);
@@ -62,12 +62,12 @@ public sealed partial class CEmitter
             }
 
             if (member.Target is not NameExpressionNode targetName
-                || !TryGetReceiverType(targetName.SourceText, out var targetType))
+                || !TryGetReceiverType(targetName.Name, out var targetType))
             {
                 return null;
             }
 
-            var target = targetName.SourceText;
+            var target = targetName.Name;
             var concreteReceiverType = targetType.ReceiverType;
             if (genericCallResolver.FindGenericMemberExact(
                 targetType.GenericBaseName,
@@ -236,7 +236,7 @@ public sealed partial class CEmitter
                 return null;
             }
 
-            var targetTypeInfo = ReceiverTypeInfo.FromText(targetType);
+            var targetTypeInfo = ReceiverTypeInfo.FromTypeRef(targetType);
             var isPointer = targetTypeInfo.IsPointer;
             var receiverType = targetTypeInfo.ReceiverType;
             var receiverArguments = targetTypeInfo.TypeArguments;

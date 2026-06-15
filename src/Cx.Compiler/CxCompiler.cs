@@ -465,7 +465,7 @@ public sealed class CxCompiler
     {
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect" },
+            Callee: NameExpressionNode { Name: "expect" },
             Arguments.Count: 1,
         } call => call with
         {
@@ -478,62 +478,62 @@ public sealed class CxCompiler
         },
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_true" },
+            Callee: NameExpressionNode { Name: "expect_true" },
             Arguments.Count: 1,
         } call => RewriteTestHelperCall(call, "expect_true", "expect_true failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_false" },
+            Callee: NameExpressionNode { Name: "expect_false" },
             Arguments.Count: 1,
         } call => RewriteTestHelperCall(call, "expect_false", "expect_false failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_eq_bool" },
+            Callee: NameExpressionNode { Name: "expect_eq_bool" },
             Arguments.Count: 2,
         } call => RewriteTestHelperCall(call, "expect_bool", "expect_eq_bool failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_eq_int" },
+            Callee: NameExpressionNode { Name: "expect_eq_int" },
             Arguments.Count: 2,
         } call => RewriteTestHelperCall(call, "expect_int", "expect_eq_int failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_eq_u64" },
+            Callee: NameExpressionNode { Name: "expect_eq_u64" },
             Arguments.Count: 2,
         } call => RewriteTestHelperCall(call, "expect_u64", "expect_eq_u64 failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_eq_usize" },
+            Callee: NameExpressionNode { Name: "expect_eq_usize" },
             Arguments.Count: 2,
         } call => RewriteTestHelperCall(call, "expect_usize", "expect_eq_usize failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_eq_double" },
+            Callee: NameExpressionNode { Name: "expect_eq_double" },
             Arguments.Count: 2,
         } call => RewriteTestHelperCall(call, "expect_double", "expect_eq_double failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_near_double" },
+            Callee: NameExpressionNode { Name: "expect_near_double" },
             Arguments.Count: 3,
         } call => RewriteTestHelperCall(call, "expect_near_double", "expect_near_double failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_eq_string" },
+            Callee: NameExpressionNode { Name: "expect_eq_string" },
             Arguments.Count: 2,
         } call => RewriteTestHelperCall(call, "expect_string", "expect_eq_string failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_eq_string_view" },
+            Callee: NameExpressionNode { Name: "expect_eq_string_view" },
             Arguments.Count: 2,
         } call => RewriteTestHelperCall(call, "expect_string_view", "expect_eq_string_view failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_null" },
+            Callee: NameExpressionNode { Name: "expect_null" },
             Arguments.Count: 1,
         } call => RewriteTestHelperCall(call, "expect_null", "expect_null failed"),
         CallExpressionNode
         {
-            Callee: NameExpressionNode { SourceText: "expect_not_null" },
+            Callee: NameExpressionNode { Name: "expect_not_null" },
             Arguments.Count: 1,
         } call => RewriteTestHelperCall(call, "expect_not_null", "expect_not_null failed"),
         ParenthesizedExpressionNode parenthesized => parenthesized with { Expression = RewriteTestExpression(parenthesized.Expression) },

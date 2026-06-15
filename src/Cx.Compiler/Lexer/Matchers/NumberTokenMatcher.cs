@@ -33,7 +33,6 @@ public sealed class NumberTokenMatcher : ITokenMatcher
             break;
         }
 
-        var value = lexer.Input[start..lexer.Position];
-        return new Token(TokenType.Number, value, location.Position, location);
+        return new Token(TokenType.Number, location, lexer.Position - start);
     }
 }

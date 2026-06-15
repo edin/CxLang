@@ -156,24 +156,24 @@ internal sealed class ExpressionSemanticAnalyzer(
         }
 
         if (ResolveExpression(name, variables, typeEnvironment) is not null
-            || isKnownTypeName(name.SourceText)
-            || currentTypeParameters.Contains(name.SourceText, StringComparer.Ordinal)
-            || IsKnownConstructorOrVariantCall(name.SourceText))
+            || isKnownTypeName(name.Name)
+            || currentTypeParameters.Contains(name.Name, StringComparer.Ordinal)
+            || IsKnownConstructorOrVariantCall(name.Name))
         {
             return;
         }
 
-        if (symbolSuggestions?.FindAliasSuggestionForValue(name.SourceText) is { } aliasSuggestion)
+        if (symbolSuggestions?.FindAliasSuggestionForValue(name.Name) is { } aliasSuggestion)
         {
-            diagnostics.Report(location, $"Unknown symbol '{name.SourceText}'. Did you mean '{aliasSuggestion}'?");
+            diagnostics.Report(location, $"Unknown symbol '{name.Name}'. Did you mean '{aliasSuggestion}'?");
         }
-        else if (symbolSuggestions?.FindPartialImportSuggestionForValue(name.SourceText) is { } partialSuggestion)
+        else if (symbolSuggestions?.FindPartialImportSuggestionForValue(name.Name) is { } partialSuggestion)
         {
-            diagnostics.Report(location, $"Unknown symbol '{name.SourceText}'. Did you mean '{partialSuggestion}'?");
+            diagnostics.Report(location, $"Unknown symbol '{name.Name}'. Did you mean '{partialSuggestion}'?");
         }
-        else if (symbolSuggestions?.FindImportSuggestionForValue(name.SourceText) is { } suggestion)
+        else if (symbolSuggestions?.FindImportSuggestionForValue(name.Name) is { } suggestion)
         {
-            diagnostics.Report(location, $"Unknown symbol '{name.SourceText}'. Did you mean to import {suggestion}?");
+            diagnostics.Report(location, $"Unknown symbol '{name.Name}'. Did you mean to import {suggestion}?");
         }
     }
 

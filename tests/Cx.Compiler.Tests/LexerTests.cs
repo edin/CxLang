@@ -73,6 +73,35 @@ public sealed class LexerTests
         Assert.Equal(expected, tokens.Select(token => token.Type));
     }
 
+    [Fact]
+    public void Tokenize_AttachesLeadingTriviaToNextToken()
+    {
+        const string text = "  // note\n\tlet";
+
+        var tokens = Tokenize(text);
+        var let = tokens.Single(token => token.Type == TokenType.Let);
+
+        Assert.Equal("test.cx", let.SourceFile.Path);
+        Assert.Equal("let", let.Span.Text);
+        Assert.Collection(
+            let.LeadingTrivia,
+            trivia =>
+            {
+                Assert.Equal(TokenTriviaKind.Whitespace, trivia.Kind);
+                Assert.Equal("  ", trivia.Text);
+            },
+            trivia =>
+            {
+                Assert.Equal(TokenTriviaKind.Comment, trivia.Kind);
+                Assert.Equal("// note", trivia.Text);
+            },
+            trivia =>
+            {
+                Assert.Equal(TokenTriviaKind.Whitespace, trivia.Kind);
+                Assert.Equal("\n\t", trivia.Text);
+            });
+    }
+
     private static IReadOnlyList<Token> Tokenize(string text)
     {
         var lexer = new Cx.Compiler.Lexer.Lexer(new SourceFile("test.cx", text), new DiagnosticBag());

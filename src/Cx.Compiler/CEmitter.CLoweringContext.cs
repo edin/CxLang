@@ -28,13 +28,15 @@ public sealed partial class CEmitter
             GenericMacroNames.Contains(name);
 
         public GenericCallResolver CreateGenericCallResolver(
-            Func<ExpressionNode, string?> resolveExpressionType,
-            Func<string, string, bool> canAssign) =>
-            new(
+            Func<ExpressionNode, TypeRef?> resolveExpressionType)
+        {
+            var typeCompatibility = new TypeCompatibility(TypeRefParser);
+            return new(
                 GenericCalls,
                 resolveExpressionType,
-                canAssign,
+                (targetType, sourceType) => typeCompatibility.CanAssign(targetType, sourceType, out _),
                 function => TypeTextOrNull(function.OwnerTypeNode, TypeRefParser));
+        }
 
         public bool TryGetMethod(string key, out CLoweringMethodInfo method)
         {

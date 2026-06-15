@@ -90,5 +90,6 @@ internal sealed class ReturnSemanticAnalyzer(
         type is null ? null : TypeRefFormatter.ToCxString(type);
 
     private static bool IsBareNull(ExpressionNode expression) =>
-        string.Equals(expression.SourceText.Trim(), "null", StringComparison.Ordinal);
+        expression is LiteralExpressionNode { LiteralText: "null" }
+        || expression is ParenthesizedExpressionNode parenthesized && IsBareNull(parenthesized.Expression);
 }

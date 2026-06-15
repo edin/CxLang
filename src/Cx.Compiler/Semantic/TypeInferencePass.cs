@@ -389,7 +389,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             return declaredType;
         }
 
-        if (initializer is LiteralExpressionNode { SourceText: "null" })
+        if (initializer is LiteralExpressionNode { LiteralText: "null" })
         {
             diagnostics.Report(location, $"Cannot infer type for {subject} '{name}' from null; write an explicit pointer type.");
             return declaredType;
@@ -448,7 +448,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         {
             var function = _program.Functions.FirstOrDefault(function =>
                 OwnerType(function) is null
-                && function.Name == functionName.SourceText
+                && function.Name == functionName.Name
                 && function.TypeParameters.Count > 0);
             if (function is null
                 || _resolver.InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, typeEnvironment, skipSelf: false) is not null)

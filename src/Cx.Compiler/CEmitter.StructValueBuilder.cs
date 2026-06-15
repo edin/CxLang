@@ -1,4 +1,5 @@
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -8,8 +9,9 @@ public sealed partial class CEmitter
     private sealed class StructValueBuilder(
         CLoweringContext context,
         Func<ExpressionNode, CExpression> lowerExpression,
-        Func<string, string?> inferExpressionType,
-        Func<string, string> lowerCxType)
+        Func<ExpressionNode, TypeRef?> inferExpressionTypeRef,
+        Func<string, string> lowerCxType,
+        Func<TypeRef, string> lowerTypeRef)
     {
         public CExpression BuildPayloadExpression(
             string payloadType,
@@ -19,7 +21,7 @@ public sealed partial class CEmitter
             if (context.TryGetStruct(normalizedPayloadType, out var structNode))
             {
                 if (arguments.Count == 1
-                    && inferExpressionType(arguments[0].SourceText) == normalizedPayloadType)
+                    && IsSameLoweredType(normalizedPayloadType, inferExpressionTypeRef(arguments[0])))
                 {
                     return lowerExpression(arguments[0]);
                 }
@@ -87,5 +89,9 @@ public sealed partial class CEmitter
             new CCallExpression(
                 new CFunctionName(structNode.Name),
                 arguments.Select(lowerExpression).ToList());
+
+        private bool IsSameLoweredType(string leftType, TypeRef? rightType) =>
+            rightType is not null
+            && string.Equals(lowerCxType(leftType), lowerTypeRef(rightType), StringComparison.Ordinal);
     }
 }

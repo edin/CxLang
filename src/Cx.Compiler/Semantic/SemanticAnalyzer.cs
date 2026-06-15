@@ -780,7 +780,7 @@ public sealed class SemanticAnalyzer(
         };
 
     private static bool IsNullLiteral(ExpressionNode expression) =>
-        expression is LiteralExpressionNode { SourceText: "null" }
+        expression is LiteralExpressionNode { LiteralText: "null" }
         || expression is ParenthesizedExpressionNode parenthesized && IsNullLiteral(parenthesized.Expression);
 
     private static bool IsNullableType(TypeRef? type) =>

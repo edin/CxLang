@@ -192,7 +192,7 @@ internal static class MatchLoweringPass
                 return semanticType;
             }
 
-            if (expression is NameExpressionNode name && context.TryGetLocalType(name.SourceText, out var localType))
+            if (expression is NameExpressionNode name && context.TryGetLocalType(name.Name, out var localType))
             {
                 return _typeRefParser.Parse(localType);
             }

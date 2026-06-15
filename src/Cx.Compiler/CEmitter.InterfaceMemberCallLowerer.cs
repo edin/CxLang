@@ -1,4 +1,5 @@
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -7,7 +8,7 @@ public sealed partial class CEmitter
 {
     private sealed class InterfaceMemberCallLowerer(
         CLoweringContext context,
-        Func<ExpressionNode, string?> resolveExpressionType,
+        Func<ExpressionNode, TypeRef?> resolveExpressionType,
         Func<ExpressionNode, CExpression> lowerExpression)
     {
         private readonly CExpressionEmitter _expressionEmitter = new();
@@ -22,13 +23,14 @@ public sealed partial class CEmitter
                 return null;
             }
 
-            var normalizedType = NormalizeType(RemovePointer(targetType));
-            if (!context.InterfaceHasMethod(normalizedType, member.MemberName))
+            var interfaceType = targetType is TypeRef.Pointer pointer ? pointer.Element : targetType;
+            var interfaceName = TypeRefFacts.GetBaseName(interfaceType);
+            if (interfaceName is null || !context.InterfaceHasMethod(interfaceName, member.MemberName))
             {
                 return null;
             }
 
-            var isPointer = targetType.EndsWith("*", StringComparison.Ordinal);
+            var isPointer = targetType is TypeRef.Pointer;
             var access = isPointer ? "->" : ".";
             var targetExpression = lowerExpression(member.Target);
             var loweredArguments = arguments.Select(lowerExpression).ToList();

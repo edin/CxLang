@@ -33,7 +33,7 @@ internal sealed class CExpressionLowerer(ICExpressionLoweringContext context)
 
     public CExpression LowerSimple(ExpressionNode expression) => expression switch
     {
-        LiteralExpressionNode literal => new CLiteralExpression(LowerLiteral(literal.SourceText)),
+        LiteralExpressionNode literal => new CLiteralExpression(LowerLiteral(literal.LiteralText)),
         NameExpressionNode name => context.LowerNameExpression(name),
         ParenthesizedExpressionNode parenthesized => new CParenthesizedExpression(context.LowerExpression(parenthesized.Expression)),
         CastExpressionNode cast => _typeExpressionLowerer.LowerCast(cast),
@@ -46,7 +46,7 @@ internal sealed class CExpressionLowerer(ICExpressionLoweringContext context)
         AssignmentExpressionNode assignment => _operatorExpressionLowerer.LowerAssignment(assignment),
         MemberExpressionNode member => _memberExpressionLowerer.LowerMember(member),
         IndexExpressionNode index => _operatorExpressionLowerer.LowerIndex(index),
-        _ => UnsupportedRawLowering(expression),
+        _ => throw CEmissionGuards.UnsupportedRawExpressionLowering(expression),
     };
 
     public CExpression LowerInitializer(InitializerExpressionNode initializer, string? targetType = null) =>
@@ -60,13 +60,4 @@ internal sealed class CExpressionLowerer(ICExpressionLoweringContext context)
         _ => text,
     };
 
-    private static CExpression UnsupportedRawLowering(ExpressionNode expression) =>
-        throw new InvalidOperationException(
-            $"Internal C emission error: expression requires unsupported raw C lowering: '{TrimForDiagnostic(expression.SourceText)}'.");
-
-    private static string TrimForDiagnostic(string text)
-    {
-        text = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return text.Length <= 120 ? text : text[..117] + "...";
-    }
 }

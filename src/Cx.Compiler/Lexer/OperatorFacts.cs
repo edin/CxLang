@@ -5,7 +5,7 @@ namespace Cx.Compiler.Lexer;
 public sealed record BinaryOperatorInfo(
     TokenType Type,
     int Precedence,
-    OperatorAssociativity Associativity);
+    Associativity Associativity);
 
 public sealed record PrefixOperatorInfo(TokenType Type, int Precedence);
 
@@ -42,27 +42,33 @@ public static class OperatorFacts
 
     private static BinaryOperatorInfo? ReadBinary(TokenType type)
     {
-        var attribute = GetAttribute<BinaryOperatorAttribute>(type);
-        return attribute is null ? null : new BinaryOperatorInfo(type, attribute.Precedence, attribute.Associativity);
+        var attribute = GetTokenAttribute(type);
+        return attribute.BinaryPrecedence is { } precedence
+            ? new BinaryOperatorInfo(type, precedence, attribute.Associativity)
+            : null;
     }
 
     private static PrefixOperatorInfo? ReadPrefix(TokenType type)
     {
-        var attribute = GetAttribute<PrefixOperatorAttribute>(type);
-        return attribute is null ? null : new PrefixOperatorInfo(type, attribute.Precedence);
+        var attribute = GetTokenAttribute(type);
+        return attribute.PrefixPrecedence is { } precedence
+            ? new PrefixOperatorInfo(type, precedence)
+            : null;
     }
 
     private static PostfixOperatorInfo? ReadPostfix(TokenType type)
     {
-        var attribute = GetAttribute<PostfixOperatorAttribute>(type);
-        return attribute is null ? null : new PostfixOperatorInfo(type, attribute.Precedence);
+        var attribute = GetTokenAttribute(type);
+        return attribute.PostfixPrecedence is { } precedence
+            ? new PostfixOperatorInfo(type, precedence)
+            : null;
     }
 
-    private static T? GetAttribute<T>(TokenType type)
-        where T : Attribute
+    private static TokenAttribute GetTokenAttribute(TokenType type)
     {
         var field = typeof(TokenType).GetField(type.ToString(), BindingFlags.Public | BindingFlags.Static)
             ?? throw new InvalidOperationException($"Token '{type}' does not have a matching enum field.");
-        return field.GetCustomAttribute<T>();
+        return field.GetCustomAttribute<TokenAttribute>()
+            ?? throw new InvalidOperationException($"Token '{type}' is missing {nameof(TokenAttribute)}.");
     }
 }

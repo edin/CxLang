@@ -249,7 +249,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             case null:
                 return;
             case NameExpressionNode name:
-                if (scope.TryResolve(name.SourceText, out var symbol))
+                if (scope.TryResolve(name.Name, out var symbol))
                 {
                     name.Semantic.Symbol = symbol;
                 }
@@ -386,7 +386,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         }
 
         if (call.Callee is NameExpressionNode name
-            && scope.TryResolve(name.SourceText, out var symbol)
+            && scope.TryResolve(name.Name, out var symbol)
             && symbol.Kind == SymbolKind.Function)
         {
             call.Semantic.Symbol = symbol;
@@ -419,7 +419,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         }
 
         if (call.Callee is NameExpressionNode name
-            && FindFreeFunction(name.SourceText, typeArguments) is { } function)
+            && FindFreeFunction(name.Name, typeArguments) is { } function)
         {
             var symbol = FunctionSymbol(function);
             call.Semantic.Symbol = symbol;
@@ -572,7 +572,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         }
 
         if (member.Target is NameExpressionNode receiver
-            && scope.TryResolve(receiver.SourceText, out var receiverSymbol)
+            && scope.TryResolve(receiver.Name, out var receiverSymbol)
             && FindInstanceFunction(receiverSymbol, member.MemberName, typeArguments) is { } instanceFunction)
         {
             var receiverTypeArguments = ResolveFunctionTypeArguments(instanceFunction, typeArguments, receiverSymbol);

@@ -76,8 +76,8 @@ public sealed class TokenMetadataTests
         Assert.NotNull(assign);
         Assert.True(multiply.Precedence > add.Precedence);
         Assert.True(add.Precedence > assign.Precedence);
-        Assert.Equal(OperatorAssociativity.Left, add.Associativity);
-        Assert.Equal(OperatorAssociativity.Right, assign.Associativity);
+        Assert.Equal(Associativity.Left, add.Associativity);
+        Assert.Equal(Associativity.Right, assign.Associativity);
     }
 
     [Fact]

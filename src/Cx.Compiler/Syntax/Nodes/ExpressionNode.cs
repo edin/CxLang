@@ -8,11 +8,17 @@ public sealed record RawExpressionNode(
 
 public sealed record LiteralExpressionNode(
     Location Location,
-    string SourceText) : ExpressionNode(Location, SourceText);
+    string SourceText) : ExpressionNode(Location, SourceText)
+{
+    public string LiteralText => SourceText;
+}
 
 public sealed record NameExpressionNode(
     Location Location,
-    string SourceText) : ExpressionNode(Location, SourceText);
+    string SourceText) : ExpressionNode(Location, SourceText)
+{
+    public string Name => SourceText;
+}
 
 public sealed record ParenthesizedExpressionNode(
     Location Location,

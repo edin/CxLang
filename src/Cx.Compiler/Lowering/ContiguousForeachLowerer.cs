@@ -153,7 +153,7 @@ internal static class ContiguousForeachLowerer
                 return true;
             }
 
-            if (expression is NameExpressionNode name && context.TryGetLocalType(name.SourceText, out type))
+            if (expression is NameExpressionNode name && context.TryGetLocalType(name.Name, out type))
             {
                 typeRef = _typeRefParser.Parse(type);
                 return true;

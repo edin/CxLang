@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Cx.Compiler.C;
 using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
@@ -72,7 +71,7 @@ public sealed partial class CEmitter
             _scope = scope;
             SelfType = selfType;
             SelfApiType = selfApiType;
-            _genericCallResolver = _context.CreateGenericCallResolver(ResolveExpressionType, CanAssign);
+            _genericCallResolver = _context.CreateGenericCallResolver(ResolveExpressionTypeRef);
             _expressionTypeResolver = CreateExpressionTypeResolver();
             _interfaceValueBuilder = new InterfaceValueBuilder(
                 _context,
@@ -82,15 +81,15 @@ public sealed partial class CEmitter
                 LowerTypeRef);
             _taggedUnionValueBuilder = new TaggedUnionValueBuilder(
                 _context,
-                InferExpressionType,
                 InferExpressionTypeRef,
                 type => LowerType(type, SelfType),
                 LowerTypeRef);
             _structValueBuilder = new StructValueBuilder(
                 _context,
                 LowerExpression,
-                InferExpressionType,
-                type => LowerType(type, SelfType));
+                InferExpressionTypeRef,
+                type => LowerType(type, SelfType),
+                LowerTypeRef);
             _adapterExposeResolver = new AdapterExposeResolver(_context);
             _receiverExpressionBuilder = new ReceiverExpressionBuilder(_scope);
             _nameExpressionLowerer = new NameExpressionLowerer(
@@ -115,7 +114,7 @@ public sealed partial class CEmitter
         {
             var interfaceMemberCallLowerer = new InterfaceMemberCallLowerer(
                 _context,
-                ResolveExpressionType,
+                ResolveExpressionTypeRef,
                 LowerExpression);
             var functionReferences = new CFunctionReferenceResolver();
             var resolvedCallLowerer = new ResolvedCallLowerer(
@@ -139,7 +138,7 @@ public sealed partial class CEmitter
                 interfaceMemberCallLowerer,
                 _adapterExposeResolver,
                 _receiverExpressionBuilder,
-                ResolveExpressionType,
+                ResolveExpressionTypeRef,
                 LowerExpression);
             var genericCallLowerer = new GenericCallLowerer(
                 _context,
@@ -225,7 +224,7 @@ public sealed partial class CEmitter
             }
 
             return _expressionEmitter.Emit(
-                TryWrapTaggedUnionValueExpression(targetType, expression.SourceText, lowered) ?? lowered);
+                TryWrapTaggedUnionValueExpression(targetType, expression, lowered) ?? lowered);
         }
 
         public string LowerInitializer(TypeRef? targetType, string fallbackTargetType, ExpressionNode expression) =>
@@ -244,7 +243,7 @@ public sealed partial class CEmitter
             }
 
             return _expressionEmitter.Emit(
-                TryWrapTaggedUnionValueExpression(targetType, expression.SourceText, lowered) ?? lowered);
+                TryWrapTaggedUnionValueExpression(targetType, expression, lowered) ?? lowered);
         }
 
         public CExpression LowerInitializerExpression(string targetType, ExpressionNode expression)
@@ -257,7 +256,7 @@ public sealed partial class CEmitter
                 return interfaceInitializer;
             }
 
-            if (TryWrapTaggedUnionValueExpression(targetType, expression.SourceText, direct) is { } wrapped)
+            if (TryWrapTaggedUnionValueExpression(targetType, expression, direct) is { } wrapped)
             {
                 return wrapped;
             }
@@ -286,7 +285,7 @@ public sealed partial class CEmitter
                 return interfaceInitializer;
             }
 
-            if (TryWrapTaggedUnionValueExpression(targetType, expression.SourceText, direct) is { } wrapped)
+            if (TryWrapTaggedUnionValueExpression(targetType, expression, direct) is { } wrapped)
             {
                 return wrapped;
             }
@@ -345,29 +344,13 @@ public sealed partial class CEmitter
                 or IndexExpressionNode
                 or CallExpressionNode
                 or GenericCallExpressionNode => _expressionEmitter.Emit(LowerExpression(expression)),
-            FunctionExpressionNode functionExpression => UnsupportedExpressionTextLowering(functionExpression),
-            RawExpressionNode raw => UnexpectedRawExpressionText(raw),
-            _ => UnsupportedExpressionTextLowering(expression),
+            FunctionExpressionNode functionExpression => throw CEmissionGuards.UnsupportedExpressionTextLowering(functionExpression),
+            RawExpressionNode raw => throw CEmissionGuards.RawExpressionAfterLowering(raw),
+            _ => throw CEmissionGuards.UnsupportedExpressionTextLowering(expression),
         };
 
-        private static string UnexpectedRawExpressionText(RawExpressionNode raw) =>
-            throw new InvalidOperationException(
-                $"Raw expression reached C emission after lowering: '{TrimForDiagnostic(raw.SourceText)}'.");
-
-        private static string TrimForDiagnostic(string text)
-        {
-            text = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-            return text.Length <= 120 ? text : text[..117] + "...";
-        }
-
-        private static string UnsupportedExpressionTextLowering(ExpressionNode expression) =>
-            throw new InvalidOperationException(
-                $"Internal C emission error: expression requires unsupported legacy text lowering: '{TrimForDiagnostic(expression.SourceText)}'.");
-
         private static CExpression UnsupportedInitializerTextFallback(ExpressionNode expression, string loweredText) =>
-            throw new InvalidOperationException(
-                "Internal C emission error: initializer lowered differently through legacy text path and cannot be represented as C AST: "
-                + $"'{TrimForDiagnostic(expression.SourceText)}' -> '{TrimForDiagnostic(loweredText)}'.");
+            throw CEmissionGuards.UnsupportedInitializerTextFallback(expression, loweredText);
 
         CExpression ICExpressionLoweringContext.LowerNameExpression(NameExpressionNode name) =>
             _nameExpressionLowerer.LowerNameExpression(name);
@@ -386,10 +369,6 @@ public sealed partial class CEmitter
         string ICExpressionLoweringContext.LowerType(TypeNode? typeNode, string fallbackType) =>
             CEmitter.LowerType(typeNode, fallbackType, SelfType);
 
-        private string LowerType(TypeNode? typeNode) =>
-            _scope.ResolveType(typeNode) is { } type
-                ? LowerTypeRef(type)
-                : string.Empty;
 
         private string LowerTypeRef(TypeRef type) =>
             s_abiNames.LowerType(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
@@ -403,141 +382,79 @@ public sealed partial class CEmitter
         {
             return assignment.Operator == "="
                 && assignment.Target is NameExpressionNode targetName
-                && _scope.TryGetVariableTypeRef(targetName.SourceText, out var targetTypeRef)
-                ? TryWrapTaggedUnionValueExpression(targetTypeRef, assignment.Value.SourceText, value)
+                && _scope.TryGetVariableTypeRef(targetName.Name, out var targetTypeRef)
+                ? TryWrapTaggedUnionValueExpression(targetTypeRef, assignment.Value, value)
                 : null;
         }
 
         CExpression? ICExpressionLoweringContext.TryLowerMemberExpression(MemberExpressionNode member) =>
             LowerMemberExpression(member);
 
-        private string LowerInitializerExpression(InitializerExpressionNode initializer, string? targetType = null)
-            => _expressionEmitter.Emit(_expressionLoweringPipeline.LowerInitializer(initializer, targetType));
-
-        private CExpression? LowerGenericMemberCallExpression(
-            MemberExpressionNode member,
-            IReadOnlyList<string> typeArguments,
-            IReadOnlyList<ExpressionNode> arguments) =>
-            _memberCallLowerer.TryLowerGenericMember(member, typeArguments, arguments);
 
         private string? ResolveExpressionType(ExpressionNode expression) =>
             _expressionTypeResolver.Resolve(expression);
 
-        public string? ResolveExpressionTypeForLowering(ExpressionNode expression) =>
-            ResolveExpressionType(expression);
-
-        private static bool CanAssign(string targetType, string sourceType) =>
-            string.Equals(targetType.Trim(), sourceType.Trim(), StringComparison.Ordinal)
-            || (targetType.Trim() == "double" && sourceType.Trim() is "int" or "float")
-            || (targetType.Trim() == "float" && sourceType.Trim() == "int")
-            || (BuiltinTypes.IsNumeric(targetType) && BuiltinTypes.IsNumeric(sourceType));
-
-        private static string RemovePointer(string type)
+        private TypeRef? ResolveExpressionTypeRef(ExpressionNode expression)
         {
-            while (type.TrimEnd().EndsWith("*", StringComparison.Ordinal))
+            if (expression.Semantic.Type is { } semanticType)
             {
-                type = type.TrimEnd()[..^1];
+                return semanticType;
             }
 
-            return type.TrimEnd();
+            return ResolveExpressionType(expression) is { } type
+                ? GenericTypeSubstitutionBuilder.ParseType(type)
+                : null;
         }
 
         private CExpression LowerMemberExpression(MemberExpressionNode member) =>
             _memberAccessLowerer.LowerExpression(member);
 
-        private CExpression? LowerAdapterExposeCall(
-            AdapterExposeInfo adapterExpose,
-            IReadOnlyList<string> receiverArguments,
-            IReadOnlyList<ExpressionNode> arguments,
-            string target,
-            bool isPointer) =>
-            _memberCallLowerer.TryLowerAdapterExposeCall(adapterExpose, receiverArguments, arguments, target, isPointer);
 
-        private bool IsModuleQualifierTarget(string target) =>
-            _context.IsModuleQualifierTarget(target);
 
         private CExpression? TryWrapTaggedUnionValueExpression(
             string targetType,
-            string sourceExpression,
+            ExpressionNode sourceExpression,
             CExpression loweredExpression)
             => _taggedUnionValueBuilder.TryWrapExpression(targetType, sourceExpression, loweredExpression);
 
         private CExpression? TryWrapTaggedUnionValueExpression(
             TypeRef targetType,
-            string sourceExpression,
+            ExpressionNode sourceExpression,
             CExpression loweredExpression)
             => _taggedUnionValueBuilder.TryWrapExpression(targetType, sourceExpression, loweredExpression);
 
-        private string? InferExpressionType(string expression)
+        private TypeRef? InferExpressionTypeRef(ExpressionNode expression)
         {
-            expression = expression.Trim();
-
-            if (Regex.IsMatch(expression, @"^-?\s*\d+$"))
+            if (expression.Semantic.Type is { } semanticType)
             {
-                return "int";
+                return semanticType;
             }
 
-            if (expression.StartsWith('"'))
+            if (expression is ParenthesizedExpressionNode parenthesized)
             {
-                return "char*";
+                return InferExpressionTypeRef(parenthesized.Expression);
             }
 
-            if (expression.StartsWith("&", StringComparison.Ordinal)
-                && _scope.TryGetVariableType(expression[1..].Trim(), out var referencedType))
+            if (expression is UnaryExpressionNode { Operator: "&" } addressOf
+                && InferExpressionTypeRef(addressOf.Operand) is { } operandType)
             {
-                return referencedType + "*";
+                return new TypeRef.Pointer(operandType);
             }
 
-            foreach (var structName in _context.GetStructNames())
-            {
-                if (expression.StartsWith(structName + "(", StringComparison.Ordinal))
-                {
-                    return structName;
-                }
-
-                if (expression.StartsWith(structName + " {", StringComparison.Ordinal))
-                {
-                    return structName;
-                }
-            }
-
-            foreach (var interfaceName in _context.GetInterfaceNames())
-            {
-                if (expression.StartsWith(interfaceName + " {", StringComparison.Ordinal))
-                {
-                    return interfaceName;
-                }
-            }
-
-            return _scope.TryGetVariableType(expression, out var variableType)
-                ? variableType
-                : null;
-        }
-
-        private TypeRef? InferExpressionTypeRef(string expression)
-        {
-            expression = expression.Trim();
-            if (expression.StartsWith("&", StringComparison.Ordinal)
-                && _scope.TryGetVariableTypeRef(expression[1..].Trim(), out var referencedType))
-            {
-                return new TypeRef.Pointer(referencedType);
-            }
-
-            if (_scope.TryGetVariableTypeRef(expression, out var variableType))
+            if (expression is NameExpressionNode name
+                && _scope.TryGetVariableTypeRef(name.Name, out var variableType))
             {
                 return variableType;
             }
 
-            if (InferExpressionType(expression) is not { } type)
+            if (expression is InitializerExpressionNode { TypeNameNode: { } typeNameNode }
+                && _scope.ResolveType(typeNameNode) is { } initializerType)
             {
-                return null;
+                return initializerType;
             }
 
-            return GenericTypeSubstitutionBuilder.ParseType(type);
+            return ResolveExpressionTypeRef(expression);
         }
-
-        private string ResolveAlias(string type) =>
-            _context.ResolveTypeAlias(type);
 
     }
 }

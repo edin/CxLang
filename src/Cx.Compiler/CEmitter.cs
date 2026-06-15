@@ -477,7 +477,7 @@ public sealed partial class CEmitter
 
     private static string? GetValueReferenceName(ExpressionNode expression) => expression switch
     {
-        NameExpressionNode name => name.SourceText,
+        NameExpressionNode name => name.Name,
         MemberExpressionNode member => ExpressionNameFacts.GetQualifiedName(member),
         _ => null,
     };
@@ -733,18 +733,6 @@ public sealed partial class CEmitter
         || GetCDeclarationTypeNames(declaration).Any(usage.Types.Contains)
         || GetCDeclarationValueNames(declaration).Any(usage.Values.Contains);
 
-    private static void EmitStruct(StringBuilder builder, StructNode structNode)
-    {
-        builder.AppendLine($"typedef struct {structNode.Name}");
-        builder.AppendLine("{");
-
-        foreach (var field in structNode.Fields)
-        {
-            builder.AppendLine($"    {LowerStructFieldDeclaration(structNode, field)};");
-        }
-
-        builder.AppendLine($"}} {structNode.Name};");
-    }
 
     private static string LowerStructFieldDeclaration(StructNode structNode, StructFieldNode field)
     {
@@ -755,21 +743,6 @@ public sealed partial class CEmitter
             : LowerDeclaration(field.TypeNode, fieldType, field.Name);
     }
 
-    private static void EmitEnum(StringBuilder builder, EnumNode enumNode)
-    {
-        builder.AppendLine("typedef enum");
-        builder.AppendLine("{");
-
-        for (var i = 0; i < enumNode.Members.Count; i++)
-        {
-            var member = enumNode.Members[i];
-            var value = string.IsNullOrWhiteSpace(member.Value) ? "" : " = " + member.Value;
-            var comma = i == enumNode.Members.Count - 1 ? "" : ",";
-            builder.AppendLine($"    {member.Name}{value}{comma}");
-        }
-
-        builder.AppendLine($"}} {enumNode.Name};");
-    }
 
     private static IReadOnlyList<FunctionNode> GetFunctionsToEmit(ProgramNode program)
     =>
@@ -1091,44 +1064,6 @@ public sealed partial class CEmitter
         return SubstituteGenericType(TypeAdapterBaseTypeText(adapter), substitutions);
     }
 
-    private static ResolvedAdapterExpose ResolveAdapterExpose(
-        IReadOnlyList<TypeAdapterNode> adapters,
-        TypeAdapterNode adapter,
-        ExposeMethodNode expose,
-        IReadOnlyList<string> receiverArguments)
-    {
-        var currentAdapter = adapter;
-        var currentExpose = expose;
-        var currentArguments = receiverArguments;
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        while (true)
-        {
-            var baseType = SubstituteAdapterBaseType(currentAdapter, currentArguments);
-            var baseOwner = GetGenericBaseName(baseType) ?? baseType;
-            var baseArguments = TryParseGenericUse(baseType, out _, out var parsedBaseArguments)
-                ? parsedBaseArguments
-                : [];
-            var key = $"{currentAdapter.Name}.{currentExpose.ExposedName}";
-            if (!seen.Add(key))
-            {
-                return new ResolvedAdapterExpose(baseType, baseOwner, currentExpose.SourceName, baseArguments);
-            }
-
-            var nextAdapter = adapters.FirstOrDefault(adapter => adapter.Name == baseOwner);
-            var nextExpose = nextAdapter?.ExposedMethods.FirstOrDefault(expose =>
-                expose.IsStatic == currentExpose.IsStatic
-                && expose.ExposedName == currentExpose.SourceName);
-            if (nextAdapter is null || nextExpose is null)
-            {
-                return new ResolvedAdapterExpose(baseType, baseOwner, currentExpose.SourceName, baseArguments);
-            }
-
-            currentAdapter = nextAdapter;
-            currentExpose = nextExpose;
-            currentArguments = baseArguments;
-        }
-    }
 
     private static IReadOnlyList<StructNode> GetStructsToEmit(ProgramNode program)
     =>
@@ -1143,8 +1078,6 @@ public sealed partial class CEmitter
     private static string GetCFunctionName(FunctionNode function) =>
         s_nameMangler.FunctionName(function);
 
-    private static string GetFunctionKey(FunctionNode function) =>
-        FunctionOwnerTypeText(function) is { } ownerType ? $"{ownerType}.{function.Name}" : function.Name;
 
     private static string? GetConcreteFunctionOwnerName(FunctionNode function) =>
         FunctionOwnerTypeText(function) is not { } ownerType
@@ -1171,70 +1104,6 @@ public sealed partial class CEmitter
         return true;
     }
 
-    private static int FindMatchingGenericClose(string type, int openIndex)
-    {
-        var depth = 0;
-        for (var i = openIndex; i < type.Length; i++)
-        {
-            if (type[i] == '<')
-            {
-                depth++;
-                continue;
-            }
-
-            if (type[i] != '>')
-            {
-                continue;
-            }
-
-            depth--;
-            if (depth == 0)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsText))
-        {
-            return [];
-        }
-
-        var arguments = new List<string>();
-        var start = 0;
-        var angleDepth = 0;
-        var parenDepth = 0;
-        var bracketDepth = 0;
-
-        for (var i = 0; i < argumentsText.Length; i++)
-        {
-            switch (argumentsText[i])
-            {
-                case '<': angleDepth++; break;
-                case '>': angleDepth--; break;
-                case '(': parenDepth++; break;
-                case ')': parenDepth--; break;
-                case '[': bracketDepth++; break;
-                case ']': bracketDepth--; break;
-            }
-
-            if (argumentsText[i] != ',' || angleDepth != 0 || parenDepth != 0 || bracketDepth != 0)
-            {
-                continue;
-            }
-
-            arguments.Add(argumentsText[start..i].Trim());
-            start = i + 1;
-        }
-
-        arguments.Add(argumentsText[start..].Trim());
-        return arguments;
-    }
-
     private static string SubstituteGenericType(string type, IReadOnlyDictionary<string, string> substitutions)
     {
         foreach (var (parameter, argument) in substitutions)
@@ -1244,16 +1113,6 @@ public sealed partial class CEmitter
 
         return type;
     }
-
-    private static bool IsIdentifierStart(char ch) => char.IsLetter(ch) || ch == '_';
-
-    private static bool IsIdentifierPart(char ch) => char.IsLetterOrDigit(ch) || ch == '_';
-
-    private static void AppendIndent(StringBuilder builder, int indentLevel) =>
-        builder.Append(' ', indentLevel * 4);
-
-    private static string IndentLine(string text, int indentLevel) =>
-        new string(' ', indentLevel * 4) + text + Environment.NewLine;
 
     private static string LowerType(string type, string? selfType = null)
         => s_abiNames.LowerType(type, selfType);
@@ -1348,21 +1207,6 @@ public sealed partial class CEmitter
     private static string ResolveAdapterStorageType(string type)
         => CTypeLowerer.ResolveAdapterStorageType(type, s_typeAdapters);
 
-    private static string StripModuleQualifier(string type)
-    {
-        var prefix = "";
-        if (type.StartsWith("const ", StringComparison.Ordinal))
-        {
-            prefix = "const ";
-            type = type["const ".Length..].TrimStart();
-        }
-
-        var dot = type.LastIndexOf('.');
-        return prefix + (dot < 0 ? type : type[(dot + 1)..]);
-    }
-
-    private static string LowerDeclaration(string type, string name, string? selfType = null)
-        => s_abiNames.LowerDeclaration(type, name, selfType);
 
     private static string LowerDeclaration(TypeNode? typeNode, string fallbackType, string name, string? selfType = null) =>
         s_abiNames.LowerDeclaration(typeNode, fallbackType, name, selfType);
@@ -1373,8 +1217,6 @@ public sealed partial class CEmitter
     private static string LowerFunctionTypeParameter(string parameter, string? selfType = null) =>
         s_abiNames.LowerFunctionTypeParameter(parameter, selfType);
 
-    private static string SubstituteSelfType(string type, string? selfType) =>
-        CTypeLowerer.SubstituteSelfType(type, selfType);
 
     private static string? ResolveSelfType(FunctionNode function)
     {
@@ -1426,8 +1268,6 @@ public sealed partial class CEmitter
     private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
         => CTypeLowerer.TryParseGenericUse(type, out name, out arguments);
 
-    private static string SanitizeTypeName(string type) =>
-        s_abiNames.SanitizeTypeName(type);
 
     private static bool TryParseFunctionType(
         string type,
@@ -1501,13 +1341,32 @@ public sealed partial class CEmitter
         _ => false,
     };
 
-    private static bool ContainsNull(ExpressionNode? expression) =>
-        expression is not null && ContainsNull(expression.SourceText);
-
-    private static bool ContainsNull(string? expression) =>
-        expression is not null && Regex.IsMatch(expression, @"\bnull\b");
-
-    private static string ExpressionText(ExpressionNode expression) => expression.SourceText;
+    private static bool ContainsNull(ExpressionNode? expression) => expression switch
+    {
+        null => false,
+        LiteralExpressionNode { LiteralText: "null" } => true,
+        ParenthesizedExpressionNode parenthesized => ContainsNull(parenthesized.Expression),
+        CastExpressionNode cast => ContainsNull(cast.Expression),
+        UnaryExpressionNode unary => ContainsNull(unary.Operand),
+        PostfixExpressionNode postfix => ContainsNull(postfix.Operand),
+        SizeOfExpressionNode sizeOf => ContainsNull(sizeOf.ExpressionOperand),
+        BinaryExpressionNode binary => ContainsNull(binary.Left) || ContainsNull(binary.Right),
+        ConditionalExpressionNode conditional =>
+            ContainsNull(conditional.Condition)
+            || ContainsNull(conditional.WhenTrue)
+            || ContainsNull(conditional.WhenFalse),
+        ScalarRangeExpressionNode range => ContainsNull(range.Start) || ContainsNull(range.End),
+        InitializerExpressionNode initializer =>
+            initializer.Fields.Any(field => ContainsNull(field.Value))
+            || initializer.Values.Any(ContainsNull),
+        FunctionExpressionNode function => ContainsNull(function.ExpressionBody),
+        AssignmentExpressionNode assignment => ContainsNull(assignment.Target) || ContainsNull(assignment.Value),
+        CallExpressionNode call => ContainsNull(call.Callee) || call.Arguments.Any(ContainsNull),
+        GenericCallExpressionNode call => ContainsNull(call.Callee) || call.Arguments.Any(ContainsNull),
+        MemberExpressionNode member => ContainsNull(member.Target),
+        IndexExpressionNode index => ContainsNull(index.Target) || ContainsNull(index.Index),
+        _ => false,
+    };
 
     private sealed record InterfaceImplementation(StructNode Struct, InterfaceNode Interface);
 

@@ -2,241 +2,198 @@ namespace Cx.Compiler.Lexer;
 
 public enum TokenType
 {
-    [Token(TokenClass.Identifier)]
-    [Matcher(typeof(IdentifierTokenMatcher))]
+    [Token(TokenClass.Identifier, typeof(IdentifierTokenMatcher))]
     Identifier,
-    [Token(TokenClass.Literal)]
-    [Matcher(typeof(NumberTokenMatcher))]
+    [Token(TokenClass.Literal, typeof(NumberTokenMatcher))]
     Number,
-    [Token(TokenClass.Literal)]
-    [Matcher(typeof(StringTokenMatcher))]
+    [Token(TokenClass.Literal, typeof(StringTokenMatcher))]
     String,
-    [Token(TokenClass.Literal)]
-    [Matcher(typeof(CharacterTokenMatcher))]
+    [Token(TokenClass.Literal, typeof(CharacterTokenMatcher))]
     Character,
 
-    [Token("fn", TokenClass.Keyword)]
+    [Keyword("fn")]
     Fn,
-    [Token("static", TokenClass.Keyword)]
+    [Keyword("static")]
     Static,
-    [Token("let", TokenClass.Keyword)]
+    [Keyword("let")]
     Let,
-    [Token("const", TokenClass.Keyword)]
+    [Keyword("const")]
     Const,
-    [Token("return", TokenClass.Keyword)]
+    [Keyword("return")]
     Return,
-    [Token("module", TokenClass.Keyword)]
+    [Keyword("module")]
     Module,
-    [Token("import", TokenClass.Keyword)]
+    [Keyword("import")]
     Import,
-    [Token("from", TokenClass.Keyword)]
+    [Keyword("from")]
     From,
-    [Token("as", TokenClass.Keyword)]
+    [Keyword("as")]
     As,
-    [Token("include", TokenClass.Keyword)]
+    [Keyword("include")]
     Include,
-    [Token("declare", TokenClass.Keyword)]
+    [Keyword("declare")]
     Declare,
-    [Token("link", TokenClass.Keyword)]
+    [Keyword("link")]
     Link,
-    [Token("macro", TokenClass.Keyword)]
+    [Keyword("macro")]
     Macro,
-    [Token("extern", TokenClass.Keyword)]
+    [Keyword("extern")]
     Extern,
-    [Token("raw", TokenClass.Keyword)]
+    [Keyword("raw")]
     Raw,
-    [Token("struct", TokenClass.Keyword)]
+    [Keyword("struct")]
     Struct,
-    [Token("extension", TokenClass.Keyword)]
+    [Keyword("extension")]
     Extension,
-    [Token("interface", TokenClass.Keyword)]
+    [Keyword("interface")]
     Interface,
-    [Token("enum", TokenClass.Keyword)]
+    [Keyword("enum")]
     Enum,
-    [Token("type", TokenClass.Keyword)]
+    [Keyword("type")]
     Type,
-    [Token("using", TokenClass.Keyword)]
+    [Keyword("using")]
     Using,
-    [Token("over", TokenClass.Keyword)]
+    [Keyword("over")]
     Over,
-    [Token("expose", TokenClass.Keyword)]
+    [Keyword("expose")]
     Expose,
-    [Token("opaque", TokenClass.Keyword)]
+    [Keyword("opaque")]
     Opaque,
-    [Token("union", TokenClass.Keyword)]
+    [Keyword("union")]
     Union,
-    [Token("if", TokenClass.Keyword)]
+    [Keyword("if")]
     If,
-    [Token("else", TokenClass.Keyword)]
+    [Keyword("else")]
     Else,
-    [Token("switch", TokenClass.Keyword)]
+    [Keyword("switch")]
     Switch,
-    [Token("case", TokenClass.Keyword)]
+    [Keyword("case")]
     Case,
-    [Token("default", TokenClass.Keyword)]
+    [Keyword("default")]
     Default,
-    [Token("break", TokenClass.Keyword)]
+    [Keyword("break")]
     Break,
-    [Token("continue", TokenClass.Keyword)]
+    [Keyword("continue")]
     Continue,
-    [Token("while", TokenClass.Keyword)]
+    [Keyword("while")]
     While,
-    [Token("for", TokenClass.Keyword)]
+    [Keyword("for")]
     For,
-    [Token("foreach", TokenClass.Keyword)]
+    [Keyword("foreach")]
     Foreach,
-    [Token("in", TokenClass.Keyword)]
+    [Keyword("in")]
     In,
-    [Token("requires", TokenClass.Keyword)]
+    [Keyword("requires")]
     Requires,
-    [Token("where", TokenClass.Keyword)]
+    [Keyword("where")]
     Where,
-    [Token("match", TokenClass.Keyword)]
+    [Keyword("match")]
     Match,
-    [Token("true", TokenClass.Keyword)]
+    [Keyword("true")]
     True,
-    [Token("false", TokenClass.Keyword)]
+    [Keyword("false")]
     False,
-    [Token("null", TokenClass.Keyword)]
+    [Keyword("null")]
     Null,
-    [Token("attribute", TokenClass.Keyword)]
+    [Keyword("attribute")]
     Attribute,
-    [Token("on", TokenClass.Keyword)]
+    [Keyword("on")]
     On,
 
-    [Token("->", TokenClass.Symbol)]
+    [Symbol("->")]
     Arrow,
-    [Token("=>", TokenClass.Symbol)]
+    [Symbol("=>")]
     FatArrow,
-    [Token("{", TokenClass.Symbol)]
+    [Symbol("{")]
     LBrace,
-    [Token("}", TokenClass.Symbol)]
+    [Symbol("}")]
     RBrace,
-    [Token("(", TokenClass.Symbol)]
+    [Symbol("(")]
     LParen,
-    [Token(")", TokenClass.Symbol)]
+    [Symbol(")")]
     RParen,
-    [Token("[", TokenClass.Symbol)]
+    [Symbol("[")]
     LBracket,
-    [Token("]", TokenClass.Symbol)]
+    [Symbol("]")]
     RBracket,
-    [Token("*", TokenClass.Symbol)]
-    [BinaryOperator(100)]
-    [PrefixOperator(110)]
+    [Symbol("*", binaryPrecedence: 100, prefixPrecedence: 110)]
     Star,
-    [Token("=", TokenClass.Symbol)]
-    [BinaryOperator(10, OperatorAssociativity.Right)]
+    [Symbol("=", binaryPrecedence: 10, associativity: Associativity.Right)]
     Equals,
-    [Token(":", TokenClass.Symbol)]
+    [Symbol(":")]
     Colon,
-    [Token(";", TokenClass.Symbol)]
+    [Symbol(";")]
     Semicolon,
-    [Token(",", TokenClass.Symbol)]
+    [Symbol(",")]
     Comma,
-    [Token("...", TokenClass.Symbol)]
-    [BinaryOperator(15)]
+    [Symbol("...", binaryPrecedence: 15)]
     Ellipsis,
-    [Token("..", TokenClass.Symbol)]
-    [BinaryOperator(15)]
+    [Symbol("..", binaryPrecedence: 15)]
     DotDot,
-    [Token(".", TokenClass.Symbol)]
+    [Symbol(".")]
     Dot,
-    [Token("==", TokenClass.Symbol)]
-    [BinaryOperator(60)]
+    [Symbol("==", binaryPrecedence: 60)]
     EqualEqual,
-    [Token("!=", TokenClass.Symbol)]
-    [BinaryOperator(60)]
+    [Symbol("!=", binaryPrecedence: 60)]
     BangEqual,
-    [Token("<=>", TokenClass.Symbol)]
-    [BinaryOperator(70)]
+    [Symbol("<=>", binaryPrecedence: 70)]
     Spaceship,
-    [Token("<=", TokenClass.Symbol)]
-    [BinaryOperator(70)]
+    [Symbol("<=", binaryPrecedence: 70)]
     LessThanOrEqual,
-    [Token(">=", TokenClass.Symbol)]
-    [BinaryOperator(70)]
+    [Symbol(">=", binaryPrecedence: 70)]
     GreaterThanOrEqual,
-    [Token("&&", TokenClass.Symbol)]
-    [BinaryOperator(30)]
+    [Symbol("&&", binaryPrecedence: 30)]
     AmpersandAmpersand,
-    [Token("||", TokenClass.Symbol)]
-    [BinaryOperator(20)]
+    [Symbol("||", binaryPrecedence: 20)]
     PipePipe,
-    [Token("++", TokenClass.Symbol)]
-    [PrefixOperator(110)]
-    [PostfixOperator(120)]
+    [Symbol("++", prefixPrecedence: 110, postfixPrecedence: 120)]
     PlusPlus,
-    [Token("--", TokenClass.Symbol)]
-    [PrefixOperator(110)]
-    [PostfixOperator(120)]
+    [Symbol("--", prefixPrecedence: 110, postfixPrecedence: 120)]
     MinusMinus,
-    [Token("+=", TokenClass.Symbol)]
-    [BinaryOperator(10, OperatorAssociativity.Right)]
+    [Symbol("+=", binaryPrecedence: 10, associativity: Associativity.Right)]
     PlusEquals,
-    [Token("-=", TokenClass.Symbol)]
-    [BinaryOperator(10, OperatorAssociativity.Right)]
+    [Symbol("-=", binaryPrecedence: 10, associativity: Associativity.Right)]
     MinusEquals,
-    [Token("*=", TokenClass.Symbol)]
-    [BinaryOperator(10, OperatorAssociativity.Right)]
+    [Symbol("*=", binaryPrecedence: 10, associativity: Associativity.Right)]
     StarEquals,
-    [Token("/=", TokenClass.Symbol)]
-    [BinaryOperator(10, OperatorAssociativity.Right)]
+    [Symbol("/=", binaryPrecedence: 10, associativity: Associativity.Right)]
     SlashEquals,
-    [Token("%=", TokenClass.Symbol)]
-    [BinaryOperator(10, OperatorAssociativity.Right)]
+    [Symbol("%=", binaryPrecedence: 10, associativity: Associativity.Right)]
     PercentEquals,
-    [Token("<<", TokenClass.Symbol)]
-    [BinaryOperator(80)]
+    [Symbol("<<", binaryPrecedence: 80)]
     LessThanLessThan,
-    [Token(">>", TokenClass.Symbol)]
-    [BinaryOperator(80)]
+    [Symbol(">>", binaryPrecedence: 80)]
     GreaterThanGreaterThan,
-    [Token("+", TokenClass.Symbol)]
-    [BinaryOperator(90)]
-    [PrefixOperator(110)]
+    [Symbol("+", binaryPrecedence: 90, prefixPrecedence: 110)]
     Plus,
-    [Token("-", TokenClass.Symbol)]
-    [BinaryOperator(90)]
-    [PrefixOperator(110)]
+    [Symbol("-", binaryPrecedence: 90, prefixPrecedence: 110)]
     Minus,
-    [Token("/", TokenClass.Symbol)]
-    [BinaryOperator(100)]
+    [Symbol("/", binaryPrecedence: 100)]
     Slash,
-    [Token("%", TokenClass.Symbol)]
-    [BinaryOperator(100)]
+    [Symbol("%", binaryPrecedence: 100)]
     Percent,
-    [Token("!", TokenClass.Symbol)]
-    [PrefixOperator(110)]
+    [Symbol("!", prefixPrecedence: 110)]
     Bang,
-    [Token("&", TokenClass.Symbol)]
-    [BinaryOperator(50)]
-    [PrefixOperator(110)]
+    [Symbol("&", binaryPrecedence: 50, prefixPrecedence: 110)]
     Ampersand,
-    [Token("|", TokenClass.Symbol)]
-    [BinaryOperator(40)]
+    [Symbol("|", binaryPrecedence: 40)]
     Pipe,
-    [Token("^", TokenClass.Symbol)]
-    [BinaryOperator(45)]
+    [Symbol("^", binaryPrecedence: 45)]
     Caret,
-    [Token("~", TokenClass.Symbol)]
-    [PrefixOperator(110)]
+    [Symbol("~", prefixPrecedence: 110)]
     Tilde,
-    [Token("<", TokenClass.Symbol)]
-    [BinaryOperator(70)]
+    [Symbol("<", binaryPrecedence: 70)]
     LessThan,
-    [Token(">", TokenClass.Symbol)]
-    [BinaryOperator(70)]
+    [Symbol(">", binaryPrecedence: 70)]
     GreaterThan,
-    [Token("?", TokenClass.Symbol)]
+    [Symbol("?")]
     QuestionMark,
-    [Token("@", TokenClass.Symbol)]
+    [Symbol("@")]
     At,
 
-    [Token(TokenClass.Trivia)]
-    [Matcher(typeof(CommentTokenMatcher))]
+    [Token(TokenClass.Trivia, typeof(CommentTokenMatcher))]
     Comment,
-    [Token(TokenClass.Trivia)]
-    [Matcher(typeof(CommentTokenMatcher))]
+    [Token(TokenClass.Trivia, typeof(CommentTokenMatcher))]
     MultilineComment,
     [Token(TokenClass.EndOfFile)]
     Eof

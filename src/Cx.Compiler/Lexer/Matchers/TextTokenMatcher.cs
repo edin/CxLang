@@ -20,6 +20,6 @@ public sealed class TextTokenMatcher : ITokenMatcher
             return null;
         }
 
-        return new Token(_type, _text, location.Position, location);
+        return new Token(_type, location, _text.Length);
     }
 }

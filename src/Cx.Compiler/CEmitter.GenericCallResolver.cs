@@ -8,8 +8,8 @@ public sealed partial class CEmitter
 {
     private sealed class GenericCallResolver(
         IReadOnlyList<GenericCallInfo> calls,
-        Func<ExpressionNode, string?> resolveExpressionType,
-        Func<string, string, bool> canAssign,
+        Func<ExpressionNode, TypeRef?> resolveExpressionType,
+        Func<string, TypeRef?, bool> canAssign,
         Func<FunctionNode, string?> resolveFunctionOwnerType)
     {
         public string RestoreSourceGenericType(string type)

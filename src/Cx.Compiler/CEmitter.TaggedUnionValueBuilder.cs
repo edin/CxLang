@@ -8,14 +8,13 @@ public sealed partial class CEmitter
 {
     private sealed class TaggedUnionValueBuilder(
         CLoweringContext context,
-        Func<string, string?> inferExpressionType,
-        Func<string, TypeRef?> inferExpressionTypeRef,
+        Func<ExpressionNode, TypeRef?> inferExpressionTypeRef,
         Func<string, string> lowerCxType,
         Func<TypeRef, string> lowerTypeRef)
     {
         public CExpression? TryWrapExpression(
             string targetType,
-            string sourceExpression,
+            ExpressionNode sourceExpression,
             CExpression loweredExpression)
         {
             var normalizedTargetType = NormalizeType(targetType);
@@ -25,14 +24,14 @@ public sealed partial class CEmitter
                 return null;
             }
 
-            var expressionType = inferExpressionType(sourceExpression);
+            var expressionType = inferExpressionTypeRef(sourceExpression);
             if (expressionType is null)
             {
                 return null;
             }
 
             var matchingVariants = taggedUnion.Variants
-                .Where(variant => lowerCxType(VariantTypeText(variant)) == lowerCxType(expressionType))
+                .Where(variant => AreSameLoweredType(variant.TypeNode, expressionType))
                 .ToList();
 
             if (matchingVariants.Count != 1)
@@ -65,7 +64,7 @@ public sealed partial class CEmitter
 
         public CExpression? TryWrapExpression(
             TypeRef targetType,
-            string sourceExpression,
+            ExpressionNode sourceExpression,
             CExpression loweredExpression)
         {
             var normalizedTargetType = NormalizeType(TypeRefFormatter.ToCxString(targetType));

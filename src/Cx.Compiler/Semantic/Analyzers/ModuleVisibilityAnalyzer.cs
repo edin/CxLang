@@ -336,14 +336,14 @@ internal sealed class ModuleVisibilityAnalyzer(
         ModuleVisibility visibility,
         IReadOnlySet<string> locals)
     {
-        if (locals.Contains(name.SourceText)
-            || !visibility.SymbolExistsAsValue(name.SourceText)
-            || visibility.IsVisibleValue(name.SourceText))
+        if (locals.Contains(name.Name)
+            || !visibility.SymbolExistsAsValue(name.Name)
+            || visibility.IsVisibleValue(name.Name))
         {
             return;
         }
 
-        diagnostics.Report(name.Location, visibility.BuildValueDiagnostic(name.SourceText));
+        diagnostics.Report(name.Location, visibility.BuildValueDiagnostic(name.Name));
     }
 
     private void AnalyzeType(

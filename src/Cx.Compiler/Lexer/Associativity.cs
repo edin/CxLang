@@ -1,6 +1,6 @@
 namespace Cx.Compiler.Lexer;
 
-public enum OperatorAssociativity
+public enum Associativity
 {
     Left,
     Right

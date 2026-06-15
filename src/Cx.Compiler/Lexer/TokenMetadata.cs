@@ -36,8 +36,7 @@ public static class TokenMetadataProvider
             ?? throw new InvalidOperationException($"Token '{type}' does not have a matching enum field.");
         var attribute = field.GetCustomAttribute<TokenAttribute>()
             ?? throw new InvalidOperationException($"Token '{type}' is missing {nameof(TokenAttribute)}.");
-        var matcher = field.GetCustomAttribute<MatcherAttribute>();
 
-        return new TokenMetadata(type, attribute.Text, attribute.Class, matcher?.MatcherType);
+        return new TokenMetadata(type, attribute.Text, attribute.Class, attribute.MatcherType);
     }
 }

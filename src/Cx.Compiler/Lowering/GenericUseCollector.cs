@@ -136,7 +136,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             {
                 case ForeachStatement foreachStatement:
                     if (foreachStatement.IterableExpression is NameExpressionNode name
-                        && variables.TryGetValue(name.SourceText, out var iterableType)
+                        && variables.TryGetValue(name.Name, out var iterableType)
                         && TypeSyntaxFacts.TryParseGenericUse(iterableType, out var ownerName, out var ownerArguments))
                     {
                         foreach (var iteratorFunction in _genericFunctions.Where(function =>
@@ -306,7 +306,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         {
             foreach (var function in _genericFunctions.Where(function =>
                 OwnerType(function) is null
-                && function.Name == name.SourceText))
+                && function.Name == name.Name))
             {
                 if (_resolver.InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: false) is { } arguments)
                 {
@@ -374,7 +374,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         {
             var matchedFunction = _genericFunctions.FirstOrDefault(candidate =>
                 OwnerType(candidate) is null
-                && candidate.Name == name.SourceText
+                && candidate.Name == name.Name
                 && candidate.TypeParameters.Count == TypeArguments(call.TypeArgumentNodes).Count);
             if (matchedFunction is not null)
             {

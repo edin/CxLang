@@ -35,17 +35,17 @@ public sealed partial class CEmitter
 
             if (call.Callee is NameExpressionNode name)
             {
-                if (context.TryGetStruct(name.SourceText, out var structNode))
+                if (context.TryGetStruct(name.Name, out var structNode))
                 {
                     return structValueBuilder.BuildStructConstructorExpression(structNode, call.Arguments);
                 }
 
-                if (context.IsTaggedUnion(name.SourceText))
+                if (context.IsTaggedUnion(name.Name))
                 {
                     return null;
                 }
 
-                var genericCall = genericCallResolver.FindInferredCall(null, name.SourceText, call.Arguments, skipSelf: false);
+                var genericCall = genericCallResolver.FindInferredCall(null, name.Name, call.Arguments, skipSelf: false);
                 if (genericCall is not null)
                 {
                     return new CCallExpression(

@@ -128,7 +128,7 @@ internal static class IteratorForeachLowerer
                 return true;
             }
 
-            if (expression is NameExpressionNode name && context.TryGetLocalType(name.SourceText, out type))
+            if (expression is NameExpressionNode name && context.TryGetLocalType(name.Name, out type))
             {
                 return true;
             }

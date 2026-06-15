@@ -421,7 +421,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         switch (target)
         {
             case NameExpressionNode name:
-                assigned.Add(name.SourceText);
+                assigned.Add(name.Name);
                 break;
 
             case MemberExpressionNode member:
@@ -468,9 +468,9 @@ internal sealed class DefiniteAssignmentAnalyzer(
         TypeEnvironment variables,
         HashSet<string> assigned)
     {
-        if (variables.Types.ContainsKey(name.SourceText) && !assigned.Contains(name.SourceText))
+        if (variables.Types.ContainsKey(name.Name) && !assigned.Contains(name.Name))
         {
-            diagnostics.Report(name.Location, $"Local '{name.SourceText}' may be used before it is assigned.");
+            diagnostics.Report(name.Location, $"Local '{name.Name}' may be used before it is assigned.");
         }
     }
 

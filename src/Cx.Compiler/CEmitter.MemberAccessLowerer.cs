@@ -46,12 +46,12 @@ public sealed partial class CEmitter
             {
                 if (TryGetTaggedUnionAccess(member, targetType, targetIsImplicitReference) is { } taggedUnionAccess)
                 {
-                    return targetName.SourceText + taggedUnionAccess + member.MemberName;
+                    return targetName.Name + taggedUnionAccess + member.MemberName;
                 }
 
                 if (targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal))
                 {
-                    return targetName.SourceText + "->" + member.MemberName;
+                    return targetName.Name + "->" + member.MemberName;
                 }
             }
 
@@ -93,14 +93,14 @@ public sealed partial class CEmitter
                 if (TryGetTaggedUnionAccess(member, targetType, targetIsImplicitReference) is { } taggedUnionAccess)
                 {
                     return new CMemberExpression(
-                        new CNameExpression(targetName.SourceText),
+                        new CNameExpression(targetName.Name),
                         taggedUnionAccess,
                         member.MemberName);
                 }
 
                 if (targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal))
                 {
-                    return new CMemberExpression(new CNameExpression(targetName.SourceText), "->", member.MemberName);
+                    return new CMemberExpression(new CNameExpression(targetName.Name), "->", member.MemberName);
                 }
             }
 
@@ -142,8 +142,15 @@ public sealed partial class CEmitter
                 return false;
             }
 
-            var targetType = ResolveExpressionType(vtableAccess.Target);
-            if (targetType is null || !context.TryGetInterface(NormalizeType(targetType), out _))
+            var targetType = ResolveExpressionTypeRef(vtableAccess.Target);
+            if (targetType is null)
+            {
+                return false;
+            }
+
+            var interfaceType = targetType is TypeRef.Pointer pointer ? pointer.Element : targetType;
+            var interfaceName = TypeRefFacts.GetBaseName(interfaceType);
+            if (interfaceName is null || !context.TryGetInterface(interfaceName, out _))
             {
                 return false;
             }
@@ -153,18 +160,18 @@ public sealed partial class CEmitter
             return true;
         }
 
-        private bool IsPointerLike(ExpressionNode expression, string type) =>
-            type.TrimEnd().EndsWith("*", StringComparison.Ordinal)
-            || expression is NameExpressionNode name && scope.IsImplicitReferenceLocal(name.SourceText);
+        private bool IsPointerLike(ExpressionNode expression, TypeRef type) =>
+            type is TypeRef.Pointer
+            || expression is NameExpressionNode name && scope.IsImplicitReferenceLocal(name.Name);
 
-        private string? ResolveExpressionType(ExpressionNode expression)
+        private TypeRef? ResolveExpressionTypeRef(ExpressionNode expression)
         {
             if (expression.Semantic.Type is { } semanticType)
             {
-                return TypeRefFormatter.ToCxString(semanticType);
+                return semanticType;
             }
 
-            return expression is NameExpressionNode name && scope.TryGetVariableType(name.SourceText, out var type)
+            return expression is NameExpressionNode name && scope.TryGetVariableTypeRef(name.Name, out var type)
                 ? type
                 : null;
         }
@@ -176,10 +183,10 @@ public sealed partial class CEmitter
             out bool targetIsImplicitReference)
         {
             if (member.Target is NameExpressionNode name
-                && scope.TryGetVariableType(name.SourceText, out targetType!))
+                && scope.TryGetVariableType(name.Name, out targetType!))
             {
                 targetName = name;
-                targetIsImplicitReference = scope.IsImplicitReferenceLocal(name.SourceText);
+                targetIsImplicitReference = scope.IsImplicitReferenceLocal(name.Name);
                 return true;
             }
 

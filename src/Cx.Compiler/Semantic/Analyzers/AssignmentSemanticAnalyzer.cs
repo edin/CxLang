@@ -249,7 +249,7 @@ internal sealed class AssignmentSemanticAnalyzer(
 
     private static string? GetAssignmentRootName(ExpressionNode target) => target switch
     {
-        NameExpressionNode name => name.SourceText,
+        NameExpressionNode name => name.Name,
         ParenthesizedExpressionNode parenthesized => GetAssignmentRootName(parenthesized.Expression),
         MemberExpressionNode member => GetAssignmentRootName(member.Target),
         IndexExpressionNode index => GetAssignmentRootName(index.Target),
@@ -275,7 +275,8 @@ internal sealed class AssignmentSemanticAnalyzer(
         TypeRefFacts.SameType(left, right);
 
     private static bool IsBareNull(ExpressionNode expression) =>
-        string.Equals(expression.SourceText.Trim(), "null", StringComparison.Ordinal);
+        expression is LiteralExpressionNode { LiteralText: "null" }
+        || expression is ParenthesizedExpressionNode parenthesized && IsBareNull(parenthesized.Expression);
 
     private static string StripConst(string type) =>
         type.StartsWith("const ", StringComparison.Ordinal)

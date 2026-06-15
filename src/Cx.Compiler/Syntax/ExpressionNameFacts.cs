@@ -6,7 +6,7 @@ internal static class ExpressionNameFacts
 {
     public static string? GetQualifiedName(ExpressionNode expression) => expression switch
     {
-        NameExpressionNode name => name.SourceText,
+        NameExpressionNode name => name.Name,
         ParenthesizedExpressionNode parenthesized => GetQualifiedName(parenthesized.Expression),
         MemberExpressionNode member when GetQualifiedName(member.Target) is { } target => $"{target}.{member.MemberName}",
         _ => null,

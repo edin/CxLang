@@ -75,7 +75,7 @@ internal sealed class ExpressionTokenParser
             }
 
             var operatorToken = Advance();
-            var nextMinimumPrecedence = op.Associativity == OperatorAssociativity.Left
+            var nextMinimumPrecedence = op.Associativity == Associativity.Left
                 ? op.Precedence + 1
                 : op.Precedence;
             var right = ParseExpression(nextMinimumPrecedence);
@@ -195,7 +195,7 @@ internal sealed class ExpressionTokenParser
 
             if (Match(TokenType.LParen) is { } openParen)
             {
-                if (expression is NameExpressionNode { SourceText: "sizeof" })
+                if (expression is NameExpressionNode { Name: "sizeof" })
                 {
                     return null;
                 }

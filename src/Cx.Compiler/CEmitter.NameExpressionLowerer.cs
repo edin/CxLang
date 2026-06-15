@@ -15,7 +15,7 @@ public sealed partial class CEmitter
         public CExpression LowerNameExpression(NameExpressionNode name)
         {
             var loweredName = LowerFunctionReferenceName(name);
-            return scope.IsImplicitReferenceLocal(name.SourceText)
+            return scope.IsImplicitReferenceLocal(name.Name)
                 ? new CUnaryExpression("*", new CNameExpression(loweredName))
                 : new CNameExpression(loweredName);
         }
@@ -23,9 +23,9 @@ public sealed partial class CEmitter
         public CExpression LowerAddressOfExpression(ExpressionNode operand)
         {
             if (operand is NameExpressionNode name
-                && scope.IsImplicitReferenceLocal(name.SourceText))
+                && scope.IsImplicitReferenceLocal(name.Name))
             {
-                return new CNameExpression(LowerName(name.SourceText));
+                return new CNameExpression(LowerName(name.Name));
             }
 
             return new CUnaryExpression("&", lowerExpression(operand));
@@ -34,7 +34,7 @@ public sealed partial class CEmitter
         public string LowerFunctionReferenceName(NameExpressionNode name) =>
             name.Semantic.Symbol is { Kind: SymbolKind.Function } symbol
                 ? nameMangler.SymbolName(symbol)
-                : LowerName(name.SourceText);
+                : LowerName(name.Name);
 
         public string LowerName(string name) =>
             context.TryResolveSymbolAlias(name, out var original)
