@@ -15,23 +15,11 @@ internal sealed class AssignmentSemanticAnalyzer(
     public void AnalyzeAssignmentExpression(
         AssignmentExpressionNode assignment,
         IReadOnlyDictionary<string, string> variables,
-        IReadOnlyDictionary<string, LocalMutability>? mutability,
-        Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression) =>
-        AnalyzeAssignmentExpression(
-            assignment,
-            variables,
-            TypeEnvironment.FromLegacyStrings(typeRefParser, variables),
-            mutability,
-            analyzeExpression);
-
-    public void AnalyzeAssignmentExpression(
-        AssignmentExpressionNode assignment,
-        IReadOnlyDictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         IReadOnlyDictionary<string, LocalMutability>? mutability,
-        Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)
+        Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, TypeEnvironment?, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)
     {
-        analyzeExpression(assignment.Value, assignment.Location, variables, mutability);
+        analyzeExpression(assignment.Value, assignment.Location, variables, typeEnvironment, mutability);
         AnalyzeAssignmentMutability(assignment, mutability);
 
         var targetTypeRef = expressionTypeResolver.ResolveTypeRef(assignment.Target, typeEnvironment);
@@ -84,32 +72,6 @@ internal sealed class AssignmentSemanticAnalyzer(
             diagnostics.Report(location, message);
         }
     }
-
-    public void CheckAssignmentCompatibility(
-        Location location,
-        string targetType,
-        ExpressionNode? sourceExpression,
-        IReadOnlyDictionary<string, string> variables,
-        string subject) =>
-        CheckAssignmentCompatibility(
-            location,
-            typeRefParser.Parse(targetType),
-            sourceExpression,
-            TypeEnvironment.FromLegacyStrings(typeRefParser, variables),
-            subject);
-
-    public void CheckAssignmentCompatibility(
-        Location location,
-        TypeRef? targetType,
-        ExpressionNode? sourceExpression,
-        IReadOnlyDictionary<string, string> variables,
-        string subject) =>
-        CheckAssignmentCompatibility(
-            location,
-            targetType,
-            sourceExpression,
-            TypeEnvironment.FromLegacyStrings(typeRefParser, variables),
-            subject);
 
     public void CheckAssignmentCompatibility(
         Location location,

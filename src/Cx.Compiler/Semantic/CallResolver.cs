@@ -40,7 +40,6 @@ internal sealed class CallResolver(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables)
     {
-        var legacyVariables = variables.ToLegacyStrings();
         if (callee is MemberExpressionNode member)
         {
             return ResolveMemberCall(member, typeArguments, arguments, variables);
@@ -88,7 +87,6 @@ internal sealed class CallResolver(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables)
     {
-        var legacyVariables = variables.ToLegacyStrings();
         var targetName = ExpressionNameFacts.GetQualifiedName(member.Target);
         if (targetName is null)
         {
@@ -102,7 +100,7 @@ internal sealed class CallResolver(
                 return requirementCall;
             }
 
-            if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, legacyVariables) is { SkipSelf: false } staticMethodCall)
+            if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: false } staticMethodCall)
             {
                 return BuildMethodResolution(
                     staticMethodCall,
@@ -138,7 +136,7 @@ internal sealed class CallResolver(
                 isInstance: false);
         }
 
-        if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, legacyVariables) is { SkipSelf: true } instanceMethodCall)
+        if (_methodCallResolver.Resolve(member, typeArguments, arguments.Count, variables) is { SkipSelf: true } instanceMethodCall)
         {
             var methodReceiverType = NormalizeReceiverType(targetType);
             return BuildMethodResolution(

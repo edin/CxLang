@@ -9,11 +9,24 @@ internal sealed record ResolvedMethodCall(
 
 internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSystem)
 {
+    private readonly TypeRefParser _typeRefParser = new(program);
+
     public ResolvedMethodCall? Resolve(
         MemberExpressionNode member,
         IReadOnlyList<string> typeArguments,
         int argumentCount,
-        IReadOnlyDictionary<string, string> variables)
+        IReadOnlyDictionary<string, string> variables) =>
+        Resolve(
+            member,
+            typeArguments,
+            argumentCount,
+            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
+
+    public ResolvedMethodCall? Resolve(
+        MemberExpressionNode member,
+        IReadOnlyList<string> typeArguments,
+        int argumentCount,
+        TypeEnvironment variables)
     {
         var targetName = ExpressionNameFacts.GetQualifiedName(member.Target);
         if (targetName is null)
@@ -21,7 +34,7 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
             return null;
         }
 
-        if (!variables.TryGetValue(targetName, out var targetType))
+        if (!variables.TryGet(targetName, out var targetType))
         {
             var staticReceiverType = BuildStaticReceiverType(targetName, typeArguments);
             return typeSystem.FindMethod(staticReceiverType, member.MemberName, isStatic: true, argumentCount) is { } staticMethod
@@ -55,15 +68,7 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
             : targetName;
     }
 
-    private TypeRef? NormalizeInstanceReceiverType(string type)
-    {
-        var parsed = typeSystem.Parse(type);
-        if (parsed is TypeRef.Unknown)
-        {
-            return null;
-        }
-
-        return TypeRefFacts.StripPointersAndAliases(parsed);
-    }
+    private static TypeRef? NormalizeInstanceReceiverType(TypeRef type) =>
+        type is TypeRef.Unknown ? null : TypeRefFacts.StripPointersAndAliases(type);
 
 }

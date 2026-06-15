@@ -43,16 +43,16 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     public IEnumerable<GenericFunctionUse> Collect(FunctionNode function)
     {
-        var selfType = ResolveSelfType(function);
-        var selfApiType = ResolveSelfApiType(function);
-        var scopeSelfType = selfApiType ?? selfType;
-        var variables = BuildFunctionVariables(function, scopeSelfType);
-        var legacyVariables = variables.ToLegacyStrings();
+        var selfType = ResolveSelfTypeRef(function);
+        var selfApiType = ResolveSelfApiTypeRef(function);
+        var selfApiTypeText = selfApiType is null ? null : TypeRefFormatter.ToCxString(selfApiType);
+        var scopeSelfTypeRef = selfApiType ?? selfType;
+        var variables = BuildFunctionVariables(function, scopeSelfTypeRef);
 
         var knownUses = new HashSet<GenericFunctionUseKey>();
         foreach (var expression in EnumerateExpressions(function.Body))
         {
-            foreach (var use in CollectExpressionGenericUses(expression, legacyVariables, selfApiType))
+            foreach (var use in CollectExpressionGenericUses(expression, variables, selfApiTypeText))
             {
                 if (TryRemember(use, knownUses))
                 {
@@ -82,12 +82,10 @@ internal sealed class GenericUseCollector(ProgramNode program)
             }
         }
 
-        var legacyVariables = variables.ToLegacyStrings();
-
         var knownUses = new HashSet<GenericFunctionUseKey>();
         foreach (var global in program.GlobalVariables.Where(global => global.Initializer is not null))
         {
-            foreach (var use in CollectExpressionGenericUses(global.Initializer!, legacyVariables))
+            foreach (var use in CollectExpressionGenericUses(global.Initializer!, variables))
             {
                 if (TryRemember(use, knownUses))
                 {
@@ -100,7 +98,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     public IEnumerable<GenericFunctionUse> CollectExpressionGenericUses(
         ExpressionNode expression,
-        IReadOnlyDictionary<string, string> variables,
+        TypeEnvironment variables,
         string? selfApiType = null)
     {
         foreach (var use in CollectResolvedUse(expression))
@@ -233,7 +231,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     private IEnumerable<GenericFunctionUse> FindGenericFunctionUses(
         ExpressionNode expression,
-        IReadOnlyDictionary<string, string> variables,
+        TypeEnvironment variables,
         string? selfApiType = null)
     {
         switch (expression)
@@ -279,15 +277,14 @@ internal sealed class GenericUseCollector(ProgramNode program)
         ExpressionNode callee,
         IReadOnlyList<string> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables,
+        TypeEnvironment variables,
         string? selfApiType)
     {
-        IReadOnlyDictionary<string, string> resolverVariables = variables;
-        if (selfApiType is not null && variables.ContainsKey("self"))
+        var resolverVariables = variables;
+        if (selfApiType is not null && variables.Types.ContainsKey("self"))
         {
-            var mappedVariables = variables
-                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-            mappedVariables["self"] = selfApiType;
+            var mappedVariables = variables.Clone();
+            mappedVariables.Set("self", _typeRefParser.Parse(selfApiType));
             resolverVariables = mappedVariables;
         }
 
@@ -303,7 +300,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     private IEnumerable<GenericFunctionUse> FindInferredGenericFunctionUses(
         CallExpressionNode call,
-        IReadOnlyDictionary<string, string> variables,
+        TypeEnvironment variables,
         string? selfApiType = null)
     {
         if (call.Callee is NameExpressionNode name)
@@ -332,7 +329,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             yield break;
         }
 
-        if (!variables.TryGetValue(targetName, out var targetType))
+        if (!variables.TryGet(targetName, out var targetType))
         {
             foreach (var function in _genericFunctions.Where(function =>
                 function.IsStatic
@@ -348,11 +345,15 @@ internal sealed class GenericUseCollector(ProgramNode program)
             yield break;
         }
 
-        var normalizedType = TypeSyntaxFacts.RemovePointer(targetType);
-        var receiverArguments = TypeSyntaxFacts.TryParseGenericUse(normalizedType, out _, out var parsedReceiverArguments)
-            ? parsedReceiverArguments
+        var receiverType = TypeRefFacts.StripPointersAndAliases(targetType);
+        var receiverArguments = TypeRefFacts.TryGetGenericArguments(receiverType, out var parsedReceiverArguments)
+            ? FormatTypeArguments(parsedReceiverArguments)
             : [];
-        var ownerType = TypeSyntaxFacts.GetGenericBaseName(normalizedType) ?? normalizedType;
+        var ownerType = TypeRefFacts.GetBaseName(receiverType);
+        if (ownerType is null)
+        {
+            yield break;
+        }
 
         foreach (var function in _genericFunctions.Where(function =>
             !function.IsStatic
@@ -371,7 +372,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     private IEnumerable<GenericFunctionUse> FindExplicitGenericFunctionUses(
         GenericCallExpressionNode call,
-        IReadOnlyDictionary<string, string> variables,
+        TypeEnvironment variables,
         string? selfApiType = null)
     {
         if (call.Callee is NameExpressionNode name)
@@ -399,7 +400,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             yield break;
         }
 
-        if (!variables.TryGetValue(targetName, out var targetType))
+        if (!variables.TryGet(targetName, out var targetType))
         {
             var staticFunction = _genericFunctions.FirstOrDefault(function =>
                 function.IsStatic
@@ -414,7 +415,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             yield break;
         }
 
-        var ownerType = TypeSyntaxFacts.GetGenericBaseName(TypeSyntaxFacts.RemovePointer(targetType));
+        var ownerType = TypeRefFacts.GetBaseName(targetType);
         var matchedMethod = _genericFunctions.FirstOrDefault(candidate =>
             !candidate.IsStatic
             && OwnerType(candidate) == ownerType
@@ -600,7 +601,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
-    private TypeEnvironment BuildFunctionVariables(FunctionNode function, string? selfType)
+    private TypeEnvironment BuildFunctionVariables(FunctionNode function, TypeRef? selfType)
     {
         var variables = new TypeEnvironment();
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
@@ -709,7 +710,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
-    private string? ResolveSelfType(FunctionNode function)
+    private TypeRef? ResolveSelfTypeRef(FunctionNode function)
     {
         if (OwnerType(function) is null)
         {
@@ -719,19 +720,19 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var functionTypeArguments = TypeArguments(function.TypeArgumentNodes);
         if (functionTypeArguments.Count > 0)
         {
-            return ResolveAdapterStorageType($"{OwnerType(function)}<{string.Join(",", functionTypeArguments)}>");
+            return ResolveAdapterStorageTypeRef($"{OwnerType(function)}<{string.Join(",", functionTypeArguments)}>");
         }
 
         var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
-        if (selfParameter is not null && !Regex.IsMatch(TypeText(selfParameter.TypeNode), @"\bSelf\b"))
+        if (selfParameter is not null && !ContainsSelf(selfParameter.TypeNode))
         {
-            return TypeSyntaxFacts.RemovePointer(TypeText(selfParameter.TypeNode));
+            return TypeRefFacts.StripPointer(TypeRefOrUnknown(selfParameter.TypeNode));
         }
 
-        return ResolveAdapterStorageType(OwnerType(function)!);
+        return ResolveAdapterStorageTypeRef(OwnerType(function)!);
     }
 
-    private string? ResolveSelfApiType(FunctionNode function)
+    private TypeRef? ResolveSelfApiTypeRef(FunctionNode function)
     {
         if (OwnerType(function) is null)
         {
@@ -739,56 +740,55 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
 
         var functionTypeArguments = TypeArguments(function.TypeArgumentNodes);
-        return functionTypeArguments.Count > 0
+        var selfApiType = functionTypeArguments.Count > 0
             ? $"{OwnerType(function)}<{string.Join(",", functionTypeArguments)}>"
             : OwnerType(function);
+        return ParseOptionalType(selfApiType);
     }
 
-    private string ResolveAdapterStorageType(string type)
+    private TypeRef? ResolveAdapterStorageTypeRef(string type)
     {
-        var prefix = "";
-        if (type.StartsWith("const ", StringComparison.Ordinal))
+        var typeRef = ParseOptionalType(type);
+        return typeRef is null ? null : ResolveAdapterStorageTypeRef(typeRef);
+    }
+
+    private TypeRef ResolveAdapterStorageTypeRef(TypeRef type)
+    {
+        if (type is TypeRef.Pointer pointer)
         {
-            prefix = "const ";
-            type = type["const ".Length..].TrimStart();
+            return new TypeRef.Pointer(ResolveAdapterStorageTypeRef(pointer.Element));
         }
 
-        var pointerSuffix = "";
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerSuffix += "*";
-            type = type[..^1].TrimEnd();
-        }
-
-        var adapterName = TypeSyntaxFacts.GetGenericBaseName(type) ?? type;
+        var current = type;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         while (true)
         {
-            var adapter = _typeAdapters.LastOrDefault(adapter => adapter.Name == adapterName);
-            if (adapter is null || !seen.Add(adapter.Name))
+            if (!TypeRefFacts.TryGetNamed(current, out var named))
             {
-                return prefix + type + pointerSuffix;
+                return current;
             }
 
-            var receiverArguments = TypeSyntaxFacts.TryParseGenericUse(type, out _, out var parsedArguments)
-                ? parsedArguments
-                : [];
-            type = SubstituteAdapterBaseType(adapter, receiverArguments);
-            adapterName = TypeSyntaxFacts.GetGenericBaseName(type) ?? type;
+            var adapter = _typeAdapters.LastOrDefault(adapter => adapter.Name == named.Name);
+            if (adapter is null || !seen.Add(named.Name))
+            {
+                return current;
+            }
+
+            current = SubstituteAdapterBaseType(adapter, named.Arguments);
         }
     }
 
-    private string SubstituteAdapterBaseType(TypeAdapterNode adapter, IReadOnlyList<string> receiverArguments)
+    private TypeRef SubstituteAdapterBaseType(TypeAdapterNode adapter, IReadOnlyList<TypeRef> receiverArguments)
     {
         if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
         {
-            return TypeText(adapter.BaseTypeNode);
+            return TypeRefOrUnknown(adapter.BaseTypeNode);
         }
 
         var substitutions = adapter.TypeParameters
             .Zip(receiverArguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return GenericTypeStringRewriter.Substitute(TypeText(adapter.BaseTypeNode), substitutions);
+        return TypeRefRewriter.Substitute(TypeRefOrUnknown(adapter.BaseTypeNode), substitutions);
     }
 
     private string? OwnerType(FunctionNode function)
@@ -817,18 +817,35 @@ internal sealed class GenericUseCollector(ProgramNode program)
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
         typeNode.ToTypeRef(_typeRefParser);
 
-    private TypeRef SubstituteSelf(TypeRef type, string? selfType)
+    private TypeRef? ParseOptionalType(string? type)
     {
-        if (string.IsNullOrWhiteSpace(selfType))
+        if (string.IsNullOrWhiteSpace(type))
         {
-            return type;
+            return null;
         }
 
-        var selfTypeRef = _typeRefParser.Parse(selfType);
-        return selfTypeRef is TypeRef.Unknown
-            ? type
-            : TypeRefRewriter.SubstituteSelf(type, selfTypeRef);
+        var parsed = _typeRefParser.Parse(type);
+        return parsed is TypeRef.Unknown ? null : parsed;
     }
+
+    private static bool ContainsSelf(TypeNode? typeNode) =>
+        ContainsSelf(typeNode?.Syntax);
+
+    private static bool ContainsSelf(TypeSyntaxNode? syntax) =>
+        syntax switch
+        {
+            NamedTypeSyntaxNode named => string.Equals(named.Name, "Self", StringComparison.Ordinal),
+            GenericTypeSyntaxNode generic => ContainsSelf(generic.Target)
+                || generic.Arguments.Any(ContainsSelf),
+            PointerTypeSyntaxNode pointer => ContainsSelf(pointer.Element),
+            FixedArrayTypeSyntaxNode fixedArray => ContainsSelf(fixedArray.Element),
+            FunctionTypeSyntaxNode function => function.Parameters.Any(ContainsSelf)
+                || ContainsSelf(function.ReturnType),
+            _ => false,
+        };
+
+    private static TypeRef SubstituteSelf(TypeRef type, TypeRef? selfType) =>
+        selfType is null ? type : TypeRefRewriter.SubstituteSelf(type, selfType);
 
     private static void SetVariable(TypeEnvironment variables, string name, TypeRef type)
     {

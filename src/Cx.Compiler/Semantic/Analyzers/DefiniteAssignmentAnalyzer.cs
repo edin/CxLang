@@ -13,17 +13,9 @@ internal sealed class DefiniteAssignmentAnalyzer(
 
     public void AnalyzeFunction(
         FunctionNode function,
-        IReadOnlyDictionary<string, string> globalVariables) =>
-        AnalyzeFunction(
-            function,
-            globalVariables,
-            TypeEnvironment.FromLegacyStrings(_typeRefParser, globalVariables));
-
-    public void AnalyzeFunction(
-        FunctionNode function,
-        IReadOnlyDictionary<string, string> globalVariables,
         TypeEnvironment globalTypeEnvironment)
     {
+        var globalVariables = globalTypeEnvironment.ToLegacyStrings();
         var variables = new Dictionary<string, string>(globalVariables, StringComparer.Ordinal);
         var typeEnvironment = globalTypeEnvironment.Clone();
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
@@ -33,7 +25,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
 
         foreach (var local in CollectLocalVariables(function.Body))
         {
-            SetVariableType(variables, typeEnvironment, local.Name, ParseTypeRef(local.Type));
+            SetVariableType(variables, typeEnvironment, local.Name, local.Type);
         }
 
         var assigned = new HashSet<string>(globalVariables.Keys, StringComparer.Ordinal);
@@ -498,14 +490,14 @@ internal sealed class DefiniteAssignmentAnalyzer(
         return enumNode.Members.All(member => covered.Contains(member.Name));
     }
 
-    private IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
+    private IEnumerable<(string Name, TypeRef Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
             switch (statement)
             {
                 case LetStatement let:
-                    yield return (let.Name, TypeText(let.TypeNode));
+                    yield return (let.Name, TypeRefOrUnknown(let.TypeNode));
                     break;
                 case IfStatement ifStatement:
                     foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
@@ -536,7 +528,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 case ForStatement forStatement:
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
-                        yield return (declaration.Name, TypeText(declaration.TypeNode));
+                        yield return (declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
                     }
 
                     foreach (var variable in CollectLocalVariables(forStatement.Body))
@@ -547,7 +539,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 case ForeachStatement foreachStatement:
                     foreach (var binding in GetForeachBindings(foreachStatement))
                     {
-                        yield return (binding.Name, TypeText(binding.TypeNode));
+                        yield return (binding.Name, TypeRefOrUnknown(binding.TypeNode));
                     }
 
                     foreach (var variable in CollectLocalVariables(foreachStatement.Body))
@@ -649,17 +641,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
         yield return foreachStatement.ValueBinding;
     }
 
-    private string TypeText(TypeNode? typeNode)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
-
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
         typeNode.ToTypeRef(_typeRefParser);
 
@@ -668,9 +649,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
         var type = typeNode.ToTypeRef(_typeRefParser);
         return type is TypeRef.Unknown ? new TypeRef.Named("any", []) : type;
     }
-
-    private TypeRef ParseTypeRef(string type) =>
-        string.IsNullOrWhiteSpace(type) ? new TypeRef.Unknown() : _typeRefParser.Parse(type);
 
     private static void SetVariableType(
         Dictionary<string, string> variables,

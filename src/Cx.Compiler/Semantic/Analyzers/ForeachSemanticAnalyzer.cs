@@ -18,15 +18,6 @@ internal sealed class ForeachSemanticAnalyzer(
 {
     public ForeachAnalysisResult AnalyzeForeach(
         ForeachStatement foreachStatement,
-        IReadOnlyDictionary<string, string> variables,
-        IReadOnlyDictionary<string, LocalMutability> mutability) =>
-        AnalyzeForeach(
-            foreachStatement,
-            TypeEnvironment.FromLegacyStrings(typeRefParser, variables),
-            mutability);
-
-    public ForeachAnalysisResult AnalyzeForeach(
-        ForeachStatement foreachStatement,
         TypeEnvironment variables,
         IReadOnlyDictionary<string, LocalMutability> mutability)
     {

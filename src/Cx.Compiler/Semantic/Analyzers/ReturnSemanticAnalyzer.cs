@@ -12,31 +12,6 @@ internal sealed class ReturnSemanticAnalyzer(
         ReturnStatement statement,
         TypeRef returnType,
         IReadOnlyDictionary<string, string> variables,
-        IReadOnlyDictionary<string, LocalMutability> mutability,
-        Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)
-    {
-        if (IsVoidType(returnType))
-        {
-            if (statement.Expression is not null)
-            {
-                analyzeExpression(statement.Expression, statement.Location, variables, mutability);
-                diagnostics.Report(statement.Location, "Cannot return a value from function returning void.");
-            }
-
-            return;
-        }
-
-        AnalyzeReturnCore(
-            statement,
-            returnType,
-            () => analyzeExpression(statement.Expression!, statement.Location, variables, mutability),
-            () => assignmentAnalyzer.CheckAssignmentCompatibility(statement.Location, returnType, statement.Expression, variables, "return value"));
-    }
-
-    public void AnalyzeReturn(
-        ReturnStatement statement,
-        TypeRef returnType,
-        IReadOnlyDictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         IReadOnlyDictionary<string, LocalMutability> mutability,
         Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, TypeEnvironment?, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)

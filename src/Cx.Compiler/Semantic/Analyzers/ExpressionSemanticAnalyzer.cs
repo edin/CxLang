@@ -15,17 +15,8 @@ internal sealed class ExpressionSemanticAnalyzer(
     IReadOnlyList<GenericConstraintNode> currentGenericConstraints,
     Func<TypeNode?, string> typeText,
     Func<string, bool> isKnownTypeName,
-    Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)
+    Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, TypeEnvironment?, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)
 {
-    public void Analyze(
-        ExpressionNode? expression,
-        Location location,
-        IReadOnlyDictionary<string, string>? variables,
-        IReadOnlyDictionary<string, LocalMutability>? mutability)
-    {
-        Analyze(expression, location, variables, null, mutability);
-    }
-
     public void Analyze(
         ExpressionNode? expression,
         Location location,
@@ -94,25 +85,14 @@ internal sealed class ExpressionSemanticAnalyzer(
             case AssignmentExpressionNode assignment:
                 Analyze(assignment.Target, location, variables, typeEnvironment, mutability);
                 Analyze(assignment.Value, location, variables, typeEnvironment, mutability);
-                if (variables is not null)
+                if (variables is not null && typeEnvironment is not null)
                 {
-                    if (typeEnvironment is null)
-                    {
-                        assignmentAnalyzer?.AnalyzeAssignmentExpression(
-                            assignment,
-                            variables,
-                            mutability,
-                            analyzeExpression);
-                    }
-                    else
-                    {
-                        assignmentAnalyzer?.AnalyzeAssignmentExpression(
-                            assignment,
-                            variables,
-                            typeEnvironment,
-                            mutability,
-                            analyzeExpression);
-                    }
+                    assignmentAnalyzer?.AnalyzeAssignmentExpression(
+                        assignment,
+                        variables,
+                        typeEnvironment,
+                        mutability,
+                        analyzeExpression);
                 }
 
                 break;

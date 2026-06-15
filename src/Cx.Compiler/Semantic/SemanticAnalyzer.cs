@@ -66,12 +66,9 @@ public sealed class SemanticAnalyzer(
             requirementDeclarations.AnalyzeStructRequirements(structNode);
         }
 
-        var globalVariables = program.GlobalVariables
-            .Select(global => (global.Name, Type: TypeText(global.TypeNode)))
-            .GroupBy(item => item.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Last().Type, StringComparer.Ordinal);
         var typeRefParser = _typeRefParser ?? throw new InvalidOperationException("Semantic analyzer has no TypeRef parser.");
-        var globalTypeEnvironment = TypeEnvironment.FromLegacyStrings(typeRefParser, globalVariables);
+        var globalTypeEnvironment = BuildGlobalTypeEnvironment(program.GlobalVariables);
+        var globalVariables = globalTypeEnvironment.ToLegacyStrings();
         var returnFlow = new ReturnFlowAnalyzer(program, _expressionTypeResolver);
         var definiteAssignment = new DefiniteAssignmentAnalyzer(diagnostics, program, _expressionTypeResolver, returnFlow);
         foreach (var global in program.GlobalVariables)
@@ -106,7 +103,7 @@ public sealed class SemanticAnalyzer(
             var locals = CollectLocalVariables(function.Body).ToList();
             foreach (var local in locals)
             {
-                SetVariableType(variables, typeEnvironment, local.Name, ParseTypeRef(local.Type));
+                SetVariableType(variables, typeEnvironment, local.Name, local.Type);
             }
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
@@ -146,7 +143,7 @@ public sealed class SemanticAnalyzer(
             _matchAnalyzer = CreateMatchAnalyzer(program);
             _foreachAnalyzer = CreateForeachAnalyzer();
             _expressionAnalyzer = CreateExpressionAnalyzer();
-            definiteAssignment.AnalyzeFunction(function, globalVariables, globalTypeEnvironment);
+            definiteAssignment.AnalyzeFunction(function, globalTypeEnvironment);
             if (!IsVoidType(functionReturnType) && !returnFlow.StatementsAlwaysReturn(function.Body, typeEnvironment))
             {
                 diagnostics.Report(
@@ -341,7 +338,7 @@ public sealed class SemanticAnalyzer(
                 var foreachScope = _foreachAnalyzer?.AnalyzeForeach(foreachStatement, typeEnvironment, mutability)
                     ?? new ForeachAnalysisResult(
                         new Dictionary<string, string>(variables, StringComparer.Ordinal),
-                        TypeEnvironment.FromLegacyStrings(_typeRefParser ?? new TypeRefParser(program), variables),
+                        typeEnvironment.Clone(),
                         new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal));
                 AnalyzeStatements(
                     foreachStatement.Body,
@@ -510,14 +507,25 @@ public sealed class SemanticAnalyzer(
         }
     }
 
-    private IEnumerable<(string Name, string Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
+    private TypeEnvironment BuildGlobalTypeEnvironment(IEnumerable<GlobalVariableNode> globals)
+    {
+        var environment = new TypeEnvironment();
+        foreach (var global in globals)
+        {
+            environment.Set(global.Name, TypeRefOrUnknown(global.TypeNode));
+        }
+
+        return environment;
+    }
+
+    private IEnumerable<(string Name, TypeRef Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
             switch (statement)
             {
                 case LetStatement let:
-                    yield return (let.Name, TypeText(let.TypeNode));
+                    yield return (let.Name, TypeRefOrUnknown(let.TypeNode));
                     break;
                 case IfStatement ifStatement:
                     foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
@@ -548,7 +556,7 @@ public sealed class SemanticAnalyzer(
                 case ForStatement forStatement:
                     if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
                     {
-                        yield return (declaration.Name, TypeText(declaration.TypeNode));
+                        yield return (declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
                     }
 
                     foreach (var variable in CollectLocalVariables(forStatement.Body))
@@ -788,6 +796,9 @@ public sealed class SemanticAnalyzer(
 
     private TypeRef ParseTypeRef(string type) =>
         _typeRefParser?.Parse(type) ?? new TypeRef.Unknown();
+
+    private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
+        _typeRefParser is null ? new TypeRef.Unknown() : typeNode.ToTypeRef(_typeRefParser);
 
     private static void SetVariableType(
         Dictionary<string, string> variables,

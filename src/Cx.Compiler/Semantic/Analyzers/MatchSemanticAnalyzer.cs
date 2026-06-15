@@ -14,11 +14,6 @@ internal sealed class MatchSemanticAnalyzer(
 {
     public IReadOnlyList<MatchArmBinding> AnalyzeMatch(
         MatchStatement matchStatement,
-        IReadOnlyDictionary<string, string> variables) =>
-        AnalyzeMatch(matchStatement, TypeEnvironment.FromLegacyStrings(typeRefParser, variables));
-
-    public IReadOnlyList<MatchArmBinding> AnalyzeMatch(
-        MatchStatement matchStatement,
         TypeEnvironment variables)
     {
         var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
