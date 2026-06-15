@@ -34,13 +34,13 @@ public sealed class MatchLoweringPassTests
         var switchExpression = Assert.IsType<MemberExpressionNode>(switchStatement.Expression);
         Assert.Equal("tag", switchExpression.MemberName);
 
-        var okCase = Assert.Single(switchStatement.Cases, switchCase => switchCase.Pattern.SourceText == "Result_Tag_Ok");
+        var okCase = Assert.Single(switchStatement.Cases, switchCase => switchCase.Pattern.ToSourceText() == "Result_Tag_Ok");
         var binding = Assert.IsType<LetStatement>(okCase.Body[0]);
         Assert.Equal("value", binding.Name);
         Assert.Equal("int", binding.TypeNode?.TypeName);
         Assert.IsType<BreakStatement>(okCase.Body[^1]);
 
-        var errorCase = Assert.Single(switchStatement.Cases, switchCase => switchCase.Pattern.SourceText == "Result_Tag_Error");
+        var errorCase = Assert.Single(switchStatement.Cases, switchCase => switchCase.Pattern.ToSourceText() == "Result_Tag_Error");
         Assert.IsType<ReturnStatement>(errorCase.Body[^1]);
     }
 

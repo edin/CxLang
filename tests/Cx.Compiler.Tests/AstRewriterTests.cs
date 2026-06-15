@@ -40,8 +40,8 @@ public sealed class AstRewriterTests
         var body = Assert.Single(rewritten.Functions).Body;
 
         Assert.Equal(2, body.Count);
-        Assert.Equal("before_items()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[0]).Expression).SourceText);
-        Assert.Equal("after_items()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[1]).Expression).SourceText);
+        Assert.Equal("before_items()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[0]).Expression).RawText);
+        Assert.Equal("after_items()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[1]).Expression).RawText);
     }
 
     [Fact]

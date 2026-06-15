@@ -23,20 +23,20 @@ public sealed class RangeForeachLowererTests
         var loopValue = Assert.IsType<ForDeclarationInitializerNode>(loop.Initializer);
         Assert.Equal("i", loopValue.Name);
         Assert.Equal("int", loopValue.TypeNode?.TypeName);
-        Assert.Equal("0", Assert.IsType<LiteralExpressionNode>(loopValue.Initializer).SourceText);
+        Assert.Equal("0", Assert.IsType<LiteralExpressionNode>(loopValue.Initializer).LiteralText);
 
         Assert.NotNull(loop.CachedRangeEndInitializer);
         var cachedEnd = loop.CachedRangeEndInitializer;
         Assert.StartsWith("__cx_range_end_", cachedEnd.Name, StringComparison.Ordinal);
-        Assert.Equal("10", Assert.IsType<LiteralExpressionNode>(cachedEnd.Initializer).SourceText);
+        Assert.Equal("10", Assert.IsType<LiteralExpressionNode>(cachedEnd.Initializer).LiteralText);
 
         var condition = Assert.IsType<BinaryExpressionNode>(loop.Condition);
         Assert.Equal("<", condition.Operator);
-        Assert.Equal("i", Assert.IsType<NameExpressionNode>(condition.Left).SourceText);
-        Assert.Equal(cachedEnd.Name, Assert.IsType<NameExpressionNode>(condition.Right).SourceText);
+        Assert.Equal("i", Assert.IsType<NameExpressionNode>(condition.Left).Name);
+        Assert.Equal(cachedEnd.Name, Assert.IsType<NameExpressionNode>(condition.Right).Name);
 
         var increment = Assert.IsType<AssignmentExpressionNode>(loop.Increment);
-        Assert.Equal("i", Assert.IsType<NameExpressionNode>(increment.Target).SourceText);
+        Assert.Equal("i", Assert.IsType<NameExpressionNode>(increment.Target).Name);
     }
 
     [Fact]
@@ -70,14 +70,14 @@ public sealed class RangeForeachLowererTests
         Assert.NotNull(forStatement.CounterInitializer);
         var hiddenIndex = forStatement.CounterInitializer;
         Assert.StartsWith("__cx_range_index_", hiddenIndex.Name, StringComparison.Ordinal);
-        Assert.Equal("0", Assert.IsType<LiteralExpressionNode>(hiddenIndex.Initializer).SourceText);
+        Assert.Equal("0", Assert.IsType<LiteralExpressionNode>(hiddenIndex.Initializer).LiteralText);
 
         var visibleIndex = Assert.IsType<LetStatement>(forStatement.Body[0]);
         Assert.Equal("index", visibleIndex.Name);
-        Assert.Equal(hiddenIndex.Name, Assert.IsType<NameExpressionNode>(visibleIndex.Initializer).SourceText);
+        Assert.Equal(hiddenIndex.Name, Assert.IsType<NameExpressionNode>(visibleIndex.Initializer).Name);
 
         var indexIncrement = Assert.IsType<AssignmentExpressionNode>(forStatement.CounterIncrement);
-        Assert.Equal(hiddenIndex.Name, Assert.IsType<NameExpressionNode>(indexIncrement.Target).SourceText);
+        Assert.Equal(hiddenIndex.Name, Assert.IsType<NameExpressionNode>(indexIncrement.Target).Name);
     }
 
     private static IReadOnlyList<StatementNode> LowerFirstForeach(string source)

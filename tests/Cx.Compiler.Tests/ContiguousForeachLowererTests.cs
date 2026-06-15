@@ -25,16 +25,16 @@ public sealed class ContiguousForeachLowererTests
 
         Assert.StartsWith("__cx_foreach_data_", data.Name, StringComparison.Ordinal);
         Assert.Equal("int*", data.TypeNode?.ToTypeName());
-        Assert.Equal("values", Assert.IsType<NameExpressionNode>(data.Initializer).SourceText);
+        Assert.Equal("values", Assert.IsType<NameExpressionNode>(data.Initializer).Name);
 
         Assert.StartsWith("__cx_foreach_length_", length.Name, StringComparison.Ordinal);
-        Assert.Equal("4", Assert.IsType<LiteralExpressionNode>(length.Initializer).SourceText);
+        Assert.Equal("4", Assert.IsType<LiteralExpressionNode>(length.Initializer).LiteralText);
 
         var value = Assert.IsType<LetStatement>(loop.Body[0]);
         Assert.Equal("value", value.Name);
         Assert.Equal("int", value.TypeNode?.ToTypeName());
         var access = Assert.IsType<IndexExpressionNode>(value.Initializer);
-        Assert.Equal(data.Name, Assert.IsType<NameExpressionNode>(access.Target).SourceText);
+        Assert.Equal(data.Name, Assert.IsType<NameExpressionNode>(access.Target).Name);
     }
 
     [Fact]

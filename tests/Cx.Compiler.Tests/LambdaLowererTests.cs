@@ -25,7 +25,7 @@ public sealed class LambdaLowererTests
 
         var main = lowered.Functions[0];
         var let = Assert.IsType<LetStatement>(main.Body[0]);
-        Assert.Equal("__cx_lambda_0", Assert.IsType<NameExpressionNode>(let.Initializer).SourceText);
+        Assert.Equal("__cx_lambda_0", Assert.IsType<NameExpressionNode>(let.Initializer).Name);
 
         var generated = lowered.Functions[1];
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(generated.Body));
@@ -61,7 +61,7 @@ public sealed class LambdaLowererTests
 
         var main = Assert.Single(lowered.Functions);
         var statement = Assert.IsType<CStatement>(Assert.Single(main.Body));
-        Assert.Equal("fn(value: int) => value", Assert.IsType<RawExpressionNode>(statement.Expression).SourceText);
+        Assert.Equal("fn(value: int) => value", Assert.IsType<RawExpressionNode>(statement.Expression).RawText);
     }
 
     [Fact]
@@ -91,6 +91,6 @@ public sealed class LambdaLowererTests
 
         var create = lowered.Functions.Single(function => function.Name == "create");
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(create.Body));
-        Assert.Equal("__cx_lambda_0", Assert.IsType<NameExpressionNode>(ret.Expression).SourceText);
+        Assert.Equal("__cx_lambda_0", Assert.IsType<NameExpressionNode>(ret.Expression).Name);
     }
 }

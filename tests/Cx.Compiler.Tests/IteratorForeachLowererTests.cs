@@ -125,10 +125,10 @@ public sealed class IteratorForeachLowererTests
         var whileStatement = Assert.IsType<WhileStatement>(lowered[2]);
         var visibleIndex = Assert.IsType<LetStatement>(whileStatement.Body[0]);
         Assert.Equal("index", visibleIndex.Name);
-        Assert.Equal(counter.Name, Assert.IsType<NameExpressionNode>(visibleIndex.Initializer).SourceText);
+        Assert.Equal(counter.Name, Assert.IsType<NameExpressionNode>(visibleIndex.Initializer).Name);
 
         var increment = Assert.IsType<AssignmentExpressionNode>(Assert.IsType<CStatement>(whileStatement.Body.Last()).Expression);
-        Assert.Equal(counter.Name, Assert.IsType<NameExpressionNode>(increment.Target).SourceText);
+        Assert.Equal(counter.Name, Assert.IsType<NameExpressionNode>(increment.Target).Name);
     }
 
     [Fact]

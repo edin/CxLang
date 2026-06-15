@@ -38,8 +38,8 @@ public sealed class AstTransformPipelineTests
 
         var body = Assert.Single(rewritten.Functions).Body;
         Assert.Equal(2, body.Count);
-        Assert.Equal("before_value()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[0]).Expression).SourceText);
-        Assert.Equal("after_value()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[1]).Expression).SourceText);
+        Assert.Equal("before_value()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[0]).Expression).RawText);
+        Assert.Equal("after_value()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[1]).Expression).RawText);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class AstTransformPipelineTests
             .Run(program);
 
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(rewritten.Functions).Body.Single());
-        Assert.Equal("wrapped(after)", Assert.IsType<RawExpressionNode>(ret.Expression).SourceText);
+        Assert.Equal("wrapped(after)", Assert.IsType<RawExpressionNode>(ret.Expression).RawText);
     }
 
     private static ProgramNode ProgramWithBody(IReadOnlyList<StatementNode> body)
