@@ -8,7 +8,10 @@ internal abstract record TypeRef
 
     public sealed record Null : TypeRef;
 
-    public sealed record Named(string Name, IReadOnlyList<TypeRef> Arguments) : TypeRef;
+    public sealed record Named(
+        string Name,
+        IReadOnlyList<TypeRef> Arguments,
+        string? ModuleName = null) : TypeRef;
 
     public sealed record Alias(string Name, TypeRef Target) : TypeRef;
 

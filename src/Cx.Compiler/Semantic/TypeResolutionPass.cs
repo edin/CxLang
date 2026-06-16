@@ -111,6 +111,8 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
         {
             ResolveFunction(function);
         }
+
+        new TypeRefModuleResolver().Resolve(program);
     }
 
     private void ResolveFunction(FunctionNode function)

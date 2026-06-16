@@ -9,9 +9,18 @@ public sealed class TypeRefFormatterTests
     [Fact]
     public void ToCxString_FormatsNamedGenericTypes()
     {
-        var type = new TypeRef.Named("Vec", [new TypeRef.Named("int", [])]);
+        var type = new TypeRef.Named("Vec", [new TypeRef.Named("int", [])], ModuleName: "std.core");
 
         Assert.Equal("Vec<int>", TypeRefFormatter.ToCxString(type));
+    }
+
+    [Fact]
+    public void ToIdentityString_IncludesNamedTypeModule()
+    {
+        var type = new TypeRef.Named("Vec", [new TypeRef.Named("int", [])], ModuleName: "std.core");
+
+        Assert.Equal("std.core::Vec<int>", TypeRefFormatter.ToIdentityString(type));
+        Assert.Equal("std.core::Vec<int>", TypeRefFacts.IdentityKey(type));
     }
 
     [Fact]

@@ -61,7 +61,7 @@ internal static class TypeRefRewriter
             .ToList();
         var rewrittenNamed = rewrittenArguments.SequenceEqual(named.Arguments)
             ? named
-            : new TypeRef.Named(named.Name, rewrittenArguments);
+            : named with { Arguments = rewrittenArguments };
 
         return rewriteNamed(rewrittenNamed) ?? rewrittenNamed;
     }

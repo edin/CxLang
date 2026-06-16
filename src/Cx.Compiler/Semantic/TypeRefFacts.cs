@@ -84,9 +84,12 @@ internal static class TypeRefFacts
         left is not null
         && right is not null
         && string.Equals(
-            TypeRefFormatter.ToCxString(UnwrapAlias(left)),
-            TypeRefFormatter.ToCxString(UnwrapAlias(right)),
+            IdentityKey(left),
+            IdentityKey(right),
             StringComparison.Ordinal);
+
+    public static string IdentityKey(TypeRef type) =>
+        TypeRefFormatter.ToIdentityString(UnwrapAlias(type));
 
     public static TypeRef UnwrapAlias(TypeRef type)
     {

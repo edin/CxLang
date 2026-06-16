@@ -11,7 +11,13 @@ public sealed class TypeResolutionPassTests
     {
         var program = CompilerTestHelpers.Parse(
             """
+            module app.main;
+
             type IntVec = Vec<int>;
+
+            struct Vec<T> {
+                data: T*;
+            }
 
             fn main() -> int {
                 let values: IntVec = Vec<int>.create();
@@ -29,8 +35,10 @@ public sealed class TypeResolutionPassTests
         Assert.Equal("IntVec", alias.Name);
         var named = Assert.IsType<TypeRef.Named>(alias.Target);
         Assert.Equal("Vec", named.Name);
+        Assert.Equal("app.main", named.ModuleName);
         var argument = Assert.IsType<TypeRef.Named>(Assert.Single(named.Arguments));
         Assert.Equal("int", argument.Name);
+        Assert.Null(argument.ModuleName);
     }
 
     [Fact]
@@ -55,5 +63,33 @@ public sealed class TypeResolutionPassTests
 
         Assert.Equal("usize", alias.Name);
         Assert.Equal("unsigned long long", Assert.IsType<TypeRef.Named>(alias.Target).Name);
+    }
+
+    [Fact]
+    public void Resolve_AddsModuleNameToLocalDeclaredTypesButNotGenericParameters()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            module std.core;
+
+            struct Box<T> {
+                value: T;
+                next: Box<T>*;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var box = Assert.Single(program.Structs);
+        var valueType = Assert.IsType<TypeRef.Named>(box.Fields[0].TypeNode?.Semantic.Type);
+        var nextType = Assert.IsType<TypeRef.Pointer>(box.Fields[1].TypeNode?.Semantic.Type);
+        var nextBox = Assert.IsType<TypeRef.Named>(nextType.Element);
+
+        Assert.Equal("T", valueType.Name);
+        Assert.Null(valueType.ModuleName);
+        Assert.Equal("Box", nextBox.Name);
+        Assert.Equal("std.core", nextBox.ModuleName);
+        Assert.Null(Assert.IsType<TypeRef.Named>(Assert.Single(nextBox.Arguments)).ModuleName);
     }
 }
