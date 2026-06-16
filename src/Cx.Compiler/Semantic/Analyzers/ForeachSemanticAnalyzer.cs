@@ -54,9 +54,9 @@ internal sealed class ForeachSemanticAnalyzer(
             {
                 if (keyValueKeyType is not null)
                 {
-                    var keyBindingType = TypeRefOrNull(foreachStatement.KeyBinding.TypeNode)
+                    var keyBindingType = SemanticFacts.TypeRefOrNull(foreachStatement.KeyBinding.TypeNode, typeRefParser)
                         ?? typeRefParser.Parse(keyValueKeyType);
-                    SetVariableType(foreachTypeEnvironment, foreachStatement.KeyBinding.Name, keyBindingType);
+                    SemanticFacts.SetVariableType(foreachTypeEnvironment, foreachStatement.KeyBinding.Name, keyBindingType);
                     foreachMutability[foreachStatement.KeyBinding.Name] = LocalMutability.ForeachKey;
                 }
 
@@ -128,13 +128,13 @@ internal sealed class ForeachSemanticAnalyzer(
     {
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
-            var indexType = TypeRefOrNull(indexBinding.TypeNode)
+            var indexType = SemanticFacts.TypeRefOrNull(indexBinding.TypeNode, typeRefParser)
                 ?? new TypeRef.Named("usize", []);
-            SetVariableType(typeEnvironment, indexBinding.Name, indexType);
+            SemanticFacts.SetVariableType(typeEnvironment, indexBinding.Name, indexType);
             mutability[indexBinding.Name] = LocalMutability.ForeachIndex;
         }
 
-        var valueBindingType = TypeRefOrNull(foreachStatement.ValueBinding.TypeNode);
+        var valueBindingType = SemanticFacts.TypeRefOrNull(foreachStatement.ValueBinding.TypeNode, typeRefParser);
         var declaredElementType = valueBindingType ?? elementType;
         if (valueBindingType is not null
             && !typeCompatibility.CanAssign(
@@ -147,7 +147,7 @@ internal sealed class ForeachSemanticAnalyzer(
                 $"Type mismatch for foreach value '{foreachStatement.ValueBinding.Name}': {reason}.");
         }
 
-        SetVariableType(typeEnvironment, foreachStatement.ValueBinding.Name, declaredElementType);
+        SemanticFacts.SetVariableType(typeEnvironment, foreachStatement.ValueBinding.Name, declaredElementType);
         mutability[foreachStatement.ValueBinding.Name] = foreachStatement.ValueBinding.IsConst
             ? LocalMutability.ForeachConstItem
             : LocalMutability.Mutable;
@@ -161,14 +161,14 @@ internal sealed class ForeachSemanticAnalyzer(
     {
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
-            var indexType = TypeRefOrNull(indexBinding.TypeNode)
+            var indexType = SemanticFacts.TypeRefOrNull(indexBinding.TypeNode, typeRefParser)
                 ?? new TypeRef.Named("usize", []);
-            SetVariableType(typeEnvironment, indexBinding.Name, indexType);
+            SemanticFacts.SetVariableType(typeEnvironment, indexBinding.Name, indexType);
             mutability[indexBinding.Name] = LocalMutability.ForeachIndex;
         }
 
-        var declaredElementType = TypeRefOrNull(foreachStatement.ValueBinding.TypeNode) ?? elementType;
-        SetVariableType(typeEnvironment, foreachStatement.ValueBinding.Name, declaredElementType);
+        var declaredElementType = SemanticFacts.TypeRefOrNull(foreachStatement.ValueBinding.TypeNode, typeRefParser) ?? elementType;
+        SemanticFacts.SetVariableType(typeEnvironment, foreachStatement.ValueBinding.Name, declaredElementType);
         mutability[foreachStatement.ValueBinding.Name] = foreachStatement.ValueBinding.IsConst
             ? LocalMutability.ForeachConstItem
             : LocalMutability.Mutable;
@@ -254,18 +254,6 @@ internal sealed class ForeachSemanticAnalyzer(
     {
         return variables.TryGet(expression.Trim(), out type!);
     }
-
-    private TypeRef? TypeRefOrNull(TypeNode? typeNode)
-    {
-        var type = typeNode.ToTypeRef(typeRefParser);
-        return type is TypeRef.Unknown ? null : type;
-    }
-
-    private static void SetVariableType(
-        TypeEnvironment typeEnvironment,
-        string name,
-        TypeRef type) =>
-        typeEnvironment.Set(name, type);
 
     private static bool TryGetFixedArrayElementType(TypeRef type, out TypeRef elementType)
     {

@@ -18,12 +18,12 @@ internal sealed class DefiniteAssignmentAnalyzer(
         var typeEnvironment = globalTypeEnvironment.Clone();
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
-            SetVariableType(typeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
+            SemanticFacts.SetVariableType(typeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
         }
 
         foreach (var local in CollectLocalVariables(function.Body))
         {
-            SetVariableType(typeEnvironment, local.Name, local.Type);
+            SemanticFacts.SetVariableType(typeEnvironment, local.Name, local.Type);
         }
 
         var assigned = new HashSet<string>(globalTypeEnvironment.Types.Keys, StringComparer.Ordinal);
@@ -65,7 +65,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         {
             case LetStatement let:
                 AnalyzeExpression(let.Initializer, typeEnvironment, assigned);
-                SetVariableType(typeEnvironment, let.Name, TypeRefOrUnknown(let.TypeNode));
+                SemanticFacts.SetVariableType(typeEnvironment, let.Name, TypeRefOrUnknown(let.TypeNode));
                 if (let.Initializer is null)
                 {
                     assigned.Remove(let.Name);
@@ -152,9 +152,9 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 AnalyzeExpression(foreachStatement.IterableExpression, typeEnvironment, assigned);
                 var foreachTypeEnvironment = typeEnvironment.Clone();
                 var foreachAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
-                foreach (var binding in GetForeachBindings(foreachStatement))
+                foreach (var binding in SemanticFacts.GetForeachBindings(foreachStatement))
                 {
-                    SetVariableType(foreachTypeEnvironment, binding.Name, TypeRefOrAny(binding.TypeNode));
+                    SemanticFacts.SetVariableType(foreachTypeEnvironment, binding.Name, SemanticFacts.TypeRefOrAny(binding.TypeNode, _typeRefParser));
                     foreachAssigned.Add(binding.Name);
                 }
 
@@ -205,7 +205,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
                         && arm.Pattern != "_"
                     && matchedTaggedUnion.Variants.FirstOrDefault(variant => variant.Name == arm.Pattern) is { } variant)
                 {
-                    SetVariableType(armTypeEnvironment, arm.BindingName, TypeRefOrUnknown(variant.TypeNode));
+                    SemanticFacts.SetVariableType(armTypeEnvironment, arm.BindingName, TypeRefOrUnknown(variant.TypeNode));
                     armAssigned.Add(arm.BindingName);
                 }
 
@@ -231,7 +231,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         {
             case ForDeclarationInitializerNode declaration:
                 AnalyzeExpression(declaration.Initializer, typeEnvironment, assigned);
-                SetVariableType(typeEnvironment, declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
+                SemanticFacts.SetVariableType(typeEnvironment, declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
                 if (declaration.Initializer is null)
                 {
                     assigned.Remove(declaration.Name);
@@ -521,7 +521,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
                     }
                     break;
                 case ForeachStatement foreachStatement:
-                    foreach (var binding in GetForeachBindings(foreachStatement))
+                    foreach (var binding in SemanticFacts.GetForeachBindings(foreachStatement))
                     {
                         yield return (binding.Name, TypeRefOrUnknown(binding.TypeNode));
                     }
@@ -610,33 +610,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
         }
     }
 
-    private static IEnumerable<ForeachBinding> GetForeachBindings(ForeachStatement foreachStatement)
-    {
-        if (foreachStatement.IndexBinding is not null)
-        {
-            yield return foreachStatement.IndexBinding;
-        }
-
-        if (foreachStatement.KeyBinding is not null)
-        {
-            yield return foreachStatement.KeyBinding;
-        }
-
-        yield return foreachStatement.ValueBinding;
-    }
-
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
-        typeNode.ToTypeRef(_typeRefParser);
-
-    private TypeRef TypeRefOrAny(TypeNode? typeNode)
-    {
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? new TypeRef.Named("any", []) : type;
-    }
-
-    private static void SetVariableType(
-        TypeEnvironment typeEnvironment,
-        string name,
-        TypeRef type) =>
-        typeEnvironment.Set(name, type);
+        SemanticFacts.TypeRefOrUnknown(typeNode, _typeRefParser);
 }

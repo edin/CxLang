@@ -75,7 +75,7 @@ public sealed class SemanticAnalyzer(
             var globalType = TypeText(global.TypeNode);
             AnalyzeType(global.TypeNode, global.Location, program, []);
             AnalyzeExpression(global.Initializer, global.Location, globalTypeEnvironment, null);
-            if (global.Initializer is not null && IsBareNull(global.Initializer) && !IsNullableType(ParseTypeRef(globalType)))
+            if (global.Initializer is not null && SemanticFacts.IsBareNull(global.Initializer) && !SemanticFacts.IsNullableType(ParseTypeRef(globalType)))
             {
                 diagnostics.Report(global.Location, $"Cannot assign null to non-pointer global '{global.Name}' of type '{globalType}'.");
             }
@@ -96,12 +96,12 @@ public sealed class SemanticAnalyzer(
             var typeEnvironment = globalTypeEnvironment.Clone();
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
-                SetVariableType(typeEnvironment, parameter.Name, parameter.TypeNode.ToTypeRef(typeRefParser));
+                SemanticFacts.SetVariableType(typeEnvironment, parameter.Name, parameter.TypeNode.ToTypeRef(typeRefParser));
             }
             var locals = CollectLocalVariables(function.Body).ToList();
             foreach (var local in locals)
             {
-                SetVariableType(typeEnvironment, local.Name, local.Type);
+                SemanticFacts.SetVariableType(typeEnvironment, local.Name, local.Type);
             }
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
@@ -142,11 +142,11 @@ public sealed class SemanticAnalyzer(
             _foreachAnalyzer = CreateForeachAnalyzer();
             _expressionAnalyzer = CreateExpressionAnalyzer();
             definiteAssignment.AnalyzeFunction(function, globalTypeEnvironment);
-            if (!IsVoidType(functionReturnType) && !returnFlow.StatementsAlwaysReturn(function.Body, typeEnvironment))
+            if (!SemanticFacts.IsVoidType(functionReturnType) && !returnFlow.StatementsAlwaysReturn(function.Body, typeEnvironment))
             {
                 diagnostics.Report(
                     function.Location,
-                    $"Not all code paths return a value from function '{GetFunctionDisplayName(function)}' returning '{FormatTypeRef(functionReturnType)}'.");
+                    $"Not all code paths return a value from function '{GetFunctionDisplayName(function)}' returning '{SemanticFacts.FormatTypeRef(functionReturnType)}'.");
             }
         }
     }
@@ -250,13 +250,13 @@ public sealed class SemanticAnalyzer(
                 var letType = TypeText(let.TypeNode);
                 AnalyzeType(let.TypeNode, let.Location, program, inScopeTypeParameters);
                 AnalyzeExpression(let.Initializer, let.Location, typeEnvironment, mutability);
-                if (let.Initializer is not null && IsBareNull(let.Initializer) && !IsNullableType(ParseTypeRef(letType)))
+                if (let.Initializer is not null && SemanticFacts.IsBareNull(let.Initializer) && !SemanticFacts.IsNullableType(ParseTypeRef(letType)))
                 {
                     diagnostics.Report(let.Location, $"Cannot assign null to non-pointer type '{letType}'.");
                 }
 
                 _assignmentAnalyzer?.CheckAssignmentCompatibility(let.Location, letType, let.Initializer, typeEnvironment, $"local '{let.Name}'");
-                SetVariableType(typeEnvironment, let.Name, ParseTypeRef(letType));
+                SemanticFacts.SetVariableType(typeEnvironment, let.Name, ParseTypeRef(letType));
                 mutability[let.Name] = let.IsConst ? LocalMutability.Const : LocalMutability.Mutable;
                 break;
 
@@ -371,7 +371,7 @@ public sealed class SemanticAnalyzer(
                     var armMutability = new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal);
                     if (arm.BindingName is not null && armBinding.Type is not null)
                     {
-                        SetVariableType(armTypeEnvironment, arm.BindingName, armBinding.Type);
+                        SemanticFacts.SetVariableType(armTypeEnvironment, arm.BindingName, armBinding.Type);
                         armMutability[arm.BindingName] = LocalMutability.Mutable;
                     }
 
@@ -396,9 +396,6 @@ public sealed class SemanticAnalyzer(
 
 
 
-    private static bool IsVoidType(TypeRef? type) =>
-        TypeRefFacts.IsNamed(type, "void");
-
     private void AnalyzeType(
         TypeNode? typeNode,
         Cx.Compiler.Syntax.Location location,
@@ -421,8 +418,8 @@ public sealed class SemanticAnalyzer(
         TypeRef rightType,
         Cx.Compiler.Syntax.Location location)
     {
-        var leftTypeText = FormatTypeRef(leftType)!;
-        var rightTypeText = FormatTypeRef(rightType)!;
+        var leftTypeText = SemanticFacts.FormatTypeRef(leftType)!;
+        var rightTypeText = SemanticFacts.FormatTypeRef(rightType)!;
         if (_typeCompatibility is not null
             && (!_typeCompatibility.CanAssign(leftType, rightType, out _)
                 || !_typeCompatibility.CanAssign(rightType, leftType, out _)))
@@ -454,8 +451,8 @@ public sealed class SemanticAnalyzer(
                 AnalyzeType(declaration.TypeNode, declaration.Location, program, inScopeTypeParameters);
                 AnalyzeExpression(declaration.Initializer, declaration.Location, typeEnvironment, mutability);
                 if (declaration.Initializer is not null
-                    && IsBareNull(declaration.Initializer)
-                    && !IsNullableType(ParseTypeRef(declarationType)))
+                    && SemanticFacts.IsBareNull(declaration.Initializer)
+                    && !SemanticFacts.IsNullableType(ParseTypeRef(declarationType)))
                 {
                     diagnostics.Report(
                         declaration.Location,
@@ -468,7 +465,7 @@ public sealed class SemanticAnalyzer(
                     declaration.Initializer,
                     typeEnvironment,
                     $"for variable '{declaration.Name}'");
-                SetVariableType(typeEnvironment, declaration.Name, ParseTypeRef(declarationType));
+                SemanticFacts.SetVariableType(typeEnvironment, declaration.Name, ParseTypeRef(declarationType));
                 mutability[declaration.Name] = declaration.IsConst ? LocalMutability.Const : LocalMutability.Mutable;
                 break;
 
@@ -675,12 +672,6 @@ public sealed class SemanticAnalyzer(
         }
     }
 
-    private static bool IsBareNull(string expression) =>
-        string.Equals(expression.Trim(), "null", StringComparison.Ordinal);
-
-    private static bool IsBareNull(ExpressionNode expression) =>
-        IsBareNull(ExpressionText(expression));
-
     private static string ExpressionText(ExpressionNode expression) => expression.ToSourceText();
 
     private void AnalyzeExpression(
@@ -760,23 +751,11 @@ public sealed class SemanticAnalyzer(
         expression is LiteralExpressionNode { LiteralText: "null" }
         || expression is ParenthesizedExpressionNode parenthesized && IsNullLiteral(parenthesized.Expression);
 
-    private static bool IsNullableType(TypeRef? type) =>
-        TypeRefFacts.IsPointer(type);
-
     private TypeRef ParseTypeRef(string type) =>
         _typeRefParser?.Parse(type) ?? new TypeRef.Unknown();
 
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
-        _typeRefParser is null ? new TypeRef.Unknown() : typeNode.ToTypeRef(_typeRefParser);
-
-    private static void SetVariableType(
-        TypeEnvironment typeEnvironment,
-        string name,
-        TypeRef type) =>
-        typeEnvironment.Set(name, type);
-
-    private static string? FormatTypeRef(TypeRef? type) =>
-        type is null ? null : TypeRefFormatter.ToCxString(type);
+        SemanticFacts.TypeRefOrUnknown(typeNode, _typeRefParser);
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 

@@ -27,9 +27,9 @@ internal sealed class AssignmentSemanticAnalyzer(
 
         if (assignment.Operator == "=")
         {
-            if (IsBareNull(assignment.Value) && !IsNullableType(targetTypeRef))
+            if (SemanticFacts.IsBareNull(assignment.Value) && !SemanticFacts.IsNullableType(targetTypeRef))
             {
-                diagnostics.Report(assignment.Location, $"Cannot assign null to non-pointer type '{FormatTypeRef(targetTypeRef)}'.");
+                diagnostics.Report(assignment.Location, $"Cannot assign null to non-pointer type '{SemanticFacts.FormatTypeRef(targetTypeRef)}'.");
             }
 
             CheckAssignmentCompatibility(assignment.Location, targetTypeRef, assignment.Value, typeEnvironment, "assignment");
@@ -158,7 +158,7 @@ internal sealed class AssignmentSemanticAnalyzer(
 
         diagnostics.Report(
             location,
-            $"Type mismatch for compound assignment: cannot apply '{assignmentOperator}' to '{FormatTypeRef(targetType)}' and '{FormatTypeRef(valueType)}'.");
+            $"Type mismatch for compound assignment: cannot apply '{assignmentOperator}' to '{SemanticFacts.FormatTypeRef(targetType)}' and '{SemanticFacts.FormatTypeRef(valueType)}'.");
     }
 
     private bool IsInterfaceBindingAssignment(TypeRef targetType, TypeRef? sourceType)
@@ -221,21 +221,11 @@ internal sealed class AssignmentSemanticAnalyzer(
         && TypeRefFacts.UnwrapAlias(sourceElement) is TypeRef.Named { Name: "Self", Arguments.Count: 0 }
         && TypeRefFacts.IsPointer(targetType);
 
-    private static bool IsNullableType(TypeRef? type) =>
-        TypeRefFacts.IsPointer(type);
-
     private static bool IsPointerType(TypeRef type) =>
         TypeRefFacts.IsPointer(type);
 
-    private static string? FormatTypeRef(TypeRef? type) =>
-        type is null ? null : TypeRefFormatter.ToCxString(type);
-
     private static bool SameType(TypeRef? left, TypeRef? right) =>
         TypeRefFacts.SameType(left, right);
-
-    private static bool IsBareNull(ExpressionNode expression) =>
-        expression is LiteralExpressionNode { LiteralText: "null" }
-        || expression is ParenthesizedExpressionNode parenthesized && IsBareNull(parenthesized.Expression);
 
     private static string StripConst(string type) =>
         type.StartsWith("const ", StringComparison.Ordinal)

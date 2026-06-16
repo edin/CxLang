@@ -12,7 +12,7 @@ internal sealed class ReturnSemanticAnalyzer(
         TypeRef returnType,
         TypeEnvironment typeEnvironment)
     {
-        if (IsVoidType(returnType))
+        if (SemanticFacts.IsVoidType(returnType))
         {
             if (statement.Expression is not null)
             {
@@ -35,28 +35,15 @@ internal sealed class ReturnSemanticAnalyzer(
     {
         if (statement.Expression is null)
         {
-            diagnostics.Report(statement.Location, $"Function returning '{FormatTypeRef(returnType)}' must return a value.");
+            diagnostics.Report(statement.Location, $"Function returning '{SemanticFacts.FormatTypeRef(returnType)}' must return a value.");
             return;
         }
 
-        if (IsBareNull(statement.Expression) && !IsNullableType(returnType))
+        if (SemanticFacts.IsBareNull(statement.Expression) && !SemanticFacts.IsNullableType(returnType))
         {
-            diagnostics.Report(statement.Location, $"Cannot return null from function returning non-pointer type '{FormatTypeRef(returnType)}'.");
+            diagnostics.Report(statement.Location, $"Cannot return null from function returning non-pointer type '{SemanticFacts.FormatTypeRef(returnType)}'.");
         }
 
         checkAssignmentCompatibility();
     }
-
-    private static bool IsVoidType(TypeRef? type) =>
-        TypeRefFacts.IsNamed(type, "void");
-
-    private static bool IsNullableType(TypeRef? type) =>
-        TypeRefFacts.IsPointer(type);
-
-    private static string? FormatTypeRef(TypeRef? type) =>
-        type is null ? null : TypeRefFormatter.ToCxString(type);
-
-    private static bool IsBareNull(ExpressionNode expression) =>
-        expression is LiteralExpressionNode { LiteralText: "null" }
-        || expression is ParenthesizedExpressionNode parenthesized && IsBareNull(parenthesized.Expression);
 }
