@@ -1,6 +1,7 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lexer;
 using Cx.Compiler.Parser;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 

@@ -188,11 +188,6 @@ public sealed partial class Parser
             typeNode);
     }
 
-    private string ParseOptionalVariableType(string subject, Location location)
-    {
-        return ParseOptionalVariableTypeNode(subject, location)?.TypeName ?? string.Empty;
-    }
-
     private TypeNode? ParseOptionalVariableTypeNode(string subject, Location location)
     {
         if (!ConsumeOptional(TokenType.Colon))
@@ -394,11 +389,14 @@ public sealed partial class Parser
             : new MatchArmNode(patternToken.Location, patternToken.Value, bindingName, body);
     }
 
-    private IReadOnlyList<StatementNode> ParseBlock()
+    private IReadOnlyList<StatementNode> ParseBlock() =>
+        ParseBlock("Expected '{' before block.", "Expected '}' after block.");
+
+    private IReadOnlyList<StatementNode> ParseBlock(string openMessage, string closeMessage)
     {
-        Expect(TokenType.LBrace, "Expected '{' before block.");
+        Expect(TokenType.LBrace, openMessage);
         var statements = ParseBlockBody(TokenType.RBrace);
-        Expect(TokenType.RBrace, "Expected '}' after block.");
+        Expect(TokenType.RBrace, closeMessage);
         return statements;
     }
 

@@ -1,6 +1,7 @@
 using Cx.Compiler.Syntax.Nodes;
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax;
 using System.Collections;
 using System.Reflection;

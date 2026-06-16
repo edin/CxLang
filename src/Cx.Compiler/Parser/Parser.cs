@@ -622,24 +622,10 @@ public sealed partial class Parser
         var fnToken = Expect(TokenType.Fn, "Expected 'fn'.");
         var nameToken = Expect(TokenType.Identifier, "Expected declared function name.");
         var typeParameters = ParseOptionalTypeParameters();
-        Expect(TokenType.LParen, "Expected '(' after declared function name.");
-
-        var parameters = new List<ParameterNode>();
-        if (!Check(TokenType.RParen))
-        {
-            do
-            {
-                var parameter = ParseParameter(allowVariadic: true);
-                if (parameter is not null)
-                {
-                    parameters.Add(parameter);
-                }
-            }
-            while (ConsumeOptional(TokenType.Comma));
-        }
-
-        ValidateVariadicParameter(parameters);
-        Expect(TokenType.RParen, "Expected ')' after declared function parameters.");
+        var parameters = ParseParameterList(
+            allowVariadic: true,
+            openMessage: "Expected '(' after declared function name.",
+            closeMessage: "Expected ')' after declared function parameters.");
         Expect(TokenType.Arrow, "Expected '->' before declared function return type.");
         var returnTypeNode = ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after declared function.");
@@ -662,24 +648,10 @@ public sealed partial class Parser
         var externToken = Expect(TokenType.Extern, "Expected 'extern'.");
         Expect(TokenType.Fn, "Expected 'fn' after 'extern'.");
         var nameToken = Expect(TokenType.Identifier, "Expected extern function name.");
-        Expect(TokenType.LParen, "Expected '(' after extern function name.");
-
-        var parameters = new List<ParameterNode>();
-        if (!Check(TokenType.RParen))
-        {
-            do
-            {
-                var parameter = ParseParameter(allowVariadic: true);
-                if (parameter is not null)
-                {
-                    parameters.Add(parameter);
-                }
-            }
-            while (ConsumeOptional(TokenType.Comma));
-        }
-
-        ValidateVariadicParameter(parameters);
-        Expect(TokenType.RParen, "Expected ')' after extern function parameters.");
+        var parameters = ParseParameterList(
+            allowVariadic: true,
+            openMessage: "Expected '(' after extern function name.",
+            closeMessage: "Expected ')' after extern function parameters.");
         Expect(TokenType.Arrow, "Expected '->' before extern function return type.");
         var returnTypeNode = ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after extern function declaration.");
@@ -920,23 +892,10 @@ public sealed partial class Parser
         }
 
         var typeParameters = ParseOptionalTypeParameters();
-        Expect(TokenType.LParen, "Expected '(' after function name.");
-
-        var parameters = new List<ParameterNode>();
-        if (!Check(TokenType.RParen))
-        {
-            do
-            {
-                var parameter = ParseParameter(allowVariadic: false);
-                if (parameter is not null)
-                {
-                    parameters.Add(parameter);
-                }
-            }
-            while (ConsumeOptional(TokenType.Comma));
-        }
-
-        ValidateVariadicParameter(parameters);
+        var parameters = ParseParameterList(
+            allowVariadic: false,
+            openMessage: "Expected '(' after function name.",
+            closeMessage: "Expected ')' after function parameters.");
         if (!isStatic
             && ownerType is not null
             && !HasExplicitReceiverParameter(ownerType, parameters.FirstOrDefault()))
@@ -945,27 +904,12 @@ public sealed partial class Parser
             parameters.Insert(0, new ParameterNode(fnLocation, "self", [], IsVariadic: false, TypeNode: selfTypeNode));
         }
 
-        Expect(TokenType.RParen, "Expected ')' after function parameters.");
         Expect(TokenType.Arrow, "Expected '->' before function return type.");
         var returnTypeNode = ParseTypeNode();
         var genericConstraints = ParseOptionalGenericConstraints(typeParameters);
-        Expect(TokenType.LBrace, "Expected '{' before function body.");
-
-        var body = new List<StatementNode>();
-        while (!IsAtEnd && !Check(TokenType.RBrace))
-        {
-            var statement = ParseStatement();
-            if (statement is not null)
-            {
-                body.Add(statement);
-            }
-            else
-            {
-                SynchronizeStatement();
-            }
-        }
-
-        Expect(TokenType.RBrace, "Expected '}' after function body.");
+        var body = ParseBlock(
+            openMessage: "Expected '{' before function body.",
+            closeMessage: "Expected '}' after function body.");
         return new FunctionNode(
             fnLocation,
             isStatic,
@@ -1198,24 +1142,10 @@ public sealed partial class Parser
     {
         var fnToken = Expect(TokenType.Fn, "Expected 'fn' before interface method.");
         var nameToken = ExpectIdentifierLike("Expected interface method name.");
-        Expect(TokenType.LParen, "Expected '(' after interface method name.");
-
-        var parameters = new List<ParameterNode>();
-        if (!Check(TokenType.RParen))
-        {
-            do
-            {
-                var parameter = ParseParameter(allowVariadic: false);
-                if (parameter is not null)
-                {
-                    parameters.Add(parameter);
-                }
-            }
-            while (ConsumeOptional(TokenType.Comma));
-        }
-
-        ValidateVariadicParameter(parameters);
-        Expect(TokenType.RParen, "Expected ')' after interface method parameters.");
+        var parameters = ParseParameterList(
+            allowVariadic: false,
+            openMessage: "Expected '(' after interface method name.",
+            closeMessage: "Expected ')' after interface method parameters.");
         Expect(TokenType.Arrow, "Expected '->' before interface method return type.");
         var returnTypeNode = ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after interface method.");
@@ -1407,24 +1337,10 @@ public sealed partial class Parser
             ? "Expected 'fn' before requirement function."
             : "Expected 'fn' after 'static' in requirement function.");
         var nameToken = ExpectIdentifierLike("Expected requirement function name.");
-        Expect(TokenType.LParen, "Expected '(' after requirement function name.");
-
-        var parameters = new List<ParameterNode>();
-        if (!Check(TokenType.RParen))
-        {
-            do
-            {
-                var parameter = ParseParameter(allowVariadic: false);
-                if (parameter is not null)
-                {
-                    parameters.Add(parameter);
-                }
-            }
-            while (ConsumeOptional(TokenType.Comma));
-        }
-
-        ValidateVariadicParameter(parameters);
-        Expect(TokenType.RParen, "Expected ')' after requirement function parameters.");
+        var parameters = ParseParameterList(
+            allowVariadic: false,
+            openMessage: "Expected '(' after requirement function name.",
+            closeMessage: "Expected ')' after requirement function parameters.");
         Expect(TokenType.Arrow, "Expected '->' before requirement function return type.");
         var returnTypeNode = ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after requirement function.");
@@ -1511,6 +1427,32 @@ public sealed partial class Parser
                 attributes,
                 IsRaw: isRaw,
                 IsHeaderDeclaration: isHeaderDeclaration);
+    }
+
+    private List<ParameterNode> ParseParameterList(
+        bool allowVariadic,
+        string openMessage,
+        string closeMessage)
+    {
+        Expect(TokenType.LParen, openMessage);
+
+        var parameters = new List<ParameterNode>();
+        if (!Check(TokenType.RParen))
+        {
+            do
+            {
+                var parameter = ParseParameter(allowVariadic);
+                if (parameter is not null)
+                {
+                    parameters.Add(parameter);
+                }
+            }
+            while (ConsumeOptional(TokenType.Comma));
+        }
+
+        ValidateVariadicParameter(parameters);
+        Expect(TokenType.RParen, closeMessage);
+        return parameters;
     }
 
     private ParameterNode? ParseParameter(bool allowVariadic)

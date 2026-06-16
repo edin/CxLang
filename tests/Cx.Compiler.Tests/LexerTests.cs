@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lexer;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax;
 
 namespace Cx.Compiler.Tests;
