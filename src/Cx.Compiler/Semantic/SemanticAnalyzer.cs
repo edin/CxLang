@@ -68,14 +68,13 @@ public sealed class SemanticAnalyzer(
 
         var typeRefParser = _typeRefParser ?? throw new InvalidOperationException("Semantic analyzer has no TypeRef parser.");
         var globalTypeEnvironment = BuildGlobalTypeEnvironment(program.GlobalVariables);
-        var globalVariables = globalTypeEnvironment.ToLegacyStrings();
         var returnFlow = new ReturnFlowAnalyzer(program, _expressionTypeResolver);
         var definiteAssignment = new DefiniteAssignmentAnalyzer(diagnostics, program, _expressionTypeResolver, returnFlow);
         foreach (var global in program.GlobalVariables)
         {
             var globalType = TypeText(global.TypeNode);
             AnalyzeType(global.TypeNode, global.Location, program, []);
-            AnalyzeExpression(global.Initializer, global.Location, globalVariables, globalTypeEnvironment, null);
+            AnalyzeExpression(global.Initializer, global.Location, globalTypeEnvironment, null);
             if (global.Initializer is not null && IsBareNull(global.Initializer) && !IsNullableType(ParseTypeRef(globalType)))
             {
                 diagnostics.Report(global.Location, $"Cannot assign null to non-pointer global '{global.Name}' of type '{globalType}'.");
@@ -94,23 +93,22 @@ public sealed class SemanticAnalyzer(
             var effectiveGenericConstraints = GetEffectiveGenericConstraints(program, function);
             requirementDeclarations.AnalyzeGenericConstraints(function.TypeParameters, effectiveGenericConstraints, function.Location);
             AnalyzeType(function.ReturnTypeNode, function.Location, program, function.TypeParameters);
-            var variables = new Dictionary<string, string>(globalVariables, StringComparer.Ordinal);
             var typeEnvironment = globalTypeEnvironment.Clone();
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
-                SetVariableType(variables, typeEnvironment, parameter.Name, parameter.TypeNode.ToTypeRef(typeRefParser));
+                SetVariableType(typeEnvironment, parameter.Name, parameter.TypeNode.ToTypeRef(typeRefParser));
             }
             var locals = CollectLocalVariables(function.Body).ToList();
             foreach (var local in locals)
             {
-                SetVariableType(variables, typeEnvironment, local.Name, local.Type);
+                SetVariableType(typeEnvironment, local.Name, local.Type);
             }
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
                 AnalyzeType(parameter.TypeNode, parameter.Location, program, function.TypeParameters);
             }
 
-            var mutability = variables.Keys.ToDictionary(name => name, _ => LocalMutability.Mutable, StringComparer.Ordinal);
+            var mutability = typeEnvironment.Types.Keys.ToDictionary(name => name, _ => LocalMutability.Mutable, StringComparer.Ordinal);
             foreach (var global in program.GlobalVariables)
             {
                 mutability[global.Name] = global.IsConst ? LocalMutability.ConstGlobal : LocalMutability.Mutable;
@@ -133,7 +131,7 @@ public sealed class SemanticAnalyzer(
             _expressionAnalyzer = CreateExpressionAnalyzer();
 
             var functionReturnType = function.ReturnTypeNode?.Semantic.Type ?? ParseTypeRef(TypeText(function.ReturnTypeNode));
-            AnalyzeStatements(function.Body, functionReturnType, variables, typeEnvironment, mutability, program, function.TypeParameters);
+            AnalyzeStatements(function.Body, functionReturnType, typeEnvironment, mutability, program, function.TypeParameters);
 
             _currentTypeParameters = previousTypeParameters;
             _currentGenericConstraints = previousGenericConstraints;
@@ -222,13 +220,11 @@ public sealed class SemanticAnalyzer(
                 _currentTypeParameters,
                 _currentGenericConstraints,
                 TypeText,
-                IsKnownTypeName,
-                AnalyzeExpression);
+                IsKnownTypeName);
 
     private void AnalyzeStatements(
         IReadOnlyList<StatementNode> statements,
         TypeRef returnType,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         Dictionary<string, LocalMutability> mutability,
         ProgramNode program,
@@ -236,14 +232,13 @@ public sealed class SemanticAnalyzer(
     {
         foreach (var statement in statements)
         {
-            AnalyzeStatement(statement, returnType, variables, typeEnvironment, mutability, program, inScopeTypeParameters);
+            AnalyzeStatement(statement, returnType, typeEnvironment, mutability, program, inScopeTypeParameters);
         }
     }
 
     private void AnalyzeStatement(
         StatementNode statement,
         TypeRef returnType,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         Dictionary<string, LocalMutability> mutability,
         ProgramNode program,
@@ -254,31 +249,31 @@ public sealed class SemanticAnalyzer(
             case LetStatement let:
                 var letType = TypeText(let.TypeNode);
                 AnalyzeType(let.TypeNode, let.Location, program, inScopeTypeParameters);
-                AnalyzeExpression(let.Initializer, let.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(let.Initializer, let.Location, typeEnvironment, mutability);
                 if (let.Initializer is not null && IsBareNull(let.Initializer) && !IsNullableType(ParseTypeRef(letType)))
                 {
                     diagnostics.Report(let.Location, $"Cannot assign null to non-pointer type '{letType}'.");
                 }
 
                 _assignmentAnalyzer?.CheckAssignmentCompatibility(let.Location, letType, let.Initializer, typeEnvironment, $"local '{let.Name}'");
-                SetVariableType(variables, typeEnvironment, let.Name, ParseTypeRef(letType));
+                SetVariableType(typeEnvironment, let.Name, ParseTypeRef(letType));
                 mutability[let.Name] = let.IsConst ? LocalMutability.Const : LocalMutability.Mutable;
                 break;
 
             case ReturnStatement ret:
-                _returnAnalyzer?.AnalyzeReturn(ret, returnType, variables, typeEnvironment, mutability, AnalyzeExpression);
+                AnalyzeExpression(ret.Expression, ret.Location, typeEnvironment, mutability);
+                _returnAnalyzer?.AnalyzeReturn(ret, returnType, typeEnvironment);
                 break;
 
             case CStatement c:
-                AnalyzeExpression(c.Expression, c.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(c.Expression, c.Location, typeEnvironment, mutability);
                 break;
 
             case IfStatement ifStatement:
-                AnalyzeExpression(ifStatement.Condition, ifStatement.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(ifStatement.Condition, ifStatement.Location, typeEnvironment, mutability);
                 AnalyzeStatements(
                     ifStatement.ThenBody,
                     returnType,
-                    new Dictionary<string, string>(variables, StringComparer.Ordinal),
                     typeEnvironment.Clone(),
                     new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal),
                     program,
@@ -288,7 +283,6 @@ public sealed class SemanticAnalyzer(
                     AnalyzeStatement(
                         ifStatement.ElseBranch,
                         returnType,
-                        new Dictionary<string, string>(variables, StringComparer.Ordinal),
                         typeEnvironment.Clone(),
                         new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal),
                         program,
@@ -301,7 +295,6 @@ public sealed class SemanticAnalyzer(
                 AnalyzeStatements(
                     elseBlock.Body,
                     returnType,
-                    new Dictionary<string, string>(variables, StringComparer.Ordinal),
                     typeEnvironment.Clone(),
                     new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal),
                     program,
@@ -309,11 +302,10 @@ public sealed class SemanticAnalyzer(
                 break;
 
             case WhileStatement whileStatement:
-                AnalyzeExpression(whileStatement.Condition, whileStatement.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(whileStatement.Condition, whileStatement.Location, typeEnvironment, mutability);
                 AnalyzeStatements(
                     whileStatement.Body,
                     returnType,
-                    new Dictionary<string, string>(variables, StringComparer.Ordinal),
                     typeEnvironment.Clone(),
                     new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal),
                     program,
@@ -321,29 +313,26 @@ public sealed class SemanticAnalyzer(
                 break;
 
             case ForStatement forStatement:
-                var forVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
                 var forTypeEnvironment = typeEnvironment.Clone();
                 var forMutability = new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal);
-                AnalyzeForDeclarationInitializer(forStatement.CachedRangeEndInitializer, forVariables, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
-                AnalyzeForDeclarationInitializer(forStatement.CounterInitializer, forVariables, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
-                AnalyzeForInitializer(forStatement.Initializer, forVariables, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
-                AnalyzeExpression(forStatement.Condition, forStatement.Location, forVariables, forTypeEnvironment, forMutability);
-                AnalyzeExpression(forStatement.Increment, forStatement.Location, forVariables, forTypeEnvironment, forMutability);
-                AnalyzeExpression(forStatement.CounterIncrement, forStatement.Location, forVariables, forTypeEnvironment, forMutability);
-                AnalyzeStatements(forStatement.Body, returnType, forVariables, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
+                AnalyzeForDeclarationInitializer(forStatement.CachedRangeEndInitializer, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
+                AnalyzeForDeclarationInitializer(forStatement.CounterInitializer, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
+                AnalyzeForInitializer(forStatement.Initializer, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
+                AnalyzeExpression(forStatement.Condition, forStatement.Location, forTypeEnvironment, forMutability);
+                AnalyzeExpression(forStatement.Increment, forStatement.Location, forTypeEnvironment, forMutability);
+                AnalyzeExpression(forStatement.CounterIncrement, forStatement.Location, forTypeEnvironment, forMutability);
+                AnalyzeStatements(forStatement.Body, returnType, forTypeEnvironment, forMutability, program, inScopeTypeParameters);
                 break;
 
             case ForeachStatement foreachStatement:
-                AnalyzeExpression(foreachStatement.IterableExpression, foreachStatement.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(foreachStatement.IterableExpression, foreachStatement.Location, typeEnvironment, mutability);
                 var foreachScope = _foreachAnalyzer?.AnalyzeForeach(foreachStatement, typeEnvironment, mutability)
                     ?? new ForeachAnalysisResult(
-                        new Dictionary<string, string>(variables, StringComparer.Ordinal),
                         typeEnvironment.Clone(),
                         new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal));
                 AnalyzeStatements(
                     foreachStatement.Body,
                     returnType,
-                    foreachScope.Variables,
                     foreachScope.TypeEnvironment,
                     foreachScope.Mutability,
                     program,
@@ -351,14 +340,13 @@ public sealed class SemanticAnalyzer(
                 break;
 
             case SwitchStatement switchStatement:
-                AnalyzeExpression(switchStatement.Expression, switchStatement.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(switchStatement.Expression, switchStatement.Location, typeEnvironment, mutability);
                 foreach (var switchCase in switchStatement.Cases)
                 {
-                    AnalyzeExpression(switchCase.Pattern, switchCase.Location, variables, typeEnvironment, mutability);
+                    AnalyzeExpression(switchCase.Pattern, switchCase.Location, typeEnvironment, mutability);
                     AnalyzeStatements(
                         switchCase.Body,
                         returnType,
-                        new Dictionary<string, string>(variables, StringComparer.Ordinal),
                         typeEnvironment.Clone(),
                         new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal),
                         program,
@@ -368,7 +356,6 @@ public sealed class SemanticAnalyzer(
                 AnalyzeStatements(
                     switchStatement.DefaultBody,
                     returnType,
-                    new Dictionary<string, string>(variables, StringComparer.Ordinal),
                     typeEnvironment.Clone(),
                     new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal),
                     program,
@@ -376,20 +363,19 @@ public sealed class SemanticAnalyzer(
                 break;
 
             case MatchStatement matchStatement:
-                AnalyzeExpression(matchStatement.Expression, matchStatement.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(matchStatement.Expression, matchStatement.Location, typeEnvironment, mutability);
                 foreach (var armBinding in _matchAnalyzer?.AnalyzeMatch(matchStatement, typeEnvironment) ?? [])
                 {
                     var arm = armBinding.Arm;
-                    var armVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
                     var armTypeEnvironment = typeEnvironment.Clone();
                     var armMutability = new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal);
                     if (arm.BindingName is not null && armBinding.Type is not null)
                     {
-                        SetVariableType(armVariables, armTypeEnvironment, arm.BindingName, armBinding.Type);
+                        SetVariableType(armTypeEnvironment, arm.BindingName, armBinding.Type);
                         armMutability[arm.BindingName] = LocalMutability.Mutable;
                     }
 
-                    AnalyzeStatements(arm.Body, returnType, armVariables, armTypeEnvironment, armMutability, program, inScopeTypeParameters);
+                    AnalyzeStatements(arm.Body, returnType, armTypeEnvironment, armMutability, program, inScopeTypeParameters);
                 }
 
                 break;
@@ -456,7 +442,6 @@ public sealed class SemanticAnalyzer(
 
     private void AnalyzeForInitializer(
         ForInitializerNode initializer,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         Dictionary<string, LocalMutability> mutability,
         ProgramNode program,
@@ -467,7 +452,7 @@ public sealed class SemanticAnalyzer(
             case ForDeclarationInitializerNode declaration:
                 var declarationType = TypeText(declaration.TypeNode);
                 AnalyzeType(declaration.TypeNode, declaration.Location, program, inScopeTypeParameters);
-                AnalyzeExpression(declaration.Initializer, declaration.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(declaration.Initializer, declaration.Location, typeEnvironment, mutability);
                 if (declaration.Initializer is not null
                     && IsBareNull(declaration.Initializer)
                     && !IsNullableType(ParseTypeRef(declarationType)))
@@ -483,19 +468,18 @@ public sealed class SemanticAnalyzer(
                     declaration.Initializer,
                     typeEnvironment,
                     $"for variable '{declaration.Name}'");
-                SetVariableType(variables, typeEnvironment, declaration.Name, ParseTypeRef(declarationType));
+                SetVariableType(typeEnvironment, declaration.Name, ParseTypeRef(declarationType));
                 mutability[declaration.Name] = declaration.IsConst ? LocalMutability.Const : LocalMutability.Mutable;
                 break;
 
             case ForExpressionInitializerNode expression:
-                AnalyzeExpression(expression.Expression, expression.Location, variables, typeEnvironment, mutability);
+                AnalyzeExpression(expression.Expression, expression.Location, typeEnvironment, mutability);
                 break;
         }
     }
 
     private void AnalyzeForDeclarationInitializer(
         ForDeclarationInitializerNode? initializer,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         Dictionary<string, LocalMutability> mutability,
         ProgramNode program,
@@ -503,7 +487,7 @@ public sealed class SemanticAnalyzer(
     {
         if (initializer is not null)
         {
-            AnalyzeForInitializer(initializer, variables, typeEnvironment, mutability, program, inScopeTypeParameters);
+            AnalyzeForInitializer(initializer, typeEnvironment, mutability, program, inScopeTypeParameters);
         }
     }
 
@@ -702,20 +686,10 @@ public sealed class SemanticAnalyzer(
     private void AnalyzeExpression(
         ExpressionNode? expression,
         Cx.Compiler.Syntax.Location location,
-        IReadOnlyDictionary<string, string>? variables = null,
-        IReadOnlyDictionary<string, LocalMutability>? mutability = null)
-    {
-        AnalyzeExpression(expression, location, variables, null, mutability);
-    }
-
-    private void AnalyzeExpression(
-        ExpressionNode? expression,
-        Cx.Compiler.Syntax.Location location,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment,
+        TypeEnvironment typeEnvironment,
         IReadOnlyDictionary<string, LocalMutability>? mutability)
     {
-        _expressionAnalyzer?.Analyze(expression, location, variables, typeEnvironment, mutability);
+        _expressionAnalyzer?.Analyze(expression, location, typeEnvironment, mutability);
 
         if (ContainsNullArithmetic(expression))
         {
@@ -723,18 +697,13 @@ public sealed class SemanticAnalyzer(
         }
 
         if (expression is not BinaryExpressionNode { Operator: "<=>" } binary
-            || (variables is null && typeEnvironment is null)
             || _expressionTypeResolver is null)
         {
             return;
         }
 
-        var leftType = typeEnvironment is null
-            ? _expressionTypeResolver.ResolveTypeRef(binary.Left, variables!)
-            : _expressionTypeResolver.ResolveTypeRef(binary.Left, typeEnvironment);
-        var rightType = typeEnvironment is null
-            ? _expressionTypeResolver.ResolveTypeRef(binary.Right, variables!)
-            : _expressionTypeResolver.ResolveTypeRef(binary.Right, typeEnvironment);
+        var leftType = _expressionTypeResolver.ResolveTypeRef(binary.Left, typeEnvironment);
+        var rightType = _expressionTypeResolver.ResolveTypeRef(binary.Right, typeEnvironment);
         if (leftType is not null && rightType is not null)
         {
             AnalyzeSpaceshipTypes(leftType, rightType, location);
@@ -801,14 +770,10 @@ public sealed class SemanticAnalyzer(
         _typeRefParser is null ? new TypeRef.Unknown() : typeNode.ToTypeRef(_typeRefParser);
 
     private static void SetVariableType(
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         string name,
-        TypeRef type)
-    {
-        variables[name] = TypeRefFormatter.ToCxString(type);
+        TypeRef type) =>
         typeEnvironment.Set(name, type);
-    }
 
     private static string? FormatTypeRef(TypeRef? type) =>
         type is null ? null : TypeRefFormatter.ToCxString(type);

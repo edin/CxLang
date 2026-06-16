@@ -14,9 +14,9 @@ internal sealed class MatchSemanticAnalyzer(
 {
     public IReadOnlyList<MatchArmBinding> AnalyzeMatch(
         MatchStatement matchStatement,
-        TypeEnvironment variables)
+        TypeEnvironment typeEnvironment)
     {
-        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
+        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, typeEnvironment);
         TaggedUnionNode? matchedTaggedUnion = null;
         InterfaceNode? matchedInterface = null;
         var matchedTypeName = TypeRefFacts.GetBaseName(matchExpressionType);
@@ -27,12 +27,12 @@ internal sealed class MatchSemanticAnalyzer(
                 matchStatement.Location,
                 $"Cannot pattern match raw union type '{TypeRefFormatter.ToCxString(matchExpressionType!)}'.");
         }
-        else if (ResolveMatchedTaggedUnion(matchStatement, variables) is { } taggedUnion)
+        else if (ResolveMatchedTaggedUnion(matchExpressionType) is { } taggedUnion)
         {
             matchedTaggedUnion = taggedUnion;
             AnalyzeTaggedUnionMatchArms(matchStatement, taggedUnion);
         }
-        else if (ResolveMatchedInterface(matchStatement, variables) is { } interfaceNode)
+        else if (ResolveMatchedInterface(matchExpressionType) is { } interfaceNode)
         {
             matchedInterface = interfaceNode;
             AnalyzeInterfaceMatchArms(matchStatement, interfaceNode);
@@ -131,11 +131,8 @@ internal sealed class MatchSemanticAnalyzer(
         return taggedUnion.Variants.All(variant => covered.Contains(variant.Name));
     }
 
-    private TaggedUnionNode? ResolveMatchedTaggedUnion(
-        MatchStatement matchStatement,
-        TypeEnvironment variables)
+    private TaggedUnionNode? ResolveMatchedTaggedUnion(TypeRef? matchExpressionType)
     {
-        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
         var normalizedType = TypeRefFacts.GetBaseName(matchExpressionType);
         if (normalizedType is null)
         {
@@ -146,11 +143,8 @@ internal sealed class MatchSemanticAnalyzer(
             string.Equals(union.Name, normalizedType, StringComparison.Ordinal));
     }
 
-    private InterfaceNode? ResolveMatchedInterface(
-        MatchStatement matchStatement,
-        TypeEnvironment variables)
+    private InterfaceNode? ResolveMatchedInterface(TypeRef? matchExpressionType)
     {
-        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
         var normalizedType = TypeRefFacts.GetBaseName(matchExpressionType);
         if (normalizedType is null)
         {

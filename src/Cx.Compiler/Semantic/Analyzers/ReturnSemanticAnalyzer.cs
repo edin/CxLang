@@ -1,5 +1,4 @@
 using Cx.Compiler.Diagnostics;
-using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
@@ -11,16 +10,12 @@ internal sealed class ReturnSemanticAnalyzer(
     public void AnalyzeReturn(
         ReturnStatement statement,
         TypeRef returnType,
-        IReadOnlyDictionary<string, string> variables,
-        TypeEnvironment typeEnvironment,
-        IReadOnlyDictionary<string, LocalMutability> mutability,
-        Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, TypeEnvironment?, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)
+        TypeEnvironment typeEnvironment)
     {
         if (IsVoidType(returnType))
         {
             if (statement.Expression is not null)
             {
-                analyzeExpression(statement.Expression, statement.Location, variables, typeEnvironment, mutability);
                 diagnostics.Report(statement.Location, "Cannot return a value from function returning void.");
             }
 
@@ -30,14 +25,12 @@ internal sealed class ReturnSemanticAnalyzer(
         AnalyzeReturnCore(
             statement,
             returnType,
-            () => analyzeExpression(statement.Expression!, statement.Location, variables, typeEnvironment, mutability),
             () => assignmentAnalyzer.CheckAssignmentCompatibility(statement.Location, returnType, statement.Expression, typeEnvironment, "return value"));
     }
 
     private void AnalyzeReturnCore(
         ReturnStatement statement,
         TypeRef returnType,
-        Action analyzeExpression,
         Action checkAssignmentCompatibility)
     {
         if (statement.Expression is null)
@@ -46,7 +39,6 @@ internal sealed class ReturnSemanticAnalyzer(
             return;
         }
 
-        analyzeExpression();
         if (IsBareNull(statement.Expression) && !IsNullableType(returnType))
         {
             diagnostics.Report(statement.Location, $"Cannot return null from function returning non-pointer type '{FormatTypeRef(returnType)}'.");

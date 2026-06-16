@@ -9,19 +9,6 @@ internal sealed record ResolvedMethodCall(
 
 internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSystem)
 {
-    private readonly TypeRefParser _typeRefParser = new(program);
-
-    public ResolvedMethodCall? Resolve(
-        MemberExpressionNode member,
-        IReadOnlyList<string> typeArguments,
-        int argumentCount,
-        IReadOnlyDictionary<string, string> variables) =>
-        Resolve(
-            member,
-            typeArguments,
-            argumentCount,
-            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
-
     public ResolvedMethodCall? Resolve(
         MemberExpressionNode member,
         IReadOnlyList<string> typeArguments,

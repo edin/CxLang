@@ -14,14 +14,12 @@ internal sealed class ExpressionSemanticAnalyzer(
     IReadOnlyList<string> currentTypeParameters,
     IReadOnlyList<GenericConstraintNode> currentGenericConstraints,
     Func<TypeNode?, string> typeText,
-    Func<string, bool> isKnownTypeName,
-    Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, TypeEnvironment?, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)
+    Func<string, bool> isKnownTypeName)
 {
     public void Analyze(
         ExpressionNode? expression,
         Location location,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment,
+        TypeEnvironment typeEnvironment,
         IReadOnlyDictionary<string, LocalMutability>? mutability)
     {
         if (expression is null)
@@ -32,16 +30,16 @@ internal sealed class ExpressionSemanticAnalyzer(
         switch (expression)
         {
             case NameExpressionNode name:
-                AnalyzeNameExpression(name, location, variables, typeEnvironment);
+                AnalyzeNameExpression(name, location, typeEnvironment);
                 break;
             case ParenthesizedExpressionNode parenthesized:
-                Analyze(parenthesized.Expression, location, variables, typeEnvironment, mutability);
+                Analyze(parenthesized.Expression, location, typeEnvironment, mutability);
                 break;
             case CastExpressionNode cast:
-                Analyze(cast.Expression, location, variables, typeEnvironment, mutability);
+                Analyze(cast.Expression, location, typeEnvironment, mutability);
                 break;
             case UnaryExpressionNode unary:
-                Analyze(unary.Operand, location, variables, typeEnvironment, mutability);
+                Analyze(unary.Operand, location, typeEnvironment, mutability);
                 break;
             case PostfixExpressionNode postfix:
                 if (postfix.Operator is "++" or "--")
@@ -49,77 +47,68 @@ internal sealed class ExpressionSemanticAnalyzer(
                     assignmentAnalyzer?.AnalyzeMutationTarget(postfix.Operand, postfix.Location, mutability);
                 }
 
-                Analyze(postfix.Operand, location, variables, typeEnvironment, mutability);
+                Analyze(postfix.Operand, location, typeEnvironment, mutability);
                 break;
             case SizeOfExpressionNode sizeOf:
-                Analyze(sizeOf.ExpressionOperand, location, variables, typeEnvironment, mutability);
+                Analyze(sizeOf.ExpressionOperand, location, typeEnvironment, mutability);
                 break;
             case BinaryExpressionNode binary:
-                Analyze(binary.Left, location, variables, typeEnvironment, mutability);
-                Analyze(binary.Right, location, variables, typeEnvironment, mutability);
+                Analyze(binary.Left, location, typeEnvironment, mutability);
+                Analyze(binary.Right, location, typeEnvironment, mutability);
                 break;
             case ScalarRangeExpressionNode range:
-                Analyze(range.Start, location, variables, typeEnvironment, mutability);
-                Analyze(range.End, location, variables, typeEnvironment, mutability);
+                Analyze(range.Start, location, typeEnvironment, mutability);
+                Analyze(range.End, location, typeEnvironment, mutability);
                 break;
             case ConditionalExpressionNode conditional:
-                Analyze(conditional.Condition, location, variables, typeEnvironment, mutability);
-                Analyze(conditional.WhenTrue, location, variables, typeEnvironment, mutability);
-                Analyze(conditional.WhenFalse, location, variables, typeEnvironment, mutability);
+                Analyze(conditional.Condition, location, typeEnvironment, mutability);
+                Analyze(conditional.WhenTrue, location, typeEnvironment, mutability);
+                Analyze(conditional.WhenFalse, location, typeEnvironment, mutability);
                 break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)
                 {
-                    Analyze(field.Value, location, variables, typeEnvironment, mutability);
+                    Analyze(field.Value, location, typeEnvironment, mutability);
                 }
 
                 foreach (var value in initializer.Values)
                 {
-                    Analyze(value, location, variables, typeEnvironment, mutability);
+                    Analyze(value, location, typeEnvironment, mutability);
                 }
 
                 break;
             case FunctionExpressionNode functionExpression:
-                Analyze(functionExpression.ExpressionBody, location, variables, typeEnvironment, mutability);
+                Analyze(functionExpression.ExpressionBody, location, typeEnvironment, mutability);
                 break;
             case AssignmentExpressionNode assignment:
-                Analyze(assignment.Target, location, variables, typeEnvironment, mutability);
-                Analyze(assignment.Value, location, variables, typeEnvironment, mutability);
-                if (variables is not null && typeEnvironment is not null)
-                {
-                    assignmentAnalyzer?.AnalyzeAssignmentExpression(
-                        assignment,
-                        variables,
-                        typeEnvironment,
-                        mutability,
-                        analyzeExpression);
-                }
-
+                Analyze(assignment.Target, location, typeEnvironment, mutability);
+                Analyze(assignment.Value, location, typeEnvironment, mutability);
+                assignmentAnalyzer?.AnalyzeAssignmentExpression(assignment, typeEnvironment, mutability);
                 break;
             case CallExpressionNode call:
-                AnalyzeCallExpression(call, location, variables, typeEnvironment);
-                Analyze(call.Callee, location, variables, typeEnvironment, mutability);
+                AnalyzeCallExpression(call, location, typeEnvironment);
+                Analyze(call.Callee, location, typeEnvironment, mutability);
                 foreach (var argument in call.Arguments)
                 {
-                    Analyze(argument, location, variables, typeEnvironment, mutability);
+                    Analyze(argument, location, typeEnvironment, mutability);
                 }
 
                 break;
             case GenericCallExpressionNode call:
-                AnalyzeGenericCallExpression(call, location, variables, typeEnvironment);
-                Analyze(call.Callee, location, variables, typeEnvironment, mutability);
+                AnalyzeGenericCallExpression(call, location, typeEnvironment);
+                Analyze(call.Callee, location, typeEnvironment, mutability);
                 foreach (var argument in call.Arguments)
                 {
-                    Analyze(argument, location, variables, typeEnvironment, mutability);
+                    Analyze(argument, location, typeEnvironment, mutability);
                 }
 
                 break;
             case MemberExpressionNode member:
-                Analyze(member.Target, location, variables, typeEnvironment, mutability);
+                Analyze(member.Target, location, typeEnvironment, mutability);
                 break;
             case IndexExpressionNode index:
-                Analyze(index.Target, location, variables, typeEnvironment, mutability);
-                Analyze(index.Index, location, variables, typeEnvironment, mutability);
+                Analyze(index.Target, location, typeEnvironment, mutability);
+                Analyze(index.Index, location, typeEnvironment, mutability);
                 break;
         }
     }
@@ -127,15 +116,9 @@ internal sealed class ExpressionSemanticAnalyzer(
     private void AnalyzeNameExpression(
         NameExpressionNode name,
         Location location,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment)
+        TypeEnvironment typeEnvironment)
     {
-        if (variables is null && typeEnvironment is null)
-        {
-            return;
-        }
-
-        if (ResolveExpression(name, variables, typeEnvironment) is not null
+        if (ResolveExpression(name, typeEnvironment) is not null
             || isKnownTypeName(name.Name)
             || currentTypeParameters.Contains(name.Name, StringComparer.Ordinal)
             || IsKnownConstructorOrVariantCall(name.Name))
@@ -160,49 +143,36 @@ internal sealed class ExpressionSemanticAnalyzer(
     private void AnalyzeCallExpression(
         CallExpressionNode call,
         Location location,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment)
+        TypeEnvironment typeEnvironment)
     {
-        if (variables is null && typeEnvironment is null)
+        if (ResolveCallSignature(call.Callee, [], call.Arguments, typeEnvironment) is { } signature)
         {
+            CheckCallArguments(location, signature, call.Arguments, typeEnvironment);
             return;
         }
 
-        if (ResolveCallSignature(call.Callee, [], call.Arguments, variables, typeEnvironment) is { } signature)
-        {
-            CheckCallArguments(location, signature, call.Arguments, variables, typeEnvironment);
-            return;
-        }
-
-        ReportUnknownCall(call.Callee, location, variables, typeEnvironment);
+        ReportUnknownCall(call.Callee, location, typeEnvironment);
     }
 
     private void AnalyzeGenericCallExpression(
         GenericCallExpressionNode call,
         Location location,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment)
+        TypeEnvironment typeEnvironment)
     {
-        if (variables is null && typeEnvironment is null)
+        if (ResolveCallSignature(call.Callee, TypeArguments(call.TypeArgumentNodes), call.Arguments, typeEnvironment) is { } signature)
         {
+            CheckCallArguments(location, signature, call.Arguments, typeEnvironment);
             return;
         }
 
-        if (ResolveCallSignature(call.Callee, TypeArguments(call.TypeArgumentNodes), call.Arguments, variables, typeEnvironment) is { } signature)
-        {
-            CheckCallArguments(location, signature, call.Arguments, variables, typeEnvironment);
-            return;
-        }
-
-        ReportUnknownCall(call.Callee, location, variables, typeEnvironment);
+        ReportUnknownCall(call.Callee, location, typeEnvironment);
     }
 
     private CallSignature? ResolveCallSignature(
         ExpressionNode callee,
         IReadOnlyList<string> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment)
+        TypeEnvironment typeEnvironment)
     {
         var resolvedCall = new CallResolver(
             program,
@@ -210,9 +180,7 @@ internal sealed class ExpressionSemanticAnalyzer(
             currentTypeParameters,
             currentGenericConstraints);
 
-        var resolution = typeEnvironment is null
-            ? resolvedCall.Resolve(callee, typeArguments, arguments, variables!)
-            : resolvedCall.Resolve(callee, typeArguments, arguments, typeEnvironment);
+        var resolution = resolvedCall.Resolve(callee, typeArguments, arguments, typeEnvironment);
         return resolution is null
             ? null
             : new CallSignature(resolution.Name, resolution.ParameterTypes, resolution.IsVariadic);
@@ -222,8 +190,7 @@ internal sealed class ExpressionSemanticAnalyzer(
         Location location,
         CallSignature signature,
         IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment)
+        TypeEnvironment typeEnvironment)
     {
         if (arguments.Count < signature.ParameterTypes.Count)
         {
@@ -249,7 +216,7 @@ internal sealed class ExpressionSemanticAnalyzer(
                 continue;
             }
 
-            var argumentType = ResolveExpressionTypeRef(arguments[i], variables, typeEnvironment);
+            var argumentType = ResolveExpressionTypeRef(arguments[i], typeEnvironment);
             if (!typeCompatibility.CanAssign(parameterType, argumentType, out var reason))
             {
                 diagnostics.Report(
@@ -262,10 +229,9 @@ internal sealed class ExpressionSemanticAnalyzer(
     private void ReportUnknownCall(
         ExpressionNode callee,
         Location location,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment)
+        TypeEnvironment typeEnvironment)
     {
-        if (ResolveExpression(callee, variables, typeEnvironment) is not null)
+        if (ResolveExpression(callee, typeEnvironment) is not null)
         {
             return;
         }
@@ -304,19 +270,13 @@ internal sealed class ExpressionSemanticAnalyzer(
 
     private string? ResolveExpression(
         ExpressionNode expression,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment) =>
-        typeEnvironment is null
-            ? expressionTypeResolver.Resolve(expression, variables!)
-            : expressionTypeResolver.Resolve(expression, typeEnvironment);
+        TypeEnvironment typeEnvironment) =>
+        expressionTypeResolver.Resolve(expression, typeEnvironment);
 
     private TypeRef? ResolveExpressionTypeRef(
         ExpressionNode expression,
-        IReadOnlyDictionary<string, string>? variables,
-        TypeEnvironment? typeEnvironment) =>
-        typeEnvironment is null
-            ? expressionTypeResolver.ResolveTypeRef(expression, variables!)
-            : expressionTypeResolver.ResolveTypeRef(expression, typeEnvironment);
+        TypeEnvironment typeEnvironment) =>
+        expressionTypeResolver.ResolveTypeRef(expression, typeEnvironment);
 
     private bool IsKnownConstructorOrVariantCall(string name)
     {

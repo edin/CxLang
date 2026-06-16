@@ -27,17 +27,6 @@ internal sealed class CallResolver(
         ExpressionNode callee,
         IReadOnlyList<string> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables) =>
-        Resolve(
-            callee,
-            typeArguments,
-            arguments,
-            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
-
-    public CallResolution? Resolve(
-        ExpressionNode callee,
-        IReadOnlyList<string> typeArguments,
-        IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables)
     {
         if (callee is MemberExpressionNode member)
@@ -465,21 +454,6 @@ internal sealed class CallResolver(
             ? $"{targetName}<{string.Join(",", typeArguments)}>"
             : targetName;
     }
-
-    public IReadOnlyList<string>? InferFunctionTypeArguments(
-        IReadOnlyList<string> typeParameters,
-        IReadOnlyList<ParameterNode> parameters,
-        IReadOnlyList<ExpressionNode> arguments,
-        IReadOnlyDictionary<string, string> variables,
-        bool skipSelf,
-        IReadOnlyList<string>? seedArguments = null) =>
-        InferFunctionTypeArguments(
-            typeParameters,
-            parameters,
-            arguments,
-            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables),
-            skipSelf,
-            seedArguments);
 
     public IReadOnlyList<string>? InferFunctionTypeArguments(
         IReadOnlyList<string> typeParameters,

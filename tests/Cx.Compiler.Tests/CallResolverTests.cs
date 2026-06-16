@@ -23,7 +23,7 @@ public sealed class CallResolverTests
         var call = GetReturnCall(program);
         var resolver = CreateResolver(program);
 
-        var resolved = resolver.Resolve(call.Callee, [], call.Arguments, new Dictionary<string, string>(StringComparer.Ordinal));
+        var resolved = resolver.Resolve(call.Callee, [], call.Arguments, new TypeEnvironment());
 
         Assert.NotNull(resolved);
         Assert.Equal("add", resolved.Name);
@@ -64,10 +64,7 @@ public sealed class CallResolverTests
             call.Callee,
             [],
             call.Arguments,
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["stack"] = "Stack<int>",
-            });
+            TypeEnvironment(("stack", "Stack<int>"), program));
 
         Assert.NotNull(resolved);
         Assert.Equal("Stack<int>.push", resolved.Name);
@@ -143,7 +140,7 @@ public sealed class CallResolverTests
             call.Callee,
             [],
             call.Arguments,
-            new Dictionary<string, string>(StringComparer.Ordinal));
+            new TypeEnvironment());
 
         Assert.NotNull(resolved);
         Assert.NotNull(resolved.Function);
@@ -192,7 +189,7 @@ public sealed class CallResolverTests
         var call = GetReturnCall(rewrittenProgram);
         var resolver = CreateResolver(rewrittenProgram);
 
-        var resolved = resolver.Resolve(call.Callee, [], call.Arguments, new Dictionary<string, string>(StringComparer.Ordinal));
+        var resolved = resolver.Resolve(call.Callee, [], call.Arguments, new TypeEnvironment());
 
         Assert.NotNull(resolved);
         Assert.Equal("int", TypeRefFormatter.ToCxString(resolved.ReturnType));
@@ -217,4 +214,12 @@ public sealed class CallResolverTests
 
     private static CallResolver CreateResolver(ProgramNode program) =>
         new(program, new ExpressionTypeResolver(program).ResolveTypeRef);
+
+    private static TypeEnvironment TypeEnvironment((string Name, string Type) variable, ProgramNode program)
+    {
+        var parser = new TypeRefParser(program);
+        var environment = new TypeEnvironment();
+        environment.Set(variable.Name, parser.Parse(variable.Type));
+        return environment;
+    }
 }

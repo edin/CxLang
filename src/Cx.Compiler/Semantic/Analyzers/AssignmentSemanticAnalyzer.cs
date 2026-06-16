@@ -14,12 +14,9 @@ internal sealed class AssignmentSemanticAnalyzer(
 {
     public void AnalyzeAssignmentExpression(
         AssignmentExpressionNode assignment,
-        IReadOnlyDictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
-        IReadOnlyDictionary<string, LocalMutability>? mutability,
-        Action<ExpressionNode, Location, IReadOnlyDictionary<string, string>, TypeEnvironment?, IReadOnlyDictionary<string, LocalMutability>?> analyzeExpression)
+        IReadOnlyDictionary<string, LocalMutability>? mutability)
     {
-        analyzeExpression(assignment.Value, assignment.Location, variables, typeEnvironment, mutability);
         AnalyzeAssignmentMutability(assignment, mutability);
 
         var targetTypeRef = expressionTypeResolver.ResolveTypeRef(assignment.Target, typeEnvironment);

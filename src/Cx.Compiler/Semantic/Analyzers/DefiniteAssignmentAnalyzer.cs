@@ -15,31 +15,28 @@ internal sealed class DefiniteAssignmentAnalyzer(
         FunctionNode function,
         TypeEnvironment globalTypeEnvironment)
     {
-        var globalVariables = globalTypeEnvironment.ToLegacyStrings();
-        var variables = new Dictionary<string, string>(globalVariables, StringComparer.Ordinal);
         var typeEnvironment = globalTypeEnvironment.Clone();
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
-            SetVariableType(variables, typeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
+            SetVariableType(typeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
         }
 
         foreach (var local in CollectLocalVariables(function.Body))
         {
-            SetVariableType(variables, typeEnvironment, local.Name, local.Type);
+            SetVariableType(typeEnvironment, local.Name, local.Type);
         }
 
-        var assigned = new HashSet<string>(globalVariables.Keys, StringComparer.Ordinal);
+        var assigned = new HashSet<string>(globalTypeEnvironment.Types.Keys, StringComparer.Ordinal);
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
             assigned.Add(parameter.Name);
         }
 
-        AnalyzeStatements(function.Body, variables, typeEnvironment, assigned);
+        AnalyzeStatements(function.Body, typeEnvironment, assigned);
     }
 
     private void AnalyzeStatements(
         IReadOnlyList<StatementNode> statements,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         HashSet<string> assigned)
     {
@@ -51,7 +48,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 diagnostics.Warn(statement.Location, "Unreachable code.");
             }
 
-            AnalyzeStatement(statement, variables, typeEnvironment, assigned);
+            AnalyzeStatement(statement, typeEnvironment, assigned);
             if (returnFlow.StatementAlwaysTransfersControl(statement, typeEnvironment))
             {
                 unreachable = true;
@@ -61,7 +58,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
 
     private void AnalyzeStatement(
         StatementNode statement,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         HashSet<string> assigned)
     {
@@ -69,7 +65,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         {
             case LetStatement let:
                 AnalyzeExpression(let.Initializer, typeEnvironment, assigned);
-                SetVariableType(variables, typeEnvironment, let.Name, TypeRefOrUnknown(let.TypeNode));
+                SetVariableType(typeEnvironment, let.Name, TypeRefOrUnknown(let.TypeNode));
                 if (let.Initializer is null)
                 {
                     assigned.Remove(let.Name);
@@ -95,7 +91,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 var thenAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
                 AnalyzeStatements(
                     ifStatement.ThenBody,
-                    new Dictionary<string, string>(variables, StringComparer.Ordinal),
                     typeEnvironment.Clone(),
                     thenAssigned);
                 if (ifStatement.ElseBranch is not null)
@@ -103,7 +98,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
                     var elseAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
                     AnalyzeStatement(
                         ifStatement.ElseBranch,
-                        new Dictionary<string, string>(variables, StringComparer.Ordinal),
                         typeEnvironment.Clone(),
                         elseAssigned);
                     ReplaceWithIntersection(assigned, thenAssigned, elseAssigned);
@@ -118,7 +112,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
             case ElseBlockStatement elseBlock:
                 AnalyzeStatements(
                     elseBlock.Body,
-                    new Dictionary<string, string>(variables, StringComparer.Ordinal),
                     typeEnvironment.Clone(),
                     assigned);
                 break;
@@ -127,19 +120,17 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 AnalyzeExpression(whileStatement.Condition, typeEnvironment, assigned);
                 AnalyzeStatements(
                     whileStatement.Body,
-                    new Dictionary<string, string>(variables, StringComparer.Ordinal),
                     typeEnvironment.Clone(),
                     new HashSet<string>(assigned, StringComparer.Ordinal));
                 break;
 
             case ForStatement forStatement:
-                var forVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
                 var forTypeEnvironment = typeEnvironment.Clone();
                 var forAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
-                AnalyzeOptionalForInitializer(forStatement.CachedRangeEndInitializer, forVariables, forTypeEnvironment, forAssigned);
-                AnalyzeOptionalForInitializer(forStatement.CounterInitializer, forVariables, forTypeEnvironment, forAssigned);
-                AnalyzeForInitializer(forStatement.Initializer, forVariables, forTypeEnvironment, forAssigned);
-                foreach (var name in variables.Keys.Where(forAssigned.Contains))
+                AnalyzeOptionalForInitializer(forStatement.CachedRangeEndInitializer, forTypeEnvironment, forAssigned);
+                AnalyzeOptionalForInitializer(forStatement.CounterInitializer, forTypeEnvironment, forAssigned);
+                AnalyzeForInitializer(forStatement.Initializer, forTypeEnvironment, forAssigned);
+                foreach (var name in typeEnvironment.Types.Keys.Where(forAssigned.Contains))
                 {
                     assigned.Add(name);
                 }
@@ -153,23 +144,21 @@ internal sealed class DefiniteAssignmentAnalyzer(
 
                 AnalyzeStatements(
                     forStatement.Body,
-                    forVariables,
                     forTypeEnvironment,
                     new HashSet<string>(forAssigned, StringComparer.Ordinal));
                 break;
 
             case ForeachStatement foreachStatement:
                 AnalyzeExpression(foreachStatement.IterableExpression, typeEnvironment, assigned);
-                var foreachVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
                 var foreachTypeEnvironment = typeEnvironment.Clone();
                 var foreachAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
                 foreach (var binding in GetForeachBindings(foreachStatement))
                 {
-                    SetVariableType(foreachVariables, foreachTypeEnvironment, binding.Name, TypeRefOrAny(binding.TypeNode));
+                    SetVariableType(foreachTypeEnvironment, binding.Name, TypeRefOrAny(binding.TypeNode));
                     foreachAssigned.Add(binding.Name);
                 }
 
-                AnalyzeStatements(foreachStatement.Body, foreachVariables, foreachTypeEnvironment, foreachAssigned);
+                AnalyzeStatements(foreachStatement.Body, foreachTypeEnvironment, foreachAssigned);
                 break;
 
             case SwitchStatement switchStatement:
@@ -181,7 +170,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
                     var caseAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
                     AnalyzeStatements(
                         switchCase.Body,
-                        new Dictionary<string, string>(variables, StringComparer.Ordinal),
                         typeEnvironment.Clone(),
                         caseAssigned);
                     switchAssignments.Add(caseAssigned);
@@ -192,7 +180,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
                     var defaultAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
                     AnalyzeStatements(
                         switchStatement.DefaultBody,
-                        new Dictionary<string, string>(variables, StringComparer.Ordinal),
                         typeEnvironment.Clone(),
                         defaultAssigned);
                     switchAssignments.Add(defaultAssigned);
@@ -211,7 +198,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 var armAssignments = new List<HashSet<string>>();
                 foreach (var arm in matchStatement.Arms)
                 {
-                    var armVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
                     var armTypeEnvironment = typeEnvironment.Clone();
                     var armAssigned = new HashSet<string>(assigned, StringComparer.Ordinal);
                     if (matchedTaggedUnion is not null
@@ -219,11 +205,11 @@ internal sealed class DefiniteAssignmentAnalyzer(
                         && arm.Pattern != "_"
                     && matchedTaggedUnion.Variants.FirstOrDefault(variant => variant.Name == arm.Pattern) is { } variant)
                 {
-                    SetVariableType(armVariables, armTypeEnvironment, arm.BindingName, TypeRefOrUnknown(variant.TypeNode));
+                    SetVariableType(armTypeEnvironment, arm.BindingName, TypeRefOrUnknown(variant.TypeNode));
                     armAssigned.Add(arm.BindingName);
                 }
 
-                    AnalyzeStatements(arm.Body, armVariables, armTypeEnvironment, armAssigned);
+                    AnalyzeStatements(arm.Body, armTypeEnvironment, armAssigned);
                     armAssignments.Add(armAssigned);
                 }
 
@@ -238,7 +224,6 @@ internal sealed class DefiniteAssignmentAnalyzer(
 
     private void AnalyzeForInitializer(
         ForInitializerNode initializer,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         HashSet<string> assigned)
     {
@@ -246,7 +231,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         {
             case ForDeclarationInitializerNode declaration:
                 AnalyzeExpression(declaration.Initializer, typeEnvironment, assigned);
-                SetVariableType(variables, typeEnvironment, declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
+                SetVariableType(typeEnvironment, declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
                 if (declaration.Initializer is null)
                 {
                     assigned.Remove(declaration.Name);
@@ -266,13 +251,12 @@ internal sealed class DefiniteAssignmentAnalyzer(
 
     private void AnalyzeOptionalForInitializer(
         ForInitializerNode? initializer,
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         HashSet<string> assigned)
     {
         if (initializer is not null)
         {
-            AnalyzeForInitializer(initializer, variables, typeEnvironment, assigned);
+            AnalyzeForInitializer(initializer, typeEnvironment, assigned);
         }
     }
 
@@ -651,12 +635,8 @@ internal sealed class DefiniteAssignmentAnalyzer(
     }
 
     private static void SetVariableType(
-        Dictionary<string, string> variables,
         TypeEnvironment typeEnvironment,
         string name,
-        TypeRef type)
-    {
-        variables[name] = TypeRefFormatter.ToCxString(type);
+        TypeRef type) =>
         typeEnvironment.Set(name, type);
-    }
 }

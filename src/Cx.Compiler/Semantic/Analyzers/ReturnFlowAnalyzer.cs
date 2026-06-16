@@ -6,26 +6,8 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
 {
     public bool StatementsAlwaysReturn(
         IReadOnlyList<StatementNode> statements,
-        IReadOnlyDictionary<string, string> variables) =>
-        statements.Any(statement => StatementAlwaysReturns(statement, variables));
-
-    public bool StatementsAlwaysReturn(
-        IReadOnlyList<StatementNode> statements,
         TypeEnvironment variables) =>
         statements.Any(statement => StatementAlwaysReturns(statement, variables));
-
-    public bool StatementAlwaysReturns(
-        StatementNode statement,
-        IReadOnlyDictionary<string, string> variables) =>
-        statement switch
-        {
-            ReturnStatement => true,
-            IfStatement ifStatement => IfStatementAlwaysReturns(ifStatement, variables),
-            ElseBlockStatement elseBlock => StatementsAlwaysReturn(elseBlock.Body, variables),
-            SwitchStatement switchStatement => SwitchStatementAlwaysReturns(switchStatement, variables),
-            MatchStatement matchStatement => MatchStatementAlwaysReturns(matchStatement, variables),
-            _ => false,
-        };
 
     public bool StatementAlwaysReturns(
         StatementNode statement,
@@ -35,19 +17,6 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
             ReturnStatement => true,
             IfStatement ifStatement => IfStatementAlwaysReturns(ifStatement, variables),
             ElseBlockStatement elseBlock => StatementsAlwaysReturn(elseBlock.Body, variables),
-            SwitchStatement switchStatement => SwitchStatementAlwaysReturns(switchStatement, variables),
-            MatchStatement matchStatement => MatchStatementAlwaysReturns(matchStatement, variables),
-            _ => false,
-        };
-
-    public bool StatementAlwaysTransfersControl(
-        StatementNode statement,
-        IReadOnlyDictionary<string, string> variables) =>
-        statement switch
-        {
-            ReturnStatement or BreakStatement or ContinueStatement => true,
-            IfStatement ifStatement => IfStatementAlwaysTransfersControl(ifStatement, variables),
-            ElseBlockStatement elseBlock => StatementsAlwaysTransferControl(elseBlock.Body, variables),
             SwitchStatement switchStatement => SwitchStatementAlwaysReturns(switchStatement, variables),
             MatchStatement matchStatement => MatchStatementAlwaysReturns(matchStatement, variables),
             _ => false,
@@ -68,21 +37,8 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
 
     public bool IsMatchExhaustive(
         MatchStatement matchStatement,
-        IReadOnlyDictionary<string, string> variables) =>
-        IsMatchExhaustive(matchStatement, ResolveMatchedTaggedUnion(matchStatement, variables));
-
-    public bool IsMatchExhaustive(
-        MatchStatement matchStatement,
         TypeEnvironment variables) =>
         IsMatchExhaustive(matchStatement, ResolveMatchedTaggedUnion(matchStatement, variables));
-
-    public TaggedUnionNode? ResolveMatchedTaggedUnion(
-        MatchStatement matchStatement,
-        IReadOnlyDictionary<string, string> variables)
-    {
-        var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, variables);
-        return ResolveTaggedUnion(matchExpressionType);
-    }
 
     public TaggedUnionNode? ResolveMatchedTaggedUnion(
         MatchStatement matchStatement,
@@ -94,20 +50,8 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
 
     private bool StatementsAlwaysTransferControl(
         IReadOnlyList<StatementNode> statements,
-        IReadOnlyDictionary<string, string> variables) =>
-        statements.Any(statement => StatementAlwaysTransfersControl(statement, variables));
-
-    private bool StatementsAlwaysTransferControl(
-        IReadOnlyList<StatementNode> statements,
         TypeEnvironment variables) =>
         statements.Any(statement => StatementAlwaysTransfersControl(statement, variables));
-
-    private bool IfStatementAlwaysTransfersControl(
-        IfStatement ifStatement,
-        IReadOnlyDictionary<string, string> variables) =>
-        StatementsAlwaysTransferControl(ifStatement.ThenBody, variables)
-        && ifStatement.ElseBranch is not null
-        && StatementAlwaysTransfersControl(ifStatement.ElseBranch, variables);
 
     private bool IfStatementAlwaysTransfersControl(
         IfStatement ifStatement,
@@ -118,13 +62,6 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
 
     private bool IfStatementAlwaysReturns(
         IfStatement ifStatement,
-        IReadOnlyDictionary<string, string> variables) =>
-        StatementsAlwaysReturn(ifStatement.ThenBody, variables)
-        && ifStatement.ElseBranch is not null
-        && StatementAlwaysReturns(ifStatement.ElseBranch, variables);
-
-    private bool IfStatementAlwaysReturns(
-        IfStatement ifStatement,
         TypeEnvironment variables) =>
         StatementsAlwaysReturn(ifStatement.ThenBody, variables)
         && ifStatement.ElseBranch is not null
@@ -132,25 +69,10 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
 
     private bool SwitchStatementAlwaysReturns(
         SwitchStatement switchStatement,
-        IReadOnlyDictionary<string, string> variables) =>
-        (switchStatement.DefaultBody.Count > 0 || IsSwitchExhaustive(switchStatement, variables))
-        && (switchStatement.DefaultBody.Count == 0 || StatementsAlwaysReturn(switchStatement.DefaultBody, variables))
-        && switchStatement.Cases.All(switchCase => StatementsAlwaysReturn(switchCase.Body, variables));
-
-    private bool SwitchStatementAlwaysReturns(
-        SwitchStatement switchStatement,
         TypeEnvironment variables) =>
         (switchStatement.DefaultBody.Count > 0 || IsSwitchExhaustive(switchStatement, variables))
         && (switchStatement.DefaultBody.Count == 0 || StatementsAlwaysReturn(switchStatement.DefaultBody, variables))
         && switchStatement.Cases.All(switchCase => StatementsAlwaysReturn(switchCase.Body, variables));
-
-    private bool IsSwitchExhaustive(
-        SwitchStatement switchStatement,
-        IReadOnlyDictionary<string, string> variables)
-    {
-        var expressionType = expressionTypeResolver.ResolveTypeRef(switchStatement.Expression, variables);
-        return IsSwitchExhaustive(switchStatement, expressionType);
-    }
 
     private bool IsSwitchExhaustive(
         SwitchStatement switchStatement,
@@ -180,12 +102,6 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
             .ToHashSet(StringComparer.Ordinal);
         return enumNode.Members.All(member => covered.Contains(member.Name));
     }
-
-    private bool MatchStatementAlwaysReturns(
-        MatchStatement matchStatement,
-        IReadOnlyDictionary<string, string> variables) =>
-        IsMatchExhaustive(matchStatement, variables)
-        && matchStatement.Arms.All(arm => StatementsAlwaysReturn(arm.Body, variables));
 
     private bool MatchStatementAlwaysReturns(
         MatchStatement matchStatement,
