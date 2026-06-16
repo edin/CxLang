@@ -77,27 +77,19 @@ public sealed partial class Parser
 
     private StatementNode ParseVariableStatement(Token keywordToken, bool isConst)
     {
-        var nameToken = Expect(TokenType.Identifier, "Expected variable name.");
-        var typeNode = ParseOptionalVariableTypeNode("variable", keywordToken.Location);
-        ExpressionNode? initializer = null;
+        var declaration = ParseVariableDeclarationParts(
+            keywordToken.Location,
+            nameMessage: "Expected variable name.",
+            typeSubject: "variable",
+            missingTypeOrInitializerMessage: "Expected ':' or '=' after variable name.");
 
-        if (ConsumeOptional(TokenType.Equals))
-        {
-            initializer = ReadExpressionUntil(keywordToken.Location, TokenType.Semicolon);
-        }
-
-        if (typeNode is null && initializer is null)
-        {
-            _diagnostics.Report(keywordToken.Location, "Expected ':' or '=' after variable name.");
-        }
-
-        if (isConst && initializer is null)
+        if (isConst && declaration.Initializer is null)
         {
             _diagnostics.Report(keywordToken.Location, "Const variables require an initializer.");
         }
 
         Expect(TokenType.Semicolon, "Expected ';' after variable declaration.");
-        return new LetStatement(keywordToken.Location, isConst, nameToken?.Value ?? string.Empty, initializer, typeNode);
+        return new LetStatement(keywordToken.Location, isConst, declaration.Name, declaration.Initializer, declaration.TypeNode);
     }
 
     private IfStatement? ParseIfStatement()
@@ -166,8 +158,28 @@ public sealed partial class Parser
 
     private ForDeclarationInitializerNode ParseForDeclarationInitializer(Location location, bool isConst)
     {
-        var nameToken = Expect(TokenType.Identifier, "Expected for initializer variable name.");
-        var typeNode = ParseOptionalVariableTypeNode("for initializer variable", location);
+        var declaration = ParseVariableDeclarationParts(
+            location,
+            nameMessage: "Expected for initializer variable name.",
+            typeSubject: "for initializer variable",
+            missingTypeOrInitializerMessage: "Expected ':' or '=' after for initializer variable name.");
+
+        return new ForDeclarationInitializerNode(
+            location,
+            isConst,
+            declaration.Name,
+            declaration.Initializer,
+            declaration.TypeNode);
+    }
+
+    private ParsedVariableDeclaration ParseVariableDeclarationParts(
+        Location location,
+        string nameMessage,
+        string typeSubject,
+        string missingTypeOrInitializerMessage)
+    {
+        var nameToken = Expect(TokenType.Identifier, nameMessage);
+        var typeNode = ParseOptionalVariableTypeNode(typeSubject, location);
         ExpressionNode? initializer = null;
 
         if (ConsumeOptional(TokenType.Equals))
@@ -177,16 +189,16 @@ public sealed partial class Parser
 
         if (typeNode is null && initializer is null)
         {
-            _diagnostics.Report(location, "Expected ':' or '=' after for initializer variable name.");
+            _diagnostics.Report(location, missingTypeOrInitializerMessage);
         }
 
-        return new ForDeclarationInitializerNode(
-            location,
-            isConst,
-            nameToken?.Value ?? string.Empty,
-            initializer,
-            typeNode);
+        return new ParsedVariableDeclaration(nameToken?.Value ?? string.Empty, initializer, typeNode);
     }
+
+    private sealed record ParsedVariableDeclaration(
+        string Name,
+        ExpressionNode? Initializer,
+        TypeNode? TypeNode);
 
     private TypeNode? ParseOptionalVariableTypeNode(string subject, Location location)
     {

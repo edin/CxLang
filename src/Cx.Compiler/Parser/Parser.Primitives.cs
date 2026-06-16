@@ -29,13 +29,9 @@ public sealed partial class Parser
 
     private Token? Match(TokenType type) => Tokens.Match(type);
 
-    private Token? MatchAny(params TokenType[] types) => Tokens.MatchAny(types);
-
     private bool ConsumeOptional(TokenType type) => Match(type) is not null;
 
     private bool Check(TokenType type) => Tokens.Check(type);
-
-    private bool CheckAny(params TokenType[] types) => Tokens.CheckAny(types);
 
     private bool IsContextualKeyword(string value) =>
         Current.Type == TokenType.Identifier
@@ -48,10 +44,6 @@ public sealed partial class Parser
     private Token Current => Tokens.Current;
 
     private TokenType PeekType(int offset = 1) => Tokens.PeekType(offset);
-
-    private int SavePosition() => Tokens.Save();
-
-    private void RestorePosition(int position) => Tokens.Restore(position);
 
     private TokenStream Tokens => _tokens ?? throw new InvalidOperationException("Parser has not been initialized.");
 }

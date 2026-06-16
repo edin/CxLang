@@ -18,14 +18,8 @@ public sealed partial class Parser
     private ExpressionNode ReadExpressionUntil(Location location, TokenType type) =>
         ParseExpression(ReadTokenSliceUntil(location, type));
 
-    private ExpressionNode ReadExpressionUntilAny(Location location, params TokenType[] types) =>
-        ParseExpression(ReadTokenSliceUntilAny(location, types));
-
     private TokenSlice ReadTokenSliceUntil(Location location, TokenType type) =>
         new(location, Tokens.ReadBalancedUntil(type));
-
-    private TokenSlice ReadTokenSliceUntilAny(Location location, params TokenType[] types) =>
-        new(location, Tokens.ReadBalancedUntilAny(types));
 
     private ExpressionNode ParseExpression(TokenSlice tokens)
     {

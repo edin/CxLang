@@ -1,6 +1,7 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lexer;
 using Cx.Compiler.Source;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Parser;
@@ -26,23 +27,6 @@ public sealed partial class Parser
             .ToList());
         _pendingTypeCloseAngles = 0;
 
-        ModuleDeclarationNode? module = null;
-        var imports = new List<ImportNode>();
-        var symbolImports = new List<SymbolImportNode>();
-        var includes = new List<IncludeNode>();
-        var cDeclarations = new List<CDeclareNode>();
-        var externFunctions = new List<ExternFunctionNode>();
-        var attributeDeclarations = new List<AttributeDeclarationNode>();
-        var typeAliases = new List<TypeAliasNode>();
-        var requirements = new List<RequirementNode>();
-        var enums = new List<EnumNode>();
-        var interfaces = new List<InterfaceNode>();
-        var structs = new List<StructNode>();
-        var typeAdapters = new List<TypeAdapterNode>();
-        var extensions = new List<ExtensionNode>();
-        var taggedUnions = new List<TaggedUnionNode>();
-        var globalVariables = new List<GlobalVariableNode>();
-        var functions = new List<FunctionNode>();
         var declarations = new List<TopLevelNode>();
         var location = new Location(sourceFile, 0, 1, 1);
 
@@ -53,8 +37,7 @@ public sealed partial class Parser
             if (Check(TokenType.Module))
             {
                 ReportUnexpectedAttributes(attributes, "module declarations");
-                module = ParseModuleDeclaration();
-                if (module is not null)
+                if (ParseModuleDeclaration() is { } module)
                 {
                     declarations.Add(module);
                 }
@@ -67,7 +50,6 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "imports");
                 if (ParseImport() is { } import)
                 {
-                    imports.Add(import);
                     declarations.Add(import);
                 }
 
@@ -79,7 +61,6 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "imports");
                 if (ParseSymbolImport() is { } symbolImport)
                 {
-                    symbolImports.Add(symbolImport);
                     declarations.Add(symbolImport);
                 }
 
@@ -91,7 +72,6 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "includes");
                 if (ParseInclude() is { } include)
                 {
-                    includes.Add(include);
                     declarations.Add(include);
                 }
 
@@ -103,7 +83,6 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "C declarations");
                 if (ParseCDeclare() is { } cDeclare)
                 {
-                    cDeclarations.Add(cDeclare);
                     declarations.Add(cDeclare);
                 }
 
@@ -114,7 +93,6 @@ public sealed partial class Parser
             {
                 if (ParseExternFunction(attributes) is { } externFunction)
                 {
-                    externFunctions.Add(externFunction);
                     declarations.Add(externFunction);
                 }
 
@@ -126,15 +104,6 @@ public sealed partial class Parser
                 if (ParseTypeDeclaration(attributes) is { } typeDeclaration)
                 {
                     declarations.Add(typeDeclaration);
-                    switch (typeDeclaration)
-                    {
-                        case TypeAliasNode typeAlias:
-                            typeAliases.Add(typeAlias);
-                            break;
-                        case TypeAdapterNode typeAdapter:
-                            typeAdapters.Add(typeAdapter);
-                            break;
-                    }
                 }
 
                 continue;
@@ -144,7 +113,6 @@ public sealed partial class Parser
             {
                 if (ParseFunction(attributes) is { } function)
                 {
-                    functions.Add(function);
                     declarations.Add(function);
                 }
 
@@ -155,7 +123,6 @@ public sealed partial class Parser
             {
                 if (ParseGlobalVariable(letToken, isConst: false, attributes) is { } global)
                 {
-                    globalVariables.Add(global);
                     declarations.Add(global);
                 }
 
@@ -166,7 +133,6 @@ public sealed partial class Parser
             {
                 if (ParseGlobalVariable(constToken, isConst: true, attributes) is { } global)
                 {
-                    globalVariables.Add(global);
                     declarations.Add(global);
                 }
 
@@ -177,7 +143,6 @@ public sealed partial class Parser
             {
                 if (ParseStaticFunction(attributes) is { } function)
                 {
-                    functions.Add(function);
                     declarations.Add(function);
                 }
 
@@ -189,7 +154,6 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "requirements");
                 if (ParseRequirement() is { } requirement)
                 {
-                    requirements.Add(requirement);
                     declarations.Add(requirement);
                 }
 
@@ -200,7 +164,6 @@ public sealed partial class Parser
             {
                 if (ParseStruct(attributes) is { } structNode)
                 {
-                    structs.Add(structNode);
                     declarations.Add(structNode);
                 }
 
@@ -211,7 +174,6 @@ public sealed partial class Parser
             {
                 if (ParseExtension(attributes) is { } extension)
                 {
-                    extensions.Add(extension);
                     declarations.Add(extension);
                 }
 
@@ -222,7 +184,6 @@ public sealed partial class Parser
             {
                 if (ParseInterface(attributes) is { } interfaceNode)
                 {
-                    interfaces.Add(interfaceNode);
                     declarations.Add(interfaceNode);
                 }
 
@@ -233,7 +194,6 @@ public sealed partial class Parser
             {
                 if (ParseEnum(attributes) is { } enumNode)
                 {
-                    enums.Add(enumNode);
                     declarations.Add(enumNode);
                 }
 
@@ -245,7 +205,6 @@ public sealed partial class Parser
                 var rawToken = Expect(TokenType.Raw, "Expected 'raw'.");
                 if (ParseTaggedUnion(attributes, isRaw: true, rawLocation: rawToken?.Location) is { } rawUnion)
                 {
-                    taggedUnions.Add(rawUnion);
                     declarations.Add(rawUnion);
                 }
 
@@ -256,7 +215,6 @@ public sealed partial class Parser
             {
                 if (ParseTaggedUnion(attributes, isRaw: false) is { } taggedUnion)
                 {
-                    taggedUnions.Add(taggedUnion);
                     declarations.Add(taggedUnion);
                 }
 
@@ -268,7 +226,6 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "attribute declarations");
                 if (ParseAttributeDeclaration() is { } attributeDeclaration)
                 {
-                    attributeDeclarations.Add(attributeDeclaration);
                     declarations.Add(attributeDeclaration);
                 }
 
@@ -413,13 +370,7 @@ public sealed partial class Parser
         }
 
         Expect(TokenType.LBrace, "Expected '{' before C declaration block.");
-        var links = new List<CLinkNode>();
-        var types = new List<TypeAliasNode>();
-        var enums = new List<EnumNode>();
-        var structs = new List<StructNode>();
-        var unions = new List<TaggedUnionNode>();
-        var constants = new List<GlobalVariableNode>();
-        var functions = new List<ExternFunctionNode>();
+        var members = new List<SyntaxNode>();
 
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
@@ -427,7 +378,7 @@ public sealed partial class Parser
             {
                 if (ParseCDeclareLink() is { } link)
                 {
-                    links.Add(link);
+                    members.Add(link);
                 }
 
                 continue;
@@ -435,19 +386,19 @@ public sealed partial class Parser
 
             if (Check(TokenType.Type))
             {
-                if (ParseCDeclareType() is { } type)
+                if (ParseTypeDeclaration([], isHeaderDeclaration: true) is { } type)
                 {
-                    types.Add(type);
+                    members.Add(type);
                 }
 
                 continue;
             }
 
-            if (Check(TokenType.Const))
+            if (Match(TokenType.Const) is { } constToken)
             {
-                if (ParseCDeclareConstant(isMacro: false) is { } constant)
+                if (ParseGlobalVariable(constToken, isConst: true, [], isHeaderDeclaration: true) is { } constant)
                 {
-                    constants.Add(constant);
+                    members.Add(constant);
                 }
 
                 continue;
@@ -456,11 +407,11 @@ public sealed partial class Parser
             if (Check(TokenType.Macro))
             {
                 var macroToken = Expect(TokenType.Macro, "Expected 'macro'.");
-                if (Check(TokenType.Const))
+                if (Match(TokenType.Const) is { } macroConstToken)
                 {
-                    if (ParseCDeclareConstant(isMacro: true) is { } constant)
+                    if (ParseGlobalVariable(macroConstToken, isConst: true, [], isHeaderDeclaration: true, isMacro: true) is { } constant)
                     {
-                        constants.Add(constant);
+                        members.Add(constant);
                     }
 
                     continue;
@@ -470,7 +421,7 @@ public sealed partial class Parser
                 {
                     if (ParseCDeclareFunction(isMacro: true) is { } function)
                     {
-                        functions.Add(function);
+                        members.Add(function);
                     }
 
                     continue;
@@ -482,9 +433,9 @@ public sealed partial class Parser
 
             if (Check(TokenType.Struct))
             {
-                if (ParseCDeclareStruct() is { } structNode)
+                if (ParseStruct([], isHeaderDeclaration: true) is { } structNode)
                 {
-                    structs.Add(structNode);
+                    members.Add(structNode);
                 }
 
                 continue;
@@ -494,7 +445,7 @@ public sealed partial class Parser
             {
                 if (ParseEnum([], isHeaderDeclaration: true) is { } enumNode)
                 {
-                    enums.Add(enumNode);
+                    members.Add(enumNode);
                 }
 
                 continue;
@@ -505,7 +456,7 @@ public sealed partial class Parser
                 var rawToken = Expect(TokenType.Raw, "Expected 'raw'.");
                 if (ParseTaggedUnion([], isRaw: true, isHeaderDeclaration: true, rawLocation: rawToken?.Location) is { } rawUnion)
                 {
-                    unions.Add(rawUnion);
+                    members.Add(rawUnion);
                 }
 
                 continue;
@@ -515,7 +466,7 @@ public sealed partial class Parser
             {
                 if (ParseCDeclareFunction(isMacro: false) is { } function)
                 {
-                    functions.Add(function);
+                    members.Add(function);
                 }
 
                 continue;
@@ -530,7 +481,7 @@ public sealed partial class Parser
 
         return declareToken is null
             ? null
-            : new CDeclareNode(declareToken.Location, path, isSystem, links, types, enums, structs, unions, constants, functions);
+            : new CDeclareNode(declareToken.Location, path, isSystem, members);
     }
 
     private CLinkNode? ParseCDeclareLink()
@@ -549,122 +500,76 @@ public sealed partial class Parser
             : new CLinkNode(linkToken.Location, platform, libraryToken.Value.Trim('"'));
     }
 
-    private TypeAliasNode? ParseCDeclareType()
-    {
-        var typeToken = Expect(TokenType.Type, "Expected 'type'.");
-        var nameToken = Expect(TokenType.Identifier, "Expected declared type name.");
-        Expect(TokenType.Equals, "Expected '=' after declared type name.");
-
-        var targetTypeNode = TypeNode.Named(nameToken?.Location ?? typeToken?.Location ?? Current.Location, "opaque");
-        if (!ConsumeOptional(TokenType.Opaque))
-        {
-            targetTypeNode = ParseTypeNode();
-        }
-
-        Expect(TokenType.Semicolon, "Expected ';' after declared type.");
-        return typeToken is null || nameToken is null
-            ? null
-            : new TypeAliasNode(typeToken.Location, nameToken.Value, [], IsHeaderDeclaration: true, TargetTypeNode: targetTypeNode);
-    }
-
-    private GlobalVariableNode? ParseCDeclareConstant(bool isMacro)
-    {
-        var constToken = Expect(TokenType.Const, "Expected 'const'.");
-        var nameToken = Expect(TokenType.Identifier, "Expected declared constant name.");
-        Expect(TokenType.Colon, "Expected ':' after declared constant name.");
-        var typeNode = ParseTypeNode();
-        Expect(TokenType.Semicolon, "Expected ';' after declared constant.");
-        return constToken is null || nameToken is null
-            ? null
-            : new GlobalVariableNode(constToken.Location, IsConst: true, nameToken.Value, Initializer: null, [], IsHeaderDeclaration: true, IsMacro: isMacro, TypeNode: typeNode);
-    }
-
-    private StructNode? ParseCDeclareStruct()
-    {
-        var structToken = Expect(TokenType.Struct, "Expected 'struct'.");
-        var nameToken = Expect(TokenType.Identifier, "Expected declared struct name.");
-        Expect(TokenType.LBrace, "Expected '{' before declared struct fields.");
-
-        var fields = new List<StructFieldNode>();
-        while (!IsAtEnd && !Check(TokenType.RBrace))
-        {
-            var fieldAttributes = ParseAttributeApplications();
-            var fieldToken = Expect(TokenType.Identifier, "Expected declared struct field name.");
-            Expect(TokenType.Colon, "Expected ':' after declared struct field name.");
-            var typeNode = ParseTypeNode();
-            Expect(TokenType.Semicolon, "Expected ';' after declared struct field.");
-
-            if (fieldToken is not null)
-            {
-                fields.Add(new StructFieldNode(fieldToken.Location, fieldToken.Value, fieldAttributes, typeNode));
-            }
-        }
-
-        Expect(TokenType.RBrace, "Expected '}' after declared struct fields.");
-        ConsumeOptional(TokenType.Semicolon);
-
-        return structToken is null
-            ? null
-            : new StructNode(
-                structToken.Location,
-                nameToken?.Value ?? string.Empty,
-                [],
-                [],
-                [],
-                fields,
-                [],
-                [],
-                IsHeaderDeclaration: true);
-    }
-
     private ExternFunctionNode? ParseCDeclareFunction(bool isMacro)
     {
         var fnToken = Expect(TokenType.Fn, "Expected 'fn'.");
-        var nameToken = Expect(TokenType.Identifier, "Expected declared function name.");
-        var typeParameters = ParseOptionalTypeParameters();
-        var parameters = ParseParameterList(
-            allowVariadic: true,
-            openMessage: "Expected '(' after declared function name.",
-            closeMessage: "Expected ')' after declared function parameters.");
-        Expect(TokenType.Arrow, "Expected '->' before declared function return type.");
-        var returnTypeNode = ParseTypeNode();
-        Expect(TokenType.Semicolon, "Expected ';' after declared function.");
-
         return fnToken is null
             ? null
-            : new ExternFunctionNode(
+            : ParseExternFunctionAfterFn(
                 fnToken.Location,
-                nameToken?.Value ?? string.Empty,
-                typeParameters,
-                parameters,
-                [],
-                IsHeaderDeclaration: true,
-                IsMacro: isMacro,
-                ReturnTypeNode: returnTypeNode);
+                attributes: [],
+                isHeaderDeclaration: true,
+                isMacro,
+                allowTypeParameters: true,
+                nameMessage: "Expected declared function name.",
+                openMessage: "Expected '(' after declared function name.",
+                closeMessage: "Expected ')' after declared function parameters.",
+                arrowMessage: "Expected '->' before declared function return type.",
+                semicolonMessage: "Expected ';' after declared function.");
     }
 
     private ExternFunctionNode? ParseExternFunction(IReadOnlyList<AttributeApplicationNode> attributes)
     {
         var externToken = Expect(TokenType.Extern, "Expected 'extern'.");
-        Expect(TokenType.Fn, "Expected 'fn' after 'extern'.");
-        var nameToken = Expect(TokenType.Identifier, "Expected extern function name.");
+        if (Expect(TokenType.Fn, "Expected 'fn' after 'extern'.") is null || externToken is null)
+        {
+            return null;
+        }
+
+        return ParseExternFunctionAfterFn(
+            externToken.Location,
+            attributes,
+            isHeaderDeclaration: false,
+            isMacro: false,
+            allowTypeParameters: false,
+            nameMessage: "Expected extern function name.",
+            openMessage: "Expected '(' after extern function name.",
+            closeMessage: "Expected ')' after extern function parameters.",
+            arrowMessage: "Expected '->' before extern function return type.",
+            semicolonMessage: "Expected ';' after extern function declaration.");
+    }
+
+    private ExternFunctionNode ParseExternFunctionAfterFn(
+        Location location,
+        IReadOnlyList<AttributeApplicationNode> attributes,
+        bool isHeaderDeclaration,
+        bool isMacro,
+        bool allowTypeParameters,
+        string nameMessage,
+        string openMessage,
+        string closeMessage,
+        string arrowMessage,
+        string semicolonMessage)
+    {
+        var nameToken = Expect(TokenType.Identifier, nameMessage);
+        var typeParameters = allowTypeParameters ? ParseOptionalTypeParameters() : [];
         var parameters = ParseParameterList(
             allowVariadic: true,
-            openMessage: "Expected '(' after extern function name.",
-            closeMessage: "Expected ')' after extern function parameters.");
-        Expect(TokenType.Arrow, "Expected '->' before extern function return type.");
+            openMessage,
+            closeMessage);
+        Expect(TokenType.Arrow, arrowMessage);
         var returnTypeNode = ParseTypeNode();
-        Expect(TokenType.Semicolon, "Expected ';' after extern function declaration.");
+        Expect(TokenType.Semicolon, semicolonMessage);
 
-        return externToken is null
-            ? null
-            : new ExternFunctionNode(
-                externToken.Location,
-                nameToken?.Value ?? string.Empty,
-                [],
-                parameters,
-                attributes,
-                ReturnTypeNode: returnTypeNode);
+        return new ExternFunctionNode(
+            location,
+            nameToken?.Value ?? string.Empty,
+            typeParameters,
+            parameters,
+            attributes,
+            IsHeaderDeclaration: isHeaderDeclaration,
+            IsMacro: isMacro,
+            ReturnTypeNode: returnTypeNode);
     }
 
     private AttributeDeclarationNode? ParseAttributeDeclaration()
@@ -713,7 +618,9 @@ public sealed partial class Parser
             : new AttributeDeclarationNode(attributeToken.Location, nameToken?.Value ?? string.Empty, targets, fields);
     }
 
-    private TopLevelNode? ParseTypeDeclaration(IReadOnlyList<AttributeApplicationNode> attributes)
+    private TopLevelNode? ParseTypeDeclaration(
+        IReadOnlyList<AttributeApplicationNode> attributes,
+        bool isHeaderDeclaration = false)
     {
         var typeToken = Expect(TokenType.Type, "Expected 'type'.");
         var nameToken = Expect(TokenType.Identifier, "Expected type alias name.");
@@ -740,19 +647,9 @@ public sealed partial class Parser
                     continue;
                 }
 
-                if (Check(TokenType.Fn))
+                if (TryParseOwnedFunction(nameToken?.Value ?? string.Empty, typeParameters, memberAttributes, out var method))
                 {
-                    if (ParseStructFunction(nameToken?.Value ?? string.Empty, typeParameters, isStatic: false, memberAttributes) is { } method)
-                    {
-                        methods.Add(method);
-                    }
-
-                    continue;
-                }
-
-                if (Check(TokenType.Static))
-                {
-                    if (ParseStructStaticFunction(nameToken?.Value ?? string.Empty, typeParameters, memberAttributes) is { } method)
+                    if (method is not null)
                     {
                         methods.Add(method);
                     }
@@ -784,12 +681,19 @@ public sealed partial class Parser
         }
 
         Expect(TokenType.Equals, "Expected '=' after type alias name.");
-        var targetTypeNode = ParseTypeNode();
+        var targetTypeNode = ConsumeOptional(TokenType.Opaque)
+            ? TypeNode.Named(typeToken?.Location ?? Current.Location, "opaque")
+            : ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after type alias.");
 
         return typeToken is null
             ? null
-            : new TypeAliasNode(typeToken.Location, nameToken?.Value ?? string.Empty, attributes, TargetTypeNode: targetTypeNode);
+            : new TypeAliasNode(
+                typeToken.Location,
+                nameToken?.Value ?? string.Empty,
+                attributes,
+                IsHeaderDeclaration: isHeaderDeclaration,
+                TargetTypeNode: targetTypeNode);
     }
 
     private ExposeMethodNode? ParseExposeMethod()
@@ -815,31 +719,34 @@ public sealed partial class Parser
             : new ExposeMethodNode(exposeToken.Location, isStatic, sourceToken.Value, exposedName, returnTypeNode);
     }
 
-    private GlobalVariableNode? ParseGlobalVariable(Token keywordToken, bool isConst, IReadOnlyList<AttributeApplicationNode> attributes)
+    private GlobalVariableNode? ParseGlobalVariable(
+        Token keywordToken,
+        bool isConst,
+        IReadOnlyList<AttributeApplicationNode> attributes,
+        bool isHeaderDeclaration = false,
+        bool isMacro = false)
     {
-        var nameToken = Expect(TokenType.Identifier, "Expected global variable name.");
-        var typeNode = ParseOptionalVariableTypeNode("global variable", keywordToken.Location);
-        ExpressionNode? initializer = null;
+        var declaration = ParseVariableDeclarationParts(
+            keywordToken.Location,
+            nameMessage: "Expected global variable name.",
+            typeSubject: "global variable",
+            missingTypeOrInitializerMessage: "Expected ':' or '=' after global variable name.");
 
-        if (ConsumeOptional(TokenType.Equals))
-        {
-            initializer = ReadExpressionUntil(keywordToken.Location, TokenType.Semicolon);
-        }
-
-        if (typeNode is null && initializer is null)
-        {
-            _diagnostics.Report(keywordToken.Location, "Expected ':' or '=' after global variable name.");
-        }
-
-        if (isConst && initializer is null)
+        if (isConst && !isHeaderDeclaration && declaration.Initializer is null)
         {
             _diagnostics.Report(keywordToken.Location, "Const globals require an initializer.");
         }
 
         Expect(TokenType.Semicolon, "Expected ';' after global variable declaration.");
-        return nameToken is null
-            ? null
-            : new GlobalVariableNode(keywordToken.Location, isConst, nameToken.Value, initializer, attributes, TypeNode: typeNode);
+        return new GlobalVariableNode(
+            keywordToken.Location,
+            isConst,
+            declaration.Name,
+            declaration.Initializer,
+            attributes,
+            IsHeaderDeclaration: isHeaderDeclaration,
+            IsMacro: isMacro,
+            TypeNode: declaration.TypeNode);
     }
 
     private FunctionNode? ParseFunction(IReadOnlyList<AttributeApplicationNode> attributes)
@@ -943,7 +850,9 @@ public sealed partial class Parser
                 && type.EndsWith("*", StringComparison.Ordinal));
     }
 
-    private StructNode? ParseStruct(IReadOnlyList<AttributeApplicationNode> attributes)
+    private StructNode? ParseStruct(
+        IReadOnlyList<AttributeApplicationNode> attributes,
+        bool isHeaderDeclaration = false)
     {
         var structToken = Expect(TokenType.Struct, "Expected 'struct'.");
         var nameToken = Expect(TokenType.Identifier, "Expected struct name.");
@@ -958,19 +867,9 @@ public sealed partial class Parser
         {
             var memberAttributes = ParseAttributeApplications();
 
-            if (Check(TokenType.Fn))
+            if (TryParseOwnedFunction(nameToken?.Value ?? string.Empty, typeParameters, memberAttributes, out var method))
             {
-                if (ParseStructFunction(nameToken?.Value ?? string.Empty, typeParameters, isStatic: false, memberAttributes) is { } method)
-                {
-                    methods.Add(method);
-                }
-
-                continue;
-            }
-
-            if (Check(TokenType.Static))
-            {
-                if (ParseStructStaticFunction(nameToken?.Value ?? string.Empty, typeParameters, memberAttributes) is { } method)
+                if (method is not null)
                 {
                     methods.Add(method);
                 }
@@ -994,7 +893,16 @@ public sealed partial class Parser
 
         return structToken is null
             ? null
-            : new StructNode(structToken.Location, nameToken?.Value ?? string.Empty, typeParameters, genericConstraints, requirements, fields, methods, attributes);
+            : new StructNode(
+                structToken.Location,
+                nameToken?.Value ?? string.Empty,
+                typeParameters,
+                genericConstraints,
+                requirements,
+                fields,
+                methods,
+                attributes,
+                IsHeaderDeclaration: isHeaderDeclaration);
     }
 
     private ExtensionNode? ParseExtension(IReadOnlyList<AttributeApplicationNode> attributes)
@@ -1012,22 +920,9 @@ public sealed partial class Parser
         {
             var memberAttributes = ParseAttributeApplications();
 
-            if (Check(TokenType.Fn))
+            if (TryParseOwnedFunction(targetType, typeParameters, memberAttributes, out var method))
             {
-                if (ParseStructFunction(targetType, typeParameters, isStatic: false, memberAttributes) is { } method)
-                {
-                    methods.Add(method with
-                    {
-                        GenericConstraints = genericConstraints.Concat(method.GenericConstraints).ToList(),
-                    });
-                }
-
-                continue;
-            }
-
-            if (Check(TokenType.Static))
-            {
-                if (ParseStructStaticFunction(targetType, typeParameters, memberAttributes) is { } method)
+                if (method is not null)
                 {
                     methods.Add(method with
                     {
@@ -1383,19 +1278,9 @@ public sealed partial class Parser
         {
             var memberAttributes = ParseAttributeApplications();
 
-            if (!isRaw && Check(TokenType.Fn))
+            if (!isRaw && TryParseOwnedFunction(nameToken?.Value ?? string.Empty, [], memberAttributes, out var method))
             {
-                if (ParseStructFunction(nameToken?.Value ?? string.Empty, [], isStatic: false, memberAttributes) is { } method)
-                {
-                    methods.Add(method);
-                }
-
-                continue;
-            }
-
-            if (!isRaw && Check(TokenType.Static))
-            {
-                if (ParseStructStaticFunction(nameToken?.Value ?? string.Empty, [], memberAttributes) is { } method)
+                if (method is not null)
                 {
                     methods.Add(method);
                 }
@@ -1427,6 +1312,28 @@ public sealed partial class Parser
                 attributes,
                 IsRaw: isRaw,
                 IsHeaderDeclaration: isHeaderDeclaration);
+    }
+
+    private bool TryParseOwnedFunction(
+        string ownerType,
+        IReadOnlyList<string> ownerTypeParameters,
+        IReadOnlyList<AttributeApplicationNode> attributes,
+        out FunctionNode? function)
+    {
+        if (Check(TokenType.Fn))
+        {
+            function = ParseStructFunction(ownerType, ownerTypeParameters, isStatic: false, attributes);
+            return true;
+        }
+
+        if (Check(TokenType.Static))
+        {
+            function = ParseStructStaticFunction(ownerType, ownerTypeParameters, attributes);
+            return true;
+        }
+
+        function = null;
+        return false;
     }
 
     private List<ParameterNode> ParseParameterList(
