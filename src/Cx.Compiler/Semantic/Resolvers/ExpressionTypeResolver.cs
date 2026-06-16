@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using Cx.Compiler.Syntax.Nodes;
 
-namespace Cx.Compiler.Semantic;
+namespace Cx.Compiler.Semantic.Resolvers;
 
 internal sealed class ExpressionTypeResolver(
     ProgramNode program,

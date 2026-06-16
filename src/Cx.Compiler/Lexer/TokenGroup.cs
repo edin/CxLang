@@ -1,6 +1,6 @@
 namespace Cx.Compiler.Lexer;
 
-public enum TokenClass
+public enum TokenGroup
 {
     Identifier,
     Literal,

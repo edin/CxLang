@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 

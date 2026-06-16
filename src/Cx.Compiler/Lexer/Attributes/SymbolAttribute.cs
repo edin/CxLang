@@ -1,4 +1,4 @@
-namespace Cx.Compiler.Lexer;
+namespace Cx.Compiler.Lexer.Attributes;
 
 public sealed class SymbolAttribute(
     string text,
@@ -8,7 +8,7 @@ public sealed class SymbolAttribute(
     int postfixPrecedence = -1)
     : TokenAttribute(
         text,
-        TokenClass.Symbol,
+        TokenGroup.Symbol,
         binaryPrecedence: binaryPrecedence,
         associativity: associativity,
         prefixPrecedence: prefixPrecedence,

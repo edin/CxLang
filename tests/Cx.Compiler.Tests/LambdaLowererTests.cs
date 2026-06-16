@@ -1,7 +1,7 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
-using Cx.Compiler.Syntax;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;

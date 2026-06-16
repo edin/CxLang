@@ -1,4 +1,4 @@
-using Cx.Compiler.Syntax;
+using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Lexer;
 

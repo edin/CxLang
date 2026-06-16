@@ -1,8 +1,9 @@
 using Cx.Compiler.Diagnostics;
-using Cx.Compiler.Syntax;
+using Cx.Compiler.Semantic.Resolvers;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
-namespace Cx.Compiler.Semantic;
+namespace Cx.Compiler.Semantic.Analyzers;
 
 internal sealed class AssignmentSemanticAnalyzer(
     DiagnosticBag diagnostics,

@@ -1,3 +1,5 @@
+using Cx.Compiler.Source;
+
 namespace Cx.Compiler.Syntax.Nodes;
 
 public sealed record FunctionNode(

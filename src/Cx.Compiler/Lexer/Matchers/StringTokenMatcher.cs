@@ -1,4 +1,4 @@
-namespace Cx.Compiler.Lexer;
+namespace Cx.Compiler.Lexer.Matchers;
 
 public sealed class StringTokenMatcher : ITokenMatcher
 {

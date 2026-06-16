@@ -1,4 +1,7 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Semantic.Analyzers;
+using Cx.Compiler.Semantic.Resolvers;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
@@ -398,14 +401,14 @@ public sealed class SemanticAnalyzer(
 
     private void AnalyzeType(
         TypeNode? typeNode,
-        Cx.Compiler.Syntax.Location location,
+        Location location,
         ProgramNode program,
         IReadOnlyList<string> inScopeTypeParameters) =>
         AnalyzeType(TypeText(typeNode), location, program, inScopeTypeParameters);
 
     private void AnalyzeType(
         string type,
-        Cx.Compiler.Syntax.Location location,
+        Location location,
         ProgramNode program,
         IReadOnlyList<string> inScopeTypeParameters)
     {
@@ -416,7 +419,7 @@ public sealed class SemanticAnalyzer(
     private void AnalyzeSpaceshipTypes(
         TypeRef leftType,
         TypeRef rightType,
-        Cx.Compiler.Syntax.Location location)
+        Location location)
     {
         var leftTypeText = SemanticFacts.FormatTypeRef(leftType)!;
         var rightTypeText = SemanticFacts.FormatTypeRef(rightType)!;
@@ -676,7 +679,7 @@ public sealed class SemanticAnalyzer(
 
     private void AnalyzeExpression(
         ExpressionNode? expression,
-        Cx.Compiler.Syntax.Location location,
+        Location location,
         TypeEnvironment typeEnvironment,
         IReadOnlyDictionary<string, LocalMutability>? mutability)
     {

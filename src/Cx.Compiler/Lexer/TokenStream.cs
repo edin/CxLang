@@ -1,7 +1,6 @@
-using Cx.Compiler.Lexer;
-using Cx.Compiler.Syntax;
+using Cx.Compiler.Source;
 
-namespace Cx.Compiler.Parser;
+namespace Cx.Compiler.Lexer;
 
 internal sealed class TokenStream
 {

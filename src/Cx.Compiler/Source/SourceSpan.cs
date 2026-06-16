@@ -1,4 +1,4 @@
-namespace Cx.Compiler.Syntax;
+namespace Cx.Compiler.Source;
 
 public sealed record SourceSpan(Location Location, int Length)
 {

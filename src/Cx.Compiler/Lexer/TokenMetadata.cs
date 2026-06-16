@@ -1,8 +1,9 @@
+using Cx.Compiler.Lexer.Attributes;
 using System.Reflection;
 
 namespace Cx.Compiler.Lexer;
 
-public sealed record TokenMetadata(TokenType Type, string? Text, TokenClass Class, Type? MatcherType);
+public sealed record TokenMetadata(TokenType Type, string? Text, TokenGroup Class, Type? MatcherType);
 
 public static class TokenMetadataProvider
 {
@@ -15,14 +16,14 @@ public static class TokenMetadataProvider
         All.ToDictionary(metadata => metadata.Type);
 
     public static readonly IReadOnlyDictionary<string, TokenType> KeywordTypes =
-        All.Where(metadata => metadata.Class == TokenClass.Keyword && metadata.Text is not null)
+        All.Where(metadata => metadata.Class == TokenGroup.Keyword && metadata.Text is not null)
             .ToDictionary(
                 metadata => metadata.Text!,
                 metadata => metadata.Type,
                 StringComparer.Ordinal);
 
     public static readonly IReadOnlyList<TokenMetadata> SymbolsByLength =
-        All.Where(metadata => metadata.Class == TokenClass.Symbol && metadata.Text is not null)
+        All.Where(metadata => metadata.Class == TokenGroup.Symbol && metadata.Text is not null)
             .OrderByDescending(metadata => metadata.Text!.Length)
             .ToArray();
 

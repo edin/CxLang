@@ -1,4 +1,4 @@
-namespace Cx.Compiler.Syntax;
+namespace Cx.Compiler.Source;
 
 public sealed record Location(SourceFile File, int Position, int Line, int Column)
 {

@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 

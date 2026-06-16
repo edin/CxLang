@@ -2,9 +2,9 @@ using Cx.Compiler.Diagnostics;
 using Cx.Compiler.C;
 using Cx.Compiler.Parser;
 using Cx.Compiler.Semantic;
-using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 using CxParser = Cx.Compiler.Parser.Parser;
+using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Tests;
 

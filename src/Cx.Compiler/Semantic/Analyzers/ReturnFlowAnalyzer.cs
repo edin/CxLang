@@ -1,6 +1,7 @@
+using Cx.Compiler.Semantic.Resolvers;
 using Cx.Compiler.Syntax.Nodes;
 
-namespace Cx.Compiler.Semantic;
+namespace Cx.Compiler.Semantic.Analyzers;
 
 internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeResolver expressionTypeResolver)
 {

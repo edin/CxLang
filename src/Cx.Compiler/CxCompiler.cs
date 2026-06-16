@@ -9,6 +9,8 @@ using Cx.Compiler.Std;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 using CxParser = Cx.Compiler.Parser.Parser;
+using Cx.Compiler.Semantic.Analyzers;
+using Cx.Compiler.Source;
 
 public sealed class CxCompiler
 {

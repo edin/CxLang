@@ -1,6 +1,6 @@
 using Cx.Compiler.Syntax.Nodes;
 
-namespace Cx.Compiler.Semantic;
+namespace Cx.Compiler.Semantic.Resolvers;
 
 internal sealed record CallResolution(
     string Name,
@@ -103,9 +103,9 @@ internal sealed class CallResolver(
                 && string.Equals(targetName, OwnerType(function), StringComparison.Ordinal)
                 && string.Equals(function.Name, member.MemberName, StringComparison.Ordinal)
                 && (MatchesGenericArguments(function.TypeParameters, typeArguments)
-                    || (typeArguments.Count == 0
+                    || typeArguments.Count == 0
                         && function.TypeParameters.Count > 0
-                        && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null)));
+                        && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
             if (staticFunction is null)
             {
                 return null;
@@ -151,10 +151,10 @@ internal sealed class CallResolver(
             && string.Equals(function.Name, member.MemberName, StringComparison.Ordinal)
             && string.Equals(OwnerType(function), receiverBaseType, StringComparison.Ordinal)
             && (MatchesGenericArguments(function.TypeParameters, typeArguments)
-                || (typeArguments.Count == 0 && function.TypeParameters.Count == receiverArguments.Count)
-                || (typeArguments.Count == 0
+                || typeArguments.Count == 0 && function.TypeParameters.Count == receiverArguments.Count
+                || typeArguments.Count == 0
                     && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: true, receiverArguments) is not null)));
+                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: true, receiverArguments) is not null));
         if (instanceFunction is not null)
         {
             var instanceArguments = typeArguments.Count > 0
@@ -207,9 +207,9 @@ internal sealed class CallResolver(
             OwnerType(function) is null
             && string.Equals(function.Name, name, StringComparison.Ordinal)
             && (MatchesGenericArguments(function.TypeParameters, typeArguments)
-                || (typeArguments.Count == 0
+                || typeArguments.Count == 0
                     && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null)));
+                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
         if (function is null)
         {
             return null;
@@ -238,9 +238,9 @@ internal sealed class CallResolver(
         var function = program.ExternFunctions.FirstOrDefault(function =>
             string.Equals(function.Name, name, StringComparison.Ordinal)
             && (MatchesGenericArguments(function.TypeParameters, typeArguments)
-                || (typeArguments.Count == 0
+                || typeArguments.Count == 0
                     && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null)));
+                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
         if (function is null)
         {
             return null;

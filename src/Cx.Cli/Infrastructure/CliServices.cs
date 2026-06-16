@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Cx.Compiler;
 using Cx.Compiler.Diagnostics;
-using Cx.Compiler.Syntax;
+using Cx.Compiler.Source;
 using Spectre.Console;
 using Tomlyn;
 using Tomlyn.Model;

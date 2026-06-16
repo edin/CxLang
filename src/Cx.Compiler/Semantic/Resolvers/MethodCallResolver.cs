@@ -1,6 +1,6 @@
 using Cx.Compiler.Syntax.Nodes;
 
-namespace Cx.Compiler.Semantic;
+namespace Cx.Compiler.Semantic.Resolvers;
 
 internal sealed record ResolvedMethodCall(
     string DisplayName,

@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Semantic.Resolvers;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 

@@ -1,5 +1,5 @@
 using Cx.Compiler.Lexer;
-using Cx.Compiler.Syntax;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Parser;

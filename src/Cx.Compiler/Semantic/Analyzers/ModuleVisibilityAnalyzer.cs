@@ -1,14 +1,15 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
-namespace Cx.Compiler.Semantic;
+namespace Cx.Compiler.Semantic.Analyzers;
 
 internal sealed class ModuleVisibilityAnalyzer(
     DiagnosticBag diagnostics,
     IReadOnlyList<ProgramNode> availablePrograms)
 {
     private readonly TypeRefParser _typeRefParser = new(availablePrograms.FirstOrDefault() ?? new ProgramNode(
-        Cx.Compiler.Syntax.Location.Synthetic("<module-visibility>"),
+        Location.Synthetic("<module-visibility>"),
         []));
 
     private readonly IReadOnlyDictionary<string, ModuleSymbols> _modules = availablePrograms
@@ -312,7 +313,7 @@ internal sealed class ModuleVisibilityAnalyzer(
 
     private void AnalyzeCall(
         ExpressionNode callee,
-        Cx.Compiler.Syntax.Location location,
+        Location location,
         ModuleVisibility visibility,
         IReadOnlySet<string> locals)
     {
@@ -348,14 +349,14 @@ internal sealed class ModuleVisibilityAnalyzer(
 
     private void AnalyzeType(
         TypeNode? typeNode,
-        Cx.Compiler.Syntax.Location location,
+        Location location,
         ModuleVisibility visibility,
         IReadOnlyList<string>? typeParameters = null) =>
         AnalyzeType(TypeText(typeNode), location, visibility, typeParameters);
 
     private void AnalyzeType(
         string type,
-        Cx.Compiler.Syntax.Location location,
+        Location location,
         ModuleVisibility visibility,
         IReadOnlyList<string>? typeParameters = null)
     {

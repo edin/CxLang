@@ -1,14 +1,17 @@
+using Cx.Compiler.Lexer.Attributes;
+using Cx.Compiler.Lexer.Matchers;
+
 namespace Cx.Compiler.Lexer;
 
 public enum TokenType
 {
-    [Token(TokenClass.Identifier, typeof(IdentifierTokenMatcher))]
+    [Token(TokenGroup.Identifier, typeof(IdentifierTokenMatcher))]
     Identifier,
-    [Token(TokenClass.Literal, typeof(NumberTokenMatcher))]
+    [Token(TokenGroup.Literal, typeof(NumberTokenMatcher))]
     Number,
-    [Token(TokenClass.Literal, typeof(StringTokenMatcher))]
+    [Token(TokenGroup.Literal, typeof(StringTokenMatcher))]
     String,
-    [Token(TokenClass.Literal, typeof(CharacterTokenMatcher))]
+    [Token(TokenGroup.Literal, typeof(CharacterTokenMatcher))]
     Character,
 
     [Keyword("fn")]
@@ -191,10 +194,10 @@ public enum TokenType
     [Symbol("@")]
     At,
 
-    [Token(TokenClass.Trivia, typeof(CommentTokenMatcher))]
+    [Token(TokenGroup.Trivia, typeof(CommentTokenMatcher))]
     Comment,
-    [Token(TokenClass.Trivia, typeof(CommentTokenMatcher))]
+    [Token(TokenGroup.Trivia, typeof(CommentTokenMatcher))]
     MultilineComment,
-    [Token(TokenClass.EndOfFile)]
+    [Token(TokenGroup.EndOfFile)]
     Eof
 }

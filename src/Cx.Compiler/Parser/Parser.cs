@@ -1,6 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lexer;
-using Cx.Compiler.Syntax;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Parser;
@@ -1455,7 +1455,7 @@ public sealed partial class Parser
         IReadOnlyList<AttributeApplicationNode> attributes,
         bool isRaw,
         bool isHeaderDeclaration = false,
-        Cx.Compiler.Syntax.Location? rawLocation = null)
+        Location? rawLocation = null)
     {
         var unionToken = Expect(TokenType.Union, "Expected 'union'.");
         var nameToken = Expect(TokenType.Identifier, "Expected union name.");

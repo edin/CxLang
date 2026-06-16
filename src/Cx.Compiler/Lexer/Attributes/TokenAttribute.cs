@@ -1,10 +1,12 @@
-namespace Cx.Compiler.Lexer;
+using Cx.Compiler.Lexer.Matchers;
+
+namespace Cx.Compiler.Lexer.Attributes;
 
 [AttributeUsage(AttributeTargets.Field)]
 public class TokenAttribute : Attribute
 {
     public TokenAttribute(
-        TokenClass tokenClass,
+        TokenGroup tokenClass,
         Type? matcherType = null,
         int binaryPrecedence = -1,
         Associativity associativity = Associativity.Left,
@@ -21,7 +23,7 @@ public class TokenAttribute : Attribute
 
     public TokenAttribute(
         string text,
-        TokenClass tokenClass,
+        TokenGroup tokenClass,
         Type? matcherType = null,
         int binaryPrecedence = -1,
         Associativity associativity = Associativity.Left,
@@ -40,7 +42,7 @@ public class TokenAttribute : Attribute
 
     public string? Text { get; }
 
-    public TokenClass Class { get; }
+    public TokenGroup Class { get; }
 
     public Type? MatcherType { get; }
 

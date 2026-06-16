@@ -1,3 +1,5 @@
+using Cx.Compiler.Lexer.Matchers;
+
 namespace Cx.Compiler.Lexer;
 
 public static class TokenDefinitions
@@ -26,8 +28,8 @@ public static class TokenDefinitions
     private static int MatcherPriority(TokenMetadata metadata) =>
         metadata.Class switch
         {
-            TokenClass.Trivia => 0,
-            TokenClass.Literal => 1,
+            TokenGroup.Trivia => 0,
+            TokenGroup.Literal => 1,
             _ => 2
         };
 

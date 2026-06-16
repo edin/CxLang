@@ -1,3 +1,5 @@
+using Cx.Compiler.Source;
+
 namespace Cx.Compiler.Syntax.Nodes;
 
 public abstract record TopLevelNode(Location Location) : SyntaxNode(Location);

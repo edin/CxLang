@@ -1,7 +1,8 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Semantic.Resolvers;
 using Cx.Compiler.Syntax.Nodes;
 
-namespace Cx.Compiler.Semantic;
+namespace Cx.Compiler.Semantic.Analyzers;
 
 internal sealed record MatchArmBinding(MatchArmNode Arm, TypeRef? Type);
 

@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lowering;
+using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Tests;
 
@@ -103,7 +104,7 @@ public sealed class LoweringCompletenessAnalyzerTests
     [Fact]
     public void Analyze_ReportsRawExpressionThatRemainsAfterLowering()
     {
-        var location = Cx.Compiler.Syntax.Location.Synthetic("<lowering-completeness-test>");
+        var location = Location.Synthetic("<lowering-completeness-test>");
         var program = new Cx.Compiler.Syntax.Nodes.ProgramNode(
             location,
             [

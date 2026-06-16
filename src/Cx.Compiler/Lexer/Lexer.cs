@@ -1,5 +1,5 @@
 using Cx.Compiler.Diagnostics;
-using Cx.Compiler.Syntax;
+using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Lexer;
 
@@ -124,7 +124,7 @@ public sealed class Lexer
                 var match = definition.Match(this);
                 if (match is not null)
                 {
-                    if (TokenMetadataProvider.ByType[match.Type].Class == TokenClass.Trivia)
+                    if (TokenMetadataProvider.ByType[match.Type].Class == TokenGroup.Trivia)
                     {
                         leadingTrivia.Add(ToTrivia(match));
                         tokens.Add(match);

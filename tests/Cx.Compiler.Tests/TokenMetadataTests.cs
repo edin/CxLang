@@ -1,4 +1,5 @@
 using Cx.Compiler.Lexer;
+using Cx.Compiler.Lexer.Matchers;
 
 namespace Cx.Compiler.Tests;
 
