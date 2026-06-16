@@ -8,7 +8,7 @@ namespace Cx.Compiler.Tests;
 public sealed class ExpressionTypeResolverTypeRefTests
 {
     [Fact]
-    public void ResolveTypeRef_PreservesAliasFromVariableMap()
+    public void ResolveTypeRef_PreservesAliasFromTypeEnvironment()
     {
         var program = CompilerTestHelpers.Parse(
             """
@@ -23,10 +23,7 @@ public sealed class ExpressionTypeResolverTypeRefTests
 
         var resolved = resolver.ResolveTypeRef(
             expression,
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["value"] = "usize",
-            });
+            TypeEnvironment(program, ("value", "usize")));
 
         var alias = Assert.IsType<TypeRef.Alias>(resolved);
         Assert.Equal("usize", alias.Name);
@@ -46,10 +43,8 @@ public sealed class ExpressionTypeResolverTypeRefTests
             """);
         var resolver = new ExpressionTypeResolver(program);
         var expression = Assert.IsType<ReturnStatement>(Assert.Single(program.Functions).Body.Single()).Expression;
-        var parser = new TypeRefParser(program);
-        var environment = new TypeEnvironment();
-        var type = parser.Parse("usize");
-        environment.Set("value", type);
+        var type = new TypeRefParser(program).Parse("usize");
+        var environment = TypeEnvironment(("value", type));
 
         var resolved = resolver.ResolveTypeRef(expression, environment);
 
@@ -77,10 +72,7 @@ public sealed class ExpressionTypeResolverTypeRefTests
         var local = Assert.IsType<LetStatement>(Assert.Single(program.Functions).Body[0]);
         var cast = Assert.IsType<CastExpressionNode>(local.Initializer);
 
-        var resolved = resolver.ResolveTypeRef(cast, new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["value"] = "int",
-        });
+        var resolved = resolver.ResolveTypeRef(cast, TypeEnvironment(program, ("value", "int")));
 
         var alias = Assert.IsType<TypeRef.Alias>(resolved);
         Assert.Equal("usize", alias.Name);
@@ -98,10 +90,7 @@ public sealed class ExpressionTypeResolverTypeRefTests
             typeNode);
         var resolver = new ExpressionTypeResolver(CompilerTestHelpers.Parse("fn main() -> int { return 0; }"));
 
-        var resolved = resolver.ResolveTypeRef(cast, new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["value"] = "int",
-        });
+        var resolved = resolver.ResolveTypeRef(cast, TypeEnvironment(null, ("value", "int")));
 
         Assert.Equal("int*", TypeRefFormatter.ToCxString(resolved!));
     }
@@ -126,7 +115,7 @@ public sealed class ExpressionTypeResolverTypeRefTests
         var local = Assert.IsType<LetStatement>(Assert.Single(program.Functions).Body[0]);
         var functionExpression = Assert.IsType<FunctionExpressionNode>(local.Initializer);
 
-        var resolved = resolver.ResolveTypeRef(functionExpression, new Dictionary<string, string>(StringComparer.Ordinal));
+        var resolved = resolver.ResolveTypeRef(functionExpression, new TypeEnvironment());
 
         var function = Assert.IsType<TypeRef.Function>(resolved);
         Assert.IsType<TypeRef.Alias>(Assert.Single(function.Parameters));
@@ -159,12 +148,32 @@ public sealed class ExpressionTypeResolverTypeRefTests
         var resolver = new ExpressionTypeResolver(program);
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(program.Functions.Single(function => function.Name == "main").Body.OfType<ReturnStatement>()));
 
-        var resolved = resolver.ResolveTypeRef(ret.Expression, new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["box"] = "Box<int>",
-        });
+        var resolved = resolver.ResolveTypeRef(ret.Expression, TypeEnvironment(program, ("box", "Box<int>")));
 
         Assert.NotNull(resolved);
         Assert.Equal("int", TypeRefFormatter.ToCxString(resolved));
+    }
+
+    private static TypeEnvironment TypeEnvironment(ProgramNode? resolverProgram, params (string Name, string Type)[] variables)
+    {
+        var parser = new TypeRefParser(resolverProgram ?? CompilerTestHelpers.Parse("fn main() -> int { return 0; }"));
+        var environment = new TypeEnvironment();
+        foreach (var variable in variables)
+        {
+            environment.Set(variable.Name, parser.Parse(variable.Type));
+        }
+
+        return environment;
+    }
+
+    private static TypeEnvironment TypeEnvironment(params (string Name, TypeRef Type)[] variables)
+    {
+        var environment = new TypeEnvironment();
+        foreach (var variable in variables)
+        {
+            environment.Set(variable.Name, variable.Type);
+        }
+
+        return environment;
     }
 }

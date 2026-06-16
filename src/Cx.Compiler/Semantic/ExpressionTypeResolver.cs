@@ -20,13 +20,6 @@ internal sealed class ExpressionTypeResolver(
         _currentTypeParameters,
         _currentGenericConstraints);
 
-    public string? Resolve(ExpressionNode? expression, IReadOnlyDictionary<string, string> variables)
-    {
-        return Resolve(
-            expression,
-            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
-    }
-
     public string? Resolve(ExpressionNode? expression, TypeEnvironment variables)
     {
         if (expression is null)
@@ -56,13 +49,6 @@ internal sealed class ExpressionTypeResolver(
             RawExpressionNode raw => ResolveRaw(raw.RawText, variables),
             _ => null,
         };
-    }
-
-    public TypeRef? ResolveTypeRef(ExpressionNode? expression, IReadOnlyDictionary<string, string> variables)
-    {
-        return ResolveTypeRef(
-            expression,
-            TypeEnvironment.FromLegacyStrings(_typeRefParser, variables));
     }
 
     public TypeRef? ResolveTypeRef(ExpressionNode? expression, TypeEnvironment variables)
