@@ -22,6 +22,8 @@ internal sealed record CNamedTypeRef(string Name) : CTypeRef;
 
 internal sealed record CPointerTypeRef(CTypeRef Element) : CTypeRef;
 
+internal sealed record CFixedArrayTypeRef(CTypeRef Element, string Length) : CTypeRef;
+
 internal sealed record CFunctionTypeRef(
     CTypeRef ReturnType,
     IReadOnlyList<CParameterDeclaration> Parameters) : CTypeRef;

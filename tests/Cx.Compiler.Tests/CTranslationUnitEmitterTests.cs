@@ -106,6 +106,57 @@ public sealed class CTranslationUnitEmitterTests
     }
 
     [Fact]
+    public void Emit_PrintsStructuredFunctionPointerDeclarations()
+    {
+        var callbackType = new CFunctionTypeRef(
+            new CNamedTypeRef("bool"),
+            [new CParameterDeclaration(new CNamedTypeRef("int"), string.Empty)]);
+        var unit = new CTranslationUnit([
+            new CStructDeclaration("Callbacks", [new CFieldDeclaration(callbackType, "predicate")]),
+            new CFunctionDefinition(
+                new CFunctionSignature(new CNamedTypeRef("void"), "main", [
+                    new CParameterDeclaration(callbackType, "predicate"),
+                ]),
+                [
+                    new CLocalDeclarationStatement(
+                        new CVariableDeclaration(callbackType, "local"),
+                        null),
+                ]),
+            new CTypeAliasDeclaration("Predicate", callbackType),
+        ]);
+
+        var output = new CTranslationUnitEmitter().Emit(unit);
+
+        Assert.Contains("bool (*predicate)(int);", output);
+        Assert.Contains("void main(bool (*predicate)(int))", output);
+        Assert.Contains("bool (*local)(int);", output);
+        Assert.Contains("typedef bool (*Predicate)(int);", output);
+    }
+
+    [Fact]
+    public void Emit_PrintsStructuredFixedArrayDeclarations()
+    {
+        var arrayType = new CFixedArrayTypeRef(new CNamedTypeRef("int"), "4");
+        var unit = new CTranslationUnit([
+            new CStructDeclaration("Values", [new CFieldDeclaration(arrayType, "items")]),
+            new CGlobalDeclaration(new CVariableDeclaration(arrayType, "global"), null),
+            new CFunctionDefinition(
+                new CFunctionSignature(new CNamedTypeRef("void"), "main", []),
+                [
+                    new CLocalDeclarationStatement(
+                        new CVariableDeclaration(arrayType, "local"),
+                        null),
+                ]),
+        ]);
+
+        var output = new CTranslationUnitEmitter().Emit(unit);
+
+        Assert.Contains("int items[4];", output);
+        Assert.Contains("int global[4];", output);
+        Assert.Contains("int local[4];", output);
+    }
+
+    [Fact]
     public void Emit_PrintsSwitchCaseExpressionPatterns()
     {
         var unit = new CTranslationUnit([

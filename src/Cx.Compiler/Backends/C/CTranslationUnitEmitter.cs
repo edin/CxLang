@@ -92,9 +92,7 @@ internal sealed class CTranslationUnitEmitter
     }
 
     private static string EmitFieldDeclaration(CFieldDeclaration field) =>
-        field.Type is CLegacyTypeRef legacy
-            ? legacy.Text
-            : $"{EmitType(field.Type)} {field.Name}";
+        CDeclaratorEmitter.Emit(field.Type, field.Name);
 
     private static string EmitType(CTypeRef type) => CTypeRefEmitter.Emit(type);
 
@@ -131,7 +129,7 @@ internal sealed class CTranslationUnitEmitter
         builder.AppendLine("    {");
         foreach (var variant in taggedUnionDeclaration.Variants)
         {
-            builder.AppendLine($"        {EmitType(variant.Type)} {variant.Name};");
+            builder.AppendLine($"        {CDeclaratorEmitter.Emit(variant.Type, variant.Name)};");
         }
 
         builder.AppendLine("    } as;");
@@ -140,22 +138,8 @@ internal sealed class CTranslationUnitEmitter
 
     private static void EmitTypeAlias(StringBuilder builder, CTypeAliasDeclaration typeAliasDeclaration)
     {
-        if (typeAliasDeclaration.TargetType is CFunctionTypeRef functionType)
-        {
-            builder.Append("typedef ");
-            builder.Append(EmitType(functionType.ReturnType));
-            builder.Append(" (*");
-            builder.Append(typeAliasDeclaration.Name);
-            builder.Append(")(");
-            builder.Append(string.Join(", ", functionType.Parameters.Select(EmitParameterDeclaration)));
-            builder.AppendLine(");");
-            return;
-        }
-
         builder.Append("typedef ");
-        builder.Append(EmitType(typeAliasDeclaration.TargetType));
-        builder.Append(' ');
-        builder.Append(typeAliasDeclaration.Name);
+        builder.Append(CDeclaratorEmitter.Emit(typeAliasDeclaration.TargetType, typeAliasDeclaration.Name));
         builder.AppendLine(";");
     }
 
@@ -182,11 +166,7 @@ internal sealed class CTranslationUnitEmitter
     private static string EmitParameterDeclaration(CParameterDeclaration parameter) =>
         parameter.IsVariadic
             ? "..."
-            : parameter.Type is CLegacyTypeRef legacy
-                ? legacy.Text
-                : string.IsNullOrWhiteSpace(parameter.Name)
-                    ? EmitType(parameter.Type)
-                    : $"{EmitType(parameter.Type)} {parameter.Name}";
+            : CDeclaratorEmitter.Emit(parameter.Type, parameter.Name);
 
     private static void EmitStatement(StringBuilder builder, CStatementNode statement, int indentLevel)
     {
@@ -385,13 +365,7 @@ internal sealed class CTranslationUnitEmitter
 
     private static string EmitVariableDeclaration(CVariableDeclaration declaration)
     {
-        if (declaration.Type is CLegacyTypeRef legacy)
-        {
-            return legacy.Text;
-        }
-
-        var prefix = declaration.IsConst ? "const " : string.Empty;
-        return $"{prefix}{EmitType(declaration.Type)} {declaration.Name}";
+        return CDeclaratorEmitter.Emit(declaration.Type, declaration.Name, declaration.IsConst);
     }
 
     private static void AppendIndent(StringBuilder builder, int indentLevel) =>
