@@ -10,7 +10,6 @@
     <EmbeddedResource Include="Std\Bitmap\*.cx" />
     <EmbeddedResource Include="Std\C\*.cx" />
     <EmbeddedResource Include="Std\Core\*.cx" />
-    <EmbeddedResource Include="Std\Router\*.cx" />
   </ItemGroup>
 
 </Project>

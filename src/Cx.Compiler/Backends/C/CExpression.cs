@@ -8,13 +8,13 @@ internal sealed record CNameExpression(string Name) : CExpression;
 
 internal sealed record CParenthesizedExpression(CExpression Expression) : CExpression;
 
-internal sealed record CCastExpression(string TargetType, CExpression Expression) : CExpression;
+internal sealed record CCastExpression(CTypeRef TargetType, CExpression Expression) : CExpression;
 
 internal sealed record CUnaryExpression(string Operator, CExpression Operand) : CExpression;
 
 internal sealed record CPostfixExpression(CExpression Operand, string Operator) : CExpression;
 
-internal sealed record CSizeOfTypeExpression(string TypeName) : CExpression;
+internal sealed record CSizeOfTypeExpression(CTypeRef Type) : CExpression;
 
 internal sealed record CSizeOfExpression(CExpression Expression) : CExpression;
 
@@ -46,7 +46,7 @@ internal sealed record CCommaExpression(
     IReadOnlyList<CExpression> Expressions) : CExpression;
 
 internal sealed record CInitializerExpression(
-    string? TypeName,
+    CTypeRef? Type,
     IReadOnlyList<CInitializerField> Fields,
     IReadOnlyList<CExpression> Values) : CExpression;
 

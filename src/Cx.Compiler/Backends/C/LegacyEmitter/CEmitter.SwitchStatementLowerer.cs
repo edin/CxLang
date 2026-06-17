@@ -14,7 +14,7 @@ public sealed partial class CEmitter
                 nameLowerer.LowerExpression(switchStatement.Expression),
                 switchStatement.Cases
                     .Select(switchCase => new CSwitchCase(
-                        nameLowerer.Lower(switchCase.Pattern),
+                        nameLowerer.LowerExpression(switchCase.Pattern),
                         statementLowerer.LowerBlock(switchCase.Body)))
                     .ToList(),
                 statementLowerer.LowerBlock(switchStatement.DefaultBody));

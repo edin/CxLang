@@ -10,7 +10,8 @@ public sealed partial class CEmitter
         CLoweringContext context,
         Func<ExpressionNode, TypeRef?> inferExpressionTypeRef,
         Func<string, string> lowerCxType,
-        Func<TypeRef, string> lowerTypeRef)
+        Func<TypeRef, string> lowerTypeRef,
+        Func<TypeRef, CTypeRef> lowerCTypeRef)
     {
         public CExpression? TryWrapExpression(
             string targetType,
@@ -40,7 +41,7 @@ public sealed partial class CEmitter
             }
 
             var variant = matchingVariants[0];
-            return BuildInitializer(lowerCxType(taggedUnion.Name), taggedUnion.Name, variant.Name, loweredExpression);
+            return BuildInitializer(new CNamedTypeRef(lowerCxType(taggedUnion.Name)), taggedUnion.Name, variant.Name, loweredExpression);
         }
 
         public CExpression? TryBuildConstructorExpression(
@@ -56,7 +57,7 @@ public sealed partial class CEmitter
             }
 
             return BuildInitializer(
-                lowerCxType(taggedUnion.Name),
+                new CNamedTypeRef(lowerCxType(taggedUnion.Name)),
                 taggedUnion.Name,
                 variant.Name,
                 buildPayload(VariantTypeText(variant), arguments));
@@ -90,16 +91,16 @@ public sealed partial class CEmitter
             }
 
             var matchedVariant = matchingVariants[0];
-            return BuildInitializer(lowerTypeRef(targetType), taggedUnion.Name, matchedVariant.Name, loweredExpression);
+            return BuildInitializer(lowerCTypeRef(targetType), taggedUnion.Name, matchedVariant.Name, loweredExpression);
         }
 
         private CExpression BuildInitializer(
-            string loweredUnionType,
+            CTypeRef unionType,
             string unionName,
             string variantName,
             CExpression loweredExpression) =>
             new CInitializerExpression(
-                loweredUnionType,
+                unionType,
                 [
                     new CInitializerField("tag", new CNameExpression($"{unionName}_Tag_{variantName}")),
                     new CInitializerField("as." + variantName, loweredExpression),

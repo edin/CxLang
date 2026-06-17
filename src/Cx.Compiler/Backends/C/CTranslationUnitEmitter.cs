@@ -81,13 +81,22 @@ internal sealed class CTranslationUnitEmitter
         builder.AppendLine($"typedef struct {structDeclaration.Name}");
         builder.AppendLine("{");
 
-        foreach (var field in structDeclaration.FieldDeclarations)
+        foreach (var field in structDeclaration.Fields)
         {
-            builder.AppendLine($"    {field};");
+            builder.Append("    ");
+            builder.Append(EmitFieldDeclaration(field));
+            builder.AppendLine(";");
         }
 
         builder.AppendLine($"}} {structDeclaration.Name};");
     }
+
+    private static string EmitFieldDeclaration(CFieldDeclaration field) =>
+        field.Type is CLegacyTypeRef legacy
+            ? legacy.Text
+            : $"{EmitType(field.Type)} {field.Name}";
+
+    private static string EmitType(CTypeRef type) => CTypeRefEmitter.Emit(type);
 
     private static void EmitTaggedUnion(StringBuilder builder, CTaggedUnionDeclaration taggedUnionDeclaration)
     {
@@ -97,7 +106,9 @@ internal sealed class CTranslationUnitEmitter
             builder.AppendLine("{");
             foreach (var variant in taggedUnionDeclaration.Variants)
             {
-                builder.AppendLine($"    {variant.FieldDeclaration};");
+                builder.Append("    ");
+                builder.Append(EmitFieldDeclaration(variant.FieldDeclaration));
+                builder.AppendLine(";");
             }
 
             builder.AppendLine($"}} {taggedUnionDeclaration.Name};");
@@ -120,7 +131,7 @@ internal sealed class CTranslationUnitEmitter
         builder.AppendLine("    {");
         foreach (var variant in taggedUnionDeclaration.Variants)
         {
-            builder.AppendLine($"        {variant.TypeName} {variant.Name};");
+            builder.AppendLine($"        {EmitType(variant.Type)} {variant.Name};");
         }
 
         builder.AppendLine("    } as;");
@@ -129,20 +140,20 @@ internal sealed class CTranslationUnitEmitter
 
     private static void EmitTypeAlias(StringBuilder builder, CTypeAliasDeclaration typeAliasDeclaration)
     {
-        if (typeAliasDeclaration.FunctionParameterTypes is not null)
+        if (typeAliasDeclaration.TargetType is CFunctionTypeRef functionType)
         {
             builder.Append("typedef ");
-            builder.Append(typeAliasDeclaration.TargetType);
+            builder.Append(EmitType(functionType.ReturnType));
             builder.Append(" (*");
             builder.Append(typeAliasDeclaration.Name);
             builder.Append(")(");
-            builder.Append(string.Join(", ", typeAliasDeclaration.FunctionParameterTypes));
+            builder.Append(string.Join(", ", functionType.Parameters.Select(EmitParameterDeclaration)));
             builder.AppendLine(");");
             return;
         }
 
         builder.Append("typedef ");
-        builder.Append(typeAliasDeclaration.TargetType);
+        builder.Append(EmitType(typeAliasDeclaration.TargetType));
         builder.Append(' ');
         builder.Append(typeAliasDeclaration.Name);
         builder.AppendLine(";");
@@ -150,22 +161,13 @@ internal sealed class CTranslationUnitEmitter
 
     private static void EmitFunctionDeclaration(StringBuilder builder, CFunctionDeclaration functionDeclaration)
     {
-        builder.Append(functionDeclaration.ReturnType);
-        builder.Append(' ');
-        builder.Append(functionDeclaration.Name);
-        builder.Append('(');
-        builder.Append(string.Join(", ", functionDeclaration.ParameterDeclarations));
-        builder.AppendLine(");");
+        builder.Append(EmitFunctionSignature(functionDeclaration.Signature));
+        builder.AppendLine(";");
     }
 
     private static void EmitFunctionDefinition(StringBuilder builder, CFunctionDefinition functionDefinition)
     {
-        builder.Append(functionDefinition.ReturnType);
-        builder.Append(' ');
-        builder.Append(functionDefinition.Name);
-        builder.Append('(');
-        builder.Append(string.Join(", ", functionDefinition.ParameterDeclarations));
-        builder.AppendLine(")");
+        builder.AppendLine(EmitFunctionSignature(functionDefinition.Signature));
         builder.AppendLine("{");
         foreach (var statement in functionDefinition.Body)
         {
@@ -173,6 +175,18 @@ internal sealed class CTranslationUnitEmitter
         }
         builder.AppendLine("}");
     }
+
+    private static string EmitFunctionSignature(CFunctionSignature signature) =>
+        $"{EmitType(signature.ReturnType)} {signature.Name}({string.Join(", ", signature.Parameters.Select(EmitParameterDeclaration))})";
+
+    private static string EmitParameterDeclaration(CParameterDeclaration parameter) =>
+        parameter.IsVariadic
+            ? "..."
+            : parameter.Type is CLegacyTypeRef legacy
+                ? legacy.Text
+                : string.IsNullOrWhiteSpace(parameter.Name)
+                    ? EmitType(parameter.Type)
+                    : $"{EmitType(parameter.Type)} {parameter.Name}";
 
     private static void EmitStatement(StringBuilder builder, CStatementNode statement, int indentLevel)
     {
@@ -183,7 +197,7 @@ internal sealed class CTranslationUnitEmitter
                 break;
             case CLocalDeclarationStatement localDeclaration:
                 AppendIndent(builder, indentLevel);
-                builder.Append(localDeclaration.Declaration);
+                builder.Append(EmitVariableDeclaration(localDeclaration.Declaration));
                 if (localDeclaration.Initializer is not null)
                 {
                     builder.Append(" = ");
@@ -264,8 +278,8 @@ internal sealed class CTranslationUnitEmitter
     private static string EmitForInitializer(CForInitializerNode initializer) => initializer switch
     {
         CEmptyForInitializer => string.Empty,
-        CDeclarationForInitializer declaration when declaration.Initializer is null => declaration.Declaration,
-        CDeclarationForInitializer { Initializer: { } value } declaration => $"{declaration.Declaration} = {_expressionEmitter.Emit(value)}",
+        CDeclarationForInitializer declaration when declaration.Initializer is null => EmitVariableDeclaration(declaration.Declaration),
+        CDeclarationForInitializer { Initializer: { } value } declaration => $"{EmitVariableDeclaration(declaration.Declaration)} = {_expressionEmitter.Emit(value)}",
         CExpressionForInitializer expression => _expressionEmitter.Emit(expression.Expression),
         _ => throw new InvalidOperationException($"Unexpected C for initializer node {initializer.GetType().Name}."),
     };
@@ -283,7 +297,7 @@ internal sealed class CTranslationUnitEmitter
         {
             AppendIndent(builder, indentLevel + 1);
             builder.Append("case ");
-            builder.Append(switchCase.Pattern);
+            builder.Append(_expressionEmitter.Emit(switchCase.Pattern));
             builder.AppendLine(":");
             EmitBlock(builder, switchCase.Body, indentLevel + 1);
         }
@@ -359,7 +373,7 @@ internal sealed class CTranslationUnitEmitter
 
     private static void EmitGlobalDeclaration(StringBuilder builder, CGlobalDeclaration globalDeclaration)
     {
-        builder.Append(globalDeclaration.Declaration);
+        builder.Append(EmitVariableDeclaration(globalDeclaration.Declaration));
         if (globalDeclaration.Initializer is not null)
         {
             builder.Append(" = ");
@@ -367,6 +381,17 @@ internal sealed class CTranslationUnitEmitter
         }
 
         builder.AppendLine(";");
+    }
+
+    private static string EmitVariableDeclaration(CVariableDeclaration declaration)
+    {
+        if (declaration.Type is CLegacyTypeRef legacy)
+        {
+            return legacy.Text;
+        }
+
+        var prefix = declaration.IsConst ? "const " : string.Empty;
+        return $"{prefix}{EmitType(declaration.Type)} {declaration.Name}";
     }
 
     private static void AppendIndent(StringBuilder builder, int indentLevel) =>

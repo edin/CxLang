@@ -41,8 +41,8 @@ public sealed class CExpressionLowererTests
             ExpressionOperand: null,
             TypeOperandNode: TypeNode.CreateFromText(location, "Vec<int>")));
 
-        Assert.Equal("lowered_Vec<int>*", Assert.IsType<CCastExpression>(cast).TargetType);
-        Assert.Equal("lowered_Vec<int>", Assert.IsType<CSizeOfTypeExpression>(sizeOf).TypeName);
+        Assert.Equal("lowered_Vec<int>*", AssertLegacyType(Assert.IsType<CCastExpression>(cast).TargetType));
+        Assert.Equal("lowered_Vec<int>", AssertLegacyType(Assert.IsType<CSizeOfTypeExpression>(sizeOf).Type));
     }
 
     [Fact]
@@ -69,9 +69,9 @@ public sealed class CExpressionLowererTests
             [],
             typeNode));
 
-        Assert.Equal("typed_Vec<int>", Assert.IsType<CCastExpression>(cast).TargetType);
-        Assert.Equal("typed_Vec<int>", Assert.IsType<CSizeOfTypeExpression>(sizeOf).TypeName);
-        Assert.Equal("typed_Vec<int>", Assert.IsType<CInitializerExpression>(initializer).TypeName);
+        Assert.Equal("typed_Vec<int>", AssertNamedType(Assert.IsType<CCastExpression>(cast).TargetType));
+        Assert.Equal("typed_Vec<int>", AssertNamedType(Assert.IsType<CSizeOfTypeExpression>(sizeOf).Type));
+        Assert.Equal("typed_Vec<int>", AssertNamedType(Assert.IsType<CInitializerExpression>(initializer).Type));
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class CExpressionLowererTests
             "=",
             new LiteralExpressionNode(location, "1")));
 
-        Assert.Equal("Point", Assert.IsType<CInitializerExpression>(initializer).TypeName);
+        Assert.Equal("Point", AssertLegacyType(Assert.IsType<CInitializerExpression>(initializer).Type));
         var loweredAssignment = Assert.IsType<CAssignmentExpression>(assignment);
         Assert.Equal("=", loweredAssignment.Operator);
         Assert.IsType<CNameExpression>(loweredAssignment.Target);
@@ -120,6 +120,12 @@ public sealed class CExpressionLowererTests
     private static Location TestLocation() =>
         new(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
 
+    private static string AssertLegacyType(CTypeRef? type) =>
+        Assert.IsType<CLegacyTypeRef>(type).Text;
+
+    private static string AssertNamedType(CTypeRef? type) =>
+        Assert.IsType<CNamedTypeRef>(type).Name;
+
     private sealed class TestContext(
         string typePrefix = "",
         string typeRefPrefix = "",
@@ -137,6 +143,9 @@ public sealed class CExpressionLowererTests
             new CUnaryExpression("&", LowerExpression(operand));
 
         public string LowerType(TypeRef type) => typeRefPrefix + TypeRefFormatter.ToCxString(type);
+
+        public CTypeRef LowerTypeRef(TypeRef type) =>
+            new CNamedTypeRef(typeRefPrefix + TypeRefFormatter.ToCxString(type));
 
         public string LowerType(TypeNode? typeNode) =>
             typeNode?.Semantic.Type is { } type

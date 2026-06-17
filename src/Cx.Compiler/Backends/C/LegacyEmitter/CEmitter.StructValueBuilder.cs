@@ -75,7 +75,7 @@ public sealed partial class CEmitter
             }
 
             initializer = new CInitializerExpression(
-                loweredStructType,
+                new CNamedTypeRef(loweredStructType),
                 structNode.Fields
                     .Zip(arguments, (field, argument) => new CInitializerField(field.Name, lowerExpression(argument)))
                     .ToList(),

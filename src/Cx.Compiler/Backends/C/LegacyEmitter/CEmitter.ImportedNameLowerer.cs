@@ -78,18 +78,20 @@ public sealed partial class CEmitter
                 _scope,
                 s_abiNames,
                 type => LowerType(type, SelfType),
-                LowerTypeRef);
+                LowerTypeText,
+                LowerCTypeRef);
             _taggedUnionValueBuilder = new TaggedUnionValueBuilder(
                 _context,
                 InferExpressionTypeRef,
                 type => LowerType(type, SelfType),
-                LowerTypeRef);
+                LowerTypeText,
+                LowerCTypeRef);
             _structValueBuilder = new StructValueBuilder(
                 _context,
                 LowerExpression,
                 InferExpressionTypeRef,
                 type => LowerType(type, SelfType),
-                LowerTypeRef);
+                LowerTypeText);
             _adapterExposeResolver = new AdapterExposeResolver(_context);
             _receiverExpressionBuilder = new ReceiverExpressionBuilder(_scope);
             _nameExpressionLowerer = new NameExpressionLowerer(
@@ -359,19 +361,25 @@ public sealed partial class CEmitter
             _nameExpressionLowerer.LowerAddressOfExpression(operand);
 
         string ICExpressionLoweringContext.LowerType(TypeRef type) =>
-            LowerTypeRef(type);
+            LowerTypeText(type);
+
+        CTypeRef ICExpressionLoweringContext.LowerTypeRef(TypeRef type) =>
+            s_abiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
 
         string ICExpressionLoweringContext.LowerType(TypeNode? typeNode) =>
             _scope.ResolveType(typeNode) is { } type
-                ? LowerTypeRef(type)
+                ? LowerTypeText(type)
                 : string.Empty;
 
         string ICExpressionLoweringContext.LowerType(TypeNode? typeNode, string fallbackType) =>
             CEmitter.LowerType(typeNode, fallbackType, SelfType);
 
 
-        private string LowerTypeRef(TypeRef type) =>
+        private string LowerTypeText(TypeRef type) =>
             s_abiNames.LowerType(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+
+        private CTypeRef LowerCTypeRef(TypeRef type) =>
+            s_abiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
 
         private static string LowerType(string type, string? selfType = null) =>
             CEmitter.LowerType(type, selfType);

@@ -10,24 +10,25 @@ public sealed partial class CEmitter
         CLoweringScope scope,
         CAbiNameService abiNames,
         Func<string, string> lowerCxType,
-        Func<TypeRef, string> lowerTypeRef)
+        Func<TypeRef, string> lowerTypeRef,
+        Func<TypeRef, CTypeRef> lowerCTypeRef)
     {
         public CExpression? TryBuild(string targetType, string sourceExpression)
         {
             var interfaceName = NormalizeType(targetType);
-            return TryBuild(interfaceName, sourceExpression, lowerCxType(interfaceName));
+            return TryBuild(interfaceName, sourceExpression, new CNamedTypeRef(lowerCxType(interfaceName)));
         }
 
         public CExpression? TryBuild(TypeRef targetType, string sourceExpression)
         {
             var interfaceName = NormalizeType(TypeRefFormatter.ToCxString(targetType));
-            return TryBuild(interfaceName, sourceExpression, lowerTypeRef(targetType));
+            return TryBuild(interfaceName, sourceExpression, lowerCTypeRef(targetType));
         }
 
         private CExpression? TryBuild(
             string interfaceName,
             string sourceExpression,
-            string loweredInterfaceName)
+            CTypeRef interfaceType)
         {
             if (!context.IsInterface(interfaceName))
             {
@@ -53,7 +54,7 @@ public sealed partial class CEmitter
                 ? new CNameExpression(trimmedSource)
                 : new CUnaryExpression("&", new CNameExpression(trimmedSource));
             return new CInitializerExpression(
-                loweredInterfaceName,
+                interfaceType,
                 [
                     new CInitializerField("state", state),
                     new CInitializerField(

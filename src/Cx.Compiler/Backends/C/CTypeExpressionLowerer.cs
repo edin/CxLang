@@ -18,12 +18,12 @@ internal sealed class CTypeExpressionLowerer(ICExpressionLoweringContext context
         }
 
         return sizeOf.ExpressionOperand is null
-            ? new CSizeOfTypeExpression("void")
+            ? new CSizeOfTypeExpression(new CNamedTypeRef("void"))
             : new CSizeOfExpression(context.LowerExpression(sizeOf.ExpressionOperand));
     }
 
-    public string LowerType(TypeNode? typeNode) =>
+    public CTypeRef LowerType(TypeNode? typeNode) =>
         typeNode?.Semantic.Type is { } type
-            ? context.LowerType(type)
-            : context.LowerType(typeNode);
+            ? context.LowerTypeRef(type)
+            : new CLegacyTypeRef(context.LowerType(typeNode));
 }

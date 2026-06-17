@@ -266,12 +266,12 @@ public sealed partial class CEmitter
 
     private static CStructDeclaration ToCInterfaceVTableStruct(InterfaceNode interfaceNode)
     {
-        var fields = new List<string> { "CxTypeId type_id" };
+        var fields = new List<CFieldDeclaration> { new(new CNamedTypeRef("CxTypeId"), "type_id") };
         foreach (var method in interfaceNode.Methods)
         {
             var parameters = new List<string> { "void* state" };
             parameters.AddRange(method.Parameters.Select(parameter => LowerParameterDeclaration(parameter)));
-            fields.Add($"{LowerType(InterfaceMethodReturnTypeText(method))} (*{method.Name})({string.Join(", ", parameters)})");
+            fields.Add(CFieldDeclaration.Legacy($"{LowerType(InterfaceMethodReturnTypeText(method))} (*{method.Name})({string.Join(", ", parameters)})"));
         }
 
         return new CStructDeclaration(GetInterfaceVTableName(interfaceNode.Name), fields);
@@ -279,10 +279,10 @@ public sealed partial class CEmitter
 
     private static CStructDeclaration ToCInterfaceValueStruct(InterfaceNode interfaceNode)
     {
-        var fields = new List<string>
+        var fields = new List<CFieldDeclaration>
         {
-            "void* state",
-            $"const {GetInterfaceVTableName(interfaceNode.Name)}* vtable",
+            new(new CPointerTypeRef(new CNamedTypeRef("void")), "state"),
+            CFieldDeclaration.Legacy($"const {GetInterfaceVTableName(interfaceNode.Name)}* vtable"),
         };
         return new CStructDeclaration(interfaceNode.Name, fields);
     }
@@ -324,10 +324,14 @@ public sealed partial class CEmitter
             taggedUnion.Name,
             taggedUnion.IsRaw,
             taggedUnion.Variants
-                .Select(variant => new CTaggedUnionVariantDeclaration(
-                    variant.Name,
-                    LowerType(variant.TypeNode, TaggedUnionVariantTypeText(variant)),
-                    LowerDeclaration(variant.TypeNode, TaggedUnionVariantTypeText(variant), variant.Name)))
+                .Select(variant =>
+                {
+                    var variantType = TaggedUnionVariantTypeText(variant);
+                    return new CTaggedUnionVariantDeclaration(
+                        variant.Name,
+                        LowerFieldType(variant.TypeNode, variantType),
+                        LowerField(variant.TypeNode, variantType, variant.Name));
+                })
                 .ToList());
 
     private static IReadOnlyList<InterfaceImplementation> GetInterfaceImplementations(
@@ -359,29 +363,40 @@ public sealed partial class CEmitter
 
     private static CTypeAliasDeclaration ToCTypeAlias(TypeAliasNode typeAlias)
     {
+        if (typeAlias.TargetTypeNode?.Semantic.Type is { } semanticType)
+        {
+            return new CTypeAliasDeclaration(
+                typeAlias.Name,
+                s_abiNames.LowerTypeRef(semanticType));
+        }
+
         var targetType = TypeAliasTargetTypeText(typeAlias);
         if (TryParseFunctionType(targetType, out var parameters, out var returnType))
         {
             return new CTypeAliasDeclaration(
                 typeAlias.Name,
-                LowerType(returnType),
-                parameters.Select(parameter => LowerFunctionTypeParameter(parameter)).ToList());
+                new CFunctionTypeRef(
+                    new CLegacyTypeRef(LowerType(returnType)),
+                    parameters
+                        .Select(parameter => CParameterDeclaration.Legacy(LowerFunctionTypeParameter(parameter)))
+                        .ToList()));
         }
 
         return new CTypeAliasDeclaration(
             typeAlias.Name,
-            LowerType(typeAlias.TargetTypeNode, targetType));
+            new CLegacyTypeRef(LowerType(typeAlias.TargetTypeNode, targetType)));
     }
 
     private static CFunctionDeclaration ToCFunctionDeclaration(FunctionNode function)
     {
         var selfType = ResolveSelfType(function);
         return new CFunctionDeclaration(
-            LowerType(function.ReturnTypeNode, FunctionReturnTypeText(function), selfType),
-            GetCFunctionName(function),
-            function.Parameters
-                .Select(parameter => LowerParameterDeclaration(parameter, selfType))
-                .ToList());
+            new CFunctionSignature(
+                LowerReturnType(function.ReturnTypeNode, FunctionReturnTypeText(function), selfType),
+                GetCFunctionName(function),
+                function.Parameters
+                    .Select(parameter => LowerParameter(parameter, selfType))
+                    .ToList()));
     }
 
     private static CFunctionDefinition ToCFunctionDefinition(
@@ -391,30 +406,30 @@ public sealed partial class CEmitter
         var declaration = ToCFunctionDeclaration(function);
         var statementLowerer = new CStatementLoweringPipeline(nameLowerer);
         return new CFunctionDefinition(
-            declaration.ReturnType,
-            declaration.Name,
-            declaration.ParameterDeclarations,
+            declaration.Signature,
             statementLowerer.LowerBlock(function.Body));
     }
 
     private static CFunctionDeclaration ToCFunctionDeclaration(ExternFunctionNode function) =>
         new(
-            LowerType(function.ReturnTypeNode, ExternFunctionReturnTypeText(function)),
-            function.Name,
-            function.Parameters
-                .Select(parameter => LowerParameterDeclaration(parameter))
-                .ToList());
+            new CFunctionSignature(
+                LowerReturnType(function.ReturnTypeNode, ExternFunctionReturnTypeText(function)),
+                function.Name,
+                function.Parameters
+                    .Select(parameter => LowerParameter(parameter))
+                    .ToList()));
 
     private static CGlobalDeclaration ToCGlobalDeclaration(
         GlobalVariableNode global,
         ImportedNameLowerer nameLowerer)
     {
         var globalType = GlobalVariableTypeText(global);
-        var declaration = (global.IsConst ? "const " : "") + LowerDeclaration(global.TypeNode, globalType, global.Name);
         var initializer = global.Initializer is null
             ? null
             : nameLowerer.LowerInitializerExpression(global.TypeNode, globalType, global.Initializer);
-        return new CGlobalDeclaration(declaration, initializer);
+        return new CGlobalDeclaration(
+            LowerVariable(global.TypeNode, globalType, global.Name, global.IsConst),
+            initializer);
     }
 
     private static IEnumerable<CDeclareNode> GetCDeclarationsToInclude(ProgramNode program)
@@ -734,13 +749,13 @@ public sealed partial class CEmitter
         || GetCDeclarationValueNames(declaration).Any(usage.Values.Contains);
 
 
-    private static string LowerStructFieldDeclaration(StructNode structNode, StructFieldNode field)
+    private static CFieldDeclaration LowerStructFieldDeclaration(StructNode structNode, StructFieldNode field)
     {
         var selfPointerType = structNode.Name + "*";
         var fieldType = StructFieldTypeText(field);
         return fieldType == selfPointerType
-            ? $"struct {structNode.Name}* {field.Name}"
-            : LowerDeclaration(field.TypeNode, fieldType, field.Name);
+            ? CFieldDeclaration.Legacy($"struct {structNode.Name}* {field.Name}")
+            : LowerField(field.TypeNode, fieldType, field.Name);
     }
 
 
@@ -1216,6 +1231,92 @@ public sealed partial class CEmitter
 
     private static string LowerFunctionTypeParameter(string parameter, string? selfType = null) =>
         s_abiNames.LowerFunctionTypeParameter(parameter, selfType);
+
+    private static CTypeRef LowerReturnType(TypeNode? typeNode, string fallbackType, string? selfType = null) =>
+        typeNode?.Semantic.Type is { } type
+            ? s_abiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(selfType))
+            : new CLegacyTypeRef(LowerType(typeNode, fallbackType, selfType));
+
+    private static CParameterDeclaration LowerParameter(ParameterNode parameter, string? selfType = null)
+    {
+        if (parameter.IsVariadic)
+        {
+            return new CParameterDeclaration(new CNamedTypeRef("void"), string.Empty, IsVariadic: true);
+        }
+
+        if (CanUseStructuredParameterType(parameter.TypeNode))
+        {
+            return new CParameterDeclaration(
+                s_abiNames.LowerTypeRef(parameter.TypeNode!.Semantic.Type!, GenericTypeSubstitutionBuilder.ParseType(selfType)),
+                parameter.Name);
+        }
+
+        return CParameterDeclaration.Legacy(LowerParameterDeclaration(parameter, selfType));
+    }
+
+    private static CVariableDeclaration LowerVariable(
+        TypeNode? typeNode,
+        string fallbackType,
+        string name,
+        bool isConst = false,
+        string? selfType = null)
+    {
+        if (CanUseStructuredVariableType(typeNode))
+        {
+            return new CVariableDeclaration(
+                s_abiNames.LowerTypeRef(typeNode!.Semantic.Type!, GenericTypeSubstitutionBuilder.ParseType(selfType)),
+                name,
+                isConst);
+        }
+
+        var declaration = (isConst ? "const " : "") + LowerDeclaration(typeNode, fallbackType, name, selfType);
+        return CVariableDeclaration.Legacy(declaration);
+    }
+
+    private static CFieldDeclaration LowerField(TypeNode? typeNode, string fallbackType, string name)
+    {
+        if (CanUseStructuredFieldType(typeNode))
+        {
+            return new CFieldDeclaration(s_abiNames.LowerTypeRef(typeNode!.Semantic.Type!), name);
+        }
+
+        return CFieldDeclaration.Legacy(LowerDeclaration(typeNode, fallbackType, name));
+    }
+
+    private static CTypeRef LowerFieldType(TypeNode? typeNode, string fallbackType) =>
+        typeNode?.Semantic.Type is { } type && CanUseStructuredFieldType(type)
+            ? s_abiNames.LowerTypeRef(type)
+            : new CLegacyTypeRef(LowerType(typeNode, fallbackType));
+
+    private static bool CanUseStructuredParameterType(TypeNode? typeNode) =>
+        typeNode?.Semantic.Type is { } type
+        && type is not TypeRef.Function
+        && !ContainsFixedArray(type);
+
+    private static bool CanUseStructuredVariableType(TypeNode? typeNode) =>
+        typeNode?.Semantic.Type is { } type
+        && type is not TypeRef.Function
+        && !ContainsFixedArray(type);
+
+    private static bool CanUseStructuredFieldType(TypeNode? typeNode) =>
+        typeNode?.Semantic.Type is { } type
+        && CanUseStructuredFieldType(type);
+
+    private static bool CanUseStructuredFieldType(TypeRef type) =>
+        type is not TypeRef.Function
+        && !ContainsFixedArray(type);
+
+    private static bool ContainsFixedArray(TypeRef type) =>
+        type switch
+        {
+            TypeRef.FixedArray => true,
+            TypeRef.Alias alias => ContainsFixedArray(alias.Target),
+            TypeRef.Pointer pointer => ContainsFixedArray(pointer.Element),
+            TypeRef.Function function => function.Parameters.Any(ContainsFixedArray)
+                || ContainsFixedArray(function.ReturnType),
+            TypeRef.Named named => named.Arguments.Any(ContainsFixedArray),
+            _ => false,
+        };
 
 
     private static string? ResolveSelfType(FunctionNode function)

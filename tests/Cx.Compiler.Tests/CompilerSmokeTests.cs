@@ -20,6 +20,62 @@ public sealed class CompilerSmokeTests
     }
 
     [Fact]
+    public void CompileToC_EmitsTypedFunctionSignature()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn add(left: int, right: int) -> int {
+                return left + right;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int add(int left, int right)", result.Output);
+    }
+
+    [Fact]
+    public void CompileToC_EmitsTypedVariableDeclarations()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let local: int = 1;
+                for (let i: int = 0; i < 1; i = i + 1) {
+                    local += i;
+                }
+                return local;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int local = 1;", result.Output);
+        Assert.Contains("for (int i = 0;", result.Output);
+    }
+
+    [Fact]
+    public void CompileToC_EmitsTypedStructAndTaggedUnionFields()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Point {
+                x: int;
+            }
+
+            union Value {
+                number: int;
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int x;", result.Output);
+        Assert.Contains("int number;", result.Output);
+    }
+
+    [Fact]
     public void CompileToC_EmitsLoweredForeachWithoutEmitterFallback()
     {
         var result = CompilerTestHelpers.Compile(

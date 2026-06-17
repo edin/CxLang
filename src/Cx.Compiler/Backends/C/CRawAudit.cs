@@ -28,9 +28,9 @@ internal sealed class CRawAuditCollector
 
     private static string GetItemPath(CTranslationUnitItem item, int index) => item switch
     {
-        CGlobalDeclaration global => $"global[{global.Declaration}]",
-        CFunctionDeclaration function => $"prototype[{function.Name}]",
-        CFunctionDefinition function => $"function[{function.Name}]",
+        CGlobalDeclaration global => $"global[{FormatDeclaration(global.Declaration)}]",
+        CFunctionDeclaration function => $"prototype[{function.Signature.Name}]",
+        CFunctionDefinition function => $"function[{function.Signature.Name}]",
         CStructDeclaration structDeclaration => $"struct[{structDeclaration.Name}]",
         CEnumDeclaration enumDeclaration => $"enum[{enumDeclaration.Name}]",
         CTaggedUnionDeclaration unionDeclaration => $"union[{unionDeclaration.Name}]",
@@ -206,6 +206,11 @@ internal sealed class CRawAuditCollector
         text = text.Trim();
         _entries.Add(new CRawAuditEntry(kind, Classify(kind, text), path, text));
     }
+
+    private static string FormatDeclaration(CVariableDeclaration declaration) =>
+        declaration.Type is CLegacyTypeRef legacy
+            ? legacy.Text
+            : declaration.Name;
 
     private static string Classify(string kind, string text)
     {

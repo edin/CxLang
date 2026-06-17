@@ -15,6 +15,8 @@ internal interface ICExpressionLoweringContext
 
     string LowerType(TypeRef type);
 
+    CTypeRef LowerTypeRef(TypeRef type);
+
     string LowerType(TypeNode? typeNode);
 
     string LowerType(TypeNode? typeNode, string fallbackType);

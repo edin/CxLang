@@ -16,9 +16,44 @@ internal sealed record CEnumDeclaration(
 
 internal sealed record CEnumMember(string Name, string? Value);
 
+internal abstract record CTypeRef;
+
+internal sealed record CNamedTypeRef(string Name) : CTypeRef;
+
+internal sealed record CPointerTypeRef(CTypeRef Element) : CTypeRef;
+
+internal sealed record CFunctionTypeRef(
+    CTypeRef ReturnType,
+    IReadOnlyList<CParameterDeclaration> Parameters) : CTypeRef;
+
+internal sealed record CLegacyTypeRef(string Text) : CTypeRef;
+
+internal sealed record CFieldDeclaration(CTypeRef Type, string Name)
+{
+    public static CFieldDeclaration Legacy(string declaration) =>
+        new(new CLegacyTypeRef(declaration), string.Empty);
+}
+
+internal sealed record CParameterDeclaration(CTypeRef Type, string Name, bool IsVariadic = false)
+{
+    public static CParameterDeclaration Legacy(string declaration) =>
+        new(new CLegacyTypeRef(declaration), string.Empty);
+}
+
+internal sealed record CVariableDeclaration(CTypeRef Type, string Name, bool IsConst = false)
+{
+    public static CVariableDeclaration Legacy(string declaration) =>
+        new(new CLegacyTypeRef(declaration), string.Empty);
+}
+
+internal sealed record CFunctionSignature(
+    CTypeRef ReturnType,
+    string Name,
+    IReadOnlyList<CParameterDeclaration> Parameters);
+
 internal sealed record CStructDeclaration(
     string Name,
-    IReadOnlyList<string> FieldDeclarations) : CTranslationUnitItem;
+    IReadOnlyList<CFieldDeclaration> Fields) : CTranslationUnitItem;
 
 internal sealed record CTaggedUnionDeclaration(
     string Name,
@@ -27,27 +62,22 @@ internal sealed record CTaggedUnionDeclaration(
 
 internal sealed record CTaggedUnionVariantDeclaration(
     string Name,
-    string TypeName,
-    string FieldDeclaration);
+    CTypeRef Type,
+    CFieldDeclaration FieldDeclaration);
 
 internal sealed record CTypeAliasDeclaration(
     string Name,
-    string TargetType,
-    IReadOnlyList<string>? FunctionParameterTypes = null) : CTranslationUnitItem;
+    CTypeRef TargetType) : CTranslationUnitItem;
 
 internal sealed record CFunctionDeclaration(
-    string ReturnType,
-    string Name,
-    IReadOnlyList<string> ParameterDeclarations) : CTranslationUnitItem;
+    CFunctionSignature Signature) : CTranslationUnitItem;
 
 internal sealed record CFunctionDefinition(
-    string ReturnType,
-    string Name,
-    IReadOnlyList<string> ParameterDeclarations,
+    CFunctionSignature Signature,
     IReadOnlyList<CStatementNode> Body) : CTranslationUnitItem;
 
 internal sealed record CGlobalDeclaration(
-    string Declaration,
+    CVariableDeclaration Declaration,
     CExpression? Initializer) : CTranslationUnitItem;
 
 internal abstract record CStatementNode;
@@ -55,7 +85,7 @@ internal abstract record CStatementNode;
 internal sealed record CBlockStatement(IReadOnlyList<CStatementNode> Body) : CStatementNode;
 
 internal sealed record CLocalDeclarationStatement(
-    string Declaration,
+    CVariableDeclaration Declaration,
     CExpression? Initializer) : CStatementNode;
 
 internal sealed record CReturnStatement(CExpression? Expression) : CStatementNode;
@@ -86,7 +116,7 @@ internal abstract record CForInitializerNode;
 internal sealed record CEmptyForInitializer : CForInitializerNode;
 
 internal sealed record CDeclarationForInitializer(
-    string Declaration,
+    CVariableDeclaration Declaration,
     CExpression? Initializer) : CForInitializerNode;
 
 internal sealed record CExpressionForInitializer(
@@ -98,7 +128,7 @@ internal sealed record CSwitchStatement(
     IReadOnlyList<CStatementNode> DefaultBody) : CStatementNode;
 
 internal sealed record CSwitchCase(
-    string Pattern,
+    CExpression Pattern,
     IReadOnlyList<CStatementNode> Body);
 
 internal abstract record CElseClause;

@@ -7,10 +7,10 @@ internal sealed class CExpressionEmitter
         CLiteralExpression literal => literal.Text,
         CNameExpression name => name.Name,
         CParenthesizedExpression parenthesized => $"({Emit(parenthesized.Expression)})",
-        CCastExpression cast => $"({cast.TargetType}) {Emit(cast.Expression)}",
+        CCastExpression cast => $"({CTypeRefEmitter.Emit(cast.TargetType)}) {Emit(cast.Expression)}",
         CUnaryExpression unary => unary.Operator + Emit(unary.Operand),
         CPostfixExpression postfix => $"{Emit(postfix.Operand)}{postfix.Operator}",
-        CSizeOfTypeExpression sizeOf => $"sizeof({sizeOf.TypeName})",
+        CSizeOfTypeExpression sizeOf => $"sizeof({CTypeRefEmitter.Emit(sizeOf.Type)})",
         CSizeOfExpression sizeOf => $"sizeof({Emit(sizeOf.Expression)})",
         CBinaryExpression binary => $"{Emit(binary.Left)} {binary.Operator} {Emit(binary.Right)}",
         CConditionalExpression conditional => $"{Emit(conditional.Condition)} ? {Emit(conditional.WhenTrue)} : {Emit(conditional.WhenFalse)}",
@@ -36,8 +36,8 @@ internal sealed class CExpressionEmitter
             body = "0";
         }
 
-        return initializer.TypeName is null
+        return initializer.Type is null
             ? "{ " + body + " }"
-            : $"({initializer.TypeName}){{ {body} }}";
+            : $"({CTypeRefEmitter.Emit(initializer.Type)}){{ {body} }}";
     }
 }

@@ -1,0 +1,41 @@
+using Cx.Compiler.Lowering;
+using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax.Nodes;
+
+namespace Cx.Compiler.C;
+
+internal sealed class CTypeRefLowerer(IReadOnlyList<TypeAdapterNode> typeAdapters)
+{
+    public CTypeRef Lower(TypeRef type, TypeRef? selfType = null)
+    {
+        type = selfType is null ? type : TypeRefRewriter.SubstituteSelf(type, selfType);
+
+        return type switch
+        {
+            TypeRef.Unknown => new CNamedTypeRef("unknown"),
+            TypeRef.Null => new CNamedTypeRef("NULL"),
+            TypeRef.Alias alias => new CNamedTypeRef(CTypeLowerer.LowerType(alias, typeAdapters)),
+            TypeRef.Named named => new CNamedTypeRef(CTypeLowerer.LowerType(named, typeAdapters)),
+            TypeRef.Pointer pointer => new CPointerTypeRef(Lower(pointer.Element, selfType: null)),
+            TypeRef.FixedArray fixedArray => Lower(fixedArray.Element, selfType: null),
+            TypeRef.Function function => new CFunctionTypeRef(
+                Lower(function.ReturnType, selfType: null),
+                LowerFunctionParameters(function)),
+            _ => new CLegacyTypeRef(CTypeLowerer.LowerType(type, typeAdapters)),
+        };
+    }
+
+    private IReadOnlyList<CParameterDeclaration> LowerFunctionParameters(TypeRef.Function function)
+    {
+        var parameters = function.Parameters
+            .Select(parameter => new CParameterDeclaration(Lower(parameter, selfType: null), string.Empty))
+            .ToList();
+
+        if (function.IsVariadic)
+        {
+            parameters.Add(new CParameterDeclaration(new CNamedTypeRef("void"), string.Empty, IsVariadic: true));
+        }
+
+        return parameters;
+    }
+}
