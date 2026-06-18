@@ -47,6 +47,9 @@ internal sealed class CTranslationUnitEmitter
                 case CGlobalDeclaration globalDeclaration:
                     EmitGlobalDeclaration(builder, globalDeclaration);
                     break;
+                case CExternGlobalDeclaration externGlobalDeclaration:
+                    EmitExternGlobalDeclaration(builder, externGlobalDeclaration);
+                    break;
                 case CRawTopLevel raw:
                     builder.Append(raw.Text);
                     if (!raw.Text.EndsWith(Environment.NewLine, StringComparison.Ordinal))
@@ -360,6 +363,13 @@ internal sealed class CTranslationUnitEmitter
             builder.Append(_expressionEmitter.Emit(globalDeclaration.Initializer));
         }
 
+        builder.AppendLine(";");
+    }
+
+    private static void EmitExternGlobalDeclaration(StringBuilder builder, CExternGlobalDeclaration externGlobalDeclaration)
+    {
+        builder.Append("extern ");
+        builder.Append(EmitVariableDeclaration(externGlobalDeclaration.Declaration));
         builder.AppendLine(";");
     }
 

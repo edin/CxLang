@@ -13,13 +13,9 @@ internal interface ICExpressionLoweringContext
 
     CExpression LowerAddressOfExpression(ExpressionNode operand);
 
-    string LowerType(TypeRef type);
-
     CTypeRef LowerTypeRef(TypeRef type);
 
-    string LowerType(TypeNode? typeNode);
-
-    string LowerType(TypeNode? typeNode, string fallbackType);
+    TypeRef? ResolveType(TypeNode? typeNode);
 
     CExpression? TryWrapAssignmentValue(AssignmentExpressionNode assignment, CExpression value);
 

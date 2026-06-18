@@ -93,9 +93,11 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     private FunctionNode InferFunction(FunctionNode function)
     {
         var typeEnvironment = _globalTypeEnvironment.Clone();
+        AddImplicitSelfBinding(function, typeEnvironment);
+        var selfType = GetSelfSubstitutionType(function);
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
-            SetVariableType(typeEnvironment, parameter.Name, TypeRefOrUnknown(parameter.TypeNode));
+            SetVariableType(typeEnvironment, parameter.Name, SubstituteSelf(TypeRefOrUnknown(parameter.TypeNode), selfType));
         }
 
         return function with
@@ -547,7 +549,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             return null;
         }
 
-        return expression switch
+        var inferred = expression switch
         {
             ParenthesizedExpressionNode parenthesized => parenthesized with
             {
@@ -626,6 +628,9 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             },
             _ => expression,
         };
+
+        inferred.Semantic.Type = _resolver?.ResolveTypeRef(inferred, typeEnvironment) ?? expectedType;
+        return inferred;
     }
 
     private FunctionExpressionNode InferFunctionExpression(
@@ -655,6 +660,59 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     }
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+
+    private void AddImplicitSelfBinding(FunctionNode function, TypeEnvironment typeEnvironment)
+    {
+        if (function.IsStatic
+            || function.OwnerTypeNode is null
+            || function.Parameters.Any(parameter => string.Equals(parameter.Name, "self", StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        var ownerType = TypeRefOrUnknown(function.OwnerTypeNode);
+        if (ownerType is not TypeRef.Unknown)
+        {
+            SetVariableType(typeEnvironment, "self", new TypeRef.Pointer(ownerType));
+        }
+    }
+
+    private TypeRef? GetSelfSubstitutionType(FunctionNode function)
+    {
+        if (function.OwnerTypeNode is null)
+        {
+            return null;
+        }
+
+        var ownerType = TypeRefOrUnknown(function.OwnerTypeNode);
+        if (ownerType is TypeRef.Named { Arguments.Count: 0 } named
+            && GetOwnerTypeParameters(named.Name) is { Count: > 0 } typeParameters)
+        {
+            return named with
+            {
+                Arguments = typeParameters
+                    .Select(parameter => new TypeRef.Named(parameter, []))
+                    .ToList(),
+            };
+        }
+
+        return ownerType is TypeRef.Unknown ? null : ownerType;
+    }
+
+    private IReadOnlyList<string> GetOwnerTypeParameters(string ownerName)
+    {
+        if (_program is null)
+        {
+            return [];
+        }
+
+        return _program.Structs.FirstOrDefault(structNode => structNode.Name == ownerName)?.TypeParameters
+            ?? _program.TypeAdapters.FirstOrDefault(adapter => adapter.Name == ownerName)?.TypeParameters
+            ?? [];
+    }
+
+    private static TypeRef SubstituteSelf(TypeRef type, TypeRef? selfType) =>
+        selfType is null ? type : TypeRefRewriter.SubstituteSelf(type, selfType);
 
     private string TypeText(TypeNode? typeNode)
     {

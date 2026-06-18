@@ -269,9 +269,16 @@ public sealed partial class CEmitter
         var fields = new List<CFieldDeclaration> { new(new CNamedTypeRef("CxTypeId"), "type_id") };
         foreach (var method in interfaceNode.Methods)
         {
-            var parameters = new List<string> { "void* state" };
-            parameters.AddRange(method.Parameters.Select(parameter => LowerParameterDeclaration(parameter)));
-            fields.Add(CFieldDeclaration.Legacy($"{LowerType(InterfaceMethodReturnTypeText(method))} (*{method.Name})({string.Join(", ", parameters)})"));
+            var parameters = new List<CParameterDeclaration>
+            {
+                new(new CPointerTypeRef(new CNamedTypeRef("void")), "state"),
+            };
+            parameters.AddRange(method.Parameters.Select(parameter => LowerParameter(parameter)));
+            fields.Add(new CFieldDeclaration(
+                new CFunctionTypeRef(
+                    LowerReturnType(method.ReturnTypeNode, InterfaceMethodReturnTypeText(method)),
+                    parameters),
+                method.Name));
         }
 
         return new CStructDeclaration(GetInterfaceVTableName(interfaceNode.Name), fields);
@@ -282,19 +289,22 @@ public sealed partial class CEmitter
         var fields = new List<CFieldDeclaration>
         {
             new(new CPointerTypeRef(new CNamedTypeRef("void")), "state"),
-            CFieldDeclaration.Legacy($"const {GetInterfaceVTableName(interfaceNode.Name)}* vtable"),
+            new(
+                new CPointerTypeRef(new CConstTypeRef(new CNamedTypeRef(GetInterfaceVTableName(interfaceNode.Name)))),
+                "vtable"),
         };
         return new CStructDeclaration(interfaceNode.Name, fields);
     }
 
-    private static CRawTopLevel ToCInterfaceVTableInstance(
+    private static CGlobalDeclaration ToCInterfaceVTableInstance(
         InterfaceImplementation implementation,
         IReadOnlyList<FunctionNode> functions)
     {
-        var builder = new StringBuilder();
-        builder.AppendLine($"const {GetInterfaceVTableName(implementation.Interface.Name)} {GetInterfaceVTableInstanceName(implementation.Struct.Name, implementation.Interface.Name)} =");
-        builder.AppendLine("{");
-        builder.AppendLine($"    .type_id = {GetTypeIdName(implementation.Struct.Name)},");
+        var fields = new List<CInitializerField>
+        {
+            new("type_id", new CNameExpression(GetTypeIdName(implementation.Struct.Name))),
+        };
+
         foreach (var method in implementation.Interface.Methods)
         {
             var concrete = functions.FirstOrDefault(function =>
@@ -306,18 +316,38 @@ public sealed partial class CEmitter
                 continue;
             }
 
-            var parameters = new List<string> { "void*" };
-            parameters.AddRange(method.Parameters.Select(parameter => LowerType(ParameterTypeText(parameter))));
-            var slotType = $"{LowerType(InterfaceMethodReturnTypeText(method))} (*)({string.Join(", ", parameters)})";
-            builder.AppendLine($"    .{method.Name} = ({slotType}){GetCFunctionName(concrete)},");
+            fields.Add(new CInitializerField(
+                method.Name,
+                new CCastExpression(
+                    BuildInterfaceMethodSlotType(method),
+                    new CNameExpression(GetCFunctionName(concrete)))));
         }
 
-        builder.AppendLine("};");
-        return new CRawTopLevel(builder.ToString());
+        return new CGlobalDeclaration(
+            new CVariableDeclaration(
+                new CNamedTypeRef(GetInterfaceVTableName(implementation.Interface.Name)),
+                GetInterfaceVTableInstanceName(implementation.Struct.Name, implementation.Interface.Name),
+                IsConst: true),
+            new CInitializerExpression(Type: null, fields, Values: []));
     }
 
-    private static CRawTopLevel ToCInterfaceVTableDeclaration(InterfaceImplementation implementation) =>
-        new($"extern const {GetInterfaceVTableName(implementation.Interface.Name)} {GetInterfaceVTableInstanceName(implementation.Struct.Name, implementation.Interface.Name)};{Environment.NewLine}");
+    private static CFunctionTypeRef BuildInterfaceMethodSlotType(InterfaceMethodNode method)
+    {
+        var parameters = new List<CParameterDeclaration>
+        {
+            new(new CPointerTypeRef(new CNamedTypeRef("void")), string.Empty),
+        };
+        parameters.AddRange(method.Parameters.Select(parameter => LowerParameter(parameter)));
+        return new CFunctionTypeRef(
+            LowerReturnType(method.ReturnTypeNode, InterfaceMethodReturnTypeText(method)),
+            parameters);
+    }
+
+    private static CExternGlobalDeclaration ToCInterfaceVTableDeclaration(InterfaceImplementation implementation) =>
+        new(new CVariableDeclaration(
+            new CNamedTypeRef(GetInterfaceVTableName(implementation.Interface.Name)),
+            GetInterfaceVTableInstanceName(implementation.Struct.Name, implementation.Interface.Name),
+            IsConst: true));
 
     private static CTaggedUnionDeclaration ToCTaggedUnion(TaggedUnionNode taggedUnion) =>
         new(
@@ -1289,34 +1319,15 @@ public sealed partial class CEmitter
             : new CLegacyTypeRef(LowerType(typeNode, fallbackType));
 
     private static bool CanUseStructuredParameterType(TypeNode? typeNode) =>
-        typeNode?.Semantic.Type is { } type
-        && type is not TypeRef.Function
-        && !ContainsFixedArray(type);
+        typeNode?.Semantic.Type is not null;
 
     private static bool CanUseStructuredVariableType(TypeNode? typeNode) =>
-        typeNode?.Semantic.Type is { } type
-        && type is not TypeRef.Function
-        && !ContainsFixedArray(type);
+        typeNode?.Semantic.Type is not null;
 
     private static bool CanUseStructuredFieldType(TypeNode? typeNode) =>
-        typeNode?.Semantic.Type is { } type
-        && CanUseStructuredFieldType(type);
+        typeNode?.Semantic.Type is not null;
 
-    private static bool CanUseStructuredFieldType(TypeRef type) =>
-        type is not TypeRef.Function
-        && !ContainsFixedArray(type);
-
-    private static bool ContainsFixedArray(TypeRef type) =>
-        type switch
-        {
-            TypeRef.FixedArray => true,
-            TypeRef.Alias alias => ContainsFixedArray(alias.Target),
-            TypeRef.Pointer pointer => ContainsFixedArray(pointer.Element),
-            TypeRef.Function function => function.Parameters.Any(ContainsFixedArray)
-                || ContainsFixedArray(function.ReturnType),
-            TypeRef.Named named => named.Arguments.Any(ContainsFixedArray),
-            _ => false,
-        };
+    private static bool CanUseStructuredFieldType(TypeRef type) => true;
 
 
     private static string? ResolveSelfType(FunctionNode function)
@@ -1330,6 +1341,11 @@ public sealed partial class CEmitter
         if (typeArguments.Count > 0)
         {
             return ResolveAdapterStorageType($"{ownerType}<{string.Join(",", typeArguments)}>");
+        }
+
+        if (function.TypeParameters.Count > 0 && !TryParseGenericUse(ownerType, out _, out _))
+        {
+            return ResolveAdapterStorageType($"{ownerType}<{string.Join(",", function.TypeParameters)}>");
         }
 
         var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
@@ -1349,8 +1365,13 @@ public sealed partial class CEmitter
         }
 
         var typeArguments = FunctionTypeArgumentTexts(function);
-        return typeArguments.Count > 0
-            ? $"{ownerType}<{string.Join(",", typeArguments)}>"
+        if (typeArguments.Count > 0)
+        {
+            return $"{ownerType}<{string.Join(",", typeArguments)}>";
+        }
+
+        return function.TypeParameters.Count > 0 && !TryParseGenericUse(ownerType, out _, out _)
+            ? $"{ownerType}<{string.Join(",", function.TypeParameters)}>"
             : ownerType;
     }
 

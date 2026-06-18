@@ -41,18 +41,18 @@ public sealed class CExpressionLowererTests
             ExpressionOperand: null,
             TypeOperandNode: TypeNode.CreateFromText(location, "Vec<int>")));
 
-        Assert.Equal("lowered_Vec<int>*", AssertLegacyType(Assert.IsType<CCastExpression>(cast).TargetType));
-        Assert.Equal("lowered_Vec<int>", AssertLegacyType(Assert.IsType<CSizeOfTypeExpression>(sizeOf).Type));
+        Assert.Equal("lowered_Vec_int*", AssertPointerType(Assert.IsType<CCastExpression>(cast).TargetType));
+        Assert.Equal("lowered_Vec_int", AssertNamedType(Assert.IsType<CSizeOfTypeExpression>(sizeOf).Type));
     }
 
     [Fact]
-    public void LowerSimple_PrefersSemanticTypeRefOverFallbackTypeText()
+    public void LowerSimple_UsesResolvedTypeRefForTypeExpressions()
     {
         var location = TestLocation();
         var semanticType = new TypeRef.Named("Vec", [new TypeRef.Named("int", [])]);
         var typeNode = new TypeNode(location, "StaleText");
         typeNode.Semantic.Type = semanticType;
-        var context = new TestContext(typePrefix: "text_", typeRefPrefix: "typed_");
+        var context = new TestContext(typeRefPrefix: "typed_");
         var lowerer = new CExpressionLowerer(context);
 
         var cast = lowerer.LowerSimple(new CastExpressionNode(
@@ -69,9 +69,9 @@ public sealed class CExpressionLowererTests
             [],
             typeNode));
 
-        Assert.Equal("typed_Vec<int>", AssertNamedType(Assert.IsType<CCastExpression>(cast).TargetType));
-        Assert.Equal("typed_Vec<int>", AssertNamedType(Assert.IsType<CSizeOfTypeExpression>(sizeOf).Type));
-        Assert.Equal("typed_Vec<int>", AssertNamedType(Assert.IsType<CInitializerExpression>(initializer).Type));
+        Assert.Equal("typed_Vec_int", AssertNamedType(Assert.IsType<CCastExpression>(cast).TargetType));
+        Assert.Equal("typed_Vec_int", AssertNamedType(Assert.IsType<CSizeOfTypeExpression>(sizeOf).Type));
+        Assert.Equal("typed_Vec_int", AssertNamedType(Assert.IsType<CInitializerExpression>(initializer).Type));
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class CExpressionLowererTests
             "=",
             new LiteralExpressionNode(location, "1")));
 
-        Assert.Equal("Point", AssertLegacyType(Assert.IsType<CInitializerExpression>(initializer).Type));
+        Assert.Equal("Point", AssertNamedType(Assert.IsType<CInitializerExpression>(initializer).Type));
         var loweredAssignment = Assert.IsType<CAssignmentExpression>(assignment);
         Assert.Equal("=", loweredAssignment.Operator);
         Assert.IsType<CNameExpression>(loweredAssignment.Target);
@@ -126,6 +126,12 @@ public sealed class CExpressionLowererTests
     private static string AssertNamedType(CTypeRef? type) =>
         Assert.IsType<CNamedTypeRef>(type).Name;
 
+    private static string AssertPointerType(CTypeRef? type)
+    {
+        var pointer = Assert.IsType<CPointerTypeRef>(type);
+        return AssertNamedType(pointer.Element) + "*";
+    }
+
     private sealed class TestContext(
         string typePrefix = "",
         string typeRefPrefix = "",
@@ -142,17 +148,19 @@ public sealed class CExpressionLowererTests
         public CExpression LowerAddressOfExpression(ExpressionNode operand) =>
             new CUnaryExpression("&", LowerExpression(operand));
 
-        public string LowerType(TypeRef type) => typeRefPrefix + TypeRefFormatter.ToCxString(type);
-
         public CTypeRef LowerTypeRef(TypeRef type) =>
-            new CNamedTypeRef(typeRefPrefix + TypeRefFormatter.ToCxString(type));
+            type switch
+            {
+                TypeRef.Pointer pointer => new CPointerTypeRef(LowerTypeRef(pointer.Element)),
+                TypeRef.Named named => new CNamedTypeRef(typeRefPrefix + typePrefix + CTypeLowerer.LowerType(named, [])),
+                TypeRef.Alias alias => new CNamedTypeRef(typeRefPrefix + typePrefix + CTypeLowerer.LowerType(alias, [])),
+                _ => new CNamedTypeRef(typeRefPrefix + typePrefix + TypeRefFormatter.ToCxString(type)),
+            };
 
-        public string LowerType(TypeNode? typeNode) =>
+        public TypeRef? ResolveType(TypeNode? typeNode) =>
             typeNode?.Semantic.Type is { } type
-                ? LowerType(type)
-                : typePrefix + (typeNode?.TypeName ?? string.Empty);
-
-        public string LowerType(TypeNode? typeNode, string fallbackType) => typePrefix + fallbackType;
+                ? type
+                : typeNode?.ToTypeRef(new TypeRefParser(new ProgramNode(TestLocation(), [])));
 
         public CExpression? TryWrapAssignmentValue(AssignmentExpressionNode assignment, CExpression value) => null;
 

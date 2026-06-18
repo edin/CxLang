@@ -590,9 +590,27 @@ internal sealed class ExpressionTypeResolver(
         }
 
         var typeName = TypeRefFacts.GetBaseName(type);
-        return program.Structs.FirstOrDefault(structNode =>
+        var structNode = program.Structs.FirstOrDefault(structNode =>
             structNode.Name == typeName
             && structNode.TypeParameters.Count == 0);
+        if (structNode is not null)
+        {
+            return structNode;
+        }
+
+        if (TypeRefFacts.TryGetNamed(type, out var adapterType)
+            && program.TypeAdapters.FirstOrDefault(adapter =>
+                adapter.Name == adapterType.Name
+                && adapter.TypeParameters.Count == adapterType.Arguments.Count) is { } adapter
+            && ResolveTypeNode(adapter.BaseTypeNode) is { } baseType)
+        {
+            var substitutions = adapter.TypeParameters
+                .Zip(adapterType.Arguments)
+                .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+            return ResolveStruct(TypeRefRewriter.Substitute(baseType, substitutions));
+        }
+
+        return null;
     }
 
     private static TypeRef? UnwrapPointer(TypeRef type) =>

@@ -17,6 +17,7 @@ internal static class CDeclaratorEmitter
     {
         CNamedTypeRef named => AppendName(named.Name, name),
         CPointerTypeRef pointer => EmitPointerDeclarator(pointer, name),
+        CConstTypeRef constType => "const " + EmitDeclarator(constType.Element, name),
         CFixedArrayTypeRef fixedArray => EmitDeclarator(fixedArray.Element, $"{name}[{fixedArray.Length}]"),
         CFunctionTypeRef function => EmitFunctionDeclarator(function, name),
         CLegacyTypeRef legacy => legacy.Text,
@@ -45,6 +46,9 @@ internal static class CDeclaratorEmitter
                 return false;
             case CNamedTypeRef named:
                 text = named.Name + "*";
+                return true;
+            case CConstTypeRef { Element: CNamedTypeRef named }:
+                text = "const " + named.Name + "*";
                 return true;
             case CPointerTypeRef nested when TryEmitPointerType(nested, out var nestedText):
                 text = nestedText + "*";

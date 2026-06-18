@@ -192,6 +192,30 @@ public sealed class CompilerSmokeTests
     }
 
     [Fact]
+    public void CompileToC_EmitsStructuredFunctionPointerParameters()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn add(left: int, right: int) -> int {
+                return left + right;
+            }
+
+            fn invoke(op: fn(int, int) -> int) -> int {
+                let local: fn(int, int) -> int = op;
+                return local(20, 22);
+            }
+
+            fn main() -> int {
+                return invoke(add);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int invoke(int (*op)(int, int))", result.Output);
+        Assert.Contains("int (*local)(int, int) = op;", result.Output);
+    }
+
+    [Fact]
     public void CompileToC_KeepsAliasSpellingForGenericCNames()
     {
         var result = CompilerTestHelpers.Compile(

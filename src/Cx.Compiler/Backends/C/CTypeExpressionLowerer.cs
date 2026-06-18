@@ -23,7 +23,7 @@ internal sealed class CTypeExpressionLowerer(ICExpressionLoweringContext context
     }
 
     public CTypeRef LowerType(TypeNode? typeNode) =>
-        typeNode?.Semantic.Type is { } type
+        context.ResolveType(typeNode) is { } type
             ? context.LowerTypeRef(type)
-            : new CLegacyTypeRef(context.LowerType(typeNode));
+            : throw CEmissionGuards.UnresolvedTypeExpression(typeNode);
 }

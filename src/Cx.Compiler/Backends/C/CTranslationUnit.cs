@@ -22,6 +22,8 @@ internal sealed record CNamedTypeRef(string Name) : CTypeRef;
 
 internal sealed record CPointerTypeRef(CTypeRef Element) : CTypeRef;
 
+internal sealed record CConstTypeRef(CTypeRef Element) : CTypeRef;
+
 internal sealed record CFixedArrayTypeRef(CTypeRef Element, string Length) : CTypeRef;
 
 internal sealed record CFunctionTypeRef(
@@ -81,6 +83,9 @@ internal sealed record CFunctionDefinition(
 internal sealed record CGlobalDeclaration(
     CVariableDeclaration Declaration,
     CExpression? Initializer) : CTranslationUnitItem;
+
+internal sealed record CExternGlobalDeclaration(
+    CVariableDeclaration Declaration) : CTranslationUnitItem;
 
 internal abstract record CStatementNode;
 

@@ -6,6 +6,7 @@ internal static class CTypeRefEmitter
     {
         CNamedTypeRef named => named.Name,
         CPointerTypeRef pointer => Emit(pointer.Element) + "*",
+        CConstTypeRef constType => "const " + Emit(constType.Element),
         CFixedArrayTypeRef fixedArray => $"{Emit(fixedArray.Element)}[{fixedArray.Length}]",
         CFunctionTypeRef function => EmitFunctionType(function),
         CLegacyTypeRef legacy => legacy.Text,

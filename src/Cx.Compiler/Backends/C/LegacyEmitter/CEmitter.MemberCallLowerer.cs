@@ -204,7 +204,7 @@ public sealed partial class CEmitter
                     loweredArguments);
             }
 
-            foreach (var methodInfo in context.GetInstanceMethodsForReceiver(normalizedType))
+            foreach (var methodInfo in GetInstanceMethodsForReceiver(targetType))
             {
                 if (methodInfo.Name != memberName)
                 {
@@ -218,7 +218,58 @@ public sealed partial class CEmitter
                     loweredArguments);
             }
 
+            if (targetType.ReceiverType.Contains('_', StringComparison.Ordinal))
+            {
+                var loweredArguments = arguments.Select(lowerExpression).ToList();
+                loweredArguments.Insert(0, receiverExpressionBuilder.Build(target, isPointer, takesPointerSelf: true));
+                return new CCallExpression(
+                    functionReferences.Resolve(
+                        targetType.ReceiverType,
+                        memberName,
+                        BuildConcreteGenericMethodName(targetType.ReceiverType, memberName)),
+                    loweredArguments);
+            }
+
             return null;
+        }
+
+        private IEnumerable<CLoweringMethodInfo> GetInstanceMethodsForReceiver(ReceiverTypeInfo targetType)
+        {
+            var restoredReceiverType = genericCallResolver.RestoreSourceGenericType(targetType.ReceiverType);
+            var restoredBaseType = TryParseGenericUse(restoredReceiverType, out var restoredBase, out _)
+                ? restoredBase
+                : restoredReceiverType;
+            var receiverTypes = new[]
+                {
+                    targetType.NormalizedType,
+                    targetType.ReceiverType,
+                    targetType.GenericBaseName,
+                    restoredReceiverType,
+                    restoredBaseType,
+                }
+                .Where(type => !string.IsNullOrWhiteSpace(type))
+                .Distinct(StringComparer.Ordinal);
+
+            foreach (var receiverType in receiverTypes)
+            {
+                foreach (var method in context.GetInstanceMethodsForReceiver(receiverType!))
+                {
+                    yield return method;
+                }
+            }
+        }
+
+        private static string BuildConcreteGenericMethodName(string receiverType, string memberName)
+        {
+            var separator = receiverType.IndexOf('_', StringComparison.Ordinal);
+            if (separator < 0)
+            {
+                return $"{receiverType}_{memberName}";
+            }
+
+            var owner = receiverType[..separator];
+            var arguments = receiverType[(separator + 1)..];
+            return $"{owner}_{memberName}_{arguments}";
         }
 
         private CExpression? TryLowerKnownTarget(

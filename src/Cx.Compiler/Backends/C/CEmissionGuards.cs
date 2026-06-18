@@ -33,6 +33,16 @@ internal static class CEmissionGuards
             "Internal C emission error: initializer lowered differently through legacy text path and cannot be represented as C AST: "
             + $"'{TrimForDiagnostic(expression.ToSourceText())}' -> '{TrimForDiagnostic(loweredText)}'.");
 
+    public static InvalidOperationException UnresolvedTypeExpression(TypeNode? typeNode) =>
+        new(
+            "Internal C emission error: type expression reached C lowering without a resolved TypeRef"
+            + (typeNode is null ? "." : $": '{TrimForDiagnostic(typeNode.ToTypeName())}'."));
+
+    public static InvalidOperationException UnresolvedExpressionType(ExpressionNode expression) =>
+        new(
+            "Internal C emission error: expression reached C lowering without Semantic.Type: "
+            + $"'{TrimForDiagnostic(expression.ToSourceText())}' at {expression.Location}.");
+
     private static string TrimForDiagnostic(string text)
     {
         text = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));

@@ -105,10 +105,11 @@ public sealed partial class CEmitter
         }
 
         public bool IsInterface(string name) =>
-            Interfaces.ContainsKey(name);
+            TryGetInterface(name, out _);
 
         public bool TryGetInterface(string name, out InterfaceNode interfaceNode) =>
-            Interfaces.TryGetValue(name, out interfaceNode!);
+            Interfaces.TryGetValue(name, out interfaceNode!)
+            || Interfaces.TryGetValue(UnqualifiedTypeName(name), out interfaceNode!);
 
         public IEnumerable<InterfaceNode> GetInterfaces() =>
             Interfaces.Values;
@@ -117,7 +118,7 @@ public sealed partial class CEmitter
             Interfaces.Keys;
 
         public bool InterfaceHasMethod(string interfaceName, string methodName) =>
-            Interfaces.TryGetValue(interfaceName, out var interfaceNode)
+            TryGetInterface(interfaceName, out var interfaceNode)
             && interfaceNode.Methods.Any(method => method.Name == methodName);
 
         public bool HasInterfaceImplementation(string structName, string interfaceName) =>
@@ -351,6 +352,12 @@ public sealed partial class CEmitter
                 MethodReceiverTypes.GetValueOrDefault(key),
                 MethodTakesPointerSelf.GetValueOrDefault(key),
                 StaticMethodNames.Contains(key));
+
+        private static string UnqualifiedTypeName(string name)
+        {
+            var qualifierIndex = name.LastIndexOf("::", StringComparison.Ordinal);
+            return qualifierIndex < 0 ? name : name[(qualifierIndex + 2)..];
+        }
     }
 
     private sealed record CLoweringMethodInfo(

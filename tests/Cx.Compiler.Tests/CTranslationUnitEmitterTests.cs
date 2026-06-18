@@ -23,6 +23,24 @@ public sealed class CTranslationUnitEmitterTests
     }
 
     [Fact]
+    public void Emit_PrintsConstPointerStructFields()
+    {
+        var unit = new CTranslationUnit([
+            new CStructDeclaration(
+                "Writer",
+                [
+                    new CFieldDeclaration(
+                        new CPointerTypeRef(new CConstTypeRef(new CNamedTypeRef("Writer_vtable"))),
+                        "vtable"),
+                ]),
+        ]);
+
+        var output = new CTranslationUnitEmitter().Emit(unit);
+
+        Assert.Contains("    const Writer_vtable* vtable;", output);
+    }
+
+    [Fact]
     public void Emit_PrintsStructuredTaggedUnionVariants()
     {
         var unit = new CTranslationUnit([
@@ -103,6 +121,55 @@ public sealed class CTranslationUnitEmitterTests
         Assert.Contains("const int global = 1;", output);
         Assert.Contains("int local = 0;", output);
         Assert.Contains("for (int i = 0; i < 1; i++)", output);
+    }
+
+    [Fact]
+    public void Emit_PrintsStructuredExternGlobalDeclarations()
+    {
+        var unit = new CTranslationUnit([
+            new CExternGlobalDeclaration(
+                new CVariableDeclaration(
+                    new CNamedTypeRef("Allocator_vtable"),
+                    "CAllocator_Allocator_vtable",
+                    IsConst: true)),
+        ]);
+
+        var output = new CTranslationUnitEmitter().Emit(unit);
+
+        Assert.Contains("extern const Allocator_vtable CAllocator_Allocator_vtable;", output);
+    }
+
+    [Fact]
+    public void Emit_PrintsStructuredDesignatedGlobalInitializers()
+    {
+        var slotType = new CFunctionTypeRef(
+            new CNamedTypeRef("void"),
+            [
+                new CParameterDeclaration(new CPointerTypeRef(new CNamedTypeRef("void")), string.Empty),
+                new CParameterDeclaration(new CNamedTypeRef("int"), string.Empty),
+            ]);
+        var unit = new CTranslationUnit([
+            new CGlobalDeclaration(
+                new CVariableDeclaration(
+                    new CNamedTypeRef("Writer_vtable"),
+                    "FileWriter_Writer_vtable",
+                    IsConst: true),
+                new CInitializerExpression(
+                    Type: null,
+                    [
+                        new CInitializerField("type_id", new CNameExpression("CX_TYPE_FileWriter")),
+                        new CInitializerField(
+                            "write",
+                            new CCastExpression(slotType, new CNameExpression("FileWriter_write"))),
+                    ],
+                    Values: [])),
+        ]);
+
+        var output = new CTranslationUnitEmitter().Emit(unit);
+
+        Assert.Contains(
+            "const Writer_vtable FileWriter_Writer_vtable = { .type_id = CX_TYPE_FileWriter, .write = (void (*)(void*, int)) FileWriter_write };",
+            output);
     }
 
     [Fact]

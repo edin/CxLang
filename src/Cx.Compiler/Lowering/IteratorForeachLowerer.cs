@@ -16,6 +16,7 @@ internal static class IteratorForeachLowerer
     private sealed class IteratorForeachTransform(ProgramNode program) : IAstNodeTransform<ForeachStatement>
     {
         private readonly RequirementMatcher _requirements = new(program);
+        private readonly TypeRefParser _typeRefParser = new(program);
 
         public AstTransformResult Transform(ForeachStatement node, AstTransformContext context)
         {
@@ -31,7 +32,7 @@ internal static class IteratorForeachLowerer
                 IsConst: false,
                 iteratorName,
                 MemberCall(node.IterableExpression, "iterator"),
-                TypeNode.CreateFromText(node.IterableExpression.Location, iterable.IteratorType));
+                CreateTypeNode(node.IterableExpression.Location, iterable.IteratorType));
 
             var body = new List<StatementNode>();
             string? indexCounterName = null;
@@ -44,21 +45,21 @@ internal static class IteratorForeachLowerer
                     IsConst: false,
                     indexCounterName,
                     new LiteralExpressionNode(indexBinding.Location, "0"),
-                    indexBinding.TypeNode ?? TypeNode.CreateFromText(indexBinding.Location, "usize"));
+                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, "usize"));
                 body.Add(new LetStatement(
                     indexBinding.Location,
                     indexBinding.IsConst,
                     indexBinding.Name,
-                    new NameExpressionNode(indexBinding.Location, indexCounterName),
-                    indexBinding.TypeNode ?? TypeNode.CreateFromText(indexBinding.Location, "usize")));
+                    Name(indexBinding.Location, indexCounterName, "usize"),
+                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, "usize")));
             }
 
             if (node.KeyBinding is { } keyBinding && iterable.KeyType is { } keyType)
             {
-                body.Add(BuildBindingLet(keyBinding, iteratorName, "key", keyType));
+                body.Add(BuildBindingLet(keyBinding, iteratorName, iterable.IteratorType, "key", keyType));
             }
 
-            body.Add(BuildBindingLet(node.ValueBinding, iteratorName, "value", iterable.ValueType));
+            body.Add(BuildBindingLet(node.ValueBinding, iteratorName, iterable.IteratorType, "value", iterable.ValueType));
             body.AddRange(node.Body);
             if (indexCounterName is not null && node.IndexBinding is not null)
             {
@@ -69,7 +70,7 @@ internal static class IteratorForeachLowerer
 
             var whileStatement = new WhileStatement(
                 node.Location,
-                MemberCall(new NameExpressionNode(node.Location, iteratorName), "next"),
+                MemberCall(Name(node.Location, iteratorName, iterable.IteratorType), "next"),
                 body);
 
             var statements = indexCounterInitializer is null
@@ -137,14 +138,15 @@ internal static class IteratorForeachLowerer
             return false;
         }
 
-        private static LetStatement BuildBindingLet(
+        private LetStatement BuildBindingLet(
             ForeachBinding binding,
             string iteratorName,
+            string iteratorType,
             string memberName,
             string valueType)
         {
-            var valueCall = MemberCall(new NameExpressionNode(binding.Location, iteratorName), memberName);
-            var bindingType = binding.TypeNode ?? TypeNode.CreateFromText(binding.Location, valueType);
+            var valueCall = MemberCall(Name(binding.Location, iteratorName, iteratorType), memberName);
+            var bindingType = binding.TypeNode ?? CreateTypeNode(binding.Location, valueType);
             return new LetStatement(
                 binding.Location,
                 binding.IsConst,
@@ -175,16 +177,30 @@ internal static class IteratorForeachLowerer
                 []);
         }
 
-        private static AssignmentExpressionNode IncrementExpression(Location location, string name) =>
+        private AssignmentExpressionNode IncrementExpression(Location location, string name) =>
             new(
                 location,
-                new NameExpressionNode(location, name),
+                Name(location, name, "usize"),
                 "=",
                 new BinaryExpressionNode(
                     location,
-                    new NameExpressionNode(location, name),
+                    Name(location, name, "usize"),
                     "+",
                     new LiteralExpressionNode(location, "1")));
+
+        private TypeNode CreateTypeNode(Location location, string type)
+        {
+            var typeNode = TypeNode.CreateFromText(location, type);
+            typeNode.Semantic.Type = _typeRefParser.Parse(typeNode);
+            return typeNode;
+        }
+
+        private NameExpressionNode Name(Location location, string name, string type)
+        {
+            var expression = new NameExpressionNode(location, name);
+            expression.Semantic.Type = _typeRefParser.Parse(type);
+            return expression;
+        }
 
         private readonly record struct IteratorIterable(string IteratorType, string ValueType, string? KeyType);
     }
