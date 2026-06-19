@@ -51,9 +51,6 @@ internal sealed class CRawAuditCollector
                     VisitStatement(function.Body[i], $"{path}.body[{i}]");
                 }
                 break;
-            case CRawTopLevel raw:
-                Add("RawTopLevel", path, raw.Text);
-                break;
         }
     }
 
@@ -93,9 +90,6 @@ internal sealed class CRawAuditCollector
                 }
 
                 VisitStatements(switchStatement.DefaultBody, path + ".default");
-                break;
-            case CRawStatement raw:
-                Add("RawStatement", path, raw.Text);
                 break;
         }
     }
@@ -208,24 +202,10 @@ internal sealed class CRawAuditCollector
     }
 
     private static string FormatDeclaration(CVariableDeclaration declaration) =>
-        declaration.Type is CLegacyTypeRef legacy
-            ? legacy.Text
-            : declaration.Name;
+        declaration.Name;
 
     private static string Classify(string kind, string text)
     {
-        if (kind == "RawStatement")
-        {
-            return text.StartsWith("/* unable to lower", StringComparison.Ordinal)
-                ? "LoweringFallbackStatement"
-                : "FallbackStatement";
-        }
-
-        if (kind == "RawTopLevel")
-        {
-            return "FallbackTopLevel";
-        }
-
         if (text.Contains("=>", StringComparison.Ordinal)
             || text.StartsWith("fn", StringComparison.Ordinal))
         {

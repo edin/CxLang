@@ -41,6 +41,24 @@ public sealed class CTranslationUnitEmitterTests
     }
 
     [Fact]
+    public void Emit_PrintsStructPointerFields()
+    {
+        var unit = new CTranslationUnit([
+            new CStructDeclaration(
+                "Node",
+                [
+                    new CFieldDeclaration(
+                        new CPointerTypeRef(new CStructTypeRef("Node")),
+                        "next"),
+                ]),
+        ]);
+
+        var output = new CTranslationUnitEmitter().Emit(unit);
+
+        Assert.Contains("    struct Node* next;", output);
+    }
+
+    [Fact]
     public void Emit_PrintsStructuredTaggedUnionVariants()
     {
         var unit = new CTranslationUnit([

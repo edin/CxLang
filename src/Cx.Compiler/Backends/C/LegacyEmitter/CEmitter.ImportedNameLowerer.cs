@@ -211,7 +211,7 @@ public sealed partial class CEmitter
             var lowered = expression is InitializerExpressionNode initializer
                 ? _expressionLoweringPipeline.LowerInitializer(initializer, targetType)
                 : LowerExpression(expression);
-            if (TryBuildInterfaceValue(targetType, expression.ToSourceText(), out var interfaceInitializer))
+            if (TryBuildInterfaceValue(targetType, expression, out var interfaceInitializer))
             {
                 return interfaceInitializer;
             }
@@ -230,7 +230,7 @@ public sealed partial class CEmitter
             var lowered = expression is InitializerExpressionNode initializer
                 ? _expressionLoweringPipeline.LowerInitializer(initializer, TypeRefFormatter.ToCxString(targetType))
                 : LowerExpression(expression);
-            if (TryBuildInterfaceValue(targetType, expression.ToSourceText(), out var interfaceInitializer))
+            if (TryBuildInterfaceValue(targetType, expression, out var interfaceInitializer))
             {
                 return interfaceInitializer;
             }
@@ -244,7 +244,7 @@ public sealed partial class CEmitter
             var direct = expression is InitializerExpressionNode initializer
                 ? _expressionLoweringPipeline.LowerInitializer(initializer, targetType)
                 : LowerExpression(expression);
-            if (TryBuildInterfaceValueExpression(targetType, expression.ToSourceText()) is { } interfaceInitializer)
+            if (TryBuildInterfaceValueExpression(targetType, expression) is { } interfaceInitializer)
             {
                 return interfaceInitializer;
             }
@@ -254,10 +254,7 @@ public sealed partial class CEmitter
                 return wrapped;
             }
 
-            var lowered = LowerInitializer(targetType, expression);
-            return string.Equals(lowered, _expressionEmitter.Emit(direct), StringComparison.Ordinal)
-                ? direct
-                : UnsupportedInitializerTextFallback(expression, lowered);
+            return direct;
         }
 
         public CExpression LowerInitializerExpression(TypeRef? targetType, string fallbackTargetType, ExpressionNode expression) =>
@@ -273,7 +270,7 @@ public sealed partial class CEmitter
             var direct = expression is InitializerExpressionNode initializer
                 ? _expressionLoweringPipeline.LowerInitializer(initializer, TypeRefFormatter.ToCxString(targetType))
                 : LowerExpression(expression);
-            if (TryBuildInterfaceValueExpression(targetType, expression.ToSourceText()) is { } interfaceInitializer)
+            if (TryBuildInterfaceValueExpression(targetType, expression) is { } interfaceInitializer)
             {
                 return interfaceInitializer;
             }
@@ -286,7 +283,7 @@ public sealed partial class CEmitter
             return direct;
         }
 
-        private bool TryBuildInterfaceValue(string targetType, string sourceExpression, out string initializer)
+        private bool TryBuildInterfaceValue(string targetType, ExpressionNode sourceExpression, out string initializer)
         {
             initializer = string.Empty;
             if (TryBuildInterfaceValueExpression(targetType, sourceExpression) is not { } expression)
@@ -298,7 +295,7 @@ public sealed partial class CEmitter
             return true;
         }
 
-        private bool TryBuildInterfaceValue(TypeRef targetType, string sourceExpression, out string initializer)
+        private bool TryBuildInterfaceValue(TypeRef targetType, ExpressionNode sourceExpression, out string initializer)
         {
             initializer = string.Empty;
             if (TryBuildInterfaceValueExpression(targetType, sourceExpression) is not { } expression)
@@ -310,10 +307,10 @@ public sealed partial class CEmitter
             return true;
         }
 
-        private CExpression? TryBuildInterfaceValueExpression(string targetType, string sourceExpression)
+        private CExpression? TryBuildInterfaceValueExpression(string targetType, ExpressionNode sourceExpression)
             => _interfaceValueBuilder.TryBuild(targetType, sourceExpression);
 
-        private CExpression? TryBuildInterfaceValueExpression(TypeRef targetType, string sourceExpression)
+        private CExpression? TryBuildInterfaceValueExpression(TypeRef targetType, ExpressionNode sourceExpression)
             => _interfaceValueBuilder.TryBuild(targetType, sourceExpression);
 
         public CExpression LowerExpression(ExpressionNode expression) =>
@@ -341,9 +338,6 @@ public sealed partial class CEmitter
             RawExpressionNode raw => throw CEmissionGuards.RawExpressionAfterLowering(raw),
             _ => throw CEmissionGuards.UnsupportedExpressionTextLowering(expression),
         };
-
-        private static CExpression UnsupportedInitializerTextFallback(ExpressionNode expression, string loweredText) =>
-            throw CEmissionGuards.UnsupportedInitializerTextFallback(expression, loweredText);
 
         CExpression ICExpressionLoweringContext.LowerNameExpression(NameExpressionNode name) =>
             _nameExpressionLowerer.LowerNameExpression(name);

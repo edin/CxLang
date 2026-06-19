@@ -4,11 +4,6 @@ internal static class CDeclaratorEmitter
 {
     public static string Emit(CTypeRef type, string name, bool isConst = false)
     {
-        if (type is CLegacyTypeRef legacy)
-        {
-            return legacy.Text;
-        }
-
         var declaration = EmitDeclarator(type, name);
         return isConst ? "const " + declaration : declaration;
     }
@@ -16,11 +11,11 @@ internal static class CDeclaratorEmitter
     private static string EmitDeclarator(CTypeRef type, string name) => type switch
     {
         CNamedTypeRef named => AppendName(named.Name, name),
+        CStructTypeRef structType => AppendName("struct " + structType.Name, name),
         CPointerTypeRef pointer => EmitPointerDeclarator(pointer, name),
         CConstTypeRef constType => "const " + EmitDeclarator(constType.Element, name),
         CFixedArrayTypeRef fixedArray => EmitDeclarator(fixedArray.Element, $"{name}[{fixedArray.Length}]"),
         CFunctionTypeRef function => EmitFunctionDeclarator(function, name),
-        CLegacyTypeRef legacy => legacy.Text,
         _ => throw new InvalidOperationException($"Unexpected C type node {type.GetType().Name}."),
     };
 
@@ -47,8 +42,14 @@ internal static class CDeclaratorEmitter
             case CNamedTypeRef named:
                 text = named.Name + "*";
                 return true;
+            case CStructTypeRef structType:
+                text = "struct " + structType.Name + "*";
+                return true;
             case CConstTypeRef { Element: CNamedTypeRef named }:
                 text = "const " + named.Name + "*";
+                return true;
+            case CConstTypeRef { Element: CStructTypeRef structType }:
+                text = "const struct " + structType.Name + "*";
                 return true;
             case CPointerTypeRef nested when TryEmitPointerType(nested, out var nestedText):
                 text = nestedText + "*";

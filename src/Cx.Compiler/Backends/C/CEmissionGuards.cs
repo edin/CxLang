@@ -1,4 +1,5 @@
 using Cx.Compiler.Syntax.Nodes;
+using Cx.Compiler.Semantic;
 
 namespace Cx.Compiler.C;
 
@@ -28,20 +29,28 @@ internal static class CEmissionGuards
     public static InvalidOperationException UnsupportedExpressionTextLowering(ExpressionNode expression) =>
         new($"Internal C emission error: expression requires unsupported legacy text lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
 
-    public static InvalidOperationException UnsupportedInitializerTextFallback(ExpressionNode expression, string loweredText) =>
-        new(
-            "Internal C emission error: initializer lowered differently through legacy text path and cannot be represented as C AST: "
-            + $"'{TrimForDiagnostic(expression.ToSourceText())}' -> '{TrimForDiagnostic(loweredText)}'.");
-
     public static InvalidOperationException UnresolvedTypeExpression(TypeNode? typeNode) =>
         new(
             "Internal C emission error: type expression reached C lowering without a resolved TypeRef"
             + (typeNode is null ? "." : $": '{TrimForDiagnostic(typeNode.ToTypeName())}'."));
 
+    public static InvalidOperationException UnresolvedDeclarationType(TypeNode? typeNode, string fallbackType, string name) =>
+        new(
+            "Internal C emission error: declaration reached C lowering without a resolved TypeRef: "
+            + $"'{TrimForDiagnostic(name)}: {TrimForDiagnostic(typeNode?.ToTypeName() ?? fallbackType)}'.");
+
+    public static InvalidOperationException UnresolvedTypeAlias(TypeAliasNode typeAlias) =>
+        new(
+            "Internal C emission error: type alias reached C lowering without a resolved TypeRef: "
+            + $"'{TrimForDiagnostic(typeAlias.Name)} = {TrimForDiagnostic(typeAlias.TargetTypeNode?.ToTypeName() ?? "<missing>")}'.");
+
     public static InvalidOperationException UnresolvedExpressionType(ExpressionNode expression) =>
         new(
             "Internal C emission error: expression reached C lowering without Semantic.Type: "
             + $"'{TrimForDiagnostic(expression.ToSourceText())}' at {expression.Location}.");
+
+    public static InvalidOperationException UnsupportedCTypeRef(TypeRef type) =>
+        new($"Internal C emission error: unsupported TypeRef '{type.GetType().Name}' reached C type lowering.");
 
     private static string TrimForDiagnostic(string text)
     {

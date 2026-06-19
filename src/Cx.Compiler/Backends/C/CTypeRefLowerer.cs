@@ -21,7 +21,7 @@ internal sealed class CTypeRefLowerer(IReadOnlyList<TypeAdapterNode> typeAdapter
             TypeRef.Function function => new CFunctionTypeRef(
                 Lower(function.ReturnType, selfType: null),
                 LowerFunctionParameters(function)),
-            _ => new CLegacyTypeRef(CTypeLowerer.LowerType(type, typeAdapters)),
+            _ => throw CEmissionGuards.UnsupportedCTypeRef(type),
         };
     }
 

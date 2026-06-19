@@ -1,5 +1,6 @@
 using Cx.Compiler.C;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
@@ -13,13 +14,13 @@ public sealed partial class CEmitter
         Func<TypeRef, string> lowerTypeRef,
         Func<TypeRef, CTypeRef> lowerCTypeRef)
     {
-        public CExpression? TryBuild(string targetType, string sourceExpression)
+        public CExpression? TryBuild(string targetType, ExpressionNode sourceExpression)
         {
             var interfaceName = NormalizeType(targetType);
             return TryBuild(interfaceName, sourceExpression, new CNamedTypeRef(lowerCxType(interfaceName)));
         }
 
-        public CExpression? TryBuild(TypeRef targetType, string sourceExpression)
+        public CExpression? TryBuild(TypeRef targetType, ExpressionNode sourceExpression)
         {
             var interfaceName = NormalizeType(TypeRefFormatter.ToCxString(targetType));
             return TryBuild(interfaceName, sourceExpression, lowerCTypeRef(targetType));
@@ -27,7 +28,7 @@ public sealed partial class CEmitter
 
         private CExpression? TryBuild(
             string interfaceName,
-            string sourceExpression,
+            ExpressionNode sourceExpression,
             CTypeRef interfaceType)
         {
             if (!context.IsInterface(interfaceName))
@@ -35,13 +36,18 @@ public sealed partial class CEmitter
                 return null;
             }
 
-            var trimmedSource = sourceExpression.Trim();
-            if (!scope.TryGetVariableType(trimmedSource, out var sourceType))
+            if (sourceExpression is not NameExpressionNode sourceName)
             {
                 return null;
             }
 
-            var normalizedSourceType = scope.TryGetVariableTypeRef(trimmedSource, out var sourceTypeRef)
+            if (!scope.TryGetVariableType(sourceName.Name, out var sourceType))
+            {
+                return null;
+            }
+
+            var hasSourceTypeRef = scope.TryGetVariableTypeRef(sourceName.Name, out var sourceTypeRef);
+            var normalizedSourceType = hasSourceTypeRef
                 ? lowerTypeRef(sourceTypeRef)
                 : lowerCxType(NormalizeType(sourceType));
             if (!context.HasInterfaceImplementation(normalizedSourceType, interfaceName))
@@ -49,10 +55,12 @@ public sealed partial class CEmitter
                 return null;
             }
 
-            var sourceIsPointer = sourceType.TrimEnd().EndsWith("*", StringComparison.Ordinal);
+            var sourceIsPointer = hasSourceTypeRef
+                ? sourceTypeRef is TypeRef.Pointer
+                : sourceType.TrimEnd().EndsWith("*", StringComparison.Ordinal);
             CExpression state = sourceIsPointer
-                ? new CNameExpression(trimmedSource)
-                : new CUnaryExpression("&", new CNameExpression(trimmedSource));
+                ? new CNameExpression(sourceName.Name)
+                : new CUnaryExpression("&", new CNameExpression(sourceName.Name));
             return new CInitializerExpression(
                 interfaceType,
                 [

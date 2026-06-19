@@ -50,13 +50,6 @@ internal sealed class CTranslationUnitEmitter
                 case CExternGlobalDeclaration externGlobalDeclaration:
                     EmitExternGlobalDeclaration(builder, externGlobalDeclaration);
                     break;
-                case CRawTopLevel raw:
-                    builder.Append(raw.Text);
-                    if (!raw.Text.EndsWith(Environment.NewLine, StringComparison.Ordinal))
-                    {
-                        builder.AppendLine();
-                    }
-                    break;
             }
         }
 
@@ -225,13 +218,6 @@ internal sealed class CTranslationUnitEmitter
                 break;
             case CSwitchStatement switchStatement:
                 EmitSwitchStatement(builder, switchStatement, indentLevel);
-                break;
-            case CRawStatement raw:
-                builder.Append(raw.Text);
-                if (!raw.Text.EndsWith(Environment.NewLine, StringComparison.Ordinal))
-                {
-                    builder.AppendLine();
-                }
                 break;
         }
     }

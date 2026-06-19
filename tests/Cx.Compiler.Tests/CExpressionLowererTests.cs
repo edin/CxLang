@@ -120,9 +120,6 @@ public sealed class CExpressionLowererTests
     private static Location TestLocation() =>
         new(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
 
-    private static string AssertLegacyType(CTypeRef? type) =>
-        Assert.IsType<CLegacyTypeRef>(type).Text;
-
     private static string AssertNamedType(CTypeRef? type) =>
         Assert.IsType<CNamedTypeRef>(type).Name;
 

@@ -20,6 +20,8 @@ internal abstract record CTypeRef;
 
 internal sealed record CNamedTypeRef(string Name) : CTypeRef;
 
+internal sealed record CStructTypeRef(string Name) : CTypeRef;
+
 internal sealed record CPointerTypeRef(CTypeRef Element) : CTypeRef;
 
 internal sealed record CConstTypeRef(CTypeRef Element) : CTypeRef;
@@ -30,25 +32,11 @@ internal sealed record CFunctionTypeRef(
     CTypeRef ReturnType,
     IReadOnlyList<CParameterDeclaration> Parameters) : CTypeRef;
 
-internal sealed record CLegacyTypeRef(string Text) : CTypeRef;
+internal sealed record CFieldDeclaration(CTypeRef Type, string Name);
 
-internal sealed record CFieldDeclaration(CTypeRef Type, string Name)
-{
-    public static CFieldDeclaration Legacy(string declaration) =>
-        new(new CLegacyTypeRef(declaration), string.Empty);
-}
+internal sealed record CParameterDeclaration(CTypeRef Type, string Name, bool IsVariadic = false);
 
-internal sealed record CParameterDeclaration(CTypeRef Type, string Name, bool IsVariadic = false)
-{
-    public static CParameterDeclaration Legacy(string declaration) =>
-        new(new CLegacyTypeRef(declaration), string.Empty);
-}
-
-internal sealed record CVariableDeclaration(CTypeRef Type, string Name, bool IsConst = false)
-{
-    public static CVariableDeclaration Legacy(string declaration) =>
-        new(new CLegacyTypeRef(declaration), string.Empty);
-}
+internal sealed record CVariableDeclaration(CTypeRef Type, string Name, bool IsConst = false);
 
 internal sealed record CFunctionSignature(
     CTypeRef ReturnType,
@@ -143,7 +131,3 @@ internal abstract record CElseClause;
 internal sealed record CElseIfClause(CIfStatement IfStatement) : CElseClause;
 
 internal sealed record CElseBlockClause(IReadOnlyList<CStatementNode> Body) : CElseClause;
-
-internal sealed record CRawStatement(string Text) : CStatementNode;
-
-internal sealed record CRawTopLevel(string Text) : CTranslationUnitItem;
