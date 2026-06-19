@@ -1145,9 +1145,6 @@ public sealed partial class CEmitter
     private static string LowerType(string type, string? selfType = null)
         => s_abiNames.LowerType(type, selfType);
 
-    private static string LowerType(TypeNode? typeNode, string fallbackType, string? selfType = null) =>
-        s_abiNames.LowerType(typeNode, fallbackType, selfType);
-
     private static string TaggedUnionVariantTypeText(TaggedUnionVariantNode variant) =>
         variant.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)

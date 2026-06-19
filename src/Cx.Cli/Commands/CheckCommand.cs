@@ -18,10 +18,6 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
         [Description("Fail if the parser falls back to raw expression nodes.")]
         public bool AstAudit { get; init; }
 
-        [CommandOption("--c-raw-audit")]
-        [Description("Report raw C escapes remaining in the lowered C AST.")]
-        public bool CRawAudit { get; init; }
-
         [CommandOption("--generic-raw-audit")]
         [Description("Report generic specializations still discovered through text fallback.")]
         public bool GenericRawAudit { get; init; }
@@ -48,8 +44,6 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
 
         var result = settings.GenericRawAudit
             ? CliServices.AuditRawGenericUses(plan.Value.SourceFiles)
-            : settings.CRawAudit
-            ? CliServices.AuditRawC(plan.Value.SourceFiles)
             : settings.AstAudit
                 ? CliServices.AuditAst(plan.Value.SourceFiles, settings.IncludeStandardLibrary)
                 : CliServices.Compile(plan.Value.SourceFiles);
@@ -60,7 +54,7 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
         }
 
         CliServices.PrintDiagnostics(result);
-        if (settings.CRawAudit || settings.GenericRawAudit)
+        if (settings.GenericRawAudit)
         {
             AnsiConsole.WriteLine(result.Output ?? string.Empty);
             return 0;

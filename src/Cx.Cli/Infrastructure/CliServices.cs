@@ -153,9 +153,6 @@ internal static class CliServices
     public static CompilationResult AuditAst(IReadOnlyList<SourceFile> sourceFiles, bool includeStandardLibrary) =>
         new CxCompiler().AuditAstCompleteness(sourceFiles, includeStandardLibrary);
 
-    public static CompilationResult AuditRawC(IReadOnlyList<SourceFile> sourceFiles) =>
-        new CxCompiler().AuditRawC(sourceFiles);
-
     public static CompilationResult AuditRawGenericUses(IReadOnlyList<SourceFile> sourceFiles) =>
         new CxCompiler().AuditRawGenericUses(sourceFiles);
 

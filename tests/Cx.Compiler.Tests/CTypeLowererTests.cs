@@ -16,14 +16,6 @@ public sealed class CTypeLowererTests
     }
 
     [Fact]
-    public void LowerDeclaration_FormatsFunctionPointerTypes()
-    {
-        var declaration = CTypeLowerer.LowerDeclaration("fn(int, Vec<int>*)->bool", "predicate", []);
-
-        Assert.Equal("bool (*predicate)(int, Vec_int*)", declaration);
-    }
-
-    [Fact]
     public void TryParseFixedArrayType_ParsesElementAndLength()
     {
         var parsed = CTypeLowerer.TryParseFixedArrayType("Vec<int>[4]", out var elementType, out var length);
@@ -62,27 +54,6 @@ public sealed class CTypeLowererTests
         ]));
 
         Assert.Equal("Box_Vec_int*", CTypeLowerer.LowerType(type, []));
-    }
-
-    [Fact]
-    public void LowerDeclaration_FormatsStructuredFixedArrayTypes()
-    {
-        var type = new TypeRef.FixedArray(new TypeRef.Named("u8", []), "32");
-
-        Assert.Equal("u8 bytes[32]", CTypeLowerer.LowerDeclaration(type, "bytes", []));
-    }
-
-    [Fact]
-    public void LowerDeclaration_FormatsStructuredFunctionPointerTypes()
-    {
-        var type = new TypeRef.Function(
-            [
-                new TypeRef.Named("int", []),
-                new TypeRef.Pointer(new TypeRef.Named("Vec", [new TypeRef.Named("int", [])])),
-            ],
-            new TypeRef.Named("bool", []));
-
-        Assert.Equal("bool (*predicate)(int, Vec_int*)", CTypeLowerer.LowerDeclaration(type, "predicate", []));
     }
 
     [Fact]

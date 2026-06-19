@@ -55,19 +55,6 @@ public sealed class CxCompiler
         return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));
     }
 
-    public CompilationResult AuditRawC(IEnumerable<SourceFile> sources)
-    {
-        var (program, diagnostics) = CompileProgram(sources, BuildTests: false);
-        if (program is null)
-        {
-            return CompilationResult.Failed(diagnostics.Diagnostics);
-        }
-
-        var unit = new CEmitter().LowerToC(program);
-        var report = new CRawAuditCollector().Collect(unit);
-        return CompilationResult.Succeeded(FormatRawAuditReport(report), diagnostics.Diagnostics);
-    }
-
     public CompilationResult AuditRawGenericUses(IEnumerable<SourceFile> sources)
     {
         var (program, diagnostics) = CompileProgram(sources, BuildTests: false);
@@ -612,30 +599,6 @@ public sealed class CxCompiler
             .Replace("\"", "\\\"", StringComparison.Ordinal)
             .Replace("\r", "\\r", StringComparison.Ordinal)
             .Replace("\n", "\\n", StringComparison.Ordinal);
-
-    private static string FormatRawAuditReport(CRawAuditReport report)
-    {
-        if (!report.HasEntries)
-        {
-            return "No raw C escapes found.";
-        }
-
-        var builder = new System.Text.StringBuilder();
-        builder.AppendLine($"Raw C escapes: {report.Entries.Count}");
-        foreach (var group in report.Entries.GroupBy(entry => entry.Category).OrderBy(group => group.Key))
-        {
-            builder.AppendLine($"{group.Key}: {group.Count()}");
-        }
-
-        builder.AppendLine();
-        foreach (var entry in report.Entries)
-        {
-            builder.AppendLine($"{entry.Kind} {entry.Category} at {entry.Path}");
-            builder.AppendLine($"  {entry.Text}");
-        }
-
-        return builder.ToString();
-    }
 
     private static string FormatRawGenericUseAuditReport(IReadOnlyList<RawGenericUseAuditEntry> entries)
     {

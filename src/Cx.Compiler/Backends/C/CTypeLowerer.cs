@@ -76,58 +76,6 @@ internal static class CTypeLowerer
         };
     }
 
-    public static string LowerDeclaration(
-        string type,
-        string name,
-        IReadOnlyList<TypeAdapterNode> typeAdapters,
-        string? selfType = null)
-    {
-        type = SubstituteSelfType(type, selfType);
-        if (TryParseFunctionType(type, out var parameters, out var returnType))
-        {
-            return $"{LowerType(returnType, typeAdapters, selfType)} (*{name})({string.Join(", ", parameters.Select(parameter => LowerFunctionTypeParameter(parameter, typeAdapters, selfType)))})";
-        }
-
-        var (elementType, suffix) = SplitArrayType(type);
-        return $"{LowerType(elementType, typeAdapters, selfType)} {name}{suffix}";
-    }
-
-    public static string LowerDeclaration(
-        TypeRef type,
-        string name,
-        IReadOnlyList<TypeAdapterNode> typeAdapters,
-        TypeRef? selfType = null)
-    {
-        type = SubstituteSelf(type, selfType);
-        type = ResolveAdapterStorageType(type, typeAdapters);
-        if (type is TypeRef.Function function)
-        {
-            return $"{LowerType(function.ReturnType, typeAdapters)} (*{name})({string.Join(", ", function.Parameters.Select(parameter => LowerFunctionTypeParameter(parameter, typeAdapters)))})";
-        }
-
-        var (elementType, suffix) = SplitArrayType(type);
-        return $"{LowerType(elementType, typeAdapters)} {name}{suffix}";
-    }
-
-    public static string LowerParameterDeclaration(
-        ParameterNode parameter,
-        IReadOnlyList<TypeAdapterNode> typeAdapters,
-        string? selfType = null) =>
-        parameter.IsVariadic
-            ? "..."
-            : LowerDeclaration(parameter.TypeNode.ToTypeName(), parameter.Name, typeAdapters, selfType);
-
-    public static string LowerParameterDeclaration(
-        ParameterNode parameter,
-        TypeRef? parameterType,
-        IReadOnlyList<TypeAdapterNode> typeAdapters,
-        TypeRef? selfType = null) =>
-        parameter.IsVariadic
-            ? "..."
-            : parameterType is null
-                ? LowerDeclaration(parameter.TypeNode.ToTypeName(), parameter.Name, typeAdapters, selfType is null ? null : TypeRefFormatter.ToCxString(selfType))
-                : LowerDeclaration(parameterType, parameter.Name, typeAdapters, selfType);
-
     public static string ResolveAdapterStorageType(
         string type,
         IReadOnlyList<TypeAdapterNode> typeAdapters)
@@ -265,19 +213,6 @@ internal static class CTypeLowerer
     public static IReadOnlyList<string> SplitGenericArguments(string argumentsText) =>
         TypeSyntaxFacts.SplitGenericArguments(argumentsText);
 
-    private static string LowerFunctionTypeParameter(
-        string parameter,
-        IReadOnlyList<TypeAdapterNode> typeAdapters,
-        string? selfType = null) =>
-        parameter.Trim() == "..."
-            ? "..."
-            : LowerType(parameter, typeAdapters, selfType);
-
-    private static string LowerFunctionTypeParameter(
-        TypeRef parameter,
-        IReadOnlyList<TypeAdapterNode> typeAdapters) =>
-        LowerType(parameter, typeAdapters);
-
     private static string LowerNamedType(
         TypeRef.Named named,
         IReadOnlyList<TypeAdapterNode> typeAdapters)
@@ -388,18 +323,6 @@ internal static class CTypeLowerer
 
             suffixBuilder.Insert(0, type[openBracket..]);
             type = type[..openBracket];
-        }
-
-        return (type, suffixBuilder.ToString());
-    }
-
-    private static (TypeRef ElementType, string Suffix) SplitArrayType(TypeRef type)
-    {
-        var suffixBuilder = new StringBuilder();
-        while (type is TypeRef.FixedArray array)
-        {
-            suffixBuilder.Insert(0, $"[{array.Length}]");
-            type = array.Element;
         }
 
         return (type, suffixBuilder.ToString());
