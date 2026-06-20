@@ -11,8 +11,6 @@ public sealed partial class CEmitter
         Func<ExpressionNode, TypeRef?> resolveExpressionType,
         Func<ExpressionNode, CExpression> lowerExpression)
     {
-        private readonly CExpressionEmitter _expressionEmitter = new();
-
         public CExpression? TryLower(
             MemberExpressionNode member,
             IReadOnlyList<ExpressionNode> arguments)
@@ -36,9 +34,9 @@ public sealed partial class CEmitter
             var loweredArguments = arguments.Select(lowerExpression).ToList();
             loweredArguments.Insert(0, new CMemberExpression(targetExpression, access, "state"));
 
-            var targetText = _expressionEmitter.Emit(targetExpression);
-            return new CCallExpression(
-                new CFunctionName($"{targetText}{access}vtable->{member.MemberName}"),
+            var vtable = new CMemberExpression(targetExpression, access, "vtable");
+            return new CExpressionCallExpression(
+                new CMemberExpression(vtable, "->", member.MemberName),
                 loweredArguments);
         }
     }

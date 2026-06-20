@@ -35,9 +35,8 @@ public sealed class CxCompiler
             return CompilationResult.Failed(diagnostics.Diagnostics);
         }
 
-        var cEmitter = new CEmitter(nameManglerOptions);
-        var cUnit = cEmitter.LowerToC(program);
-        var c = cEmitter.Emit(cUnit);
+        var cUnit = new CxToCTranslationUnitLowerer(nameManglerOptions).Lower(program);
+        var c = new CTranslationUnitEmitter().Emit(cUnit);
         return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));
     }
 
@@ -49,9 +48,8 @@ public sealed class CxCompiler
             return CompilationResult.Failed(diagnostics.Diagnostics);
         }
 
-        var cEmitter = new CEmitter();
-        var cUnit = cEmitter.LowerToC(program);
-        var c = cEmitter.Emit(cUnit);
+        var cUnit = new CxToCTranslationUnitLowerer().Lower(program);
+        var c = new CTranslationUnitEmitter().Emit(cUnit);
         return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));
     }
 

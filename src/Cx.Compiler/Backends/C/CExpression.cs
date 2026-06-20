@@ -65,3 +65,7 @@ internal sealed record CResolvedFunction(
 internal sealed record CCallExpression(
     CFunctionReference Function,
     IReadOnlyList<CExpression> Arguments) : CExpression;
+
+internal sealed record CExpressionCallExpression(
+    CExpression Function,
+    IReadOnlyList<CExpression> Arguments) : CExpression;

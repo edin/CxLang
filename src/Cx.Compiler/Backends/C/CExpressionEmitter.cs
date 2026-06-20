@@ -20,11 +20,15 @@ internal sealed class CExpressionEmitter
         CCommaExpression comma => string.Join(", ", comma.Expressions.Select(Emit)),
         CInitializerExpression initializer => EmitInitializer(initializer),
         CCallExpression call => EmitCall(call),
+        CExpressionCallExpression call => EmitExpressionCall(call),
         _ => throw new InvalidOperationException($"Unexpected C expression node {expression.GetType().Name}."),
     };
 
     private string EmitCall(CCallExpression call) =>
         $"{call.Function.Name}({string.Join(", ", call.Arguments.Select(Emit))})";
+
+    private string EmitExpressionCall(CExpressionCallExpression call) =>
+        $"{Emit(call.Function)}({string.Join(", ", call.Arguments.Select(Emit))})";
 
     private string EmitInitializer(CInitializerExpression initializer)
     {

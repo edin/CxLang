@@ -6,7 +6,7 @@ internal sealed class CInitializerExpressionLowerer(
     ICExpressionLoweringContext context,
     CTypeExpressionLowerer typeExpressionLowerer)
 {
-    public CExpression LowerInitializer(InitializerExpressionNode initializer, string? targetType = null) =>
+    public CExpression LowerInitializer(InitializerExpressionNode initializer) =>
         new CInitializerExpression(
             initializer.TypeNameNode is not null ? typeExpressionLowerer.LowerType(initializer.TypeNameNode) : null,
             initializer.Fields

@@ -84,6 +84,13 @@ internal sealed class CUsageCollector
                     Visit(argument);
                 }
                 break;
+            case CExpressionCallExpression call:
+                Visit(call.Function);
+                foreach (var argument in call.Arguments)
+                {
+                    Visit(argument);
+                }
+                break;
         }
     }
 }

@@ -34,7 +34,7 @@ public sealed partial class CEmitter
             _ => throw CEmissionGuards.UnsupportedCExpressionLowering(expression),
         };
 
-        public CExpression LowerInitializer(InitializerExpressionNode initializer, string? targetType = null) =>
-            _simpleLowerer.LowerInitializer(initializer, targetType);
+        public CExpression LowerInitializer(InitializerExpressionNode initializer) =>
+            _simpleLowerer.LowerInitializer(initializer);
     }
 }

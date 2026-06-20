@@ -209,7 +209,7 @@ public sealed partial class CEmitter
         public string LowerInitializer(string targetType, ExpressionNode expression)
         {
             var lowered = expression is InitializerExpressionNode initializer
-                ? _expressionLoweringPipeline.LowerInitializer(initializer, targetType)
+                ? _expressionLoweringPipeline.LowerInitializer(initializer)
                 : LowerExpression(expression);
             if (TryBuildInterfaceValue(targetType, expression, out var interfaceInitializer))
             {
@@ -220,15 +220,10 @@ public sealed partial class CEmitter
                 TryWrapTaggedUnionValueExpression(targetType, expression, lowered) ?? lowered);
         }
 
-        public string LowerInitializer(TypeRef? targetType, string fallbackTargetType, ExpressionNode expression) =>
-            targetType is null
-                ? LowerInitializer(fallbackTargetType, expression)
-                : LowerInitializer(targetType, expression);
-
         public string LowerInitializer(TypeRef targetType, ExpressionNode expression)
         {
             var lowered = expression is InitializerExpressionNode initializer
-                ? _expressionLoweringPipeline.LowerInitializer(initializer, TypeRefFormatter.ToCxString(targetType))
+                ? _expressionLoweringPipeline.LowerInitializer(initializer)
                 : LowerExpression(expression);
             if (TryBuildInterfaceValue(targetType, expression, out var interfaceInitializer))
             {
@@ -242,7 +237,7 @@ public sealed partial class CEmitter
         public CExpression LowerInitializerExpression(string targetType, ExpressionNode expression)
         {
             var direct = expression is InitializerExpressionNode initializer
-                ? _expressionLoweringPipeline.LowerInitializer(initializer, targetType)
+                ? _expressionLoweringPipeline.LowerInitializer(initializer)
                 : LowerExpression(expression);
             if (TryBuildInterfaceValueExpression(targetType, expression) is { } interfaceInitializer)
             {
@@ -257,18 +252,10 @@ public sealed partial class CEmitter
             return direct;
         }
 
-        public CExpression LowerInitializerExpression(TypeRef? targetType, string fallbackTargetType, ExpressionNode expression) =>
-            targetType is null
-                ? LowerInitializerExpression(fallbackTargetType, expression)
-                : LowerInitializerExpression(targetType, expression);
-
-        public CExpression LowerInitializerExpression(TypeNode? targetTypeNode, string fallbackTargetType, ExpressionNode expression) =>
-            LowerInitializerExpression(_scope.ResolveType(targetTypeNode), fallbackTargetType, expression);
-
         public CExpression LowerInitializerExpression(TypeRef targetType, ExpressionNode expression)
         {
             var direct = expression is InitializerExpressionNode initializer
-                ? _expressionLoweringPipeline.LowerInitializer(initializer, TypeRefFormatter.ToCxString(targetType))
+                ? _expressionLoweringPipeline.LowerInitializer(initializer)
                 : LowerExpression(expression);
             if (TryBuildInterfaceValueExpression(targetType, expression) is { } interfaceInitializer)
             {

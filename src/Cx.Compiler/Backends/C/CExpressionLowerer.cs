@@ -47,8 +47,8 @@ internal sealed class CExpressionLowerer(ICExpressionLoweringContext context)
         _ => throw CEmissionGuards.UnsupportedRawExpressionLowering(expression),
     };
 
-    public CExpression LowerInitializer(InitializerExpressionNode initializer, string? targetType = null) =>
-        _initializerExpressionLowerer.LowerInitializer(initializer, targetType);
+    public CExpression LowerInitializer(InitializerExpressionNode initializer) =>
+        _initializerExpressionLowerer.LowerInitializer(initializer);
 
     private static string LowerLiteral(string text) => text switch
     {

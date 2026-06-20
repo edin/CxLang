@@ -265,6 +265,31 @@ public sealed class CTranslationUnitEmitterTests
     }
 
     [Fact]
+    public void Emit_PrintsExpressionCalleeCalls()
+    {
+        var unit = new CTranslationUnit([
+            new CFunctionDefinition(
+                new CFunctionSignature(new CNamedTypeRef("void"), "main", []),
+                [
+                    new CExpressionStatement(
+                        new CExpressionCallExpression(
+                            new CMemberExpression(
+                                new CMemberExpression(new CNameExpression("writer"), ".", "vtable"),
+                                "->",
+                                "write"),
+                            [
+                                new CMemberExpression(new CNameExpression("writer"), ".", "state"),
+                                new CNameExpression("value"),
+                            ])),
+                ]),
+        ]);
+
+        var output = new CTranslationUnitEmitter().Emit(unit);
+
+        Assert.Contains("writer.vtable->write(writer.state, value);", output);
+    }
+
+    [Fact]
     public void Emit_PrintsStructuredTypeAliases()
     {
         var unit = new CTranslationUnit([
