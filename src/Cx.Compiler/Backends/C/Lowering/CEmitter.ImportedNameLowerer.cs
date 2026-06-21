@@ -9,6 +9,7 @@ public sealed partial class CEmitter
 {
     private sealed class ImportedNameLowerer : ICExpressionLoweringContext
     {
+        private readonly CBackendContext _backend;
         private readonly CLoweringContext _context;
         private readonly CLoweringScope _scope;
         private readonly CExpressionEmitter _expressionEmitter = new();
@@ -27,8 +28,10 @@ public sealed partial class CEmitter
 
         public ImportedNameLowerer(
             ProgramNode program,
-            IReadOnlyList<StructNode> concreteStructs)
+            IReadOnlyList<StructNode> concreteStructs,
+            CBackendContext backend)
             : this(
+                backend,
                 CLoweringContext.Create(program, concreteStructs),
                 CreateInitialScope(program))
         {
@@ -61,11 +64,13 @@ public sealed partial class CEmitter
         }
 
         private ImportedNameLowerer(
+            CBackendContext backend,
             CLoweringContext context,
             CLoweringScope scope,
             string? selfType = null,
             string? selfApiType = null)
         {
+            _backend = backend;
             _context = context;
             _scope = scope;
             SelfType = selfType;
@@ -74,28 +79,28 @@ public sealed partial class CEmitter
             _interfaceValueBuilder = new InterfaceValueBuilder(
                 _context,
                 _scope,
-                s_abiNames,
-                type => LowerType(type, SelfType),
+                _backend.AbiNames,
+                LowerType,
                 LowerTypeText,
                 LowerCTypeRef);
             _taggedUnionValueBuilder = new TaggedUnionValueBuilder(
                 _context,
                 InferExpressionTypeRef,
-                type => LowerType(type, SelfType),
+                LowerType,
                 LowerTypeText,
                 LowerCTypeRef);
             _structValueBuilder = new StructValueBuilder(
                 _context,
                 LowerExpression,
                 InferExpressionTypeRef,
-                type => LowerType(type, SelfType),
+                LowerType,
                 LowerTypeText);
             _adapterExposeResolver = new AdapterExposeResolver(_context);
             _receiverExpressionBuilder = new ReceiverExpressionBuilder(_scope);
             _nameExpressionLowerer = new NameExpressionLowerer(
                 _context,
                 _scope,
-                s_nameMangler,
+                _backend.NameMangler,
                 LowerExpression);
             var expressionLoweringServices = CreateExpressionLoweringServices();
             _expressionLoweringPipeline = expressionLoweringServices.Pipeline;
@@ -143,7 +148,7 @@ public sealed partial class CEmitter
                 _structValueBuilder,
                 _adapterExposeResolver,
                 _nameExpressionLowerer.LowerName,
-                type => LowerType(type, SelfType),
+                LowerType,
                 LowerExpression);
             var callLowerer = new CallLowerer(
                 _context,
@@ -174,6 +179,7 @@ public sealed partial class CEmitter
             var scope = _scope.ForFunction(function, selfType, selfApiType);
 
             return new(
+                _backend,
                 _context,
                 scope,
                 selfType,
@@ -185,6 +191,7 @@ public sealed partial class CEmitter
             var scope = _scope.WithLocal(name, type);
 
             return new ImportedNameLowerer(
+                _backend,
                 _context,
                 scope,
                 SelfType,
@@ -200,6 +207,7 @@ public sealed partial class CEmitter
             var scope = _scope.WithImplicitReferenceLocal(name, valueType, storageType, isConst);
 
             return new ImportedNameLowerer(
+                _backend,
                 _context,
                 scope,
                 SelfType,
@@ -333,20 +341,20 @@ public sealed partial class CEmitter
             _nameExpressionLowerer.LowerAddressOfExpression(operand);
 
         CTypeRef ICExpressionLoweringContext.LowerTypeRef(TypeRef type) =>
-            s_abiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+            _backend.AbiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
 
         TypeRef? ICExpressionLoweringContext.ResolveType(TypeNode? typeNode) =>
             _scope.ResolveType(typeNode);
 
 
         private string LowerTypeText(TypeRef type) =>
-            s_abiNames.LowerType(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+            _backend.AbiNames.LowerType(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
 
         private CTypeRef LowerCTypeRef(TypeRef type) =>
-            s_abiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+            _backend.AbiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
 
-        private static string LowerType(string type, string? selfType = null) =>
-            CEmitter.LowerType(type, selfType);
+        private string LowerType(string type) =>
+            _backend.AbiNames.LowerType(type, SelfType);
 
         CExpression? ICExpressionLoweringContext.TryWrapAssignmentValue(
             AssignmentExpressionNode assignment,
@@ -416,7 +424,7 @@ public sealed partial class CEmitter
                 : null;
         }
 
-        private static string RestoreSourceAdapterType(string type)
+        private string RestoreSourceAdapterType(string type)
         {
             var pointerSuffix = "";
             var normalized = type.Trim();
@@ -426,7 +434,7 @@ public sealed partial class CEmitter
                 normalized = normalized[..^1].TrimEnd();
             }
 
-            foreach (var adapter in s_typeAdapters.Where(adapter => adapter.TypeParameters.Count > 0))
+            foreach (var adapter in _backend.TypeAdapters.Where(adapter => adapter.TypeParameters.Count > 0))
             {
                 var prefix = adapter.Name + "_";
                 if (!normalized.StartsWith(prefix, StringComparison.Ordinal))
