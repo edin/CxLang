@@ -1,4 +1,5 @@
 using Cx.Compiler.Source;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
@@ -26,7 +27,7 @@ public sealed class CEmitterInvariantTests
                             new RawExpressionNode(location, "legacy_text_call()"))
                     ],
                     Attributes: [],
-                    ReturnTypeNode: TypeNode.CreateFromText(location, "void")),
+                    ReturnTypeNode: ResolvedTypeNode(location, "void")),
             ]);
 
         var exception = Assert.Throws<InvalidOperationException>(() => new CEmitter().Emit(program));
@@ -57,11 +58,18 @@ public sealed class CEmitterInvariantTests
                             ])
                     ],
                     Attributes: [],
-                    ReturnTypeNode: TypeNode.CreateFromText(location, "void")),
+                    ReturnTypeNode: ResolvedTypeNode(location, "void")),
             ]);
 
         var exception = Assert.Throws<InvalidOperationException>(() => new CEmitter().Emit(program));
         Assert.Contains("match at", exception.Message);
         Assert.Contains("reached C statement lowering", exception.Message);
+    }
+
+    private static TypeNode ResolvedTypeNode(Location location, string type)
+    {
+        var typeNode = TypeNode.CreateFromText(location, type);
+        typeNode.Semantic.Type = new TypeRef.Named(type, []);
+        return typeNode;
     }
 }

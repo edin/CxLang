@@ -7,13 +7,17 @@ namespace Cx.Compiler;
 
 public sealed partial class CEmitter
 {
-    private static bool TryParseFixedArrayType(string type, out string elementType, out string length)
-        => CTypeLowerer.TryParseFixedArrayType(type, out elementType, out length);
+    private static CTypeRef LowerReturnType(
+        CBackendContext backend,
+        TypeNode? typeNode,
+        string fallbackType,
+        string? selfType = null) =>
+        LowerDeclarationType(backend, typeNode, fallbackType, "return", selfType);
 
-    private static CTypeRef LowerReturnType(TypeNode? typeNode, string fallbackType, string? selfType = null) =>
-        LowerDeclarationType(typeNode, fallbackType, "return", selfType);
-
-    private static CParameterDeclaration LowerParameter(ParameterNode parameter, string? selfType = null)
+    private static CParameterDeclaration LowerParameter(
+        CBackendContext backend,
+        ParameterNode parameter,
+        string? selfType = null)
     {
         if (parameter.IsVariadic)
         {
@@ -21,11 +25,12 @@ public sealed partial class CEmitter
         }
 
         return new CParameterDeclaration(
-            LowerDeclarationType(parameter.TypeNode, ParameterTypeText(parameter), parameter.Name, selfType),
+            LowerDeclarationType(backend, parameter.TypeNode, ParameterTypeText(parameter), parameter.Name, selfType),
             parameter.Name);
     }
 
     private static CVariableDeclaration LowerVariable(
+        CBackendContext backend,
         TypeNode? typeNode,
         string fallbackType,
         string name,
@@ -33,44 +38,58 @@ public sealed partial class CEmitter
         string? selfType = null)
     {
         return new CVariableDeclaration(
-            LowerDeclarationType(typeNode, fallbackType, name, selfType),
+            LowerDeclarationType(backend, typeNode, fallbackType, name, selfType),
             name,
             isConst);
     }
 
-    private static CFieldDeclaration LowerField(TypeNode? typeNode, string fallbackType, string name)
+    private static CFieldDeclaration LowerField(
+        CBackendContext backend,
+        TypeNode? typeNode,
+        string fallbackType,
+        string name)
     {
-        return new CFieldDeclaration(LowerDeclarationType(typeNode, fallbackType, name), name);
+        return new CFieldDeclaration(LowerDeclarationType(backend, typeNode, fallbackType, name), name);
     }
 
-    private static CTypeRef LowerFieldType(TypeNode? typeNode, string fallbackType) =>
-        LowerDeclarationType(typeNode, fallbackType, "field");
+    private static CFieldDeclaration LowerField(CBackendContext backend, TypeRef type, string name) =>
+        new(LowerDeclarationType(backend, type), name);
+
+    private static CTypeRef LowerFieldType(CBackendContext backend, TypeNode? typeNode, string fallbackType) =>
+        LowerDeclarationType(backend, typeNode, fallbackType, "field");
+
+    private static CTypeRef LowerFieldType(CBackendContext backend, TypeRef type) =>
+        LowerDeclarationType(backend, type);
 
     private static CTypeRef LowerDeclarationType(
+        CBackendContext backend,
         TypeNode? typeNode,
         string fallbackType,
         string name,
         string? selfType = null)
     {
         var type = ResolveDeclarationType(typeNode, fallbackType, name);
-        return s_abiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(selfType));
+        return backend.AbiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(selfType));
     }
 
-    private static TypeRef ResolveDeclarationType(TypeNode? typeNode, string fallbackType, string name)
-    {
-        var type = typeNode?.Semantic.Type
-            ?? (typeNode is null ? null : RequireTypeRefParser().Parse(typeNode));
-        if (type is null or TypeRef.Unknown)
-        {
-            type = RequireTypeRefParser().Parse(fallbackType);
-        }
+    private static CTypeRef LowerDeclarationType(CBackendContext backend, TypeRef type) =>
+        backend.AbiNames.LowerTypeRef(type);
 
-        return type is TypeRef.Unknown
+    private static TypeRef ResolveDeclarationType(
+        TypeNode? typeNode,
+        string fallbackType,
+        string name)
+    {
+        var type = typeNode?.Semantic.Type;
+
+        return type is null or TypeRef.Unknown
             ? throw CEmissionGuards.UnresolvedDeclarationType(typeNode, fallbackType, name)
             : type;
     }
 
-    private static TypeRefParser RequireTypeRefParser() =>
-        s_typeRefParser
-        ?? throw new InvalidOperationException("Internal C emission error: TypeRef parser was not initialized.");
+    private static TypeRef ResolveInitializerTargetType(
+        TypeNode? typeNode,
+        string fallbackType,
+        string name) =>
+        ResolveDeclarationType(typeNode, fallbackType, name);
 }

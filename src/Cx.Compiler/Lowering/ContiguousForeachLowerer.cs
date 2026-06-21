@@ -37,14 +37,14 @@ internal static class ContiguousForeachLowerer
                     IsConst: true,
                     sourceName,
                     source,
-                    TypeNode.CreateFromText(source.Location, iterable.SourceType)));
+                    CreateTypeNode(source.Location, iterable.SourceType)));
                 source = new NameExpressionNode(source.Location, sourceName);
             }
 
             var dataName = context.UniqueName("__cx_foreach_data");
             var lengthName = context.UniqueName("__cx_foreach_length");
             var indexName = context.UniqueName("__cx_foreach_index");
-            var dataType = TypeNode.CreateFromText(node.Location, iterable.ElementType + "*");
+            var dataType = CreateTypeNode(node.Location, iterable.ElementType + "*");
             statements.Add(new LetStatement(
                 node.Location,
                 IsConst: true,
@@ -56,7 +56,7 @@ internal static class ContiguousForeachLowerer
                 IsConst: true,
                 lengthName,
                 iterable.LengthExpression(source),
-                TypeNode.CreateFromText(node.Location, "usize")));
+                CreateTypeNode(node.Location, "usize")));
 
             var body = new List<StatementNode>();
             if (node.IndexBinding is { } indexBinding)
@@ -66,7 +66,7 @@ internal static class ContiguousForeachLowerer
                     indexBinding.IsConst,
                     indexBinding.Name,
                     new NameExpressionNode(indexBinding.Location, indexName),
-                    indexBinding.TypeNode ?? TypeNode.CreateFromText(indexBinding.Location, "usize")));
+                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, "usize")));
             }
 
             body.Add(BuildValueBinding(node.ValueBinding, iterable.ElementType, dataName, indexName));
@@ -79,7 +79,7 @@ internal static class ContiguousForeachLowerer
                     IsConst: false,
                     indexName,
                     new LiteralExpressionNode(node.Location, "0"),
-                    TypeNode.CreateFromText(node.Location, "usize")),
+                    CreateTypeNode(node.Location, "usize")),
                 new BinaryExpressionNode(
                     node.Location,
                     new NameExpressionNode(node.Location, indexName),
@@ -163,7 +163,7 @@ internal static class ContiguousForeachLowerer
             return false;
         }
 
-        private static LetStatement BuildValueBinding(
+        private LetStatement BuildValueBinding(
             ForeachBinding binding,
             string elementType,
             string dataName,
@@ -172,7 +172,7 @@ internal static class ContiguousForeachLowerer
             var indexExpression = Index(
                 new NameExpressionNode(binding.Location, dataName),
                 new NameExpressionNode(binding.Location, indexName));
-            var bindingType = binding.TypeNode ?? TypeNode.CreateFromText(binding.Location, elementType);
+            var bindingType = binding.TypeNode ?? CreateTypeNode(binding.Location, elementType);
             return new LetStatement(
                 binding.Location,
                 binding.IsConst,
@@ -181,12 +181,19 @@ internal static class ContiguousForeachLowerer
                 binding.IsReference ? PointerType(binding.Location, bindingType) : bindingType);
         }
 
-        private static TypeNode PointerType(Location location, TypeNode typeNode)
+        private TypeNode PointerType(Location location, TypeNode typeNode)
         {
             var type = typeNode.ToTypeName();
-            return TypeNode.CreateFromText(
+            return CreateTypeNode(
                 location,
                 type.TrimEnd().EndsWith("*", StringComparison.Ordinal) ? type : $"{type}*");
+        }
+
+        private TypeNode CreateTypeNode(Location location, string type)
+        {
+            var typeNode = TypeNode.CreateFromText(location, type);
+            typeNode.Semantic.Type = _typeRefParser.Parse(typeNode);
+            return typeNode;
         }
 
         private static ExpressionNode PointerLength(ExpressionNode source)

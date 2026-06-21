@@ -6,15 +6,15 @@ namespace Cx.Compiler;
 
 public sealed partial class CEmitter
 {
-    private static string GetCFunctionName(FunctionNode function) =>
-        s_nameMangler.FunctionName(function);
+    private static string GetCFunctionName(CBackendContext backend, FunctionNode function) =>
+        backend.NameMangler.FunctionName(function);
 
-    private static string? GetConcreteFunctionOwnerName(FunctionNode function) =>
+    private static string? GetConcreteFunctionOwnerName(CBackendContext backend, FunctionNode function) =>
         FunctionOwnerTypeText(function) is not { } ownerType
             ? null
             : FunctionTypeArgumentTexts(function).Count == 0
                 ? ownerType
-                : LowerType($"{ownerType}<{string.Join(",", FunctionTypeArgumentTexts(function))}>");
+                : LowerType(backend, $"{ownerType}<{string.Join(",", FunctionTypeArgumentTexts(function))}>");
 
     private static string? GetGenericBaseName(string type) =>
         CTypeLowerer.GetGenericBaseName(type);
@@ -44,13 +44,13 @@ public sealed partial class CEmitter
         return type;
     }
 
-    private static string LowerType(string type, string? selfType = null)
-        => s_abiNames.LowerType(type, selfType);
+    private static string LowerType(CBackendContext backend, string type, string? selfType = null)
+        => backend.AbiNames.LowerType(type, selfType);
 
-    private static string ResolveAdapterStorageType(string type)
-        => CTypeLowerer.ResolveAdapterStorageType(type, s_typeAdapters);
+    private static string ResolveAdapterStorageType(CBackendContext backend, string type)
+        => CTypeLowerer.ResolveAdapterStorageType(type, backend.TypeAdapters);
 
-    private static string? ResolveSelfType(FunctionNode function)
+    private static string? ResolveSelfType(CBackendContext backend, FunctionNode function)
     {
         if (FunctionOwnerTypeText(function) is not { } ownerType)
         {
@@ -60,12 +60,12 @@ public sealed partial class CEmitter
         var typeArguments = FunctionTypeArgumentTexts(function);
         if (typeArguments.Count > 0)
         {
-            return ResolveAdapterStorageType($"{ownerType}<{string.Join(",", typeArguments)}>");
+            return ResolveAdapterStorageType(backend, $"{ownerType}<{string.Join(",", typeArguments)}>");
         }
 
         if (function.TypeParameters.Count > 0 && !TryParseGenericUse(ownerType, out _, out _))
         {
-            return ResolveAdapterStorageType($"{ownerType}<{string.Join(",", function.TypeParameters)}>");
+            return ResolveAdapterStorageType(backend, $"{ownerType}<{string.Join(",", function.TypeParameters)}>");
         }
 
         var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
@@ -74,7 +74,7 @@ public sealed partial class CEmitter
             return NormalizeType(selfParameter.TypeNode.ToTypeName());
         }
 
-        return ResolveAdapterStorageType(ownerType);
+        return ResolveAdapterStorageType(backend, ownerType);
     }
 
     private static string? ResolveSelfApiType(FunctionNode function)
@@ -102,6 +102,9 @@ public sealed partial class CEmitter
     private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
         => CTypeLowerer.TryParseGenericUse(type, out name, out arguments);
 
-    private static bool ReferencesCompositeType(string type, IReadOnlySet<string> compositeTypeNames)
-        => CTypeLowerer.ReferencesCompositeType(type, compositeTypeNames, s_typeAdapters);
+    private static bool ReferencesCompositeType(
+        CBackendContext backend,
+        string type,
+        IReadOnlySet<string> compositeTypeNames)
+        => CTypeLowerer.ReferencesCompositeType(type, compositeTypeNames, backend.TypeAdapters);
 }

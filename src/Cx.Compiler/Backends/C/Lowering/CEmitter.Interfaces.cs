@@ -5,7 +5,9 @@ namespace Cx.Compiler;
 
 public sealed partial class CEmitter
 {
-    private static CEnumDeclaration ToCTypeIdEnum(IReadOnlyList<InterfaceImplementation> implementations) =>
+    private static CEnumDeclaration ToCTypeIdEnum(
+        CBackendContext backend,
+        IReadOnlyList<InterfaceImplementation> implementations) =>
         new(
             "CxTypeId",
             new[] { new CEnumMember("CX_TYPE_UNKNOWN", "0") }
@@ -13,10 +15,10 @@ public sealed partial class CEmitter
                 .Select(implementation => implementation.Struct.Name)
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
-                .Select(name => new CEnumMember(GetTypeIdName(name), null)))
+                .Select(name => new CEnumMember(GetTypeIdName(backend, name), null)))
                 .ToList());
 
-    private static CStructDeclaration ToCInterfaceVTableStruct(InterfaceNode interfaceNode)
+    private static CStructDeclaration ToCInterfaceVTableStruct(CBackendContext backend, InterfaceNode interfaceNode)
     {
         var fields = new List<CFieldDeclaration> { new(new CNamedTypeRef("CxTypeId"), "type_id") };
         foreach (var method in interfaceNode.Methods)
@@ -25,42 +27,43 @@ public sealed partial class CEmitter
             {
                 new(new CPointerTypeRef(new CNamedTypeRef("void")), "state"),
             };
-            parameters.AddRange(method.Parameters.Select(parameter => LowerParameter(parameter)));
+            parameters.AddRange(method.Parameters.Select(parameter => LowerParameter(backend, parameter)));
             fields.Add(new CFieldDeclaration(
                 new CFunctionTypeRef(
-                    LowerReturnType(method.ReturnTypeNode, InterfaceMethodReturnTypeText(method)),
+                    LowerReturnType(backend, method.ReturnTypeNode, InterfaceMethodReturnTypeText(method)),
                     parameters),
                 method.Name));
         }
 
-        return new CStructDeclaration(GetInterfaceVTableName(interfaceNode.Name), fields);
+        return new CStructDeclaration(GetInterfaceVTableName(backend, interfaceNode.Name), fields);
     }
 
-    private static CStructDeclaration ToCInterfaceValueStruct(InterfaceNode interfaceNode)
+    private static CStructDeclaration ToCInterfaceValueStruct(CBackendContext backend, InterfaceNode interfaceNode)
     {
         var fields = new List<CFieldDeclaration>
         {
             new(new CPointerTypeRef(new CNamedTypeRef("void")), "state"),
             new(
-                new CPointerTypeRef(new CConstTypeRef(new CNamedTypeRef(GetInterfaceVTableName(interfaceNode.Name)))),
+                new CPointerTypeRef(new CConstTypeRef(new CNamedTypeRef(GetInterfaceVTableName(backend, interfaceNode.Name)))),
                 "vtable"),
         };
         return new CStructDeclaration(interfaceNode.Name, fields);
     }
 
     private static CGlobalDeclaration ToCInterfaceVTableInstance(
+        CBackendContext backend,
         InterfaceImplementation implementation,
         IReadOnlyList<FunctionNode> functions)
     {
         var fields = new List<CInitializerField>
         {
-            new("type_id", new CNameExpression(GetTypeIdName(implementation.Struct.Name))),
+            new("type_id", new CNameExpression(GetTypeIdName(backend, implementation.Struct.Name))),
         };
 
         foreach (var method in implementation.Interface.Methods)
         {
             var concrete = functions.FirstOrDefault(function =>
-                GetConcreteFunctionOwnerName(function) == implementation.Struct.Name
+                GetConcreteFunctionOwnerName(backend, function) == implementation.Struct.Name
                 && !function.IsStatic
                 && function.Name == method.Name);
             if (concrete is null)
@@ -71,34 +74,36 @@ public sealed partial class CEmitter
             fields.Add(new CInitializerField(
                 method.Name,
                 new CCastExpression(
-                    BuildInterfaceMethodSlotType(method),
-                    new CNameExpression(GetCFunctionName(concrete)))));
+                    BuildInterfaceMethodSlotType(backend, method),
+                    new CNameExpression(GetCFunctionName(backend, concrete)))));
         }
 
         return new CGlobalDeclaration(
             new CVariableDeclaration(
-                new CNamedTypeRef(GetInterfaceVTableName(implementation.Interface.Name)),
-                GetInterfaceVTableInstanceName(implementation.Struct.Name, implementation.Interface.Name),
+                new CNamedTypeRef(GetInterfaceVTableName(backend, implementation.Interface.Name)),
+                GetInterfaceVTableInstanceName(backend, implementation.Struct.Name, implementation.Interface.Name),
                 IsConst: true),
             new CInitializerExpression(Type: null, fields, Values: []));
     }
 
-    private static CFunctionTypeRef BuildInterfaceMethodSlotType(InterfaceMethodNode method)
+    private static CFunctionTypeRef BuildInterfaceMethodSlotType(CBackendContext backend, InterfaceMethodNode method)
     {
         var parameters = new List<CParameterDeclaration>
         {
             new(new CPointerTypeRef(new CNamedTypeRef("void")), string.Empty),
         };
-        parameters.AddRange(method.Parameters.Select(parameter => LowerParameter(parameter)));
+        parameters.AddRange(method.Parameters.Select(parameter => LowerParameter(backend, parameter)));
         return new CFunctionTypeRef(
-            LowerReturnType(method.ReturnTypeNode, InterfaceMethodReturnTypeText(method)),
+            LowerReturnType(backend, method.ReturnTypeNode, InterfaceMethodReturnTypeText(method)),
             parameters);
     }
 
-    private static CExternGlobalDeclaration ToCInterfaceVTableDeclaration(InterfaceImplementation implementation) =>
+    private static CExternGlobalDeclaration ToCInterfaceVTableDeclaration(
+        CBackendContext backend,
+        InterfaceImplementation implementation) =>
         new(new CVariableDeclaration(
-            new CNamedTypeRef(GetInterfaceVTableName(implementation.Interface.Name)),
-            GetInterfaceVTableInstanceName(implementation.Struct.Name, implementation.Interface.Name),
+            new CNamedTypeRef(GetInterfaceVTableName(backend, implementation.Interface.Name)),
+            GetInterfaceVTableInstanceName(backend, implementation.Struct.Name, implementation.Interface.Name),
             IsConst: true));
 
     private static IReadOnlyList<InterfaceImplementation> GetInterfaceImplementations(
@@ -119,14 +124,14 @@ public sealed partial class CEmitter
             .ToList();
     }
 
-    private static string GetInterfaceVTableName(string interfaceName) =>
-        s_abiNames.InterfaceVTableName(interfaceName);
+    private static string GetInterfaceVTableName(CBackendContext backend, string interfaceName) =>
+        backend.AbiNames.InterfaceVTableName(interfaceName);
 
-    private static string GetInterfaceVTableInstanceName(string structName, string interfaceName) =>
-        s_abiNames.InterfaceVTableInstanceName(structName, interfaceName);
+    private static string GetInterfaceVTableInstanceName(CBackendContext backend, string structName, string interfaceName) =>
+        backend.AbiNames.InterfaceVTableInstanceName(structName, interfaceName);
 
-    private static string GetTypeIdName(string typeName) =>
-        s_abiNames.TypeIdName(typeName);
+    private static string GetTypeIdName(CBackendContext backend, string typeName) =>
+        backend.AbiNames.TypeIdName(typeName);
 
     private sealed record InterfaceImplementation(StructNode Struct, InterfaceNode Interface);
 }

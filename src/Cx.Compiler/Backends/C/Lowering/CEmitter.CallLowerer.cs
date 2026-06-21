@@ -1,4 +1,5 @@
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -78,7 +79,7 @@ public sealed partial class CEmitter
         }
 
         private CExpression LowerPayloadConstructorExpression(
-            string payloadType,
+            TypeRef payloadType,
             IReadOnlyList<ExpressionNode> arguments) =>
             structValueBuilder.BuildPayloadExpression(payloadType, arguments);
 

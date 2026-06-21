@@ -5,18 +5,21 @@ namespace Cx.Compiler;
 
 public sealed partial class CEmitter
 {
-    private static CTaggedUnionDeclaration ToCTaggedUnion(TaggedUnionNode taggedUnion) =>
+    private static CTaggedUnionDeclaration ToCTaggedUnion(CBackendContext backend, TaggedUnionNode taggedUnion) =>
         new(
             taggedUnion.Name,
             taggedUnion.IsRaw,
             taggedUnion.Variants
                 .Select(variant =>
                 {
-                    var variantType = TaggedUnionVariantTypeText(variant);
+                    var variantType = ResolveDeclarationType(
+                        variant.TypeNode,
+                        TaggedUnionVariantTypeText(variant),
+                        variant.Name);
                     return new CTaggedUnionVariantDeclaration(
                         variant.Name,
-                        LowerFieldType(variant.TypeNode, variantType),
-                        LowerField(variant.TypeNode, variantType, variant.Name));
+                        LowerFieldType(backend, variantType),
+                        LowerField(backend, variantType, variant.Name));
                 })
                 .ToList());
 }

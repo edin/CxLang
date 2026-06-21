@@ -13,10 +13,10 @@ public sealed partial class CEmitter
         private readonly CConditionalStatementLowerer _conditionalLowerer;
         private readonly CSwitchStatementLowerer _switchLowerer;
 
-        public CStatementLoweringPipeline(ImportedNameLowerer nameLowerer)
+        public CStatementLoweringPipeline(CBackendContext backend, ImportedNameLowerer nameLowerer)
         {
             _nameLowerer = nameLowerer;
-            _localDeclarationLowerer = new CLocalDeclarationLowerer(nameLowerer);
+            _localDeclarationLowerer = new CLocalDeclarationLowerer(backend, nameLowerer);
             _loopLowerer = new CLoopStatementLowerer(nameLowerer, this, _localDeclarationLowerer);
             _conditionalLowerer = new CConditionalStatementLowerer(nameLowerer, this);
             _switchLowerer = new CSwitchStatementLowerer(nameLowerer, this);

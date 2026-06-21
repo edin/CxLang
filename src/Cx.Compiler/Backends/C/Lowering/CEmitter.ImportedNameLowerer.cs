@@ -23,6 +23,7 @@ public sealed partial class CEmitter
         private readonly MemberAccessLowerer _memberAccessLowerer;
         private readonly MemberCallLowerer _memberCallLowerer;
         private readonly NameExpressionLowerer _nameExpressionLowerer;
+        public CBackendContext Backend => _backend;
         public string? SelfType { get; }
         private string? SelfApiType { get; }
 
@@ -32,7 +33,7 @@ public sealed partial class CEmitter
             CBackendContext backend)
             : this(
                 backend,
-                CLoweringContext.Create(program, concreteStructs),
+                CLoweringContext.Create(program, concreteStructs, backend),
                 CreateInitialScope(program))
         {
         }
@@ -80,7 +81,6 @@ public sealed partial class CEmitter
                 _context,
                 _scope,
                 _backend.AbiNames,
-                LowerType,
                 LowerTypeText,
                 LowerCTypeRef);
             _taggedUnionValueBuilder = new TaggedUnionValueBuilder(
@@ -116,6 +116,7 @@ public sealed partial class CEmitter
                 LowerExpression);
             var functionReferences = new CFunctionReferenceResolver();
             var resolvedCallLowerer = new ResolvedCallLowerer(
+                _backend,
                 _context,
                 _scope,
                 _genericCallResolver,
@@ -123,6 +124,7 @@ public sealed partial class CEmitter
                 _receiverExpressionBuilder,
                 LowerExpression);
             var memberAccessLowerer = new MemberAccessLowerer(
+                _backend,
                 _context,
                 _scope,
                 Lower,
@@ -174,7 +176,7 @@ public sealed partial class CEmitter
 
         public ImportedNameLowerer ForFunction(FunctionNode function)
         {
-            var selfType = ResolveSelfType(function);
+            var selfType = ResolveSelfType(_backend, function);
             var selfApiType = ResolveSelfApiType(function);
             var scope = _scope.ForFunction(function, selfType, selfApiType);
 
@@ -214,20 +216,6 @@ public sealed partial class CEmitter
                 SelfApiType);
         }
 
-        public string LowerInitializer(string targetType, ExpressionNode expression)
-        {
-            var lowered = expression is InitializerExpressionNode initializer
-                ? _expressionLoweringPipeline.LowerInitializer(initializer)
-                : LowerExpression(expression);
-            if (TryBuildInterfaceValue(targetType, expression, out var interfaceInitializer))
-            {
-                return interfaceInitializer;
-            }
-
-            return _expressionEmitter.Emit(
-                TryWrapTaggedUnionValueExpression(targetType, expression, lowered) ?? lowered);
-        }
-
         public string LowerInitializer(TypeRef targetType, ExpressionNode expression)
         {
             var lowered = expression is InitializerExpressionNode initializer
@@ -240,24 +228,6 @@ public sealed partial class CEmitter
 
             return _expressionEmitter.Emit(
                 TryWrapTaggedUnionValueExpression(targetType, expression, lowered) ?? lowered);
-        }
-
-        public CExpression LowerInitializerExpression(string targetType, ExpressionNode expression)
-        {
-            var direct = expression is InitializerExpressionNode initializer
-                ? _expressionLoweringPipeline.LowerInitializer(initializer)
-                : LowerExpression(expression);
-            if (TryBuildInterfaceValueExpression(targetType, expression) is { } interfaceInitializer)
-            {
-                return interfaceInitializer;
-            }
-
-            if (TryWrapTaggedUnionValueExpression(targetType, expression, direct) is { } wrapped)
-            {
-                return wrapped;
-            }
-
-            return direct;
         }
 
         public CExpression LowerInitializerExpression(TypeRef targetType, ExpressionNode expression)
@@ -278,18 +248,6 @@ public sealed partial class CEmitter
             return direct;
         }
 
-        private bool TryBuildInterfaceValue(string targetType, ExpressionNode sourceExpression, out string initializer)
-        {
-            initializer = string.Empty;
-            if (TryBuildInterfaceValueExpression(targetType, sourceExpression) is not { } expression)
-            {
-                return false;
-            }
-
-            initializer = _expressionEmitter.Emit(expression);
-            return true;
-        }
-
         private bool TryBuildInterfaceValue(TypeRef targetType, ExpressionNode sourceExpression, out string initializer)
         {
             initializer = string.Empty;
@@ -301,9 +259,6 @@ public sealed partial class CEmitter
             initializer = _expressionEmitter.Emit(expression);
             return true;
         }
-
-        private CExpression? TryBuildInterfaceValueExpression(string targetType, ExpressionNode sourceExpression)
-            => _interfaceValueBuilder.TryBuild(targetType, sourceExpression);
 
         private CExpression? TryBuildInterfaceValueExpression(TypeRef targetType, ExpressionNode sourceExpression)
             => _interfaceValueBuilder.TryBuild(targetType, sourceExpression);
@@ -407,7 +362,7 @@ public sealed partial class CEmitter
 
             var targetTypeText = RestoreSourceAdapterType(
                 _genericCallResolver.RestoreSourceGenericType(TypeRefFormatter.ToCxString(targetType)));
-            var storageType = RemovePointer(NormalizeType(ResolveAdapterStorageType(targetTypeText)));
+            var storageType = RemovePointer(NormalizeType(ResolveAdapterStorageType(_backend, targetTypeText)));
             if (!_context.TryGetStruct(storageType, out var structNode))
             {
                 return null;
@@ -457,12 +412,6 @@ public sealed partial class CEmitter
             _memberAccessLowerer.LowerExpression(member);
 
 
-
-        private CExpression? TryWrapTaggedUnionValueExpression(
-            string targetType,
-            ExpressionNode sourceExpression,
-            CExpression loweredExpression)
-            => _taggedUnionValueBuilder.TryWrapExpression(targetType, sourceExpression, loweredExpression);
 
         private CExpression? TryWrapTaggedUnionValueExpression(
             TypeRef targetType,

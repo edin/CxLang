@@ -1,3 +1,4 @@
+using Cx.Compiler.C;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -183,7 +184,8 @@ public sealed partial class CEmitter
 
         public static CLoweringContext Create(
             ProgramNode program,
-            IReadOnlyList<StructNode> concreteStructs)
+            IReadOnlyList<StructNode> concreteStructs,
+            CBackendContext backend)
         {
             var typeRefParser = new TypeRefParser(program);
 
@@ -201,7 +203,7 @@ public sealed partial class CEmitter
                     .Where(function => function.OwnerTypeNode is not null && (function.TypeArgumentNodes ?? []).Count == 0)
                     .ToDictionary(
                         function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
-                        GetCFunctionName,
+                        function => GetCFunctionName(backend, function),
                         StringComparer.Ordinal),
                 program.Functions
                     .Where(function => function.OwnerTypeNode is not null)
@@ -210,7 +212,7 @@ public sealed partial class CEmitter
                         function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
                         function => NormalizeType(TypeText(
                             SubstituteSelf(function.Parameters.FirstOrDefault()?.TypeNode.ToTypeRef(typeRefParser) ?? new TypeRef.Unknown(),
-                                ResolveSelfType(function, typeRefParser),
+                                ResolveSelfType(function, typeRefParser, backend),
                                 typeRefParser))),
                         StringComparer.Ordinal),
                 program.Functions
@@ -228,7 +230,7 @@ public sealed partial class CEmitter
                         TypeTexts(function.TypeArgumentNodes ?? [], typeRefParser),
                         function.Parameters.Where(parameter => !parameter.IsVariadic).Select(parameter => TypeText(parameter.TypeNode, typeRefParser)).ToList(),
                         TypeText(function.ReturnTypeNode, typeRefParser),
-                        GetCFunctionName(function),
+                        GetCFunctionName(backend, function),
                         IsPointer(function.Parameters.FirstOrDefault()?.TypeNode, typeRefParser),
                         function.IsStatic))
                     .ToList(),
@@ -279,7 +281,10 @@ public sealed partial class CEmitter
                 typeRefParser);
         }
 
-        private static string? ResolveSelfType(FunctionNode function, TypeRefParser typeRefParser)
+        private static string? ResolveSelfType(
+            FunctionNode function,
+            TypeRefParser typeRefParser,
+            CBackendContext backend)
         {
             if (function.OwnerTypeNode is null)
             {
@@ -290,7 +295,7 @@ public sealed partial class CEmitter
             var typeArguments = TypeTexts(function.TypeArgumentNodes ?? [], typeRefParser);
             if (typeArguments.Count > 0)
             {
-                return ResolveAdapterStorageType($"{ownerType}<{string.Join(",", typeArguments)}>");
+                return ResolveAdapterStorageType(backend, $"{ownerType}<{string.Join(",", typeArguments)}>");
             }
 
             var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
@@ -304,7 +309,7 @@ public sealed partial class CEmitter
                 }
             }
 
-            return ResolveAdapterStorageType(ownerType);
+            return ResolveAdapterStorageType(backend, ownerType);
         }
 
         private static TypeRef SubstituteSelf(TypeRef type, string? selfType, TypeRefParser typeRefParser) =>

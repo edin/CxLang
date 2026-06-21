@@ -13,45 +13,15 @@ public sealed partial class CEmitter
         Func<TypeRef, string> lowerTypeRef,
         Func<TypeRef, CTypeRef> lowerCTypeRef)
     {
-        public CExpression? TryWrapExpression(
-            string targetType,
-            ExpressionNode sourceExpression,
-            CExpression loweredExpression)
-        {
-            var normalizedTargetType = NormalizeType(targetType);
-            if (!context.TryGetTaggedUnion(normalizedTargetType, out var taggedUnion)
-                || taggedUnion.IsRaw)
-            {
-                return null;
-            }
-
-            var expressionType = inferExpressionTypeRef(sourceExpression);
-            if (expressionType is null)
-            {
-                return null;
-            }
-
-            var matchingVariants = taggedUnion.Variants
-                .Where(variant => AreSameLoweredType(variant.TypeNode, expressionType))
-                .ToList();
-
-            if (matchingVariants.Count != 1)
-            {
-                return null;
-            }
-
-            var variant = matchingVariants[0];
-            return BuildInitializer(new CNamedTypeRef(lowerCxType(taggedUnion.Name)), taggedUnion.Name, variant.Name, loweredExpression);
-        }
-
         public CExpression? TryBuildConstructorExpression(
             string unionName,
             string variantName,
             IReadOnlyList<ExpressionNode> arguments,
-            Func<string, IReadOnlyList<ExpressionNode>, CExpression> buildPayload)
+            Func<TypeRef, IReadOnlyList<ExpressionNode>, CExpression> buildPayload)
         {
             if (!context.TryGetTaggedUnionVariant(unionName, variantName, out var taggedUnion, out var variant)
-                || taggedUnion.IsRaw)
+                || taggedUnion.IsRaw
+                || variant.TypeNode?.Semantic.Type is not { } variantType)
             {
                 return null;
             }
@@ -60,7 +30,7 @@ public sealed partial class CEmitter
                 new CNamedTypeRef(lowerCxType(taggedUnion.Name)),
                 taggedUnion.Name,
                 variant.Name,
-                buildPayload(VariantTypeText(variant), arguments));
+                buildPayload(variantType, arguments));
         }
 
         public CExpression? TryWrapExpression(
@@ -107,16 +77,14 @@ public sealed partial class CEmitter
                 ],
                 []);
 
-        private static string VariantTypeText(TaggedUnionVariantNode variant) =>
-            variant.TypeNode?.Semantic.Type is { } type
-                ? TypeRefFormatter.ToCxString(type)
-                : variant.TypeNode.ToTypeName();
-
         private bool AreSameLoweredType(TypeNode? leftTypeNode, TypeRef rightType)
         {
-            var loweredLeft = leftTypeNode?.Semantic.Type is { } leftType
-                ? lowerTypeRef(leftType)
-                : lowerCxType(leftTypeNode.ToTypeName());
+            if (leftTypeNode?.Semantic.Type is not { } leftType)
+            {
+                return false;
+            }
+
+            var loweredLeft = lowerTypeRef(leftType);
             var loweredRight = lowerTypeRef(rightType);
             return string.Equals(loweredLeft, loweredRight, StringComparison.Ordinal);
         }

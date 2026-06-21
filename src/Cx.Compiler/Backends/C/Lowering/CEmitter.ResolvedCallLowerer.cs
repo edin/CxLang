@@ -7,6 +7,7 @@ namespace Cx.Compiler;
 public sealed partial class CEmitter
 {
     private sealed class ResolvedCallLowerer(
+        CBackendContext backend,
         CLoweringContext context,
         CLoweringScope scope,
         GenericCallResolver genericCallResolver,
@@ -83,7 +84,7 @@ public sealed partial class CEmitter
             return functionReferences.Resolve(
                 ownerType,
                 resolvedCall.Function.Name,
-                s_nameMangler.FunctionName(resolvedCall.Function));
+                backend.NameMangler.FunctionName(resolvedCall.Function));
         }
 
         private bool TryGetReceiverPointerInfo(string name, out bool isPointer)

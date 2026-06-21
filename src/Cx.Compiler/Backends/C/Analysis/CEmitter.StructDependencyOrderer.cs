@@ -1,10 +1,13 @@
+using Cx.Compiler.C;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
 public sealed partial class CEmitter
 {
-    private static IReadOnlyList<StructNode> OrderStructsByFieldDependencies(IReadOnlyList<StructNode> structs)
+    private static IReadOnlyList<StructNode> OrderStructsByFieldDependencies(
+        CBackendContext backend,
+        IReadOnlyList<StructNode> structs)
     {
         var remaining = structs.ToList();
         var remainingNames = remaining
@@ -15,7 +18,7 @@ public sealed partial class CEmitter
         while (remaining.Count > 0)
         {
             var index = remaining.FindIndex(structNode =>
-                !structNode.Fields.Any(field => ReferencesCompositeType(StructFieldTypeText(field), remainingNames)));
+                !structNode.Fields.Any(field => ReferencesCompositeType(backend, StructFieldTypeText(field), remainingNames)));
             if (index < 0)
             {
                 ordered.AddRange(remaining);

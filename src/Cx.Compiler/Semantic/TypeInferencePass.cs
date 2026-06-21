@@ -256,10 +256,17 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         TypeEnvironment typeEnvironment) =>
         declaration is null ? null : InferForDeclarationInitializer(declaration, typeEnvironment);
 
-    private static TypeNode? CreateInferredTypeNode(Location location, string type) =>
-        string.IsNullOrWhiteSpace(type)
-            ? null
-            : TypeNode.CreateFromText(location, type);
+    private TypeNode? CreateInferredTypeNode(Location location, string type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return null;
+        }
+
+        var typeNode = TypeNode.CreateFromText(location, type);
+        typeNode.Semantic.Type = ParseTypeRef(type);
+        return typeNode;
+    }
 
     private static TypeNode? CreateInferredTypeNode(Location location, TypeRef? type)
     {

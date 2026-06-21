@@ -14,19 +14,19 @@ public sealed partial class CEmitter
         Func<TypeRef, string> lowerTypeRef)
     {
         public CExpression BuildPayloadExpression(
-            string payloadType,
+            TypeRef payloadType,
             IReadOnlyList<ExpressionNode> arguments)
         {
-            var normalizedPayloadType = NormalizeType(payloadType);
+            var normalizedPayloadType = NormalizeType(TypeRefFormatter.ToCxString(payloadType));
             if (context.TryGetStruct(normalizedPayloadType, out var structNode))
             {
                 if (arguments.Count == 1
-                    && IsSameLoweredType(normalizedPayloadType, inferExpressionTypeRef(arguments[0])))
+                    && IsSameLoweredType(payloadType, inferExpressionTypeRef(arguments[0])))
                 {
                     return lowerExpression(arguments[0]);
                 }
 
-                if (TryBuildStructConstructorExpression(structNode, arguments, out var initializer))
+                if (TryBuildStructConstructorExpression(structNode, lowerTypeRef(payloadType), arguments, out var initializer))
                 {
                     return initializer;
                 }
@@ -90,8 +90,8 @@ public sealed partial class CEmitter
                 new CFunctionName(structNode.Name),
                 arguments.Select(lowerExpression).ToList());
 
-        private bool IsSameLoweredType(string leftType, TypeRef? rightType) =>
+        private bool IsSameLoweredType(TypeRef leftType, TypeRef? rightType) =>
             rightType is not null
-            && string.Equals(lowerCxType(leftType), lowerTypeRef(rightType), StringComparison.Ordinal);
+            && string.Equals(lowerTypeRef(leftType), lowerTypeRef(rightType), StringComparison.Ordinal);
     }
 }

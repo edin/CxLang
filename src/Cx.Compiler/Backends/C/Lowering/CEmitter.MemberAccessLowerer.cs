@@ -7,6 +7,7 @@ namespace Cx.Compiler;
 public sealed partial class CEmitter
 {
     private sealed class MemberAccessLowerer(
+        CBackendContext backend,
         CLoweringContext context,
         CLoweringScope scope,
         Func<ExpressionNode, string> lowerText,
@@ -220,9 +221,9 @@ public sealed partial class CEmitter
                 : ".as.";
         }
 
-        private static string? TryLowerFunctionReferenceMember(MemberExpressionNode member) =>
+        private string? TryLowerFunctionReferenceMember(MemberExpressionNode member) =>
             member.Semantic is { Symbol: { Kind: SymbolKind.Function } symbol, ResolvedCall.IsInstance: false }
-                ? s_nameMangler.SymbolName(symbol)
+                ? backend.NameMangler.SymbolName(symbol)
                 : null;
 
     }
