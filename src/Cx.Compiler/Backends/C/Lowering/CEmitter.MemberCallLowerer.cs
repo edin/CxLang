@@ -335,12 +335,6 @@ public sealed partial class CEmitter
                 return true;
             }
 
-            if (scope.TryGetVariableType(name, out var typeText))
-            {
-                typeInfo = ReceiverTypeInfo.FromText(typeText);
-                return true;
-            }
-
             typeInfo = null!;
             return false;
         }
@@ -373,23 +367,6 @@ public sealed partial class CEmitter
                     type is TypeRef.Pointer,
                     receiverText,
                     genericBase,
-                    typeArguments);
-            }
-
-            public static ReceiverTypeInfo FromText(string type)
-            {
-                var normalizedType = NormalizeType(type);
-                var isPointer = type.EndsWith("*", StringComparison.Ordinal);
-                var receiverType = RemovePointer(normalizedType);
-                var typeArguments = TryParseGenericUse(receiverType, out _, out var parsedArguments)
-                    ? parsedArguments
-                    : [];
-                return new(
-                    type,
-                    normalizedType,
-                    isPointer,
-                    receiverType,
-                    GetGenericBaseName(receiverType),
                     typeArguments);
             }
         }

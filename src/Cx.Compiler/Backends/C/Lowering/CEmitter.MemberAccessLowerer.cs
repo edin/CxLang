@@ -50,7 +50,7 @@ public sealed partial class CEmitter
                     return targetName.Name + taggedUnionAccess + member.MemberName;
                 }
 
-                if (targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal))
+                if (targetIsImplicitReference || targetType is TypeRef.Pointer)
                 {
                     return targetName.Name + "->" + member.MemberName;
                 }
@@ -99,7 +99,7 @@ public sealed partial class CEmitter
                         member.MemberName);
                 }
 
-                if (targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal))
+                if (targetIsImplicitReference || targetType is TypeRef.Pointer)
                 {
                     return new CMemberExpression(new CNameExpression(targetName.Name), "->", member.MemberName);
                 }
@@ -180,11 +180,11 @@ public sealed partial class CEmitter
         private bool TryGetNamedTarget(
             MemberExpressionNode member,
             out NameExpressionNode targetName,
-            out string targetType,
+            out TypeRef targetType,
             out bool targetIsImplicitReference)
         {
             if (member.Target is NameExpressionNode name
-                && scope.TryGetVariableType(name.Name, out targetType!))
+                && scope.TryGetVariableTypeRef(name.Name, out targetType!))
             {
                 targetName = name;
                 targetIsImplicitReference = scope.IsImplicitReferenceLocal(name.Name);
@@ -192,17 +192,18 @@ public sealed partial class CEmitter
             }
 
             targetName = null!;
-            targetType = string.Empty;
+            targetType = new TypeRef.Unknown();
             targetIsImplicitReference = false;
             return false;
         }
 
         private string? TryGetTaggedUnionAccess(
             MemberExpressionNode member,
-            string targetType,
+            TypeRef targetType,
             bool targetIsImplicitReference)
         {
-            var normalizedType = NormalizeType(targetType);
+            var isPointer = targetType is TypeRef.Pointer;
+            var normalizedType = NormalizeType(TypeRefFormatter.ToCxString(isPointer ? ((TypeRef.Pointer)targetType).Element : targetType));
             if (!context.TryGetTaggedUnion(normalizedType, out var taggedUnion)
                 || !taggedUnion.Variants.Any(variant => variant.Name == member.MemberName))
             {
@@ -211,12 +212,12 @@ public sealed partial class CEmitter
 
             if (taggedUnion.IsRaw)
             {
-                return targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal)
+                return targetIsImplicitReference || isPointer
                     ? "->"
                     : ".";
             }
 
-            return targetIsImplicitReference || targetType.EndsWith("*", StringComparison.Ordinal)
+            return targetIsImplicitReference || isPointer
                 ? "->as."
                 : ".as.";
         }

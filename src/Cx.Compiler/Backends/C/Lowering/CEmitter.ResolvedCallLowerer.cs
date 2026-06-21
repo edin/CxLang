@@ -95,12 +95,6 @@ public sealed partial class CEmitter
                 return true;
             }
 
-            if (scope.TryGetVariableType(name, out var typeText))
-            {
-                isPointer = typeText.EndsWith("*", StringComparison.Ordinal);
-                return true;
-            }
-
             isPointer = false;
             return false;
         }

@@ -6,17 +6,10 @@ namespace Cx.Compiler.C;
 
 internal sealed class CLoweringScope(
     TypeRefParser typeRefParser,
-    IReadOnlySet<string> pointerParameters,
-    IReadOnlyDictionary<string, string> variables,
     IReadOnlyDictionary<string, TypeRef> variableTypes,
     IReadOnlyDictionary<string, CLoweringScope.ImplicitReferenceLocal> implicitReferenceLocals)
 {
     private TypeRefParser TypeRefParser { get; } = typeRefParser;
-
-    private IReadOnlySet<string> PointerParameters { get; } = pointerParameters;
-
-    [Cx.Compiler.LegacyStringType("Compatibility lowering scope map. Prefer VariableTypes.")]
-    private IReadOnlyDictionary<string, string> Variables { get; } = variables;
 
     private IReadOnlyDictionary<string, TypeRef> VariableTypes { get; } = variableTypes;
 
@@ -24,20 +17,15 @@ internal sealed class CLoweringScope(
 
     public static CLoweringScope Create(
         TypeRefParser typeRefParser,
-        IReadOnlySet<string> pointerParameters,
-        IReadOnlyDictionary<string, string> variables,
         IReadOnlyDictionary<string, TypeRef> variableTypes) =>
         new(
             typeRefParser,
-            pointerParameters,
-            variables,
             variableTypes,
             new Dictionary<string, ImplicitReferenceLocal>(StringComparer.Ordinal));
 
     public CLoweringScope ForFunction(FunctionNode function, string? selfType, string? selfApiType = null)
     {
         var scopeSelfType = selfApiType ?? selfType;
-        var variables = Variables.ToDictionary(StringComparer.Ordinal);
         var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
         var locals = function.Parameters
             .Where(parameter => !parameter.IsVariadic)
@@ -51,85 +39,16 @@ internal sealed class CLoweringScope(
 
         foreach (var variable in locals)
         {
-            variables[variable.Key] = TypeText(variable.Type);
-        }
-
-        foreach (var variable in locals)
-        {
             variableTypes[variable.Key] = variable.Type;
         }
 
-        var pointerVariables = variables
-            .Where(item => item.Value.EndsWith("*", StringComparison.Ordinal))
-            .Select(item => item.Key)
-            .ToHashSet(StringComparer.Ordinal);
-        return new(TypeRefParser, pointerVariables, variables, variableTypes, ImplicitReferenceLocals);
+        return new(TypeRefParser, variableTypes, ImplicitReferenceLocals);
     }
-
-    public CLoweringScope WithLocal(string name, string type)
-    {
-        var variables = Variables.ToDictionary(StringComparer.Ordinal);
-        variables[name] = type;
-
-        var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
-        var typeRef = TypeRefParser.Parse(type);
-        if (!IsUnknown(typeRef))
-        {
-            variableTypes[name] = typeRef;
-        }
-
-        var pointerParameters = PointerParameters.ToHashSet(StringComparer.Ordinal);
-        if (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            pointerParameters.Add(name);
-        }
-
-        return new(TypeRefParser, pointerParameters, variables, variableTypes, ImplicitReferenceLocals);
-    }
-
-    public CLoweringScope WithImplicitReferenceLocal(
-        string name,
-        string valueType,
-        string storageType,
-        bool isConst)
-    {
-        var variables = Variables.ToDictionary(StringComparer.Ordinal);
-        variables[name] = valueType;
-
-        var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
-        var valueTypeRef = TypeRefParser.Parse(valueType);
-        if (!IsUnknown(valueTypeRef))
-        {
-            variableTypes[name] = valueTypeRef;
-        }
-
-        var implicitReferenceLocals = ImplicitReferenceLocals.ToDictionary(StringComparer.Ordinal);
-        implicitReferenceLocals[name] = new ImplicitReferenceLocal(valueType, storageType, isConst);
-
-        return new(TypeRefParser, PointerParameters, variables, variableTypes, implicitReferenceLocals);
-    }
-
-    public bool TryGetVariableType(string name, out string type) =>
-        Variables.TryGetValue(name, out type!);
-
-    public string? GetVariableTypeOrDefault(string name) =>
-        Variables.GetValueOrDefault(name);
-
-    public IEnumerable<(string Name, string Type)> GetVariables() =>
-        Variables.Select(variable => (variable.Key, variable.Value));
 
     public bool TryGetVariableTypeRef(string name, out TypeRef type)
     {
         if (VariableTypes.TryGetValue(name, out type!))
         {
-            return true;
-        }
-
-        if (Variables.TryGetValue(name, out var textType)
-            && TypeRefParser.Parse(textType) is { } parsed
-            && !IsUnknown(parsed))
-        {
-            type = parsed;
             return true;
         }
 
@@ -145,9 +64,6 @@ internal sealed class CLoweringScope(
 
     public bool IsImplicitReferenceLocal(string name) =>
         ImplicitReferenceLocals.ContainsKey(name);
-
-    public IEnumerable<string> GetPointerParametersByDescendingLength() =>
-        PointerParameters.OrderByDescending(name => name.Length);
 
     private IEnumerable<(string Name, TypeRef TypeRef)> CollectLocalVariableTypes(IEnumerable<StatementNode> statements)
     {
@@ -231,9 +147,6 @@ internal sealed class CLoweringScope(
 
     private static bool IsUnknown(TypeRef type) =>
         type is TypeRef.Unknown;
-
-    private static string TypeText(TypeRef type) =>
-        IsUnknown(type) ? string.Empty : TypeRefFormatter.ToCxString(type);
 
     public sealed record ImplicitReferenceLocal(
         string ValueType,

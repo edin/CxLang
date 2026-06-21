@@ -16,7 +16,7 @@ internal sealed class CNameMangler(
 
     public string FunctionName(FunctionNode function) =>
         ModulePrefix(function) +
-        (function.OwnerTypeNode.ToTypeNameOrNull() is { } ownerType ? $"{ownerType}_{function.Name}" : function.Name) +
+        (TypeTextOrNull(function.OwnerTypeNode) is { } ownerType ? $"{ownerType}_{function.Name}" : function.Name) +
         TypeArgumentSuffix(function.TypeArgumentNodes ?? []);
 
     public string SymbolName(Symbol symbol) =>
@@ -27,7 +27,15 @@ internal sealed class CNameMangler(
     private string TypeArgumentSuffix(IReadOnlyList<TypeNode> arguments) =>
         arguments.Count == 0
             ? string.Empty
-            : "_" + string.Join("_", arguments.Select(argument => argument.ToTypeName()).Select(lowerType).Select(sanitizeTypeName));
+            : "_" + string.Join("_", arguments.Select(TypeText).Select(lowerType).Select(sanitizeTypeName));
+
+    private static string TypeText(TypeNode typeNode) =>
+        typeNode.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : typeNode.ToTypeName();
+
+    private static string? TypeTextOrNull(TypeNode? typeNode) =>
+        typeNode is null ? null : TypeText(typeNode);
 
     private string ModulePrefix(FunctionNode function)
     {

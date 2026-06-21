@@ -50,14 +50,6 @@ public sealed partial class CEmitter
 
             return CLoweringScope.Create(
                 typeRefParser,
-                globals
-                    .Where(global => global.Type is TypeRef.Pointer)
-                    .Select(global => global.Name)
-                    .ToHashSet(StringComparer.Ordinal),
-                globals.ToDictionary(
-                    global => global.Name,
-                    global => TypeRefFormatter.ToCxString(global.Type),
-                    StringComparer.Ordinal),
                 globals.ToDictionary(
                     global => global.Name,
                     global => global.Type,
@@ -186,34 +178,6 @@ public sealed partial class CEmitter
                 scope,
                 selfType,
                 selfApiType);
-        }
-
-        public ImportedNameLowerer WithLocal(string name, string type)
-        {
-            var scope = _scope.WithLocal(name, type);
-
-            return new ImportedNameLowerer(
-                _backend,
-                _context,
-                scope,
-                SelfType,
-                SelfApiType);
-        }
-
-        public ImportedNameLowerer WithImplicitReferenceLocal(
-            string name,
-            string valueType,
-            string storageType,
-            bool isConst)
-        {
-            var scope = _scope.WithImplicitReferenceLocal(name, valueType, storageType, isConst);
-
-            return new ImportedNameLowerer(
-                _backend,
-                _context,
-                scope,
-                SelfType,
-                SelfApiType);
         }
 
         public string LowerInitializer(TypeRef targetType, ExpressionNode expression)

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -69,9 +70,18 @@ public sealed partial class CEmitter
         }
 
         var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
-        if (selfParameter is not null && !Regex.IsMatch(selfParameter.TypeNode.ToTypeName(), @"\bSelf\b"))
+        if (selfParameter?.TypeNode is { } selfParameterTypeNode
+            && selfParameterTypeNode.Semantic.Type is { } selfParameterType
+            && !ReferencesSelf(selfParameterType))
         {
-            return NormalizeType(selfParameter.TypeNode.ToTypeName());
+            return NormalizeType(TypeRefFormatter.ToCxString(selfParameterType));
+        }
+
+        if (selfParameter?.TypeNode is { } fallbackSelfParameterTypeNode
+            && fallbackSelfParameterTypeNode.Semantic.Type is null
+            && !Regex.IsMatch(fallbackSelfParameterTypeNode.ToTypeName(), @"\bSelf\b"))
+        {
+            return NormalizeType(fallbackSelfParameterTypeNode.ToTypeName());
         }
 
         return ResolveAdapterStorageType(backend, ownerType);
@@ -101,6 +111,18 @@ public sealed partial class CEmitter
 
     private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
         => CTypeLowerer.TryParseGenericUse(type, out name, out arguments);
+
+    private static bool ReferencesSelf(TypeRef type) =>
+        TypeRefFacts.UnwrapAlias(type) switch
+        {
+            TypeRef.Named { Name: "Self" } => true,
+            TypeRef.Named named => named.Arguments.Any(ReferencesSelf),
+            TypeRef.Pointer pointer => ReferencesSelf(pointer.Element),
+            TypeRef.FixedArray fixedArray => ReferencesSelf(fixedArray.Element),
+            TypeRef.Function function => function.Parameters.Any(ReferencesSelf)
+                || ReferencesSelf(function.ReturnType),
+            _ => false,
+        };
 
     private static bool ReferencesCompositeType(
         CBackendContext backend,
