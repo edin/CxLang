@@ -32,7 +32,9 @@ internal sealed class CNameMangler(
     private static string TypeText(TypeNode typeNode) =>
         typeNode.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : typeNode.ToTypeName();
+            : typeNode.Syntax is { } syntax
+                ? TypeSyntaxFormatter.ToCxString(syntax)
+                : throw new InvalidOperationException("C name mangler expected resolved type metadata or parsed type syntax.");
 
     private static string? TypeTextOrNull(TypeNode? typeNode) =>
         typeNode is null ? null : TypeText(typeNode);

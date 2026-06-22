@@ -843,12 +843,22 @@ public sealed partial class Parser
             return true;
         }
 
-        var type = parameter.TypeNode.ToTypeName().Trim();
-        return type == "Self*"
-            || type == ownerType + "*"
-            || (type.StartsWith(ownerType + "<", StringComparison.Ordinal)
-                && type.EndsWith("*", StringComparison.Ordinal));
+        return IsReceiverPointerType(parameter.TypeNode?.Syntax, ownerType);
     }
+
+    private static bool IsReceiverPointerType(TypeSyntaxNode? syntax, string ownerType) =>
+        syntax is PointerTypeSyntaxNode pointer
+        && IsReceiverTargetType(pointer.Element, ownerType);
+
+    private static bool IsReceiverTargetType(TypeSyntaxNode syntax, string ownerType) =>
+        syntax switch
+        {
+            NamedTypeSyntaxNode named => string.Equals(named.Name, "Self", StringComparison.Ordinal)
+                || string.Equals(named.Name, ownerType, StringComparison.Ordinal),
+            GenericTypeSyntaxNode { Target: NamedTypeSyntaxNode named } =>
+                string.Equals(named.Name, ownerType, StringComparison.Ordinal),
+            _ => false,
+        };
 
     private StructNode? ParseStruct(
         IReadOnlyList<AttributeApplicationNode> attributes,

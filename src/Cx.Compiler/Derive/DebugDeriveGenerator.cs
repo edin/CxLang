@@ -16,7 +16,7 @@ internal static class DebugDeriveGenerator
 
         var typeAliases = program.TypeAliases
             .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Last().TargetTypeNode.ToTypeName(), StringComparer.Ordinal);
+            .ToDictionary(group => group.Key, group => TypeText(group.Last().TargetTypeNode), StringComparer.Ordinal);
 
         foreach (var structNode in program.Structs.Where(HasDebugDerive).Where(structNode => structNode.TypeParameters.Count == 0))
         {
@@ -70,7 +70,7 @@ internal static class DebugDeriveGenerator
         IReadOnlySet<string> debugStructNames,
         IReadOnlyDictionary<string, string> typeAliases)
     {
-        var type = field.TypeNode.ToTypeName().Trim();
+        var type = TypeText(field.TypeNode);
         var expression = $"self.{field.Name}";
         var resolvedType = ResolveAlias(type, typeAliases);
 
@@ -218,6 +218,11 @@ internal static class DebugDeriveGenerator
 
         return type + pointerSuffix;
     }
+
+    private static string TypeText(TypeNode? typeNode) =>
+        typeNode?.Syntax is { } syntax
+            ? TypeSyntaxFormatter.ToCxString(syntax).Trim()
+            : string.Empty;
 
     private static string EscapeCString(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)

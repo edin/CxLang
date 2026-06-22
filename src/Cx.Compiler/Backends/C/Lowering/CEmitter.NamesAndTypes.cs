@@ -79,9 +79,11 @@ public sealed partial class CEmitter
 
         if (selfParameter?.TypeNode is { } fallbackSelfParameterTypeNode
             && fallbackSelfParameterTypeNode.Semantic.Type is null
-            && !Regex.IsMatch(fallbackSelfParameterTypeNode.ToTypeName(), @"\bSelf\b"))
+            && TypeRefOrUnknown(backend, fallbackSelfParameterTypeNode) is { } fallbackSelfParameterType
+            && fallbackSelfParameterType is not TypeRef.Unknown
+            && !ReferencesSelf(fallbackSelfParameterType))
         {
-            return NormalizeType(fallbackSelfParameterTypeNode.ToTypeName());
+            return NormalizeType(TypeRefFormatter.ToCxString(fallbackSelfParameterType));
         }
 
         return ResolveAdapterStorageType(backend, ownerType);
@@ -111,6 +113,9 @@ public sealed partial class CEmitter
 
     private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
         => CTypeLowerer.TryParseGenericUse(type, out name, out arguments);
+
+    private static TypeRef TypeRefOrUnknown(CBackendContext backend, TypeNode? typeNode) =>
+        SemanticFacts.TypeRefOrUnknown(typeNode, backend.TypeRefParser);
 
     private static bool ReferencesSelf(TypeRef type) =>
         TypeRefFacts.UnwrapAlias(type) switch

@@ -1,6 +1,7 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic.Resolvers;
 using Cx.Compiler.Source;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
@@ -279,6 +280,11 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         typeNode.Semantic.Type = type;
         return typeNode;
     }
+
+    private static TypeNode? PreserveTypeNode(TypeNode? typeNode) =>
+        typeNode is null
+            ? null
+            : SyntaxNode.CloneSemantic(typeNode, typeNode with { });
 
     private ForeachStatement InferForeachStatement(
         ForeachStatement foreachStatement,
@@ -596,6 +602,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             },
             InitializerExpressionNode initializer => initializer with
             {
+                TypeNameNode = PreserveTypeNode(initializer.TypeNameNode),
                 Fields = initializer.Fields.Select(field => field with
                 {
                     Value = InferExpression(field.Value, typeEnvironment)!,

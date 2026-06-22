@@ -32,7 +32,7 @@ internal static class CEmissionGuards
     public static InvalidOperationException UnresolvedTypeExpression(TypeNode? typeNode) =>
         new(
             "Internal C emission error: type expression reached C lowering without a resolved TypeRef"
-            + (typeNode is null ? "." : $": '{TrimForDiagnostic(typeNode.ToTypeName())}'."));
+            + (typeNode is null ? "." : $": '{TrimForDiagnostic(typeNode.ToTypeName())}' at {typeNode.Location}."));
 
     public static InvalidOperationException UnresolvedDeclarationType(TypeNode? typeNode, string fallbackType, string name) =>
         new(

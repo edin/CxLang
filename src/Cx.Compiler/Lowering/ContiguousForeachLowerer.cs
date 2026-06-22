@@ -152,9 +152,10 @@ internal static class ContiguousForeachLowerer
                 return true;
             }
 
-            if (expression is NameExpressionNode name && context.TryGetLocalType(name.Name, out type))
+            if (expression is NameExpressionNode name && context.TryGetLocalTypeRef(name.Name, out var localType))
             {
-                typeRef = _typeRefParser.Parse(type);
+                typeRef = localType;
+                type = TypeRefFormatter.ToCxString(localType);
                 return true;
             }
 
@@ -183,16 +184,23 @@ internal static class ContiguousForeachLowerer
 
         private TypeNode PointerType(Location location, TypeNode typeNode)
         {
-            var type = typeNode.ToTypeName();
-            return CreateTypeNode(
-                location,
-                type.TrimEnd().EndsWith("*", StringComparison.Ordinal) ? type : $"{type}*");
+            var type = typeNode.Semantic.Type ?? _typeRefParser.Parse(typeNode);
+            return type is TypeRef.Pointer
+                ? CreateTypeNode(location, type)
+                : CreateTypeNode(location, new TypeRef.Pointer(type));
         }
 
         private TypeNode CreateTypeNode(Location location, string type)
         {
             var typeNode = TypeNode.CreateFromText(location, type);
             typeNode.Semantic.Type = _typeRefParser.Parse(typeNode);
+            return typeNode;
+        }
+
+        private static TypeNode CreateTypeNode(Location location, TypeRef type)
+        {
+            var typeNode = TypeNode.CreateFromText(location, TypeRefFormatter.ToCxString(type));
+            typeNode.Semantic.Type = type;
             return typeNode;
         }
 

@@ -287,13 +287,14 @@ internal static class CTypeLowerer
     {
         if (adapter.TypeParameters.Count == 0 || adapter.TypeParameters.Count != receiverArguments.Count)
         {
-            return adapter.BaseTypeNode.ToTypeName();
+            return TypeRefFormatter.ToCxString(TypeParser.Parse(adapter.BaseTypeNode));
         }
 
         var substitutions = adapter.TypeParameters
             .Zip(receiverArguments)
-            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        return GenericTypeStringRewriter.Substitute(adapter.BaseTypeNode.ToTypeName(), substitutions);
+            .ToDictionary(pair => pair.First, pair => TypeParser.Parse(pair.Second), StringComparer.Ordinal);
+        var substituted = TypeRefRewriter.Substitute(TypeParser.Parse(adapter.BaseTypeNode), substitutions);
+        return TypeRefFormatter.ToCxString(substituted);
     }
 
     private static string StripModuleQualifier(string type)

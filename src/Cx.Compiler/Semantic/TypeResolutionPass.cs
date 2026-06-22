@@ -28,6 +28,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
         foreach (var global in program.GlobalVariables)
         {
             ResolveType(global, global.TypeNode);
+            ResolveExpression(global.Initializer);
         }
 
         foreach (var attribute in program.AttributeDeclarations)
@@ -118,6 +119,12 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
     private void ResolveFunction(FunctionNode function)
     {
         ResolveGenericConstraints(function.GenericConstraints);
+        if (function.OwnerTypeNode is not null)
+        {
+            ResolveType(function.OwnerTypeNode, function.OwnerTypeNode);
+        }
+
+        ResolveTypeArgumentNodes(function.TypeArgumentNodes ?? []);
         ResolveFunctionSignature(function, function.ReturnTypeNode, function.Parameters);
         ResolveStatements(function.Body);
     }

@@ -36,9 +36,27 @@ internal static class TypeNodeRewriter
         }
         else
         {
-            rewritten.Semantic.Type = null;
+            rewritten.Semantic.Type = TypeRefFromSyntax(rewritten.Syntax);
         }
 
         return rewritten;
     }
+
+    private static TypeRef TypeRefFromSyntax(TypeSyntaxNode? syntax) =>
+        syntax switch
+        {
+            null => new TypeRef.Unknown(),
+            NamedTypeSyntaxNode { Name: "null" } => new TypeRef.Null(),
+            NamedTypeSyntaxNode named => new TypeRef.Named(named.Name, []),
+            GenericTypeSyntaxNode generic => new TypeRef.Named(
+                TypeSyntaxFormatter.ToCxString(generic.Target),
+                generic.Arguments.Select(TypeRefFromSyntax).ToList()),
+            PointerTypeSyntaxNode pointer => new TypeRef.Pointer(TypeRefFromSyntax(pointer.Element)),
+            FixedArrayTypeSyntaxNode fixedArray => new TypeRef.FixedArray(TypeRefFromSyntax(fixedArray.Element), fixedArray.Length),
+            FunctionTypeSyntaxNode function => new TypeRef.Function(
+                function.Parameters.Select(TypeRefFromSyntax).ToList(),
+                TypeRefFromSyntax(function.ReturnType),
+                function.IsVariadic),
+            _ => new TypeRef.Unknown(),
+        };
 }

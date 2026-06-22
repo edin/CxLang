@@ -15,7 +15,7 @@ internal sealed class AstTransformContext(
     Action<TopLevelNode> injectTopLevelDeclaration,
     Func<IReadOnlyList<StatementNode>, TypeNode?, IReadOnlyList<StatementNode>> rewriteFunctionBody,
     Func<ExpressionNode, TypeNode?, ExpressionNode> rewriteExpression,
-    Func<string, string?> getLocalType)
+    Func<string, TypeRef?> getLocalType)
 {
     public bool IsInsideFunction { get; internal set; }
 
@@ -38,10 +38,16 @@ internal sealed class AstTransformContext(
         TypeNode? expectedTypeNode = null) =>
         rewriteExpression(expression, expectedTypeNode);
 
-    public bool TryGetLocalType(string name, out string type)
+    public bool TryGetLocalTypeRef(string name, out TypeRef type)
     {
-        type = getLocalType(name) ?? string.Empty;
-        return !string.IsNullOrWhiteSpace(type);
+        if (getLocalType(name) is { } localType && localType is not TypeRef.Unknown)
+        {
+            type = localType;
+            return true;
+        }
+
+        type = new TypeRef.Unknown();
+        return false;
     }
 }
 
@@ -84,11 +90,13 @@ internal sealed class AstTransformPipeline
     private sealed class Runner(IReadOnlyList<IAstTransformRegistration> registrations) : AstRewriter
     {
         private readonly Dictionary<string, int> _nameCounters = [];
-        private readonly Stack<Dictionary<string, string>> _localScopes = [];
+        private readonly Stack<Dictionary<string, TypeRef>> _localScopes = [];
         private AstTransformContext? _context;
+        private TypeRefParser? _typeRefParser;
 
         public override ProgramNode RewriteProgram(ProgramNode program)
         {
+            _typeRefParser = new TypeRefParser(program);
             _context = new AstTransformContext(
                 NextName,
                 InjectTopLevelDeclaration,
@@ -363,11 +371,11 @@ internal sealed class AstTransformPipeline
             return $"{key}_{nextId}";
         }
 
-        private void PushLocalScope() => _localScopes.Push(new Dictionary<string, string>(StringComparer.Ordinal));
+        private void PushLocalScope() => _localScopes.Push(new Dictionary<string, TypeRef>(StringComparer.Ordinal));
 
         private void PopLocalScope() => _localScopes.Pop();
 
-        private string? GetLocalType(string name)
+        private TypeRef? GetLocalType(string name)
         {
             foreach (var scope in _localScopes)
             {
@@ -418,17 +426,15 @@ internal sealed class AstTransformPipeline
                 return;
             }
 
-            var type = TypeText(typeNode);
-            if (!string.IsNullOrWhiteSpace(type))
+            var type = TypeRefOrUnknown(typeNode);
+            if (type is not TypeRef.Unknown)
             {
                 _localScopes.Peek()[name] = type;
             }
         }
 
-        private static string TypeText(TypeNode? typeNode) =>
-            typeNode?.Semantic.Type is { } type
-                ? TypeRefFormatter.ToCxString(type)
-                : typeNode.ToTypeName();
+        private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
+            SemanticFacts.TypeRefOrUnknown(typeNode, _typeRefParser);
     }
 }
 

@@ -122,8 +122,8 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
-    private static bool TryRemember(GenericFunctionUse use, ISet<GenericFunctionUseKey> knownUses) =>
-        knownUses.Add(GenericFunctionUseKey.Create(use.Function, use.TypeArguments));
+    private bool TryRemember(GenericFunctionUse use, ISet<GenericFunctionUseKey> knownUses) =>
+        knownUses.Add(GenericFunctionUseKey.Create(use.Function, use.TypeArguments, _typeRefParser));
 
     private IEnumerable<GenericFunctionUse> FindForeachIteratorGenericUses(
         IEnumerable<StatementNode> statements,
@@ -862,8 +862,34 @@ internal sealed record GenericFunctionUse(FunctionNode Function, IReadOnlyList<s
 
 internal readonly record struct GenericFunctionUseKey(string FunctionName, string TypeArguments)
 {
+    public static GenericFunctionUseKey Create(
+        FunctionNode function,
+        IReadOnlyList<string> typeArguments,
+        TypeRefParser typeRefParser) =>
+        new(
+            FormatFunctionName(function, typeRefParser),
+            string.Join(",", typeArguments));
+
     public static GenericFunctionUseKey Create(FunctionNode function, IReadOnlyList<string> typeArguments) =>
         new(
-            function.OwnerTypeNode is null ? function.Name : $"{function.OwnerTypeNode.ToTypeName()}.{function.Name}",
+            FormatFunctionName(function, typeRefParser: null),
             string.Join(",", typeArguments));
+
+    private static string FormatFunctionName(FunctionNode function, TypeRefParser? typeRefParser)
+    {
+        if (function.OwnerTypeNode is null)
+        {
+            return function.Name;
+        }
+
+        var ownerType = function.OwnerTypeNode.Semantic.Type
+            ?? function.OwnerTypeNode.ToTypeRef(
+                typeRefParser ?? throw new InvalidOperationException(
+                    $"Generic use collector expected resolved owner type for '{function.Name}'."));
+
+        return ownerType is TypeRef.Unknown
+            ? throw new InvalidOperationException(
+                $"Generic use collector could not resolve owner type for '{function.Name}'.")
+            : $"{TypeRefFormatter.ToCxString(ownerType)}.{function.Name}";
+    }
 }

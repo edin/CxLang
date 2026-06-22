@@ -122,12 +122,11 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         var methods = declaration.Methods
             .Concat(program.Extensions
                 .Where(extension =>
-                    string.Equals(extension.TargetTypeNode.ToTypeName(), declaration.Name, StringComparison.Ordinal)
+                    HasOwnerName(extension.TargetTypeNode, declaration.Name)
                     && ExtensionConstraintsSatisfied(extension, type))
                 .SelectMany(extension => extension.Methods))
             .Concat(program.Functions.Where(function =>
-                function.OwnerTypeNode.ToTypeNameOrNull() is not null
-                && string.Equals(function.OwnerTypeNode.ToTypeName(), declaration.Name, StringComparison.Ordinal)));
+                HasOwnerName(function.OwnerTypeNode, declaration.Name)));
         return methods
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
             .ToList();
@@ -142,9 +141,7 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         }
 
         return program.Functions
-            .Where(function =>
-                function.OwnerTypeNode.ToTypeNameOrNull() is not null
-                && string.Equals(function.OwnerTypeNode.ToTypeName(), ownerName, StringComparison.Ordinal))
+            .Where(function => HasOwnerName(function.OwnerTypeNode, ownerName))
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
             .ToList();
     }
@@ -180,7 +177,7 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
                 continue;
             }
 
-            var returnType = expose.ReturnTypeNode.ToTypeNameOrNull() is null
+            var returnType = expose.ReturnTypeNode is null
                 ? baseMethod.ReturnType
                 : expose.ReturnTypeNode.ToTypeRef(_parser);
             returnType = TypeRefRewriter.Substitute(returnType, type.Substitutions);
@@ -231,22 +228,20 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
             return extension.GenericConstraints.Count == 0;
         }
 
-        var substitutions = type.Substitutions
-            .ToDictionary(
-                pair => pair.Key,
-                pair => TypeRefFormatter.ToCxString(pair.Value),
-                StringComparer.Ordinal);
         foreach (var constraint in extension.GenericConstraints)
         {
-            if (!substitutions.TryGetValue(constraint.TypeParameter, out var concreteType))
+            if (!type.Substitutions.TryGetValue(constraint.TypeParameter, out var concreteTypeRef))
             {
                 return false;
             }
 
+            var concreteType = TypeRefFormatter.ToCxString(concreteTypeRef);
             foreach (var requirement in constraint.Requirements)
             {
                 var arguments = requirement.TypeArgumentNodes
-                    .Select(argument => GenericTypeStringRewriter.Substitute(argument.ToTypeName(), substitutions))
+                    .Select(argument =>
+                        TypeRefFormatter.ToCxString(
+                            TypeRefRewriter.Substitute(argument.ToTypeRef(_parser), type.Substitutions)))
                     .ToList();
                 if (!_requirementMatcher.Value.Match(concreteType, requirement.Name, arguments).Success)
                 {
@@ -273,6 +268,9 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
             TypeRef.Named named => named.Name,
             _ => null,
         };
+
+    private bool HasOwnerName(TypeNode? ownerTypeNode, string ownerName) =>
+        string.Equals(GetOwnerName(ownerTypeNode.ToTypeRef(_parser)), ownerName, StringComparison.Ordinal);
 }
 
 internal sealed class TypeResolver(
