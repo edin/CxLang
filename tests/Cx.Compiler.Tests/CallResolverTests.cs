@@ -147,7 +147,7 @@ public sealed class CallResolverTests
         Assert.NotNull(resolved);
         Assert.NotNull(resolved.Function);
         Assert.Equal("create", resolved.Function.Name);
-        Assert.Equal("Vec", resolved.Function.OwnerTypeNode?.ToTypeName());
+        Assert.Equal("Vec", resolved.Function.OwnerTypeNode?.ToSourceText());
         Assert.False(resolved.IsInstance);
         Assert.Equal(["int"], resolved.TypeArguments);
     }

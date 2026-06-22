@@ -42,6 +42,29 @@ internal static class TypeNodeRewriter
         return rewritten;
     }
 
+    public static TypeNode? Rewrite(
+        TypeNode? typeNode,
+        IReadOnlyDictionary<string, TypeRef> substitutions,
+        TypeRef? selfType = null)
+    {
+        if (typeNode is null)
+        {
+            return null;
+        }
+
+        var sourceType = typeNode.Semantic.Type ?? TypeRefFromSyntax(typeNode.Syntax);
+        var rewrittenType = TypeRefRewriter.Substitute(sourceType, substitutions);
+        if (selfType is not null)
+        {
+            rewrittenType = TypeRefRewriter.SubstituteSelf(rewrittenType, selfType);
+        }
+
+        var rewritten = TypeNode.CreateFromText(typeNode.Location, TypeRefFormatter.ToCxString(rewrittenType));
+        SyntaxNode.CloneSemantic(typeNode, rewritten);
+        rewritten.Semantic.Type = rewrittenType;
+        return rewritten;
+    }
+
     private static TypeRef TypeRefFromSyntax(TypeSyntaxNode? syntax) =>
         syntax switch
         {

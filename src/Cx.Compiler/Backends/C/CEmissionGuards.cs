@@ -32,17 +32,17 @@ internal static class CEmissionGuards
     public static InvalidOperationException UnresolvedTypeExpression(TypeNode? typeNode) =>
         new(
             "Internal C emission error: type expression reached C lowering without a resolved TypeRef"
-            + (typeNode is null ? "." : $": '{TrimForDiagnostic(typeNode.ToTypeName())}' at {typeNode.Location}."));
+            + (typeNode is null ? "." : $": '{TrimForDiagnostic(TypeText(typeNode))}' at {typeNode.Location}."));
 
     public static InvalidOperationException UnresolvedDeclarationType(TypeNode? typeNode, string fallbackType, string name) =>
         new(
             "Internal C emission error: declaration reached C lowering without a resolved TypeRef: "
-            + $"'{TrimForDiagnostic(name)}: {TrimForDiagnostic(typeNode?.ToTypeName() ?? fallbackType)}'.");
+            + $"'{TrimForDiagnostic(name)}: {TrimForDiagnostic(TypeTextOrFallback(typeNode, fallbackType))}'.");
 
     public static InvalidOperationException UnresolvedTypeAlias(TypeAliasNode typeAlias) =>
         new(
             "Internal C emission error: type alias reached C lowering without a resolved TypeRef: "
-            + $"'{TrimForDiagnostic(typeAlias.Name)} = {TrimForDiagnostic(typeAlias.TargetTypeNode?.ToTypeName() ?? "<missing>")}'.");
+            + $"'{TrimForDiagnostic(typeAlias.Name)} = {TrimForDiagnostic(TypeTextOrFallback(typeAlias.TargetTypeNode, "<missing>"))}'.");
 
     public static InvalidOperationException UnresolvedExpressionType(ExpressionNode expression) =>
         new(
@@ -57,4 +57,12 @@ internal static class CEmissionGuards
         text = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return text.Length <= 120 ? text : text[..117] + "...";
     }
+
+    private static string TypeTextOrFallback(TypeNode? typeNode, string fallback) =>
+        typeNode is null ? fallback : TypeText(typeNode);
+
+    private static string TypeText(TypeNode typeNode) =>
+        typeNode.Syntax is { } syntax
+            ? TypeSyntaxFormatter.ToCxString(syntax)
+            : typeNode.TypeName;
 }

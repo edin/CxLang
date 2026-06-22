@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Cx.Compiler.C;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
@@ -17,9 +16,6 @@ public sealed partial class CEmitter
                 ? ownerType
                 : LowerType(backend, $"{ownerType}<{string.Join(",", FunctionTypeArgumentTexts(function))}>");
 
-    private static string? GetGenericBaseName(string type) =>
-        CTypeLowerer.GetGenericBaseName(type);
-
     private static bool TrySplitQualifiedMember(string text, out string ownerName, out string memberName)
     {
         var dot = text.LastIndexOf('.');
@@ -35,16 +31,6 @@ public sealed partial class CEmitter
         return true;
     }
 
-    private static string SubstituteGenericType(string type, IReadOnlyDictionary<string, string> substitutions)
-    {
-        foreach (var (parameter, argument) in substitutions)
-        {
-            type = Regex.Replace(type, $@"\b{Regex.Escape(parameter)}\b", argument);
-        }
-
-        return type;
-    }
-
     private static string LowerType(CBackendContext backend, string type, string? selfType = null)
         => backend.AbiNames.LowerType(type, selfType);
 
@@ -53,7 +39,8 @@ public sealed partial class CEmitter
 
     private static string? ResolveSelfType(CBackendContext backend, FunctionNode function)
     {
-        if (FunctionOwnerTypeText(function) is not { } ownerType)
+        var ownerTypeRef = FunctionOwnerTypeRef(function);
+        if (ownerTypeRef is null || FunctionOwnerTypeText(function) is not { } ownerType)
         {
             return null;
         }
@@ -64,7 +51,7 @@ public sealed partial class CEmitter
             return ResolveAdapterStorageType(backend, $"{ownerType}<{string.Join(",", typeArguments)}>");
         }
 
-        if (function.TypeParameters.Count > 0 && !TryParseGenericUse(ownerType, out _, out _))
+        if (function.TypeParameters.Count > 0 && !HasGenericArguments(ownerTypeRef))
         {
             return ResolveAdapterStorageType(backend, $"{ownerType}<{string.Join(",", function.TypeParameters)}>");
         }
@@ -91,7 +78,8 @@ public sealed partial class CEmitter
 
     private static string? ResolveSelfApiType(FunctionNode function)
     {
-        if (FunctionOwnerTypeText(function) is not { } ownerType)
+        var ownerTypeRef = FunctionOwnerTypeRef(function);
+        if (ownerTypeRef is null || FunctionOwnerTypeText(function) is not { } ownerType)
         {
             return null;
         }
@@ -102,14 +90,15 @@ public sealed partial class CEmitter
             return $"{ownerType}<{string.Join(",", typeArguments)}>";
         }
 
-        return function.TypeParameters.Count > 0 && !TryParseGenericUse(ownerType, out _, out _)
+        return function.TypeParameters.Count > 0 && !HasGenericArguments(ownerTypeRef)
             ? $"{ownerType}<{string.Join(",", function.TypeParameters)}>"
             : ownerType;
     }
 
-    private static string NormalizeType(string type) => CTypeLowerer.NormalizeType(type);
+    private static bool HasGenericArguments(TypeRef type) =>
+        TypeRefFacts.TryGetGenericArguments(type, out _);
 
-    private static string RemovePointer(string type) => CTypeLowerer.RemovePointer(type);
+    private static string NormalizeType(string type) => CTypeLowerer.NormalizeType(type);
 
     private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
         => CTypeLowerer.TryParseGenericUse(type, out name, out arguments);

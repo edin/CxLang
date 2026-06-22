@@ -14,6 +14,8 @@ internal sealed class TypeUsageAnalyzer(
     Func<string, string?> findPartialImportSuggestionForType,
     Func<string, string?> findImportSuggestionForType)
 {
+    private readonly TypeRefParser _typeRefParser = new(program);
+
     public void Analyze(
         TypeNode? typeNode,
         Location location,
@@ -60,14 +62,15 @@ internal sealed class TypeUsageAnalyzer(
 
             var substitutions = definition.TypeParameters
                 .Zip(use.Arguments)
-                .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+                .ToDictionary(pair => pair.First, pair => _typeRefParser.Parse(pair.Second), StringComparer.Ordinal);
             foreach (var constraint in definition.GenericConstraints)
             {
-                if (!substitutions.TryGetValue(constraint.TypeParameter, out var concreteType))
+                if (!substitutions.TryGetValue(constraint.TypeParameter, out var concreteTypeRef))
                 {
                     continue;
                 }
 
+                var concreteType = TypeRefFormatter.ToCxString(concreteTypeRef);
                 if (inScopeTypeParameters.Contains(concreteType, StringComparer.Ordinal))
                 {
                     continue;
@@ -76,8 +79,9 @@ internal sealed class TypeUsageAnalyzer(
                 foreach (var requirement in constraint.Requirements)
                 {
                     var arguments = requirement.TypeArgumentNodes
-                        .Select(typeText)
-                        .Select(argument => GenericTypeStringRewriter.Substitute(argument, substitutions))
+                        .Select(typeNode => typeNode.ToTypeRef(_typeRefParser))
+                        .Select(argument => TypeRefRewriter.Substitute(argument, substitutions))
+                        .Select(TypeRefFormatter.ToCxString)
                         .ToList();
                     var match = requirementMatcher.Match(concreteType, requirement.Name, arguments);
                     if (match.Success)

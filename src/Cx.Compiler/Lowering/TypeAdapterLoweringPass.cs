@@ -24,8 +24,9 @@ internal static class TypeAdapterLoweringPass
         var adapterMethods = new List<FunctionNode>();
         foreach (var adapter in program.TypeAdapters)
         {
+            var baseTypeRef = adapter.BaseTypeNode.ToTypeRef(typeRefParser);
             var baseType = TypeText(adapter.BaseTypeNode, typeRefParser);
-            var baseName = GetGenericBaseName(baseType);
+            var baseName = TypeRefFacts.GetBaseName(baseTypeRef) ?? string.Empty;
             var baseTypeParameters = Array.Empty<string>() as IReadOnlyList<string>;
             if (structs.TryGetValue(baseName, out var baseStruct))
             {
@@ -41,7 +42,7 @@ internal static class TypeAdapterLoweringPass
                 continue;
             }
 
-            var baseArguments = TryParseGenericUse(baseType, out _, out var parsedBaseArguments)
+            var baseArguments = TypeRefFacts.TryGetGenericArguments(baseTypeRef, out var parsedBaseArguments)
                 ? parsedBaseArguments
                 : [];
             if (baseTypeParameters.Count != baseArguments.Count)
@@ -72,40 +73,6 @@ internal static class TypeAdapterLoweringPass
         }
 
         return program with { Declarations = declarations };
-    }
-
-    private static string GetGenericBaseName(string type)
-    {
-        type = StripPointerSuffix(type);
-        return TypeSyntaxParser.Parse(type) is GenericTypeSyntaxNode generic
-            ? TypeSyntaxFormatter.ToCxString(generic.Target)
-            : type;
-    }
-
-    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
-    {
-        type = StripPointerSuffix(type);
-        if (TypeSyntaxParser.Parse(type) is not GenericTypeSyntaxNode generic)
-        {
-            name = type;
-            arguments = [];
-            return false;
-        }
-
-        name = TypeSyntaxFormatter.ToCxString(generic.Target);
-        arguments = generic.Arguments.Select(TypeSyntaxFormatter.ToCxString).ToList();
-        return true;
-    }
-
-    private static string StripPointerSuffix(string type)
-    {
-        type = type.Trim();
-        while (type.EndsWith("*", StringComparison.Ordinal))
-        {
-            type = type[..^1].TrimEnd();
-        }
-
-        return type;
     }
 
     private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)

@@ -127,11 +127,11 @@ internal static class GenericStructSpecializer
         var fields = definition.Fields
             .Select(field =>
             {
-                var fieldType = GenericTypeStringRewriter.Substitute(TypeText(field.TypeNode, typeRefParser), substitutions);
+                var fieldType = SubstituteTypeText(field.TypeNode, typeSubstitutions, typeRefParser);
                 collectFromType(fieldType);
                 return CopySemantic(field, field with
                 {
-                    TypeNode = SubstituteTypeNode(field.TypeNode, substitutions, typeSubstitutions),
+                    TypeNode = SubstituteTypeNode(field.TypeNode, typeSubstitutions),
                 });
             })
             .ToList();
@@ -139,7 +139,7 @@ internal static class GenericStructSpecializer
             .Select(requirement => CopySemantic(requirement, requirement with
             {
                 TypeArgumentNodes = requirement.TypeArgumentNodes
-                    .Select(typeNode => SubstituteTypeNode(typeNode, substitutions, typeSubstitutions)!)
+                    .Select(typeNode => SubstituteTypeNode(typeNode, typeSubstitutions)!)
                     .ToList(),
             }))
             .ToList();
@@ -269,12 +269,8 @@ internal static class GenericStructSpecializer
 
     private static TypeNode? SubstituteTypeNode(
         TypeNode? typeNode,
-        IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
-        TypeNodeRewriter.Rewrite(
-            typeNode,
-            typeName => GenericTypeStringRewriter.Substitute(typeName, substitutions),
-            typeSubstitutions);
+        TypeNodeRewriter.Rewrite(typeNode, typeSubstitutions);
 
     private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
     {
@@ -284,6 +280,20 @@ internal static class GenericStructSpecializer
         }
 
         var type = typeNode.ToTypeRef(typeRefParser);
+        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+    }
+
+    private static string SubstituteTypeText(
+        TypeNode? typeNode,
+        IReadOnlyDictionary<string, TypeRef> substitutions,
+        TypeRefParser typeRefParser)
+    {
+        if (typeNode is null)
+        {
+            return string.Empty;
+        }
+
+        var type = TypeRefRewriter.Substitute(typeNode.ToTypeRef(typeRefParser), substitutions);
         return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
     }
 

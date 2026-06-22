@@ -324,9 +324,7 @@ public sealed partial class CEmitter
                 return null;
             }
 
-            var targetTypeText = RestoreSourceAdapterType(
-                _genericCallResolver.RestoreSourceGenericType(TypeRefFormatter.ToCxString(targetType)));
-            var storageType = RemovePointer(NormalizeType(ResolveAdapterStorageType(_backend, targetTypeText)));
+            var storageType = TypeRefFacts.StripPointer(CTypeLowerer.ResolveAdapterStorageType(targetType, _backend.TypeAdapters));
             if (!_context.TryGetStruct(storageType, out var structNode))
             {
                 return null;
@@ -341,35 +339,6 @@ public sealed partial class CEmitter
             return member.MemberName == "allocator"
                 ? _context.TypeRefParser.Parse("Allocator*")
                 : null;
-        }
-
-        private string RestoreSourceAdapterType(string type)
-        {
-            var pointerSuffix = "";
-            var normalized = type.Trim();
-            while (normalized.EndsWith("*", StringComparison.Ordinal))
-            {
-                pointerSuffix += "*";
-                normalized = normalized[..^1].TrimEnd();
-            }
-
-            foreach (var adapter in _backend.TypeAdapters.Where(adapter => adapter.TypeParameters.Count > 0))
-            {
-                var prefix = adapter.Name + "_";
-                if (!normalized.StartsWith(prefix, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                var arguments = normalized[prefix.Length..]
-                    .Split('_', StringSplitOptions.RemoveEmptyEntries);
-                if (arguments.Length == adapter.TypeParameters.Count)
-                {
-                    return $"{adapter.Name}<{string.Join(",", arguments)}>{pointerSuffix}";
-                }
-            }
-
-            return type;
         }
 
         private CExpression LowerMemberExpression(MemberExpressionNode member) =>

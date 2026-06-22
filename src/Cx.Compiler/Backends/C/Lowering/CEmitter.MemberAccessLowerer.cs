@@ -203,8 +203,7 @@ public sealed partial class CEmitter
             bool targetIsImplicitReference)
         {
             var isPointer = targetType is TypeRef.Pointer;
-            var normalizedType = NormalizeType(TypeRefFormatter.ToCxString(isPointer ? ((TypeRef.Pointer)targetType).Element : targetType));
-            if (!context.TryGetTaggedUnion(normalizedType, out var taggedUnion)
+            if (!context.TryGetTaggedUnion(targetType, out var taggedUnion)
                 || !taggedUnion.Variants.Any(variant => variant.Name == member.MemberName))
             {
                 return null;

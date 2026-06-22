@@ -38,8 +38,7 @@ public sealed partial class CEmitter
             ExpressionNode sourceExpression,
             CExpression loweredExpression)
         {
-            var normalizedTargetType = NormalizeType(TypeRefFormatter.ToCxString(targetType));
-            if (!context.TryGetTaggedUnion(normalizedTargetType, out var taggedUnion)
+            if (!context.TryGetTaggedUnion(targetType, out var taggedUnion)
                 || taggedUnion.IsRaw)
             {
                 return null;

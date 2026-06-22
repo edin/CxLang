@@ -24,7 +24,7 @@ public sealed class ContiguousForeachLowererTests
         var loop = Assert.IsType<ForStatement>(lowered[2]);
 
         Assert.StartsWith("__cx_foreach_data_", data.Name, StringComparison.Ordinal);
-        Assert.Equal("int*", data.TypeNode?.ToTypeName());
+        Assert.Equal("int*", data.TypeNode?.ToSourceText());
         Assert.Equal("values", Assert.IsType<NameExpressionNode>(data.Initializer).Name);
 
         Assert.StartsWith("__cx_foreach_length_", length.Name, StringComparison.Ordinal);
@@ -32,7 +32,7 @@ public sealed class ContiguousForeachLowererTests
 
         var value = Assert.IsType<LetStatement>(loop.Body[0]);
         Assert.Equal("value", value.Name);
-        Assert.Equal("int", value.TypeNode?.ToTypeName());
+        Assert.Equal("int", value.TypeNode?.ToSourceText());
         var access = Assert.IsType<IndexExpressionNode>(value.Initializer);
         Assert.Equal(data.Name, Assert.IsType<NameExpressionNode>(access.Target).Name);
     }
@@ -109,7 +109,7 @@ public sealed class ContiguousForeachLowererTests
 
         var value = Assert.IsType<LetStatement>(loop.Body[0]);
         Assert.Equal("value", value.Name);
-        Assert.Equal("int*", value.TypeNode?.ToTypeName());
+        Assert.Equal("int*", value.TypeNode?.ToSourceText());
         Assert.IsType<UnaryExpressionNode>(value.Initializer);
     }
 

@@ -19,6 +19,13 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
         string expression,
         IReadOnlyDictionary<string, string> variables,
         string context = "",
+        IReadOnlySet<GenericFunctionUseKey>? knownUses = null) =>
+        Collect(expression, TypeEnvironment.FromLegacyStrings(_typeRefParser, variables), context, knownUses);
+
+    public IEnumerable<GenericFunctionUse> Collect(
+        string expression,
+        TypeEnvironment variables,
+        string context = "",
         IReadOnlySet<GenericFunctionUseKey>? knownUses = null)
     {
         foreach (var function in genericFunctions)
@@ -42,18 +49,21 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
             }
         }
 
-        foreach (var (variable, variableType) in variables)
+        foreach (var (variable, variableType) in variables.Types)
         {
-            var owner = TypeSyntaxFacts.GetGenericBaseName(variableType);
+            var owner = TypeRefFacts.GetBaseName(variableType);
             if (owner is null)
             {
                 continue;
             }
 
+            var receiverArguments = TypeRefFacts.TryGetGenericArguments(variableType, out var parsedReceiverArguments)
+                ? FormatTypeArguments(parsedReceiverArguments)
+                : [];
             foreach (var function in genericFunctions.Where(function => OwnerType(function) == owner && !function.IsStatic))
             {
                 var inferredCallPattern = $@"\b{Regex.Escape(variable)}\s*\.\s*{Regex.Escape(function.Name)}\s*\(";
-                if (function.TypeParameters.Count == (TypeSyntaxFacts.TryParseGenericUse(variableType, out _, out var receiverArguments) ? receiverArguments.Count : 0)
+                if (function.TypeParameters.Count == receiverArguments.Count
                     && Regex.IsMatch(expression, inferredCallPattern))
                 {
                     if (ShouldSkip(function, receiverArguments, knownUses))
@@ -127,6 +137,9 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
         var type = typeNode.ToTypeRef(_typeRefParser);
         return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
     }
+
+    private static IReadOnlyList<string> FormatTypeArguments(IReadOnlyList<TypeRef> typeArguments) =>
+        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
 
     private static string TrimForAudit(string expression)
     {

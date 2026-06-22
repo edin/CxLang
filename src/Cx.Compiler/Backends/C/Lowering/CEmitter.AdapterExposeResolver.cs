@@ -1,3 +1,5 @@
+using Cx.Compiler.Semantic;
+
 namespace Cx.Compiler;
 
 public sealed partial class CEmitter
@@ -8,15 +10,26 @@ public sealed partial class CEmitter
             AdapterExposeInfo expose,
             IReadOnlyList<string> receiverArguments)
         {
+            var type = SubstituteBaseTypeRef(expose, receiverArguments);
+            return TypeRefFormatter.ToCxString(type);
+        }
+
+        private TypeRef SubstituteBaseTypeRef(
+            AdapterExposeInfo expose,
+            IReadOnlyList<string> receiverArguments)
+        {
             if (expose.TypeParameters.Count == 0 || expose.TypeParameters.Count != receiverArguments.Count)
             {
-                return expose.BaseType;
+                return expose.BaseTypeRef;
             }
 
             var substitutions = expose.TypeParameters
                 .Zip(receiverArguments)
-                .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-            return SubstituteGenericType(expose.BaseType, substitutions);
+                .ToDictionary(
+                    pair => pair.First,
+                    pair => context.TypeRefParser.Parse(pair.Second),
+                    StringComparer.Ordinal);
+            return TypeRefRewriter.Substitute(expose.BaseTypeRef, substitutions);
         }
 
         public ResolvedAdapterExpose Resolve(
@@ -29,10 +42,11 @@ public sealed partial class CEmitter
 
             while (true)
             {
-                var baseType = SubstituteBaseType(current, currentArguments);
-                var baseOwner = GetGenericBaseName(baseType) ?? baseType;
-                var baseArguments = TryParseGenericUse(baseType, out _, out var parsedBaseArguments)
-                    ? parsedBaseArguments
+                var baseTypeRef = SubstituteBaseTypeRef(current, currentArguments);
+                var baseType = TypeRefFormatter.ToCxString(baseTypeRef);
+                var baseOwner = TypeRefFacts.GetBaseName(baseTypeRef) ?? baseType;
+                var baseArguments = TypeRefFacts.TryGetGenericArguments(baseTypeRef, out var parsedBaseArguments)
+                    ? parsedBaseArguments.Select(TypeRefFormatter.ToCxString).ToList()
                     : [];
                 var key = $"{current.AdapterName}.{current.ExposedName}";
                 if (!seen.Add(key)

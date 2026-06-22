@@ -352,14 +352,12 @@ public sealed partial class CEmitter
                 var receiverType = type is TypeRef.Pointer pointer ? pointer.Element : type;
                 var receiverText = NormalizeType(TypeRefFormatter.ToCxString(receiverType));
                 var typeText = TypeRefFormatter.ToCxString(type);
-                var typeArguments = receiverType is TypeRef.Named named
-                    ? named.Arguments.Select(TypeRefFormatter.ToCxString).ToList()
-                    : TryParseGenericUse(receiverText, out _, out var parsedArguments)
-                        ? parsedArguments
-                        : [];
-                var genericBase = receiverType is TypeRef.Named { Arguments.Count: > 0 } namedReceiver
-                    ? namedReceiver.Name
-                    : GetGenericBaseName(receiverText);
+                var typeArguments = TypeRefFacts.TryGetGenericArguments(receiverType, out var parsedArguments)
+                    ? parsedArguments.Select(TypeRefFormatter.ToCxString).ToList()
+                    : [];
+                var genericBase = typeArguments.Count > 0
+                    ? TypeRefFacts.GetBaseName(receiverType)
+                    : null;
 
                 return new(
                     typeText,

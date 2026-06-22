@@ -17,8 +17,7 @@ public sealed partial class CEmitter
             TypeRef payloadType,
             IReadOnlyList<ExpressionNode> arguments)
         {
-            var normalizedPayloadType = NormalizeType(TypeRefFormatter.ToCxString(payloadType));
-            if (context.TryGetStruct(normalizedPayloadType, out var structNode))
+            if (context.TryGetStruct(payloadType, out var structNode))
             {
                 if (arguments.Count == 1
                     && IsSameLoweredType(payloadType, inferExpressionTypeRef(arguments[0])))

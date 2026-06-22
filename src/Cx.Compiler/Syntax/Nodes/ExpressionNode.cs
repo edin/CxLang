@@ -179,7 +179,7 @@ public static class ExpressionNodeExtensions
         LiteralExpressionNode literal => literal.LiteralText,
         NameExpressionNode name => name.Name,
         ParenthesizedExpressionNode parenthesized => $"({parenthesized.Expression.ToSourceText()})",
-        CastExpressionNode cast => $"({cast.TargetTypeNode.ToTypeName()}){cast.Expression.ToSourceText()}",
+        CastExpressionNode cast => $"({cast.TargetTypeNode.ToSourceText()}){cast.Expression.ToSourceText()}",
         UnaryExpressionNode unary => unary.Operator + unary.Operand.ToSourceText(),
         PostfixExpressionNode postfix => postfix.Operand.ToSourceText() + postfix.Operator,
         SizeOfExpressionNode sizeOf => $"sizeof({sizeOf.OperandNode.ToSourceText()})",
@@ -201,7 +201,7 @@ public static class ExpressionNodeExtensions
 
     public static string ToSourceText(this SizeOfOperandNode operand) => operand switch
     {
-        SizeOfTypeOperandNode type => type.TypeNode.ToTypeName(),
+        SizeOfTypeOperandNode type => type.TypeNode.ToSourceText(),
         SizeOfExpressionOperandNode expression => expression.Expression.ToSourceText(),
         SizeOfUnresolvedOperandNode { ExpressionCandidate: not null } unresolved => unresolved.ExpressionCandidate.ToSourceText(),
         SizeOfUnresolvedOperandNode unresolved => unresolved.FallbackText,
@@ -212,14 +212,14 @@ public static class ExpressionNodeExtensions
     {
         var fields = initializer.Fields.Select(field => $"{field.Name}: {field.Value.ToSourceText()}");
         var values = initializer.Values.Select(value => value.ToSourceText());
-        var prefix = initializer.TypeNameNode.ToTypeName();
+        var prefix = initializer.TypeNameNode.ToSourceText();
         return prefix + "{" + string.Join(", ", fields.Concat(values)) + "}";
     }
 
     private static string FormatFunctionExpression(FunctionExpressionNode function)
     {
         var parameters = string.Join(", ", function.Parameters.Select(FormatParameter));
-        var returnType = function.ReturnTypeNode is null ? string.Empty : " -> " + function.ReturnTypeNode.ToTypeName();
+        var returnType = function.ReturnTypeNode is null ? string.Empty : " -> " + function.ReturnTypeNode.ToSourceText();
         if (function.ExpressionBody is not null)
         {
             return $"fn({parameters}){returnType} => {function.ExpressionBody.ToSourceText()}";
@@ -229,11 +229,11 @@ public static class ExpressionNodeExtensions
     }
 
     private static string FormatParameter(ParameterNode parameter) =>
-        parameter.Name + (parameter.TypeNode is null ? string.Empty : ": " + parameter.TypeNode.ToTypeName());
+        parameter.Name + (parameter.TypeNode is null ? string.Empty : ": " + parameter.TypeNode.ToSourceText());
 
     private static string FormatGenericCall(GenericCallExpressionNode call)
     {
-        var typeArguments = string.Join(", ", call.TypeArgumentNodes.Select(type => type.ToTypeName()));
+        var typeArguments = string.Join(", ", call.TypeArgumentNodes.Select(type => type.ToSourceText()));
         return $"{call.Callee.ToSourceText()}<{typeArguments}>({FormatArguments(call.Arguments)})";
     }
 

@@ -1,3 +1,5 @@
+using Cx.Compiler.Semantic;
+
 namespace Cx.Compiler;
 
 public sealed partial class CEmitter
@@ -12,6 +14,7 @@ public sealed partial class CEmitter
         string AdapterName,
         IReadOnlyList<string> TypeParameters,
         string BaseType,
+        TypeRef BaseTypeRef,
         bool IsStatic,
         string SourceName,
         string ExposedName,
@@ -19,10 +22,14 @@ public sealed partial class CEmitter
 
     private sealed record GenericCallInfo(
         string? OwnerType,
+        TypeRef? OwnerTypeRef,
         string Name,
         IReadOnlyList<string> TypeArguments,
+        IReadOnlyList<TypeRef> TypeArgumentRefs,
         IReadOnlyList<string> ParameterTypes,
+        IReadOnlyList<TypeRef> ParameterTypeRefs,
         string ReturnType,
+        TypeRef ReturnTypeRef,
         string CName,
         bool TakesPointerSelf,
         bool IsStatic);

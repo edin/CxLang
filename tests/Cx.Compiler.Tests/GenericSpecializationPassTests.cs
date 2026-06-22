@@ -39,8 +39,8 @@ public sealed class GenericSpecializationPassTests
 
         Assert.Equal("identity", identity.Name);
         Assert.Equal(["int"], FunctionTypeArguments(identity));
-        Assert.Equal("int", identity.ReturnTypeNode.ToTypeName());
-        Assert.Equal("int", Assert.Single(identity.Parameters).TypeNode.ToTypeName());
+        Assert.Equal("int", identity.ReturnTypeNode.ToSourceText());
+        Assert.Equal("int", Assert.Single(identity.Parameters).TypeNode.ToSourceText());
         Assert.Same(identity, call.Semantic.ResolvedCall?.Function);
         Assert.DoesNotContain(lowered.Functions, function => function.Name == "unused" && FunctionTypeArguments(function).Count > 0);
     }
@@ -67,8 +67,8 @@ public sealed class GenericSpecializationPassTests
         var identity = Assert.Single(lowered.Functions, function => function.Name == "identity" && FunctionTypeArguments(function).Count > 0);
 
         Assert.Equal(["int"], FunctionTypeArguments(identity));
-        Assert.Equal("int", identity.ReturnTypeNode.ToTypeName());
-        Assert.Equal("int", Assert.Single(identity.Parameters).TypeNode.ToTypeName());
+        Assert.Equal("int", identity.ReturnTypeNode.ToSourceText());
+        Assert.Equal("int", Assert.Single(identity.Parameters).TypeNode.ToSourceText());
     }
 
     [Fact]

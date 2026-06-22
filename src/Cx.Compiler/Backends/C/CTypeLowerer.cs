@@ -113,13 +113,24 @@ internal static class CTypeLowerer
         }
     }
 
-    public static string SubstituteSelfType(string type, string? selfType) =>
-        GenericTypeStringRewriter.SubstituteSelf(type, selfType);
+    public static string SubstituteSelfType(string type, string? selfType)
+    {
+        if (string.IsNullOrWhiteSpace(selfType))
+        {
+            return type;
+        }
+
+        var parsedType = TypeParser.Parse(type);
+        var parsedSelfType = TypeParser.Parse(selfType);
+        if (parsedType is TypeRef.Unknown || parsedSelfType is TypeRef.Unknown)
+        {
+            return type;
+        }
+
+        return TypeRefFormatter.ToCxString(TypeRefRewriter.SubstituteSelf(parsedType, parsedSelfType));
+    }
 
     public static string NormalizeType(string type) => type.TrimEnd('*').TrimEnd();
-
-    public static string RemovePointer(string type) =>
-        TypeSyntaxFacts.RemovePointer(type);
 
     public static string? GetGenericBaseName(string type) =>
         TypeSyntaxFacts.GetGenericBaseName(type);
@@ -232,7 +243,7 @@ internal static class CTypeLowerer
     private static TypeRef SubstituteSelf(TypeRef type, TypeRef? selfType) =>
         selfType is null ? type : TypeRefRewriter.SubstituteSelf(type, selfType);
 
-    private static TypeRef ResolveAdapterStorageType(
+    public static TypeRef ResolveAdapterStorageType(
         TypeRef type,
         IReadOnlyList<TypeAdapterNode> typeAdapters)
     {

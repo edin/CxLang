@@ -9,7 +9,7 @@ public sealed partial class CEmitter
     private static string TaggedUnionVariantTypeText(TaggedUnionVariantNode variant) =>
         variant.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(variant.TypeNode, variant.TypeNode?.ToTypeName() ?? string.Empty, variant.Name);
+            : throw CEmissionGuards.UnresolvedDeclarationType(variant.TypeNode, string.Empty, variant.Name);
 
     private static string TypeAliasTargetTypeText(TypeAliasNode typeAlias) =>
         typeAlias.TargetTypeNode?.Semantic.Type is { } type
@@ -19,7 +19,7 @@ public sealed partial class CEmitter
     private static string TypeAdapterBaseTypeText(TypeAdapterNode adapter) =>
         adapter.BaseTypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(adapter.BaseTypeNode, adapter.BaseTypeNode?.ToTypeName() ?? string.Empty, adapter.Name);
+            : throw CEmissionGuards.UnresolvedDeclarationType(adapter.BaseTypeNode, string.Empty, adapter.Name);
 
     private static string? FunctionOwnerTypeText(FunctionNode function) =>
         function.OwnerTypeNode is null
@@ -28,30 +28,36 @@ public sealed partial class CEmitter
                 ? TypeRefFormatter.ToCxString(type)
                 : throw CEmissionGuards.UnresolvedTypeExpression(function.OwnerTypeNode);
 
+    private static TypeRef? FunctionOwnerTypeRef(FunctionNode function) =>
+        function.OwnerTypeNode is null
+            ? null
+            : function.OwnerTypeNode.Semantic.Type
+                ?? throw CEmissionGuards.UnresolvedTypeExpression(function.OwnerTypeNode);
+
     private static string FunctionReturnTypeText(FunctionNode function) =>
         function.ReturnTypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(function.ReturnTypeNode, function.ReturnTypeNode?.ToTypeName() ?? string.Empty, "return");
+            : throw CEmissionGuards.UnresolvedDeclarationType(function.ReturnTypeNode, string.Empty, "return");
 
     private static string ParameterTypeText(ParameterNode parameter) =>
         parameter.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(parameter.TypeNode, parameter.TypeNode?.ToTypeName() ?? string.Empty, parameter.Name);
+            : throw CEmissionGuards.UnresolvedDeclarationType(parameter.TypeNode, string.Empty, parameter.Name);
 
     private static string GlobalVariableTypeText(GlobalVariableNode global) =>
         global.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(global.TypeNode, global.TypeNode?.ToTypeName() ?? string.Empty, global.Name);
+            : throw CEmissionGuards.UnresolvedDeclarationType(global.TypeNode, string.Empty, global.Name);
 
     private static string ForDeclarationInitializerTypeText(ForDeclarationInitializerNode initializer) =>
         initializer.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(initializer.TypeNode, initializer.TypeNode?.ToTypeName() ?? string.Empty, initializer.Name);
+            : throw CEmissionGuards.UnresolvedDeclarationType(initializer.TypeNode, string.Empty, initializer.Name);
 
     private static string LetStatementTypeText(LetStatement let) =>
         let.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(let.TypeNode, let.TypeNode?.ToTypeName() ?? string.Empty, let.Name);
+            : throw CEmissionGuards.UnresolvedDeclarationType(let.TypeNode, string.Empty, let.Name);
 
     private static string CastExpressionTargetTypeText(CastExpressionNode cast) =>
         cast.TargetTypeNode?.Semantic.Type is { } type
@@ -71,12 +77,12 @@ public sealed partial class CEmitter
     private static string InterfaceMethodReturnTypeText(InterfaceMethodNode method) =>
         method.ReturnTypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(method.ReturnTypeNode, method.ReturnTypeNode?.ToTypeName() ?? string.Empty, "return");
+            : throw CEmissionGuards.UnresolvedDeclarationType(method.ReturnTypeNode, string.Empty, "return");
 
     private static string ExternFunctionReturnTypeText(ExternFunctionNode function) =>
         function.ReturnTypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(function.ReturnTypeNode, function.ReturnTypeNode?.ToTypeName() ?? string.Empty, "return");
+            : throw CEmissionGuards.UnresolvedDeclarationType(function.ReturnTypeNode, string.Empty, "return");
 
     private static IReadOnlyList<string> FunctionTypeArgumentTexts(FunctionNode function) =>
         (function.TypeArgumentNodes ?? [])
@@ -91,5 +97,5 @@ public sealed partial class CEmitter
     private static string StructFieldTypeText(StructFieldNode field) =>
         field.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedDeclarationType(field.TypeNode, field.TypeNode?.ToTypeName() ?? string.Empty, field.Name);
+            : throw CEmissionGuards.UnresolvedDeclarationType(field.TypeNode, string.Empty, field.Name);
 }

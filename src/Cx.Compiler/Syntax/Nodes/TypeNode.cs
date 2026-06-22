@@ -23,14 +23,19 @@ public sealed record TypeNode(
 
 public static class TypeNodeExtensions
 {
-    public static string ToTypeName(this TypeNode? typeNode) =>
+    public static string ToSourceText(this TypeNode? typeNode) =>
         typeNode?.Syntax is { } syntax
             ? TypeSyntaxFormatter.ToCxString(syntax)
             : typeNode?.TypeName ?? string.Empty;
 
+    [Obsolete("Use TypeNode.Syntax, Semantic.Type, or ToSourceText() for compatibility-only source reconstruction.")]
+    public static string ToTypeName(this TypeNode? typeNode) =>
+        typeNode.ToSourceText();
+
+    [Obsolete("Use TypeNode.Syntax, Semantic.Type, or ToSourceText() for compatibility-only source reconstruction.")]
     public static string? ToTypeNameOrNull(this TypeNode? typeNode)
     {
-        var typeName = typeNode.ToTypeName();
+        var typeName = typeNode.ToSourceText();
         return string.IsNullOrWhiteSpace(typeName) ? null : typeName;
     }
 }

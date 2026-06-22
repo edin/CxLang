@@ -92,8 +92,8 @@ public sealed class TypeNodeParsingTests
             """);
 
         var function = Assert.Single(program.Functions);
-        Assert.Equal("Box<Box<int>>*", Assert.Single(function.Parameters).TypeNode.ToTypeName());
-        Assert.Equal("Box<int>", function.ReturnTypeNode.ToTypeName());
+        Assert.Equal("Box<Box<int>>*", Assert.Single(function.Parameters).TypeNode.ToSourceText());
+        Assert.Equal("Box<int>", function.ReturnTypeNode.ToSourceText());
     }
 
     [Fact]
@@ -218,8 +218,8 @@ public sealed class TypeNodeParsingTests
         Assert.IsType<PointerTypeSyntaxNode>(functionType.Parameters[1]);
 
         var declaredFunction = Assert.Single(Assert.Single(program.CDeclarations).Functions);
-        Assert.Equal("UInt8*", declaredFunction.Parameters[0].TypeNode.ToTypeName());
-        Assert.Equal("usize", declaredFunction.Parameters[1].TypeNode.ToTypeName());
+        Assert.Equal("UInt8*", declaredFunction.Parameters[0].TypeNode.ToSourceText());
+        Assert.Equal("usize", declaredFunction.Parameters[1].TypeNode.ToSourceText());
     }
 
     [Fact]

@@ -19,11 +19,11 @@ internal static class TypeTokenParser
             return TypeNode.Create(tokens[0].Location, syntax);
         }
 
-        var typeName = ToTypeName(tokens);
+        var typeName = ToTypeSourceText(tokens);
         return new TypeNode(tokens[0].Location, typeName, new NamedTypeSyntaxNode(typeName));
     }
 
-    public static string ToTypeName(IReadOnlyList<Token> tokens) =>
+    public static string ToTypeSourceText(IReadOnlyList<Token> tokens) =>
         Normalize(TokenText.ToSourceText(tokens));
 
     public static string Normalize(string type)

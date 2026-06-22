@@ -36,8 +36,24 @@ public sealed partial class CEmitter
                 GenericCalls,
                 resolveExpressionType,
                 (targetType, sourceType) => typeCompatibility.CanAssign(targetType, sourceType, out _),
+                ParseTypeOrNull,
+                ParseTypeArguments,
                 function => TypeTextOrNull(function.OwnerTypeNode, TypeRefParser));
         }
+
+        private TypeRef? ParseTypeOrNull(string? type)
+        {
+            if (string.IsNullOrWhiteSpace(type))
+            {
+                return null;
+            }
+
+            var parsed = TypeRefParser.Parse(type);
+            return parsed is TypeRef.Unknown ? null : parsed;
+        }
+
+        private IReadOnlyList<TypeRef> ParseTypeArguments(IReadOnlyList<string> typeArguments) =>
+            typeArguments.Select(TypeRefParser.Parse).ToList();
 
         public bool TryGetMethod(string key, out CLoweringMethodInfo method)
         {
@@ -79,6 +95,18 @@ public sealed partial class CEmitter
         public bool TryGetTaggedUnion(string name, out TaggedUnionNode taggedUnion) =>
             TaggedUnions.TryGetValue(name, out taggedUnion!);
 
+        public bool TryGetTaggedUnion(TypeRef type, out TaggedUnionNode taggedUnion)
+        {
+            if (TypeRefFacts.GetBaseName(type) is { } name
+                && TryGetTaggedUnion(name, out taggedUnion!))
+            {
+                return true;
+            }
+
+            taggedUnion = null!;
+            return false;
+        }
+
         public IEnumerable<TaggedUnionNode> GetTaggedUnions() =>
             TaggedUnions.Values;
 
@@ -112,6 +140,18 @@ public sealed partial class CEmitter
             Interfaces.TryGetValue(name, out interfaceNode!)
             || Interfaces.TryGetValue(UnqualifiedTypeName(name), out interfaceNode!);
 
+        public bool TryGetInterface(TypeRef type, out InterfaceNode interfaceNode)
+        {
+            if (TypeRefFacts.GetBaseName(type) is { } name
+                && TryGetInterface(name, out interfaceNode!))
+            {
+                return true;
+            }
+
+            interfaceNode = null!;
+            return false;
+        }
+
         public IEnumerable<InterfaceNode> GetInterfaces() =>
             Interfaces.Values;
 
@@ -143,6 +183,18 @@ public sealed partial class CEmitter
 
         public bool TryGetStruct(string name, out StructNode structNode) =>
             Structs.TryGetValue(name, out structNode!);
+
+        public bool TryGetStruct(TypeRef type, out StructNode structNode)
+        {
+            if (TypeRefFacts.GetBaseName(type) is { } name
+                && TryGetStruct(name, out structNode!))
+            {
+                return true;
+            }
+
+            structNode = null!;
+            return false;
+        }
 
         public IEnumerable<StructNode> GetStructs() =>
             Structs.Values;
@@ -226,10 +278,14 @@ public sealed partial class CEmitter
                     .Where(function => (function.TypeArgumentNodes ?? []).Count > 0)
                     .Select(function => new GenericCallInfo(
                         TypeTextOrNull(function.OwnerTypeNode, typeRefParser),
+                        TypeRefOrNull(function.OwnerTypeNode, typeRefParser),
                         function.Name,
                         TypeTexts(function.TypeArgumentNodes ?? [], typeRefParser),
+                        TypeRefs(function.TypeArgumentNodes ?? [], typeRefParser),
                         function.Parameters.Where(parameter => !parameter.IsVariadic).Select(parameter => TypeText(parameter.TypeNode, typeRefParser)).ToList(),
+                        function.Parameters.Where(parameter => !parameter.IsVariadic).Select(parameter => parameter.TypeNode.ToTypeRef(typeRefParser)).ToList(),
                         TypeText(function.ReturnTypeNode, typeRefParser),
+                        function.ReturnTypeNode.ToTypeRef(typeRefParser),
                         GetCFunctionName(backend, function),
                         IsPointer(function.Parameters.FirstOrDefault()?.TypeNode, typeRefParser),
                         function.IsStatic))
@@ -272,6 +328,7 @@ public sealed partial class CEmitter
                         adapter.Name,
                         adapter.TypeParameters,
                         TypeText(adapter.BaseTypeNode, typeRefParser),
+                        adapter.BaseTypeNode.ToTypeRef(typeRefParser),
                         expose.IsStatic,
                         expose.SourceName,
                         expose.ExposedName,
@@ -345,6 +402,15 @@ public sealed partial class CEmitter
 
         private static IReadOnlyList<string> TypeTexts(IReadOnlyList<TypeNode> typeNodes, TypeRefParser typeRefParser) =>
             typeNodes.Select(typeNode => TypeText(typeNode, typeRefParser)).ToList();
+
+        private static IReadOnlyList<TypeRef> TypeRefs(IReadOnlyList<TypeNode> typeNodes, TypeRefParser typeRefParser) =>
+            typeNodes.Select(typeNode => typeNode.ToTypeRef(typeRefParser)).ToList();
+
+        private static TypeRef? TypeRefOrNull(TypeNode? typeNode, TypeRefParser typeRefParser)
+        {
+            var type = typeNode.ToTypeRef(typeRefParser);
+            return type is TypeRef.Unknown ? null : type;
+        }
 
         private static string TypeText(TypeRef type) =>
             type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);

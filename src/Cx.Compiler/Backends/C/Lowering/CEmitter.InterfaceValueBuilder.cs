@@ -15,8 +15,9 @@ public sealed partial class CEmitter
     {
         public CExpression? TryBuild(TypeRef targetType, ExpressionNode sourceExpression)
         {
-            var interfaceName = NormalizeType(TypeRefFormatter.ToCxString(targetType));
-            return TryBuild(interfaceName, sourceExpression, lowerCTypeRef(targetType));
+            return context.TryGetInterface(targetType, out var interfaceNode)
+                ? TryBuild(interfaceNode.Name, sourceExpression, lowerCTypeRef(targetType))
+                : null;
         }
 
         private CExpression? TryBuild(

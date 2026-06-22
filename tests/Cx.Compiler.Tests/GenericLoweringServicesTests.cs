@@ -96,7 +96,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{(use.Function.OwnerTypeNode is null ? "" : use.Function.OwnerTypeNode.ToTypeName() + ".")}{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{(use.Function.OwnerTypeNode is null ? "" : use.Function.OwnerTypeNode.ToSourceText() + ".")}{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("Box.make<int>", uses);
@@ -145,7 +145,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{use.Function.OwnerTypeNode?.ToTypeName()}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{use.Function.OwnerTypeNode?.ToSourceText()}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MiniVec.with_capacity<u8>", uses);
@@ -189,7 +189,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{use.Function.OwnerTypeNode?.ToTypeName()}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{use.Function.OwnerTypeNode?.ToSourceText()}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MiniVec.add<u8>", uses);
@@ -220,8 +220,8 @@ public sealed class GenericLoweringServicesTests
         var rewritten = GenericTypeRewriter.Rewrite(program, concreteStructNames);
         var function = Assert.Single(rewritten.Functions);
 
-        Assert.Equal("Box_int", function.ReturnTypeNode.ToTypeName());
-        Assert.Equal("Box_Box_int*", Assert.Single(function.Parameters).TypeNode.ToTypeName());
+        Assert.Equal("Box_int", function.ReturnTypeNode.ToSourceText());
+        Assert.Equal("Box_Box_int*", Assert.Single(function.Parameters).TypeNode.ToSourceText());
         var resolvedParameter = Assert.IsType<Cx.Compiler.Semantic.TypeRef.Pointer>(Assert.Single(function.Parameters).TypeNode?.Semantic.Type);
         Assert.Equal("Box_Box_int", Assert.IsType<Cx.Compiler.Semantic.TypeRef.Named>(resolvedParameter.Element).Name);
     }
@@ -242,8 +242,8 @@ public sealed class GenericLoweringServicesTests
         var parameter = Assert.Single(specialized.Parameters);
         var local = Assert.IsType<LetStatement>(specialized.Body[0]);
 
-        Assert.Equal("int", specialized.ReturnTypeNode.ToTypeName());
-        Assert.Equal("int", parameter.TypeNode.ToTypeName());
+        Assert.Equal("int", specialized.ReturnTypeNode.ToSourceText());
+        Assert.Equal("int", parameter.TypeNode.ToSourceText());
         Assert.Equal("int", local.TypeNode?.TypeName);
     }
 
@@ -270,7 +270,7 @@ public sealed class GenericLoweringServicesTests
         var parameter = Assert.Single(specialized.Parameters);
         var local = Assert.IsType<LetStatement>(specialized.Body[0]);
 
-        Assert.Equal("Box<int>*", parameter.TypeNode.ToTypeName());
+        Assert.Equal("Box<int>*", parameter.TypeNode.ToSourceText());
         Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(parameter.TypeNode!.Semantic.Type!));
         Assert.Equal("Box<int>*", local.TypeNode?.TypeName);
         Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(local.TypeNode!.Semantic.Type!));
@@ -315,7 +315,7 @@ public sealed class GenericLoweringServicesTests
         Assert.Equal("Box_int", initializer.TypeNameNode?.TypeName);
         Assert.Equal(["Box_int"], genericCall.TypeArgumentNodes.Select(node => node.TypeName).ToList());
         Assert.Equal("Box_int", functionExpression.ReturnTypeNode?.TypeName);
-        Assert.Equal("Box_int", Assert.Single(functionExpression.Parameters).TypeNode.ToTypeName());
+        Assert.Equal("Box_int", Assert.Single(functionExpression.Parameters).TypeNode.ToSourceText());
     }
 
     [Fact]

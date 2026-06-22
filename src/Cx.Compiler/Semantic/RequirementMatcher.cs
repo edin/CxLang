@@ -613,8 +613,11 @@ public sealed class RequirementMatcher
     }
 
 
-    private static string Substitute(string type, TypeBindings bindings)
-        => GenericTypeStringRewriter.Substitute(type, bindings.ToLegacyStrings());
+    private string Substitute(string type, TypeBindings bindings)
+    {
+        var substituted = TypeRefRewriter.Substitute(_typeRefParser.Parse(type), bindings.Bindings);
+        return substituted is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(substituted);
+    }
 
     private bool SameType(string left, string right) =>
         LowerType(ResolveAlias(left)) == LowerType(ResolveAlias(right));
