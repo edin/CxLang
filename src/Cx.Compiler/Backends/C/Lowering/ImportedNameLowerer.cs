@@ -161,8 +161,8 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
 
     public ImportedNameLowerer ForFunction(FunctionNode function)
     {
-        var selfType = CEmitter.ResolveSelfType(_backend, function);
-        var selfApiType = CEmitter.ResolveSelfApiType(function);
+        var selfType = CFunctionTypeResolver.ResolveSelfType(_backend, function);
+        var selfApiType = CFunctionTypeResolver.ResolveSelfApiType(function);
         var scope = _scope.ForFunction(function, selfType, selfApiType);
 
         return new(

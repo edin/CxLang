@@ -3,9 +3,9 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
-public sealed partial class CEmitter
+internal static class CStructDependencyOrderer
 {
-    private static IReadOnlyList<StructNode> OrderStructsByFieldDependencies(
+    public static IReadOnlyList<StructNode> OrderByFieldDependencies(
         CBackendContext backend,
         IReadOnlyList<StructNode> structs)
     {
@@ -18,7 +18,7 @@ public sealed partial class CEmitter
         while (remaining.Count > 0)
         {
             var index = remaining.FindIndex(structNode =>
-                !structNode.Fields.Any(field => ReferencesCompositeType(backend, StructFieldTypeText(field), remainingNames)));
+                !structNode.Fields.Any(field => CTypeLowerer.ReferencesCompositeType(CTypeText.StructFieldTypeText(field), remainingNames, backend.TypeAdapters)));
             if (index < 0)
             {
                 ordered.AddRange(remaining);

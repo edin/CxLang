@@ -3,9 +3,9 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
-public sealed partial class CEmitter
+internal static class CInterfaceDeclarationBuilder
 {
-    private static CEnumDeclaration ToCTypeIdEnum(
+    public static CEnumDeclaration BuildTypeIdEnum(
         CBackendContext backend,
         IReadOnlyList<InterfaceImplementation> implementations) =>
         new(
@@ -18,7 +18,7 @@ public sealed partial class CEmitter
                 .Select(name => new CEnumMember(GetTypeIdName(backend, name), null)))
                 .ToList());
 
-    private static CStructDeclaration ToCInterfaceVTableStruct(CBackendContext backend, InterfaceNode interfaceNode)
+    public static CStructDeclaration BuildVTableStruct(CBackendContext backend, InterfaceNode interfaceNode)
     {
         var fields = new List<CFieldDeclaration> { new(new CNamedTypeRef("CxTypeId"), "type_id") };
         foreach (var method in interfaceNode.Methods)
@@ -27,10 +27,10 @@ public sealed partial class CEmitter
             {
                 new(new CPointerTypeRef(new CNamedTypeRef("void")), "state"),
             };
-            parameters.AddRange(method.Parameters.Select(parameter => LowerParameter(backend, parameter)));
+            parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter)));
             fields.Add(new CFieldDeclaration(
                 new CFunctionTypeRef(
-                    LowerReturnType(backend, method.ReturnTypeNode, InterfaceMethodReturnTypeText(method)),
+                    CDeclarationLowerer.LowerReturnType(backend, method.ReturnTypeNode, CTypeText.InterfaceMethodReturnTypeText(method)),
                     parameters),
                 method.Name));
         }
@@ -38,7 +38,7 @@ public sealed partial class CEmitter
         return new CStructDeclaration(GetInterfaceVTableName(backend, interfaceNode.Name), fields);
     }
 
-    private static CStructDeclaration ToCInterfaceValueStruct(CBackendContext backend, InterfaceNode interfaceNode)
+    public static CStructDeclaration BuildValueStruct(CBackendContext backend, InterfaceNode interfaceNode)
     {
         var fields = new List<CFieldDeclaration>
         {
@@ -50,7 +50,7 @@ public sealed partial class CEmitter
         return new CStructDeclaration(interfaceNode.Name, fields);
     }
 
-    private static CGlobalDeclaration ToCInterfaceVTableInstance(
+    public static CGlobalDeclaration BuildVTableInstance(
         CBackendContext backend,
         InterfaceImplementation implementation,
         IReadOnlyList<FunctionNode> functions)
@@ -63,7 +63,7 @@ public sealed partial class CEmitter
         foreach (var method in implementation.Interface.Methods)
         {
             var concrete = functions.FirstOrDefault(function =>
-                GetConcreteFunctionOwnerName(backend, function) == implementation.Struct.Name
+                CFunctionTypeResolver.GetConcreteOwnerName(backend, function) == implementation.Struct.Name
                 && !function.IsStatic
                 && function.Name == method.Name);
             if (concrete is null)
@@ -92,13 +92,13 @@ public sealed partial class CEmitter
         {
             new(new CPointerTypeRef(new CNamedTypeRef("void")), string.Empty),
         };
-        parameters.AddRange(method.Parameters.Select(parameter => LowerParameter(backend, parameter)));
+        parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter)));
         return new CFunctionTypeRef(
-            LowerReturnType(backend, method.ReturnTypeNode, InterfaceMethodReturnTypeText(method)),
+            CDeclarationLowerer.LowerReturnType(backend, method.ReturnTypeNode, CTypeText.InterfaceMethodReturnTypeText(method)),
             parameters);
     }
 
-    private static CExternGlobalDeclaration ToCInterfaceVTableDeclaration(
+    public static CExternGlobalDeclaration BuildVTableDeclaration(
         CBackendContext backend,
         InterfaceImplementation implementation) =>
         new(new CVariableDeclaration(

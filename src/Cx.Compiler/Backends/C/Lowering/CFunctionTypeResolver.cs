@@ -4,19 +4,38 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
-public sealed partial class CEmitter
+internal static class CFunctionTypeResolver
 {
-    private static string? GetConcreteFunctionOwnerName(CBackendContext backend, FunctionNode function) =>
+    public static string? GetConcreteOwnerName(CBackendContext backend, FunctionNode function) =>
         FunctionOwnerTypeText(function) is not { } ownerType
             ? null
             : FunctionTypeArgumentTexts(function).Count == 0
                 ? ownerType
                 : backend.AbiNames.LowerType($"{ownerType}<{string.Join(",", FunctionTypeArgumentTexts(function))}>");
 
-    internal static string? ResolveSelfType(CBackendContext backend, FunctionNode function) =>
+    public static string? ResolveSelfType(CBackendContext backend, FunctionNode function) =>
         ResolveSelfTypeRef(backend, function) is { } selfType
             ? TypeRefFormatter.ToCxString(selfType)
             : null;
+
+    public static string? ResolveSelfApiType(FunctionNode function)
+    {
+        var ownerTypeRef = FunctionOwnerTypeRef(function);
+        if (ownerTypeRef is null || FunctionOwnerTypeText(function) is not { } ownerType)
+        {
+            return null;
+        }
+
+        var typeArguments = FunctionTypeArgumentTexts(function);
+        if (typeArguments.Count > 0)
+        {
+            return $"{ownerType}<{string.Join(",", typeArguments)}>";
+        }
+
+        return function.TypeParameters.Count > 0 && !HasGenericArguments(ownerTypeRef)
+            ? $"{ownerType}<{string.Join(",", function.TypeParameters)}>"
+            : ownerType;
+    }
 
     private static TypeRef? ResolveSelfTypeRef(CBackendContext backend, FunctionNode function)
     {
@@ -53,7 +72,7 @@ public sealed partial class CEmitter
 
         if (selfParameter?.TypeNode is { } fallbackSelfParameterTypeNode
             && fallbackSelfParameterTypeNode.Semantic.Type is null
-            && TypeRefOrUnknown(backend, fallbackSelfParameterTypeNode) is { } fallbackSelfParameterType
+            && SemanticFacts.TypeRefOrUnknown(fallbackSelfParameterTypeNode, backend.TypeRefParser) is { } fallbackSelfParameterType
             && fallbackSelfParameterType is not TypeRef.Unknown
             && !ReferencesSelf(fallbackSelfParameterType))
         {
@@ -63,27 +82,26 @@ public sealed partial class CEmitter
         return CTypeLowerer.ResolveAdapterStorageType(ownerTypeRef, backend.TypeAdapters);
     }
 
-    internal static string? ResolveSelfApiType(FunctionNode function)
-    {
-        var ownerTypeRef = FunctionOwnerTypeRef(function);
-        if (ownerTypeRef is null || FunctionOwnerTypeText(function) is not { } ownerType)
-        {
-            return null;
-        }
+    private static string? FunctionOwnerTypeText(FunctionNode function) =>
+        FunctionOwnerTypeRef(function) is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : null;
 
-        var typeArguments = FunctionTypeArgumentTexts(function);
-        if (typeArguments.Count > 0)
-        {
-            return $"{ownerType}<{string.Join(",", typeArguments)}>";
-        }
+    private static TypeRef? FunctionOwnerTypeRef(FunctionNode function) =>
+        function.OwnerTypeNode is null
+            ? null
+            : function.OwnerTypeNode.Semantic.Type
+                ?? throw CEmissionGuards.UnresolvedTypeExpression(function.OwnerTypeNode);
 
-        return function.TypeParameters.Count > 0 && !HasGenericArguments(ownerTypeRef)
-            ? $"{ownerType}<{string.Join(",", function.TypeParameters)}>"
-            : ownerType;
-    }
+    private static IReadOnlyList<string> FunctionTypeArgumentTexts(FunctionNode function) =>
+        (function.TypeArgumentNodes ?? [])
+            .Select(FunctionTypeArgumentText)
+            .ToList();
 
-    private static bool HasGenericArguments(TypeRef type) =>
-        TypeRefFacts.TryGetGenericArguments(type, out _);
+    private static string FunctionTypeArgumentText(TypeNode typeArgument) =>
+        typeArgument.Semantic.Type is { } type
+            ? TypeRefFormatter.ToCxString(type)
+            : throw CEmissionGuards.UnresolvedTypeExpression(typeArgument);
 
     private static IReadOnlyList<TypeRef> FunctionTypeArguments(FunctionNode function) =>
         (function.TypeArgumentNodes ?? [])
@@ -91,8 +109,8 @@ public sealed partial class CEmitter
                 ?? throw CEmissionGuards.UnresolvedTypeExpression(typeArgument))
             .ToList();
 
-    private static TypeRef TypeRefOrUnknown(CBackendContext backend, TypeNode? typeNode) =>
-        SemanticFacts.TypeRefOrUnknown(typeNode, backend.TypeRefParser);
+    private static bool HasGenericArguments(TypeRef type) =>
+        TypeRefFacts.TryGetGenericArguments(type, out _);
 
     private static bool ReferencesSelf(TypeRef type) =>
         TypeRefFacts.UnwrapAlias(type) switch
@@ -105,10 +123,4 @@ public sealed partial class CEmitter
                 || ReferencesSelf(function.ReturnType),
             _ => false,
         };
-
-    private static bool ReferencesCompositeType(
-        CBackendContext backend,
-        string type,
-        IReadOnlySet<string> compositeTypeNames)
-        => CTypeLowerer.ReferencesCompositeType(type, compositeTypeNames, backend.TypeAdapters);
 }

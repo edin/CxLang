@@ -3,7 +3,7 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
-public sealed partial class CEmitter
+public sealed class CEmitter
 {
     private readonly CNameManglerOptions? _nameManglerOptions;
 

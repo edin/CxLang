@@ -4,9 +4,9 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
-public sealed partial class CEmitter
+internal static class CDeclarationUsageAnalyzer
 {
-    private static IEnumerable<CDeclareNode> GetCDeclarationsToInclude(ProgramNode program)
+    public static IEnumerable<CDeclareNode> GetDeclarationsToInclude(ProgramNode program)
     {
         var usage = GetCDeclarationUsage(program);
         foreach (var declaration in program.CDeclarations)
@@ -90,7 +90,7 @@ public sealed partial class CEmitter
                 continue;
             }
 
-            foreach (var expression in EnumerateExpressionNodes(global.Initializer))
+            foreach (var expression in CExpressionTraversal.EnumerateExpressionNodes(global.Initializer))
             {
                 yield return expression;
             }
@@ -98,7 +98,7 @@ public sealed partial class CEmitter
 
         foreach (var function in program.Functions)
         {
-            foreach (var expression in EnumerateExpressionNodes(function.Body))
+            foreach (var expression in CExpressionTraversal.EnumerateExpressionNodes(function.Body))
             {
                 yield return expression;
             }
@@ -109,7 +109,7 @@ public sealed partial class CEmitter
     {
         foreach (var global in program.GlobalVariables.Where(global => !global.IsHeaderDeclaration))
         {
-            yield return GlobalVariableTypeText(global);
+            yield return CTypeText.GlobalVariableTypeText(global);
             foreach (var type in EnumerateExpressionTypeReferences(global.Initializer))
             {
                 yield return type;
@@ -118,15 +118,15 @@ public sealed partial class CEmitter
 
         foreach (var typeAlias in program.TypeAliases.Where(typeAlias => !typeAlias.IsHeaderDeclaration))
         {
-            yield return TypeAliasTargetTypeText(typeAlias);
+            yield return CTypeText.TypeAliasTargetTypeText(typeAlias);
         }
 
         foreach (var function in program.Functions)
         {
-            yield return FunctionReturnTypeText(function);
+            yield return CTypeText.FunctionReturnTypeText(function);
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
-                yield return ParameterTypeText(parameter);
+                yield return CTypeText.ParameterTypeText(parameter);
             }
 
             foreach (var type in EnumerateStatementTypeReferences(function.Body))
@@ -139,7 +139,7 @@ public sealed partial class CEmitter
         {
             foreach (var field in structNode.Fields)
             {
-                yield return StructFieldTypeText(field);
+                yield return CTypeText.StructFieldTypeText(field);
             }
         }
 
@@ -147,7 +147,7 @@ public sealed partial class CEmitter
         {
             foreach (var variant in taggedUnion.Variants)
             {
-                yield return TaggedUnionVariantTypeText(variant);
+                yield return CTypeText.TaggedUnionVariantTypeText(variant);
             }
         }
     }
@@ -159,7 +159,7 @@ public sealed partial class CEmitter
             switch (statement)
             {
                 case LetStatement letStatement:
-                    yield return LetStatementTypeText(letStatement);
+                    yield return CTypeText.LetStatementTypeText(letStatement);
                     foreach (var type in EnumerateExpressionTypeReferences(letStatement.Initializer))
                     {
                         yield return type;
@@ -240,7 +240,7 @@ public sealed partial class CEmitter
 
     private static IEnumerable<string> EnumerateForInitializerTypeReferences(ForInitializerNode? initializer) => initializer switch
     {
-        ForDeclarationInitializerNode declaration => [ForDeclarationInitializerTypeText(declaration), .. EnumerateExpressionTypeReferences(declaration.Initializer)],
+        ForDeclarationInitializerNode declaration => [CTypeText.ForDeclarationInitializerTypeText(declaration), .. EnumerateExpressionTypeReferences(declaration.Initializer)],
         ForExpressionInitializerNode expression => EnumerateExpressionTypeReferences(expression.Expression),
         _ => [],
     };
@@ -252,18 +252,18 @@ public sealed partial class CEmitter
             yield break;
         }
 
-        foreach (var node in EnumerateExpressionNodes(expression))
+        foreach (var node in CExpressionTraversal.EnumerateExpressionNodes(expression))
         {
             switch (node)
             {
                 case CastExpressionNode cast:
-                    yield return CastExpressionTargetTypeText(cast);
+                    yield return CTypeText.CastExpressionTargetTypeText(cast);
                     break;
                 case InitializerExpressionNode { TypeNameNode: not null } initializer:
-                    yield return InitializerExpressionTypeNameText(initializer);
+                    yield return CTypeText.InitializerExpressionTypeNameText(initializer);
                     break;
                 case SizeOfExpressionNode { TypeOperandNode: not null } sizeOf:
-                    yield return SizeOfExpressionTypeOperandText(sizeOf);
+                    yield return CTypeText.SizeOfExpressionTypeOperandText(sizeOf);
                     break;
             }
         }

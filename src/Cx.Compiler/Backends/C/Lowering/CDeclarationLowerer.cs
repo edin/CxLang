@@ -5,16 +5,16 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
-public sealed partial class CEmitter
+internal static class CDeclarationLowerer
 {
-    private static CTypeRef LowerReturnType(
+    public static CTypeRef LowerReturnType(
         CBackendContext backend,
         TypeNode? typeNode,
         string fallbackType,
         string? selfType = null) =>
         LowerDeclarationType(backend, typeNode, fallbackType, "return", selfType);
 
-    private static CParameterDeclaration LowerParameter(
+    public static CParameterDeclaration LowerParameter(
         CBackendContext backend,
         ParameterNode parameter,
         string? selfType = null)
@@ -25,11 +25,11 @@ public sealed partial class CEmitter
         }
 
         return new CParameterDeclaration(
-            LowerDeclarationType(backend, parameter.TypeNode, ParameterTypeText(parameter), parameter.Name, selfType),
+            LowerDeclarationType(backend, parameter.TypeNode, CTypeText.ParameterTypeText(parameter), parameter.Name, selfType),
             parameter.Name);
     }
 
-    internal static CVariableDeclaration LowerVariable(
+    public static CVariableDeclaration LowerVariable(
         CBackendContext backend,
         TypeNode? typeNode,
         string fallbackType,
@@ -43,7 +43,7 @@ public sealed partial class CEmitter
             isConst);
     }
 
-    private static CFieldDeclaration LowerField(
+    public static CFieldDeclaration LowerField(
         CBackendContext backend,
         TypeNode? typeNode,
         string fallbackType,
@@ -52,13 +52,13 @@ public sealed partial class CEmitter
         return new CFieldDeclaration(LowerDeclarationType(backend, typeNode, fallbackType, name), name);
     }
 
-    private static CFieldDeclaration LowerField(CBackendContext backend, TypeRef type, string name) =>
+    public static CFieldDeclaration LowerField(CBackendContext backend, TypeRef type, string name) =>
         new(LowerDeclarationType(backend, type), name);
 
-    private static CTypeRef LowerFieldType(CBackendContext backend, TypeNode? typeNode, string fallbackType) =>
+    public static CTypeRef LowerFieldType(CBackendContext backend, TypeNode? typeNode, string fallbackType) =>
         LowerDeclarationType(backend, typeNode, fallbackType, "field");
 
-    private static CTypeRef LowerFieldType(CBackendContext backend, TypeRef type) =>
+    public static CTypeRef LowerFieldType(CBackendContext backend, TypeRef type) =>
         LowerDeclarationType(backend, type);
 
     private static CTypeRef LowerDeclarationType(
@@ -75,7 +75,7 @@ public sealed partial class CEmitter
     private static CTypeRef LowerDeclarationType(CBackendContext backend, TypeRef type) =>
         backend.AbiNames.LowerTypeRef(type);
 
-    private static TypeRef ResolveDeclarationType(
+    public static TypeRef ResolveDeclarationType(
         TypeNode? typeNode,
         string fallbackType,
         string name)
@@ -87,7 +87,7 @@ public sealed partial class CEmitter
             : type;
     }
 
-    internal static TypeRef ResolveInitializerTargetType(
+    public static TypeRef ResolveInitializerTargetType(
         TypeNode? typeNode,
         string fallbackType,
         string name) =>

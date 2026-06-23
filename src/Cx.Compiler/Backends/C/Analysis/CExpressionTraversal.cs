@@ -2,9 +2,9 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
-public sealed partial class CEmitter
+internal static class CExpressionTraversal
 {
-    private static IEnumerable<ExpressionNode> EnumerateExpressionNodes(IEnumerable<StatementNode> statements)
+    public static IEnumerable<ExpressionNode> EnumerateExpressionNodes(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
@@ -147,7 +147,7 @@ public sealed partial class CEmitter
         }
     }
 
-    private static IEnumerable<ExpressionNode> EnumerateExpressionNodes(ExpressionNode expression)
+    public static IEnumerable<ExpressionNode> EnumerateExpressionNodes(ExpressionNode expression)
     {
         yield return expression;
         switch (expression)
@@ -229,5 +229,4 @@ public sealed partial class CEmitter
                 break;
         }
     }
-
 }
