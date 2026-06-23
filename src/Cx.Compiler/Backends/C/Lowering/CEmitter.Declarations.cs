@@ -41,7 +41,7 @@ public sealed partial class CEmitter
         return new CFunctionDeclaration(
             new CFunctionSignature(
                 LowerReturnType(backend, function.ReturnTypeNode, FunctionReturnTypeText(function), selfType),
-                GetCFunctionName(backend, function),
+                backend.NameMangler.FunctionName(function),
                 function.Parameters
                     .Select(parameter => LowerParameter(backend, parameter, selfType))
                     .ToList()));

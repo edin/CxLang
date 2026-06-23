@@ -75,7 +75,7 @@ public sealed partial class CEmitter
                 method.Name,
                 new CCastExpression(
                     BuildInterfaceMethodSlotType(backend, method),
-                    new CNameExpression(GetCFunctionName(backend, concrete)))));
+                    new CNameExpression(backend.NameMangler.FunctionName(concrete)))));
         }
 
         return new CGlobalDeclaration(

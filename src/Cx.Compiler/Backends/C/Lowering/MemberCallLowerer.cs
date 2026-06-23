@@ -342,36 +342,4 @@ internal sealed class MemberCallLowerer(
         return false;
     }
 
-    private sealed record ReceiverTypeInfo(
-        string Type,
-        string NormalizedType,
-        bool IsPointer,
-        string ReceiverType,
-        string? GenericBaseName,
-        IReadOnlyList<string> TypeArguments,
-        IReadOnlyList<TypeRef> TypeArgumentRefs)
-    {
-        public static ReceiverTypeInfo FromTypeRef(TypeRef type)
-        {
-            var receiverType = type is TypeRef.Pointer pointer ? pointer.Element : type;
-            var receiverText = CTypeLowerer.NormalizeType(TypeRefFormatter.ToCxString(receiverType));
-            var typeText = TypeRefFormatter.ToCxString(type);
-            var typeArgumentRefs = TypeRefFacts.TryGetGenericArguments(receiverType, out var parsedArguments)
-                ? parsedArguments
-                : [];
-            var typeArguments = typeArgumentRefs.Select(TypeRefFormatter.ToCxString).ToList();
-            var genericBase = typeArguments.Count > 0
-                ? TypeRefFacts.GetBaseName(receiverType)
-                : null;
-
-            return new(
-                typeText,
-                CTypeLowerer.NormalizeType(typeText),
-                type is TypeRef.Pointer,
-                receiverText,
-                genericBase,
-                typeArguments,
-                typeArgumentRefs);
-        }
-    }
 }

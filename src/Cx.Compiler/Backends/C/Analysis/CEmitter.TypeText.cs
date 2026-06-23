@@ -49,12 +49,12 @@ public sealed partial class CEmitter
             ? TypeRefFormatter.ToCxString(type)
             : throw CEmissionGuards.UnresolvedDeclarationType(global.TypeNode, string.Empty, global.Name);
 
-    private static string ForDeclarationInitializerTypeText(ForDeclarationInitializerNode initializer) =>
+    internal static string ForDeclarationInitializerTypeText(ForDeclarationInitializerNode initializer) =>
         initializer.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
             : throw CEmissionGuards.UnresolvedDeclarationType(initializer.TypeNode, string.Empty, initializer.Name);
 
-    private static string LetStatementTypeText(LetStatement let) =>
+    internal static string LetStatementTypeText(LetStatement let) =>
         let.TypeNode?.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
             : throw CEmissionGuards.UnresolvedDeclarationType(let.TypeNode, string.Empty, let.Name);

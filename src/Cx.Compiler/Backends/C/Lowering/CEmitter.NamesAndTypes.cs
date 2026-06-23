@@ -6,35 +6,14 @@ namespace Cx.Compiler;
 
 public sealed partial class CEmitter
 {
-    private static string GetCFunctionName(CBackendContext backend, FunctionNode function) =>
-        backend.NameMangler.FunctionName(function);
-
     private static string? GetConcreteFunctionOwnerName(CBackendContext backend, FunctionNode function) =>
         FunctionOwnerTypeText(function) is not { } ownerType
             ? null
             : FunctionTypeArgumentTexts(function).Count == 0
                 ? ownerType
-                : LowerType(backend, $"{ownerType}<{string.Join(",", FunctionTypeArgumentTexts(function))}>");
+                : backend.AbiNames.LowerType($"{ownerType}<{string.Join(",", FunctionTypeArgumentTexts(function))}>");
 
-    private static bool TrySplitQualifiedMember(string text, out string ownerName, out string memberName)
-    {
-        var dot = text.LastIndexOf('.');
-        if (dot <= 0 || dot == text.Length - 1)
-        {
-            ownerName = string.Empty;
-            memberName = string.Empty;
-            return false;
-        }
-
-        ownerName = text[..dot];
-        memberName = text[(dot + 1)..];
-        return true;
-    }
-
-    private static string LowerType(CBackendContext backend, string type, string? selfType = null)
-        => backend.AbiNames.LowerType(type, selfType);
-
-    private static string? ResolveSelfType(CBackendContext backend, FunctionNode function) =>
+    internal static string? ResolveSelfType(CBackendContext backend, FunctionNode function) =>
         ResolveSelfTypeRef(backend, function) is { } selfType
             ? TypeRefFormatter.ToCxString(selfType)
             : null;
@@ -84,7 +63,7 @@ public sealed partial class CEmitter
         return CTypeLowerer.ResolveAdapterStorageType(ownerTypeRef, backend.TypeAdapters);
     }
 
-    private static string? ResolveSelfApiType(FunctionNode function)
+    internal static string? ResolveSelfApiType(FunctionNode function)
     {
         var ownerTypeRef = FunctionOwnerTypeRef(function);
         if (ownerTypeRef is null || FunctionOwnerTypeText(function) is not { } ownerType)
@@ -111,11 +90,6 @@ public sealed partial class CEmitter
             .Select(typeArgument => typeArgument.Semantic.Type
                 ?? throw CEmissionGuards.UnresolvedTypeExpression(typeArgument))
             .ToList();
-
-    private static string NormalizeType(string type) => CTypeLowerer.NormalizeType(type);
-
-    private static bool TryParseGenericUse(string type, out string name, out IReadOnlyList<string> arguments)
-        => CTypeLowerer.TryParseGenericUse(type, out name, out arguments);
 
     private static TypeRef TypeRefOrUnknown(CBackendContext backend, TypeNode? typeNode) =>
         SemanticFacts.TypeRefOrUnknown(typeNode, backend.TypeRefParser);

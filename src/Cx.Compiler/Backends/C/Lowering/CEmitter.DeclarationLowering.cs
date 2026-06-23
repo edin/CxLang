@@ -29,7 +29,7 @@ public sealed partial class CEmitter
             parameter.Name);
     }
 
-    private static CVariableDeclaration LowerVariable(
+    internal static CVariableDeclaration LowerVariable(
         CBackendContext backend,
         TypeNode? typeNode,
         string fallbackType,
@@ -87,7 +87,7 @@ public sealed partial class CEmitter
             : type;
     }
 
-    private static TypeRef ResolveInitializerTargetType(
+    internal static TypeRef ResolveInitializerTargetType(
         TypeNode? typeNode,
         string fallbackType,
         string name) =>
