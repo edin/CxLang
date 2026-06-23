@@ -1,4 +1,5 @@
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -27,10 +28,10 @@ internal static class CInterfaceDeclarationBuilder
             {
                 new(new CPointerTypeRef(new CNamedTypeRef("void")), "state"),
             };
-            parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter)));
+            parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter, (TypeRef?)null)));
             fields.Add(new CFieldDeclaration(
                 new CFunctionTypeRef(
-                    CDeclarationLowerer.LowerReturnType(backend, method.ReturnTypeNode, CTypeText.InterfaceMethodReturnTypeText(method)),
+                    CDeclarationLowerer.LowerReturnType(backend, method.ReturnTypeNode),
                     parameters),
                 method.Name));
         }
@@ -63,7 +64,8 @@ internal static class CInterfaceDeclarationBuilder
         foreach (var method in implementation.Interface.Methods)
         {
             var concrete = functions.FirstOrDefault(function =>
-                CFunctionTypeResolver.GetConcreteOwnerName(backend, function) == implementation.Struct.Name
+                CFunctionTypeResolver.ResolveConcreteOwnerType(function) is { } ownerType
+                && backend.AbiNames.LowerType(ownerType) == implementation.Struct.Name
                 && !function.IsStatic
                 && function.Name == method.Name);
             if (concrete is null)
@@ -92,9 +94,9 @@ internal static class CInterfaceDeclarationBuilder
         {
             new(new CPointerTypeRef(new CNamedTypeRef("void")), string.Empty),
         };
-        parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter)));
+        parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter, (TypeRef?)null)));
         return new CFunctionTypeRef(
-            CDeclarationLowerer.LowerReturnType(backend, method.ReturnTypeNode, CTypeText.InterfaceMethodReturnTypeText(method)),
+            CDeclarationLowerer.LowerReturnType(backend, method.ReturnTypeNode),
             parameters);
     }
 

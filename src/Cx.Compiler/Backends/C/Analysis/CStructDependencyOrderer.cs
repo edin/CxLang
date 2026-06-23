@@ -18,7 +18,10 @@ internal static class CStructDependencyOrderer
         while (remaining.Count > 0)
         {
             var index = remaining.FindIndex(structNode =>
-                !structNode.Fields.Any(field => CTypeLowerer.ReferencesCompositeType(CTypeText.StructFieldTypeText(field), remainingNames, backend.TypeAdapters)));
+                !structNode.Fields.Any(field => CTypeLowerer.ReferencesCompositeType(
+                    CDeclarationLowerer.ResolveDeclarationType(field.TypeNode, field.Name),
+                    remainingNames,
+                    backend.TypeAdapters)));
             if (index < 0)
             {
                 ordered.AddRange(remaining);

@@ -37,10 +37,10 @@ internal static class CDeclarationBuilder
 
     public static CFunctionDeclaration BuildFunctionDeclaration(CBackendContext backend, FunctionNode function)
     {
-        var selfType = CFunctionTypeResolver.ResolveSelfType(backend, function);
+        var selfType = CFunctionTypeResolver.ResolveSelfTypeRef(backend, function);
         return new CFunctionDeclaration(
             new CFunctionSignature(
-                CDeclarationLowerer.LowerReturnType(backend, function.ReturnTypeNode, CTypeText.FunctionReturnTypeText(function), selfType),
+                CDeclarationLowerer.LowerReturnType(backend, function.ReturnTypeNode, selfType),
                 backend.NameMangler.FunctionName(function),
                 function.Parameters
                     .Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter, selfType))
@@ -61,10 +61,10 @@ internal static class CDeclarationBuilder
     public static CFunctionDeclaration BuildFunctionDeclaration(CBackendContext backend, ExternFunctionNode function) =>
         new(
             new CFunctionSignature(
-                CDeclarationLowerer.LowerReturnType(backend, function.ReturnTypeNode, CTypeText.ExternFunctionReturnTypeText(function)),
+                CDeclarationLowerer.LowerReturnType(backend, function.ReturnTypeNode),
                 function.Name,
                 function.Parameters
-                    .Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter))
+                    .Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter, (TypeRef?)null))
                     .ToList()));
 
     public static CGlobalDeclaration BuildGlobalDeclaration(
@@ -72,9 +72,8 @@ internal static class CDeclarationBuilder
         GlobalVariableNode global,
         ImportedNameLowerer nameLowerer)
     {
-        var globalType = CTypeText.GlobalVariableTypeText(global);
         return new CGlobalDeclaration(
-            CDeclarationLowerer.LowerVariable(backend, global.TypeNode, globalType, global.Name, global.IsConst),
+            CDeclarationLowerer.LowerVariable(backend, global.TypeNode, global.Name, global.IsConst),
             LowerGlobalInitializer(global, nameLowerer));
     }
 
@@ -84,7 +83,7 @@ internal static class CDeclarationBuilder
         global.Initializer is null
             ? null
             : nameLowerer.LowerInitializerExpression(
-                CDeclarationLowerer.ResolveInitializerTargetType(global.TypeNode, CTypeText.GlobalVariableTypeText(global), global.Name),
+                CDeclarationLowerer.ResolveInitializerTargetType(global.TypeNode, global.Name),
                 global.Initializer);
 
     private static CFieldDeclaration LowerStructFieldDeclaration(
@@ -92,12 +91,15 @@ internal static class CDeclarationBuilder
         StructNode structNode,
         StructFieldNode field)
     {
-        var selfPointerType = structNode.Name + "*";
-        var fieldType = CTypeText.StructFieldTypeText(field);
-        return fieldType == selfPointerType
+        var fieldType = CDeclarationLowerer.ResolveDeclarationType(field.TypeNode, field.Name);
+        return IsSelfPointer(fieldType, structNode.Name)
             ? new CFieldDeclaration(
                 new CPointerTypeRef(new CStructTypeRef(structNode.Name)),
                 field.Name)
-            : CDeclarationLowerer.LowerField(backend, field.TypeNode, fieldType, field.Name);
+            : CDeclarationLowerer.LowerField(backend, fieldType, field.Name);
     }
+
+    private static bool IsSelfPointer(TypeRef type, string structName) =>
+        type is TypeRef.Pointer pointer
+        && TypeRefFacts.GetBaseName(TypeRefFacts.UnwrapAlias(pointer.Element)) == structName;
 }

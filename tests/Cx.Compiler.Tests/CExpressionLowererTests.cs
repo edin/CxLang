@@ -134,7 +134,7 @@ public sealed class CExpressionLowererTests
         string typeRefPrefix = "",
         CExpression? memberOverride = null) : ICExpressionLoweringContext
     {
-        public string? SelfType => null;
+        public TypeRef? SelfTypeRef => null;
 
         public CExpression LowerExpression(ExpressionNode expression) =>
             new CExpressionLowerer(this).LowerSimple(expression);

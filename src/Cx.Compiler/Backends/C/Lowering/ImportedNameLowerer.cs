@@ -22,8 +22,7 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
     private readonly MemberCallLowerer _memberCallLowerer;
     private readonly NameExpressionLowerer _nameExpressionLowerer;
     public CBackendContext Backend => _backend;
-    public string? SelfType { get; }
-    private string? SelfApiType { get; }
+    public TypeRef? SelfTypeRef { get; }
 
     public ImportedNameLowerer(
         ProgramNode program,
@@ -58,14 +57,12 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
         CBackendContext backend,
         CLoweringContext context,
         CLoweringScope scope,
-        string? selfType = null,
-        string? selfApiType = null)
+        TypeRef? selfType = null)
     {
         _backend = backend;
         _context = context;
         _scope = scope;
-        SelfType = selfType;
-        SelfApiType = selfApiType;
+        SelfTypeRef = selfType;
         _genericCallResolver = _context.CreateGenericCallResolver(ResolveExpressionTypeRef);
         _interfaceValueBuilder = new InterfaceValueBuilder(
             _context,
@@ -76,15 +73,14 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
         _taggedUnionValueBuilder = new TaggedUnionValueBuilder(
             _context,
             InferExpressionTypeRef,
-            LowerType,
             LowerTypeText,
             LowerCTypeRef);
         _structValueBuilder = new StructValueBuilder(
             _context,
             LowerExpression,
             InferExpressionTypeRef,
-            LowerType,
-            LowerTypeText);
+            LowerTypeText,
+            LowerCTypeRef);
         _adapterExposeResolver = new AdapterExposeResolver(_context);
         _receiverExpressionBuilder = new ReceiverExpressionBuilder(_scope);
         _nameExpressionLowerer = new NameExpressionLowerer(
@@ -140,7 +136,7 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
             _structValueBuilder,
             _adapterExposeResolver,
             _nameExpressionLowerer.LowerName,
-            LowerType,
+            LowerTypeText,
             LowerExpression);
         var callLowerer = new CallLowerer(
             _context,
@@ -161,16 +157,15 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
 
     public ImportedNameLowerer ForFunction(FunctionNode function)
     {
-        var selfType = CFunctionTypeResolver.ResolveSelfType(_backend, function);
-        var selfApiType = CFunctionTypeResolver.ResolveSelfApiType(function);
+        var selfType = CFunctionTypeResolver.ResolveSelfTypeRef(_backend, function);
+        var selfApiType = CFunctionTypeResolver.ResolveSelfApiTypeRef(function);
         var scope = _scope.ForFunction(function, selfType, selfApiType);
 
         return new(
             _backend,
             _context,
             scope,
-            selfType,
-            selfApiType);
+            selfType);
     }
 
     public string LowerInitializer(TypeRef targetType, ExpressionNode expression)
@@ -253,20 +248,17 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
         _nameExpressionLowerer.LowerAddressOfExpression(operand);
 
     CTypeRef ICExpressionLoweringContext.LowerTypeRef(TypeRef type) =>
-        _backend.AbiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+        _backend.AbiNames.LowerTypeRef(type, SelfTypeRef);
 
     TypeRef? ICExpressionLoweringContext.ResolveType(TypeNode? typeNode) =>
         _scope.ResolveType(typeNode);
 
 
     private string LowerTypeText(TypeRef type) =>
-        _backend.AbiNames.LowerType(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
+        _backend.AbiNames.LowerType(type, SelfTypeRef);
 
     private CTypeRef LowerCTypeRef(TypeRef type) =>
-        _backend.AbiNames.LowerTypeRef(type, GenericTypeSubstitutionBuilder.ParseType(SelfType));
-
-    private string LowerType(string type) =>
-        _backend.AbiNames.LowerType(type, SelfType);
+        _backend.AbiNames.LowerTypeRef(type, SelfTypeRef);
 
     CExpression? ICExpressionLoweringContext.TryWrapAssignmentValue(
         AssignmentExpressionNode assignment,

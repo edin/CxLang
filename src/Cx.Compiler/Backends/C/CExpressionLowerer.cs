@@ -5,7 +5,7 @@ namespace Cx.Compiler.C;
 
 internal interface ICExpressionLoweringContext
 {
-    string? SelfType { get; }
+    TypeRef? SelfTypeRef { get; }
 
     CExpression LowerExpression(ExpressionNode expression);
 

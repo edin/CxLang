@@ -18,23 +18,13 @@ internal sealed class CxToCTranslationUnitLowerer(CNameManglerOptions? nameMangl
 
         var functionsToEmit = CEmitSelection.GetFunctionsToEmit(program);
         var emitProgram = program with { Functions = functionsToEmit };
-        var includes = program.Includes
-            .Concat(CDeclarationUsageAnalyzer.GetDeclarationsToInclude(emitProgram)
-                .Select(declaration => new IncludeNode(declaration.Location, declaration.HeaderPath, declaration.IsSystemHeader)))
-            .DistinctBy(include => (include.Path, include.IsSystem))
-            .ToList();
-        var usesNull = CNullUsageAnalyzer.UsesNull(emitProgram);
-        if (usesNull && !includes.Any(include => include.IsSystem && include.Path == "stddef.h"))
-        {
-            items.Add(new CInclude("stddef.h", IsSystem: true));
-        }
-
+        var includes = CIncludeCollector.Collect(program, emitProgram);
         foreach (var include in includes)
         {
-            items.Add(new CInclude(include.Path, include.IsSystem));
+            items.Add(include);
         }
 
-        if (includes.Count > 0 || usesNull)
+        if (includes.Count > 0)
         {
             items.Add(new CBlankLine());
         }
@@ -50,26 +40,14 @@ internal sealed class CxToCTranslationUnitLowerer(CNameManglerOptions? nameMangl
         }
 
         var structsToEmit = CEmitSelection.GetStructsToEmit(emitProgram);
-        var compositeTypeNames = structsToEmit
-            .Select(structNode => structNode.Name)
-            .Concat(emitProgram.TaggedUnions.Where(union => !union.IsHeaderDeclaration).Select(taggedUnion => taggedUnion.Name))
-            .ToHashSet(StringComparer.Ordinal);
-        var emittedTypeAliases = program.TypeAliases
-            .Where(typeAlias => !typeAlias.IsHeaderDeclaration)
-            .ToList();
-        var earlyTypeAliases = emittedTypeAliases
-            .Where(typeAlias => !CTypeLowerer.ReferencesCompositeType(CTypeText.TypeAliasTargetTypeText(typeAlias), compositeTypeNames, backend.TypeAdapters))
-            .ToList();
-        var lateTypeAliases = emittedTypeAliases
-            .Where(typeAlias => CTypeLowerer.ReferencesCompositeType(CTypeText.TypeAliasTargetTypeText(typeAlias), compositeTypeNames, backend.TypeAdapters))
-            .ToList();
+        var declarationOrder = CDeclarationOrderPlanner.Plan(backend, program, emitProgram, structsToEmit);
 
-        foreach (var typeAlias in earlyTypeAliases)
+        foreach (var typeAlias in declarationOrder.EarlyTypeAliases)
         {
             items.Add(CDeclarationBuilder.BuildTypeAlias(backend, typeAlias));
         }
 
-        if (earlyTypeAliases.Count > 0)
+        if (declarationOrder.EarlyTypeAliases.Count > 0)
         {
             items.Add(new CBlankLine());
         }
@@ -95,39 +73,7 @@ internal sealed class CxToCTranslationUnitLowerer(CNameManglerOptions? nameMangl
             items.Add(new CBlankLine());
         }
 
-        var taggedUnionNames = emitProgram.TaggedUnions
-            .Where(union => !union.IsRaw)
-            .Select(taggedUnion => taggedUnion.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        var lateStructNames = structsToEmit
-            .Where(structNode => structNode.Fields.Any(field => CTypeLowerer.ReferencesCompositeType(CTypeText.StructFieldTypeText(field), taggedUnionNames, backend.TypeAdapters)))
-            .Select(structNode => structNode.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        var changed = true;
-        while (changed)
-        {
-            changed = false;
-            foreach (var structNode in structsToEmit)
-            {
-                if (lateStructNames.Contains(structNode.Name)
-                    || !structNode.Fields.Any(field => CTypeLowerer.ReferencesCompositeType(CTypeText.StructFieldTypeText(field), lateStructNames, backend.TypeAdapters)))
-                {
-                    continue;
-                }
-
-                lateStructNames.Add(structNode.Name);
-                changed = true;
-            }
-        }
-
-        var earlyStructs = CStructDependencyOrderer.OrderByFieldDependencies(
-            backend,
-            structsToEmit.Where(structNode => !lateStructNames.Contains(structNode.Name)).ToList());
-        var lateStructs = CStructDependencyOrderer.OrderByFieldDependencies(
-            backend,
-            structsToEmit.Where(structNode => lateStructNames.Contains(structNode.Name)).ToList());
-
-        foreach (var structNode in earlyStructs)
+        foreach (var structNode in declarationOrder.EarlyStructs)
         {
             items.Add(CDeclarationBuilder.BuildStruct(backend, structNode));
             items.Add(new CBlankLine());
@@ -139,18 +85,18 @@ internal sealed class CxToCTranslationUnitLowerer(CNameManglerOptions? nameMangl
             items.Add(new CBlankLine());
         }
 
-        foreach (var structNode in lateStructs)
+        foreach (var structNode in declarationOrder.LateStructs)
         {
             items.Add(CDeclarationBuilder.BuildStruct(backend, structNode));
             items.Add(new CBlankLine());
         }
 
-        foreach (var typeAlias in lateTypeAliases)
+        foreach (var typeAlias in declarationOrder.LateTypeAliases)
         {
             items.Add(CDeclarationBuilder.BuildTypeAlias(backend, typeAlias));
         }
 
-        if (lateTypeAliases.Count > 0)
+        if (declarationOrder.LateTypeAliases.Count > 0)
         {
             items.Add(new CBlankLine());
         }

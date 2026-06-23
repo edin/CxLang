@@ -6,38 +6,48 @@ namespace Cx.Compiler;
 
 internal static class CFunctionTypeResolver
 {
-    public static string? GetConcreteOwnerName(CBackendContext backend, FunctionNode function) =>
-        FunctionOwnerTypeText(function) is not { } ownerType
-            ? null
-            : FunctionTypeArgumentTexts(function).Count == 0
-                ? ownerType
-                : backend.AbiNames.LowerType($"{ownerType}<{string.Join(",", FunctionTypeArgumentTexts(function))}>");
-
-    public static string? ResolveSelfType(CBackendContext backend, FunctionNode function) =>
-        ResolveSelfTypeRef(backend, function) is { } selfType
-            ? TypeRefFormatter.ToCxString(selfType)
-            : null;
-
-    public static string? ResolveSelfApiType(FunctionNode function)
+    public static TypeRef? ResolveConcreteOwnerType(FunctionNode function)
     {
         var ownerTypeRef = FunctionOwnerTypeRef(function);
-        if (ownerTypeRef is null || FunctionOwnerTypeText(function) is not { } ownerType)
+        if (ownerTypeRef is null)
         {
             return null;
         }
 
-        var typeArguments = FunctionTypeArgumentTexts(function);
+        var typeArguments = FunctionTypeArguments(function);
+        if (typeArguments.Count == 0)
+        {
+            return ownerTypeRef;
+        }
+
+        return new TypeRef.Named(
+            TypeRefFacts.GetBaseName(ownerTypeRef) ?? TypeRefFormatter.ToCxString(ownerTypeRef),
+            typeArguments);
+    }
+
+    public static TypeRef? ResolveSelfApiTypeRef(FunctionNode function)
+    {
+        var ownerTypeRef = FunctionOwnerTypeRef(function);
+        if (ownerTypeRef is null)
+        {
+            return null;
+        }
+
+        var baseName = TypeRefFacts.GetBaseName(ownerTypeRef) ?? TypeRefFormatter.ToCxString(ownerTypeRef);
+        var typeArguments = FunctionTypeArguments(function);
         if (typeArguments.Count > 0)
         {
-            return $"{ownerType}<{string.Join(",", typeArguments)}>";
+            return new TypeRef.Named(baseName, typeArguments);
         }
 
         return function.TypeParameters.Count > 0 && !HasGenericArguments(ownerTypeRef)
-            ? $"{ownerType}<{string.Join(",", function.TypeParameters)}>"
-            : ownerType;
+            ? new TypeRef.Named(
+                baseName,
+                function.TypeParameters.Select(parameter => new TypeRef.Named(parameter, []) as TypeRef).ToList())
+            : ownerTypeRef;
     }
 
-    private static TypeRef? ResolveSelfTypeRef(CBackendContext backend, FunctionNode function)
+    public static TypeRef? ResolveSelfTypeRef(CBackendContext backend, FunctionNode function)
     {
         var ownerTypeRef = FunctionOwnerTypeRef(function);
         if (ownerTypeRef is null)
@@ -82,26 +92,11 @@ internal static class CFunctionTypeResolver
         return CTypeLowerer.ResolveAdapterStorageType(ownerTypeRef, backend.TypeAdapters);
     }
 
-    private static string? FunctionOwnerTypeText(FunctionNode function) =>
-        FunctionOwnerTypeRef(function) is { } type
-            ? TypeRefFormatter.ToCxString(type)
-            : null;
-
     private static TypeRef? FunctionOwnerTypeRef(FunctionNode function) =>
         function.OwnerTypeNode is null
             ? null
             : function.OwnerTypeNode.Semantic.Type
                 ?? throw CEmissionGuards.UnresolvedTypeExpression(function.OwnerTypeNode);
-
-    private static IReadOnlyList<string> FunctionTypeArgumentTexts(FunctionNode function) =>
-        (function.TypeArgumentNodes ?? [])
-            .Select(FunctionTypeArgumentText)
-            .ToList();
-
-    private static string FunctionTypeArgumentText(TypeNode typeArgument) =>
-        typeArgument.Semantic.Type is { } type
-            ? TypeRefFormatter.ToCxString(type)
-            : throw CEmissionGuards.UnresolvedTypeExpression(typeArgument);
 
     private static IReadOnlyList<TypeRef> FunctionTypeArguments(FunctionNode function) =>
         (function.TypeArgumentNodes ?? [])

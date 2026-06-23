@@ -8,8 +8,8 @@ internal sealed class StructValueBuilder(
     CLoweringContext context,
     Func<ExpressionNode, CExpression> lowerExpression,
     Func<ExpressionNode, TypeRef?> inferExpressionTypeRef,
-    Func<string, string> lowerCxType,
-    Func<TypeRef, string> lowerTypeRef)
+    Func<TypeRef, string> lowerTypeRef,
+    Func<TypeRef, CTypeRef> lowerCTypeRef)
 {
     public CExpression BuildPayloadExpression(
         TypeRef payloadType,
@@ -23,7 +23,7 @@ internal sealed class StructValueBuilder(
                 return lowerExpression(arguments[0]);
             }
 
-            if (TryBuildStructConstructorExpression(structNode, lowerTypeRef(payloadType), arguments, out var initializer))
+            if (TryBuildStructConstructorExpression(structNode, lowerCTypeRef(payloadType), arguments, out var initializer))
             {
                 return initializer;
             }
@@ -45,7 +45,7 @@ internal sealed class StructValueBuilder(
 
     public CExpression BuildStructConstructorExpression(
         StructNode structNode,
-        string loweredStructType,
+        CTypeRef loweredStructType,
         IReadOnlyList<ExpressionNode> arguments)
     {
         return TryBuildStructConstructorExpression(structNode, loweredStructType, arguments, out var initializer)
@@ -57,11 +57,15 @@ internal sealed class StructValueBuilder(
         StructNode structNode,
         IReadOnlyList<ExpressionNode> arguments,
         out CExpression initializer) =>
-        TryBuildStructConstructorExpression(structNode, lowerCxType(structNode.Name), arguments, out initializer);
+        TryBuildStructConstructorExpression(
+            structNode,
+            lowerCTypeRef(new TypeRef.Named(structNode.Name, [])),
+            arguments,
+            out initializer);
 
     private bool TryBuildStructConstructorExpression(
         StructNode structNode,
-        string loweredStructType,
+        CTypeRef loweredStructType,
         IReadOnlyList<ExpressionNode> arguments,
         out CExpression initializer)
     {
@@ -72,7 +76,7 @@ internal sealed class StructValueBuilder(
         }
 
         initializer = new CInitializerExpression(
-            new CNamedTypeRef(loweredStructType),
+            loweredStructType,
             structNode.Fields
                 .Zip(arguments, (field, argument) => new CInitializerField(field.Name, lowerExpression(argument)))
                 .ToList(),

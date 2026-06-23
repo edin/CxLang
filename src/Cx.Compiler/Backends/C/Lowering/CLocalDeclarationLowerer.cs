@@ -7,30 +7,21 @@ internal sealed class CLocalDeclarationLowerer(CBackendContext backend, Imported
 {
     public CLocalDeclarationStatement LowerLet(LetStatement let)
     {
-        var type = CTypeText.LetStatementTypeText(let);
         return new CLocalDeclarationStatement(
-            CDeclarationLowerer.LowerVariable(backend, let.TypeNode, type, let.Name, let.IsConst, nameLowerer.SelfType),
-            LowerInitializer(let.TypeNode, type, let.Name, let.Initializer));
+            CDeclarationLowerer.LowerVariable(backend, let.TypeNode, let.Name, let.IsConst, nameLowerer.SelfTypeRef),
+            LowerInitializer(let.TypeNode, let.Name, let.Initializer));
     }
 
     public CLocalDeclarationStatement LowerForDeclaration(ForDeclarationInitializerNode declaration) =>
         new(
             LowerForVariable(declaration),
-            LowerInitializer(
-                declaration.TypeNode,
-                CTypeText.ForDeclarationInitializerTypeText(declaration),
-                declaration.Name,
-                declaration.Initializer));
+            LowerInitializer(declaration.TypeNode, declaration.Name, declaration.Initializer));
 
     public CForInitializerNode LowerForInitializer(ForInitializerNode initializer) => initializer switch
     {
         ForDeclarationInitializerNode declaration => new CDeclarationForInitializer(
             LowerForVariable(declaration),
-            LowerInitializer(
-                declaration.TypeNode,
-                CTypeText.ForDeclarationInitializerTypeText(declaration),
-                declaration.Name,
-                declaration.Initializer)),
+            LowerInitializer(declaration.TypeNode, declaration.Name, declaration.Initializer)),
         ForExpressionInitializerNode expression => new CExpressionForInitializer(
             nameLowerer.LowerExpression(expression.Expression)),
         _ => new CEmptyForInitializer(),
@@ -40,19 +31,18 @@ internal sealed class CLocalDeclarationLowerer(CBackendContext backend, Imported
         CDeclarationLowerer.LowerVariable(
             backend,
             declaration.TypeNode,
-            CTypeText.ForDeclarationInitializerTypeText(declaration),
             declaration.Name,
             declaration.IsConst,
-            nameLowerer.SelfType);
+            nameLowerer.SelfTypeRef);
 
     private CExpression? LowerInitializer(
         TypeNode? typeNode,
-        string fallbackType,
         string name,
         ExpressionNode? initializer) =>
         initializer is null
             ? null
             : nameLowerer.LowerInitializerExpression(
-                CDeclarationLowerer.ResolveInitializerTargetType(typeNode, fallbackType, name),
+                CDeclarationLowerer.ResolveInitializerTargetType(typeNode, name),
                 initializer);
+
 }

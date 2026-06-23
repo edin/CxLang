@@ -23,10 +23,9 @@ internal sealed class CLoweringScope(
             variableTypes,
             new Dictionary<string, ImplicitReferenceLocal>(StringComparer.Ordinal));
 
-    public CLoweringScope ForFunction(FunctionNode function, string? selfType, string? selfApiType = null)
+    public CLoweringScope ForFunction(FunctionNode function, TypeRef? selfType, TypeRef? selfApiType = null)
     {
-        var scopeSelfType = selfApiType ?? selfType;
-        var scopeSelfTypeRef = ParseTypeOrNull(scopeSelfType);
+        var scopeSelfTypeRef = selfApiType ?? selfType;
         var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
         var locals = function.Parameters
             .Where(parameter => !parameter.IsVariadic)
@@ -145,17 +144,6 @@ internal sealed class CLoweringScope(
         selfType is null
             ? type
             : TypeRefRewriter.SubstituteSelf(type, selfType);
-
-    private TypeRef? ParseTypeOrNull(string? type)
-    {
-        if (string.IsNullOrWhiteSpace(type))
-        {
-            return null;
-        }
-
-        var parsed = TypeRefParser.Parse(type);
-        return parsed is TypeRef.Unknown ? null : parsed;
-    }
 
     private static bool IsUnknown(TypeRef type) =>
         type is TypeRef.Unknown;

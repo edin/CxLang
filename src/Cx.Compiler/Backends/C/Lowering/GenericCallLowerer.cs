@@ -14,7 +14,7 @@ internal sealed class GenericCallLowerer(
     StructValueBuilder structValueBuilder,
     AdapterExposeResolver adapterExposeResolver,
     Func<string, string> lowerName,
-    Func<string, string> lowerType,
+    Func<TypeRef, string> lowerTypeRef,
     Func<ExpressionNode, CExpression> lowerExpression)
 {
     public CExpression? TryLower(GenericCallExpressionNode call)
@@ -44,13 +44,13 @@ internal sealed class GenericCallLowerer(
                 call.Arguments.Select(lowerExpression).ToList());
         }
 
-        var loweredGenericType = lowerType($"{calleeName}<{string.Join(", ", typeArguments)}>");
+        var loweredGenericType = LowerGenericTypeName(calleeName, call.TypeArgumentNodes);
         if (context.TryGetStruct(calleeName, out var structNode)
             || context.TryGetStruct(loweredGenericType, out structNode))
         {
             return structValueBuilder.BuildStructConstructorExpression(
                 structNode,
-                loweredGenericType,
+                new CNamedTypeRef(loweredGenericType),
                 call.Arguments);
         }
 
@@ -94,6 +94,15 @@ internal sealed class GenericCallLowerer(
         var type = scope.ResolveType(typeNode);
         return type is null ? null : TypeRefFormatter.ToCxString(type);
     }
+
+    private string LowerGenericTypeName(string calleeName, IReadOnlyList<TypeNode> typeArgumentNodes) =>
+        lowerTypeRef(new TypeRef.Named(
+            calleeName,
+            typeArgumentNodes
+                .Select(typeNode => scope.ResolveType(typeNode))
+                .Where(type => type is not null)
+                .Select(type => type!)
+                .ToList()));
 
     private static bool TrySplitQualifiedMember(string text, out string ownerName, out string memberName)
     {

@@ -7,7 +7,6 @@ namespace Cx.Compiler;
 internal sealed class TaggedUnionValueBuilder(
     CLoweringContext context,
     Func<ExpressionNode, TypeRef?> inferExpressionTypeRef,
-    Func<string, string> lowerCxType,
     Func<TypeRef, string> lowerTypeRef,
     Func<TypeRef, CTypeRef> lowerCTypeRef)
 {
@@ -25,7 +24,7 @@ internal sealed class TaggedUnionValueBuilder(
         }
 
         return BuildInitializer(
-            new CNamedTypeRef(lowerCxType(taggedUnion.Name)),
+            lowerCTypeRef(new TypeRef.Named(taggedUnion.Name, [])),
             taggedUnion.Name,
             variant.Name,
             buildPayload(variantType, arguments));

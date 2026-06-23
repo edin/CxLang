@@ -12,10 +12,7 @@ internal static class CTaggedUnionDeclarationBuilder
             taggedUnion.Variants
                 .Select(variant =>
                 {
-                    var variantType = CDeclarationLowerer.ResolveDeclarationType(
-                        variant.TypeNode,
-                        CTypeText.TaggedUnionVariantTypeText(variant),
-                        variant.Name);
+                    var variantType = CDeclarationLowerer.ResolveDeclarationType(variant.TypeNode, variant.Name);
                     return new CTaggedUnionVariantDeclaration(
                         variant.Name,
                         CDeclarationLowerer.LowerFieldType(backend, variantType),

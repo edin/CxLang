@@ -186,6 +186,27 @@ internal static class CTypeLowerer
         return compositeTypeNames.Contains(loweredType);
     }
 
+    public static bool ReferencesCompositeType(
+        TypeRef type,
+        IReadOnlySet<string> compositeTypeNames,
+        IReadOnlyList<TypeAdapterNode> typeAdapters)
+    {
+        if (type is TypeRef.Function function)
+        {
+            return function.Parameters.Any(parameter => ReferencesCompositeType(parameter, compositeTypeNames, typeAdapters))
+                || ReferencesCompositeType(function.ReturnType, compositeTypeNames, typeAdapters);
+        }
+
+        var loweredType = LowerType(type, typeAdapters).TrimEnd('*');
+        var arrayStart = loweredType.IndexOf('[', StringComparison.Ordinal);
+        if (arrayStart >= 0)
+        {
+            loweredType = loweredType[..arrayStart];
+        }
+
+        return compositeTypeNames.Contains(loweredType);
+    }
+
     public static string SanitizeTypeName(string type) =>
         type
             .Replace("*", "_ptr", StringComparison.Ordinal)

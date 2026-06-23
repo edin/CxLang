@@ -1,5 +1,5 @@
-using System.Text.RegularExpressions;
 using Cx.Compiler.C;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -105,11 +105,11 @@ internal static class CDeclarationUsageAnalyzer
         }
     }
 
-    private static IEnumerable<string> EnumerateTypeReferences(ProgramNode program)
+    private static IEnumerable<TypeRef> EnumerateTypeReferences(ProgramNode program)
     {
         foreach (var global in program.GlobalVariables.Where(global => !global.IsHeaderDeclaration))
         {
-            yield return CTypeText.GlobalVariableTypeText(global);
+            yield return ResolveDeclarationType(global.TypeNode, global.Name);
             foreach (var type in EnumerateExpressionTypeReferences(global.Initializer))
             {
                 yield return type;
@@ -118,15 +118,15 @@ internal static class CDeclarationUsageAnalyzer
 
         foreach (var typeAlias in program.TypeAliases.Where(typeAlias => !typeAlias.IsHeaderDeclaration))
         {
-            yield return CTypeText.TypeAliasTargetTypeText(typeAlias);
+            yield return ResolveTypeAliasType(typeAlias);
         }
 
         foreach (var function in program.Functions)
         {
-            yield return CTypeText.FunctionReturnTypeText(function);
+            yield return ResolveDeclarationType(function.ReturnTypeNode, "return");
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
-                yield return CTypeText.ParameterTypeText(parameter);
+                yield return ResolveDeclarationType(parameter.TypeNode, parameter.Name);
             }
 
             foreach (var type in EnumerateStatementTypeReferences(function.Body))
@@ -139,7 +139,7 @@ internal static class CDeclarationUsageAnalyzer
         {
             foreach (var field in structNode.Fields)
             {
-                yield return CTypeText.StructFieldTypeText(field);
+                yield return ResolveDeclarationType(field.TypeNode, field.Name);
             }
         }
 
@@ -147,19 +147,19 @@ internal static class CDeclarationUsageAnalyzer
         {
             foreach (var variant in taggedUnion.Variants)
             {
-                yield return CTypeText.TaggedUnionVariantTypeText(variant);
+                yield return ResolveDeclarationType(variant.TypeNode, variant.Name);
             }
         }
     }
 
-    private static IEnumerable<string> EnumerateStatementTypeReferences(IEnumerable<StatementNode> statements)
+    private static IEnumerable<TypeRef> EnumerateStatementTypeReferences(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
             switch (statement)
             {
                 case LetStatement letStatement:
-                    yield return CTypeText.LetStatementTypeText(letStatement);
+                    yield return ResolveDeclarationType(letStatement.TypeNode, letStatement.Name);
                     foreach (var type in EnumerateExpressionTypeReferences(letStatement.Initializer))
                     {
                         yield return type;
@@ -238,14 +238,14 @@ internal static class CDeclarationUsageAnalyzer
         }
     }
 
-    private static IEnumerable<string> EnumerateForInitializerTypeReferences(ForInitializerNode? initializer) => initializer switch
+    private static IEnumerable<TypeRef> EnumerateForInitializerTypeReferences(ForInitializerNode? initializer) => initializer switch
     {
-        ForDeclarationInitializerNode declaration => [CTypeText.ForDeclarationInitializerTypeText(declaration), .. EnumerateExpressionTypeReferences(declaration.Initializer)],
+        ForDeclarationInitializerNode declaration => [ResolveDeclarationType(declaration.TypeNode, declaration.Name), .. EnumerateExpressionTypeReferences(declaration.Initializer)],
         ForExpressionInitializerNode expression => EnumerateExpressionTypeReferences(expression.Expression),
         _ => [],
     };
 
-    private static IEnumerable<string> EnumerateExpressionTypeReferences(ExpressionNode? expression)
+    private static IEnumerable<TypeRef> EnumerateExpressionTypeReferences(ExpressionNode? expression)
     {
         if (expression is null)
         {
@@ -257,42 +257,70 @@ internal static class CDeclarationUsageAnalyzer
             switch (node)
             {
                 case CastExpressionNode cast:
-                    yield return CTypeText.CastExpressionTargetTypeText(cast);
+                    yield return ResolveTypeExpression(cast.TargetTypeNode);
                     break;
                 case InitializerExpressionNode { TypeNameNode: not null } initializer:
-                    yield return CTypeText.InitializerExpressionTypeNameText(initializer);
+                    yield return ResolveTypeExpression(initializer.TypeNameNode);
                     break;
                 case SizeOfExpressionNode { TypeOperandNode: not null } sizeOf:
-                    yield return CTypeText.SizeOfExpressionTypeOperandText(sizeOf);
+                    yield return ResolveTypeExpression(sizeOf.TypeOperandNode);
                     break;
             }
         }
     }
 
-    private static IEnumerable<string> ExtractTypeNames(string type)
+    private static IEnumerable<string> ExtractTypeNames(TypeRef type)
     {
-        type = NormalizeTypeReferenceText(type);
-        foreach (Match match in Regex.Matches(type, @"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?"))
+        type = TypeRefFacts.UnwrapAlias(type);
+        switch (type)
         {
-            var name = match.Value;
-            if (!IsTypeReferenceKeyword(name))
-            {
-                yield return name;
-            }
+            case TypeRef.Named named:
+                if (!IsTypeReferenceKeyword(named.Name))
+                {
+                    yield return named.Name;
+                }
+                foreach (var argumentName in named.Arguments.SelectMany(ExtractTypeNames))
+                {
+                    yield return argumentName;
+                }
+                break;
+            case TypeRef.Pointer pointer:
+                foreach (var name in ExtractTypeNames(pointer.Element))
+                {
+                    yield return name;
+                }
+                break;
+            case TypeRef.FixedArray fixedArray:
+                foreach (var name in ExtractTypeNames(fixedArray.Element))
+                {
+                    yield return name;
+                }
+                break;
+            case TypeRef.Function function:
+                foreach (var name in function.Parameters.SelectMany(ExtractTypeNames))
+                {
+                    yield return name;
+                }
+                foreach (var name in ExtractTypeNames(function.ReturnType))
+                {
+                    yield return name;
+                }
+                break;
         }
     }
 
-    private static string NormalizeTypeReferenceText(string type) =>
-        type
-            .Replace("*", " ", StringComparison.Ordinal)
-            .Replace("[", " ", StringComparison.Ordinal)
-            .Replace("]", " ", StringComparison.Ordinal)
-            .Replace("(", " ", StringComparison.Ordinal)
-            .Replace(")", " ", StringComparison.Ordinal)
-            .Replace(",", " ", StringComparison.Ordinal)
-            .Replace("->", " ", StringComparison.Ordinal)
-            .Replace("<", " ", StringComparison.Ordinal)
-            .Replace(">", " ", StringComparison.Ordinal);
+    private static TypeRef ResolveTypeAliasType(TypeAliasNode typeAlias) =>
+        typeAlias.TargetTypeNode?.Semantic.Type is { } type && type is not TypeRef.Unknown
+            ? type
+            : throw CEmissionGuards.UnresolvedTypeAlias(typeAlias);
+
+    private static TypeRef ResolveDeclarationType(TypeNode? typeNode, string name) =>
+        CDeclarationLowerer.ResolveDeclarationType(typeNode, name);
+
+    private static TypeRef ResolveTypeExpression(TypeNode? typeNode) =>
+        typeNode?.Semantic.Type is { } type && type is not TypeRef.Unknown
+            ? type
+            : throw CEmissionGuards.UnresolvedTypeExpression(typeNode);
 
     private static bool IsTypeReferenceKeyword(string name) =>
         name is
