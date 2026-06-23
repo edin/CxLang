@@ -3,16 +3,13 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
-public sealed partial class CEmitter
+internal sealed class CallExpressionLowerer(
+    CallLowerer callLowerer,
+    GenericCallLowerer genericCallLowerer)
 {
-    private sealed class CallExpressionLowerer(
-        CallLowerer callLowerer,
-        GenericCallLowerer genericCallLowerer)
-    {
-        public CExpression? TryLower(CallExpressionNode call) =>
-            callLowerer.TryLowerExpression(call);
+    public CExpression? TryLower(CallExpressionNode call) =>
+        callLowerer.TryLowerExpression(call);
 
-        public CExpression? TryLower(GenericCallExpressionNode call) =>
-            genericCallLowerer.TryLower(call);
-    }
+    public CExpression? TryLower(GenericCallExpressionNode call) =>
+        genericCallLowerer.TryLower(call);
 }

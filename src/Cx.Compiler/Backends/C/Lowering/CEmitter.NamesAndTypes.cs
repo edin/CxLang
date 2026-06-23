@@ -34,26 +34,34 @@ public sealed partial class CEmitter
     private static string LowerType(CBackendContext backend, string type, string? selfType = null)
         => backend.AbiNames.LowerType(type, selfType);
 
-    private static string ResolveAdapterStorageType(CBackendContext backend, string type)
-        => CTypeLowerer.ResolveAdapterStorageType(type, backend.TypeAdapters);
+    private static string? ResolveSelfType(CBackendContext backend, FunctionNode function) =>
+        ResolveSelfTypeRef(backend, function) is { } selfType
+            ? TypeRefFormatter.ToCxString(selfType)
+            : null;
 
-    private static string? ResolveSelfType(CBackendContext backend, FunctionNode function)
+    private static TypeRef? ResolveSelfTypeRef(CBackendContext backend, FunctionNode function)
     {
         var ownerTypeRef = FunctionOwnerTypeRef(function);
-        if (ownerTypeRef is null || FunctionOwnerTypeText(function) is not { } ownerType)
+        if (ownerTypeRef is null)
         {
             return null;
         }
 
-        var typeArguments = FunctionTypeArgumentTexts(function);
-        if (typeArguments.Count > 0)
+        var typeArgumentRefs = FunctionTypeArguments(function);
+        if (typeArgumentRefs.Count > 0)
         {
-            return ResolveAdapterStorageType(backend, $"{ownerType}<{string.Join(",", typeArguments)}>");
+            return CTypeLowerer.ResolveAdapterStorageType(
+                new TypeRef.Named(TypeRefFacts.GetBaseName(ownerTypeRef) ?? TypeRefFormatter.ToCxString(ownerTypeRef), typeArgumentRefs),
+                backend.TypeAdapters);
         }
 
         if (function.TypeParameters.Count > 0 && !HasGenericArguments(ownerTypeRef))
         {
-            return ResolveAdapterStorageType(backend, $"{ownerType}<{string.Join(",", function.TypeParameters)}>");
+            return CTypeLowerer.ResolveAdapterStorageType(
+                new TypeRef.Named(
+                    TypeRefFacts.GetBaseName(ownerTypeRef) ?? TypeRefFormatter.ToCxString(ownerTypeRef),
+                    function.TypeParameters.Select(parameter => new TypeRef.Named(parameter, []) as TypeRef).ToList()),
+                backend.TypeAdapters);
         }
 
         var selfParameter = function.Parameters.FirstOrDefault(parameter => parameter.Name == "self");
@@ -61,7 +69,7 @@ public sealed partial class CEmitter
             && selfParameterTypeNode.Semantic.Type is { } selfParameterType
             && !ReferencesSelf(selfParameterType))
         {
-            return NormalizeType(TypeRefFormatter.ToCxString(selfParameterType));
+            return TypeRefFacts.StripPointer(selfParameterType);
         }
 
         if (selfParameter?.TypeNode is { } fallbackSelfParameterTypeNode
@@ -70,10 +78,10 @@ public sealed partial class CEmitter
             && fallbackSelfParameterType is not TypeRef.Unknown
             && !ReferencesSelf(fallbackSelfParameterType))
         {
-            return NormalizeType(TypeRefFormatter.ToCxString(fallbackSelfParameterType));
+            return TypeRefFacts.StripPointer(fallbackSelfParameterType);
         }
 
-        return ResolveAdapterStorageType(backend, ownerType);
+        return CTypeLowerer.ResolveAdapterStorageType(ownerTypeRef, backend.TypeAdapters);
     }
 
     private static string? ResolveSelfApiType(FunctionNode function)
@@ -97,6 +105,12 @@ public sealed partial class CEmitter
 
     private static bool HasGenericArguments(TypeRef type) =>
         TypeRefFacts.TryGetGenericArguments(type, out _);
+
+    private static IReadOnlyList<TypeRef> FunctionTypeArguments(FunctionNode function) =>
+        (function.TypeArgumentNodes ?? [])
+            .Select(typeArgument => typeArgument.Semantic.Type
+                ?? throw CEmissionGuards.UnresolvedTypeExpression(typeArgument))
+            .ToList();
 
     private static string NormalizeType(string type) => CTypeLowerer.NormalizeType(type);
 

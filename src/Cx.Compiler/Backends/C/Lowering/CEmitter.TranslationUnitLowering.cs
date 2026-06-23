@@ -80,7 +80,7 @@ public sealed partial class CEmitter
             items.Add(new CBlankLine());
         }
 
-        var interfaceImplementations = GetInterfaceImplementations(emitProgram, structsToEmit);
+        var interfaceImplementations = CInterfaceImplementationCollector.Collect(emitProgram, structsToEmit);
         if (emitProgram.Interfaces.Count > 0)
         {
             items.Add(ToCTypeIdEnum(backend, interfaceImplementations));

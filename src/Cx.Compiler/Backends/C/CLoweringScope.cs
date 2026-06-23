@@ -26,12 +26,13 @@ internal sealed class CLoweringScope(
     public CLoweringScope ForFunction(FunctionNode function, string? selfType, string? selfApiType = null)
     {
         var scopeSelfType = selfApiType ?? selfType;
+        var scopeSelfTypeRef = ParseTypeOrNull(scopeSelfType);
         var variableTypes = VariableTypes.ToDictionary(StringComparer.Ordinal);
         var locals = function.Parameters
             .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => (parameter.Name, Type: SubstituteSelf(parameter.TypeNode.ToTypeRef(TypeRefParser), scopeSelfType)))
+            .Select(parameter => (parameter.Name, Type: SubstituteSelf(parameter.TypeNode.ToTypeRef(TypeRefParser), scopeSelfTypeRef)))
             .Concat(CollectLocalVariableTypes(function.Body)
-                .Select(statement => (statement.Name, Type: SubstituteSelf(statement.TypeRef, scopeSelfType))))
+                .Select(statement => (statement.Name, Type: SubstituteSelf(statement.TypeRef, scopeSelfTypeRef))))
             .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !IsUnknown(item.Type))
             .GroupBy(item => item.Name, StringComparer.Ordinal)
             .Select(group => (group.Key, Type: group.First().Type))
@@ -140,10 +141,21 @@ internal sealed class CLoweringScope(
         }
     }
 
-    private TypeRef SubstituteSelf(TypeRef type, string? selfType) =>
-        string.IsNullOrWhiteSpace(selfType)
+    private TypeRef SubstituteSelf(TypeRef type, TypeRef? selfType) =>
+        selfType is null
             ? type
-            : TypeRefRewriter.SubstituteSelf(type, TypeRefParser.Parse(selfType));
+            : TypeRefRewriter.SubstituteSelf(type, selfType);
+
+    private TypeRef? ParseTypeOrNull(string? type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return null;
+        }
+
+        var parsed = TypeRefParser.Parse(type);
+        return parsed is TypeRef.Unknown ? null : parsed;
+    }
 
     private static bool IsUnknown(TypeRef type) =>
         type is TypeRef.Unknown;

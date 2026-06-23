@@ -106,24 +106,6 @@ public sealed partial class CEmitter
             GetInterfaceVTableInstanceName(backend, implementation.Struct.Name, implementation.Interface.Name),
             IsConst: true));
 
-    private static IReadOnlyList<InterfaceImplementation> GetInterfaceImplementations(
-        ProgramNode program,
-        IReadOnlyList<StructNode> structs)
-    {
-        var interfaces = program.Interfaces.ToDictionary(interfaceNode => interfaceNode.Name, StringComparer.Ordinal);
-        return structs
-            .Where(structNode => !structNode.IsHeaderDeclaration)
-            .SelectMany(structNode => structNode.Requirements
-                .Select(requirement => interfaces.TryGetValue(requirement.Name, out var interfaceNode)
-                    ? new InterfaceImplementation(structNode, interfaceNode)
-                    : null)
-                .Where(implementation => implementation is not null)
-                .Cast<InterfaceImplementation>())
-            .GroupBy(implementation => (implementation.Struct.Name, implementation.Interface.Name))
-            .Select(group => group.First())
-            .ToList();
-    }
-
     private static string GetInterfaceVTableName(CBackendContext backend, string interfaceName) =>
         backend.AbiNames.InterfaceVTableName(interfaceName);
 
@@ -132,6 +114,4 @@ public sealed partial class CEmitter
 
     private static string GetTypeIdName(CBackendContext backend, string typeName) =>
         backend.AbiNames.TypeIdName(typeName);
-
-    private sealed record InterfaceImplementation(StructNode Struct, InterfaceNode Interface);
 }
