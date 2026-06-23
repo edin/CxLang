@@ -89,21 +89,21 @@ internal sealed class MemberCallLowerer(
     public CExpression? TryLowerAdapterExposeCall(
         AdapterExposeInfo adapterExpose,
         IReadOnlyList<string> receiverArguments,
+        IReadOnlyList<TypeRef> receiverArgumentRefs,
         IReadOnlyList<ExpressionNode> arguments,
         string target,
         bool isPointer)
     {
-        var resolvedExpose = adapterExposeResolver.Resolve(adapterExpose, receiverArguments);
+        var resolvedExpose = adapterExposeResolver.Resolve(adapterExpose, receiverArguments, receiverArgumentRefs);
         var baseOwner = resolvedExpose.BaseOwner;
         var typeArguments = resolvedExpose.TypeArguments;
         var typeArgumentRefs = resolvedExpose.TypeArgumentRefs;
-        var restoredBaseType = genericCallResolver.RestoreSourceGenericType(resolvedExpose.BaseType);
         if (typeArguments.Count == 0
-            && CTypeLowerer.TryParseGenericUse(restoredBaseType, out var restoredOwner, out var restoredArguments))
+            && genericCallResolver.TryRestoreSourceGenericType(resolvedExpose.BaseType, out var restoredBaseType))
         {
-            baseOwner = restoredOwner;
-            typeArguments = restoredArguments;
-            typeArgumentRefs = context.ParseTypeArguments(restoredArguments);
+            baseOwner = restoredBaseType.OwnerType;
+            typeArguments = restoredBaseType.TypeArguments;
+            typeArgumentRefs = restoredBaseType.TypeArgumentRefs;
         }
 
         var genericBaseCall = genericCallResolver.FindInferredCall(
@@ -182,6 +182,7 @@ internal sealed class MemberCallLowerer(
             && TryLowerAdapterExposeCall(
                 adapterExpose,
                 receiverArguments,
+                targetType.TypeArgumentRefs,
                 arguments,
                 target,
                 isPointer) is { } adapterExposeCall)

@@ -8,7 +8,7 @@ internal sealed record CLoweringContext(
     IReadOnlyDictionary<string, string> SymbolAliases,
     IReadOnlyList<string> ModuleQualifiers,
     IReadOnlyDictionary<string, string> MethodNames,
-    IReadOnlyDictionary<string, string> MethodReceiverTypes,
+    IReadOnlyDictionary<string, TypeRef> MethodReceiverTypes,
     IReadOnlyDictionary<string, bool> MethodTakesPointerSelf,
     IReadOnlyList<GenericCallInfo> GenericCalls,
     IReadOnlySet<string> GenericMacroNames,
@@ -19,8 +19,8 @@ internal sealed record CLoweringContext(
     IReadOnlyDictionary<string, TaggedUnionNode> TaggedUnions,
     IReadOnlyDictionary<string, string> TagAliases,
     IReadOnlyDictionary<string, string> EnumMemberAliases,
-    IReadOnlyDictionary<string, string> TypeAliases,
     IReadOnlyDictionary<string, AdapterExposeInfo> AdapterExposes,
+    IReadOnlyList<TypeAdapterNode> TypeAdapters,
     TypeRefParser TypeRefParser)
 {
     public bool IsGenericMacro(string name) =>
@@ -81,7 +81,8 @@ internal sealed record CLoweringContext(
             .Where(method =>
                 !StaticMethodNames.Contains(method.Key)
                 && (method.Key.StartsWith(receiverType + ".", StringComparison.Ordinal)
-                    || MethodReceiverTypes.GetValueOrDefault(method.Key) == receiverType))
+                    || (MethodReceiverTypes.TryGetValue(method.Key, out var methodReceiverType)
+                        && ReceiverMatches(methodReceiverType, receiverType))))
             .Select(method => CreateMethodInfo(method.Key, method.Value));
 
     public IEnumerable<CLoweringMethodInfo> GetMethods() =>
@@ -218,20 +219,6 @@ internal sealed record CLoweringContext(
     public IEnumerable<(string Source, string Target)> GetEnumMemberAliases() =>
         EnumMemberAliases.Select(alias => (alias.Key, alias.Value));
 
-    public string ResolveTypeAlias(string type)
-    {
-        var isPointer = type.EndsWith("*", StringComparison.Ordinal);
-        var coreType = isPointer ? type.TrimEnd('*').TrimEnd() : type;
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        while (TypeAliases.TryGetValue(coreType, out var targetType) && seen.Add(coreType))
-        {
-            coreType = targetType;
-        }
-
-        return isPointer ? coreType + "*" : coreType;
-    }
-
     public static CLoweringContext Create(
         ProgramNode program,
         IReadOnlyList<StructNode> concreteStructs,
@@ -260,9 +247,9 @@ internal sealed record CLoweringContext(
                 .Where(function => (function.TypeArgumentNodes ?? []).Count == 0)
                 .ToDictionary(
                     function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
-                    function => CTypeLowerer.NormalizeType(TypeText(
-                        SubstituteSelf(function.Parameters.FirstOrDefault()?.TypeNode.ToTypeRef(typeRefParser) ?? new TypeRef.Unknown(),
-                            ResolveSelfTypeRef(function, typeRefParser, backend)))),
+                    function => TypeRefFacts.StripPointer(SubstituteSelf(
+                        function.Parameters.FirstOrDefault()?.TypeNode.ToTypeRef(typeRefParser) ?? new TypeRef.Unknown(),
+                        ResolveSelfTypeRef(function, typeRefParser, backend))),
                     StringComparer.Ordinal),
             program.Functions
                 .Where(function => function.OwnerTypeNode is not null)
@@ -314,9 +301,6 @@ internal sealed record CLoweringContext(
                     Target = member.Name,
                 }))
                 .ToDictionary(item => item.Source, item => item.Target, StringComparer.Ordinal),
-            program.TypeAliases
-                .GroupBy(typeAlias => typeAlias.Name, StringComparer.Ordinal)
-                .ToDictionary(group => group.Key, group => TypeText(group.Last().TargetTypeNode, typeRefParser), StringComparer.Ordinal),
             program.TypeAdapters
                 .SelectMany(adapter => adapter.ExposedMethods.Select(expose => new AdapterExposeInfo(
                     adapter.Name,
@@ -327,6 +311,7 @@ internal sealed record CLoweringContext(
                     expose.ExposedName)))
                 .GroupBy(expose => $"{expose.AdapterName}.{expose.ExposedName}", StringComparer.Ordinal)
                 .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal),
+            backend.TypeAdapters,
             typeRefParser);
     }
 
@@ -413,9 +398,16 @@ internal sealed record CLoweringContext(
             key,
             key[(key.LastIndexOf('.') + 1)..],
             cName,
-            MethodReceiverTypes.GetValueOrDefault(key),
+            MethodReceiverTypes.TryGetValue(key, out var receiverType) ? ReceiverLookupName(receiverType) : null,
             MethodTakesPointerSelf.GetValueOrDefault(key),
             StaticMethodNames.Contains(key));
+
+    private bool ReceiverMatches(TypeRef methodReceiverType, string candidate) =>
+        ReceiverLookupName(methodReceiverType) == candidate
+        || CTypeLowerer.LowerType(methodReceiverType, TypeAdapters) == candidate;
+
+    private static string ReceiverLookupName(TypeRef type) =>
+        TypeRefFormatter.ToCxString(TypeRefFacts.StripPointer(TypeRefFacts.UnwrapAlias(type)));
 
     private static string UnqualifiedTypeName(string name)
     {

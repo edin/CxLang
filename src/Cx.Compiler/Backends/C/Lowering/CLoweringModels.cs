@@ -31,6 +31,12 @@ internal sealed record GenericCallInfo(
     bool TakesPointerSelf,
     bool IsStatic);
 
+internal sealed record RestoredGenericType(
+    string SourceType,
+    string OwnerType,
+    IReadOnlyList<string> TypeArguments,
+    IReadOnlyList<TypeRef> TypeArgumentRefs);
+
 internal sealed record InterfaceImplementation(StructNode Struct, InterfaceNode Interface);
 
 internal sealed record CLoweringMethodInfo(

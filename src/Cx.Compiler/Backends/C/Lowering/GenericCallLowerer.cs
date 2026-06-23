@@ -24,7 +24,12 @@ internal sealed class GenericCallLowerer(
             return resolvedCall;
         }
 
-        var typeArguments = TypeTexts(call.TypeArgumentNodes);
+        if (!TryResolveTypeArguments(call.TypeArgumentNodes, out var typeArgumentRefs))
+        {
+            return null;
+        }
+
+        var typeArguments = TypeTexts(typeArgumentRefs);
         if (call.Callee is MemberExpressionNode member
             && memberCallLowerer.TryLowerGenericMember(member, typeArguments, call.Arguments) is { } memberCall)
         {
@@ -44,7 +49,7 @@ internal sealed class GenericCallLowerer(
                 call.Arguments.Select(lowerExpression).ToList());
         }
 
-        var loweredGenericType = LowerGenericTypeName(calleeName, call.TypeArgumentNodes);
+        var loweredGenericType = LowerGenericTypeName(calleeName, typeArgumentRefs);
         if (context.TryGetStruct(calleeName, out var structNode)
             || context.TryGetStruct(loweredGenericType, out structNode))
         {
@@ -54,7 +59,7 @@ internal sealed class GenericCallLowerer(
                 call.Arguments);
         }
 
-        var freeMatch = genericCallResolver.FindFreeExact(calleeName, typeArguments);
+        var freeMatch = genericCallResolver.FindFreeExact(calleeName, typeArguments, typeArgumentRefs);
         if (freeMatch is not null)
         {
             return new CCallExpression(
@@ -62,17 +67,19 @@ internal sealed class GenericCallLowerer(
                 call.Arguments.Select(lowerExpression).ToList());
         }
 
-        var staticMatch = genericCallResolver.FindStaticExact(calleeName, typeArguments);
+        var staticMatch = genericCallResolver.FindStaticExact(calleeName, typeArguments, typeArgumentRefs);
         if (staticMatch is null
             && TrySplitQualifiedMember(calleeName, out var ownerName, out var memberName)
             && context.TryGetAdapterExpose($"{ownerName}.{memberName}", out var staticExpose)
             && staticExpose.IsStatic)
         {
-            var resolvedExpose = adapterExposeResolver.Resolve(staticExpose, typeArguments);
+            var resolvedExpose = adapterExposeResolver.Resolve(staticExpose, typeArguments, typeArgumentRefs);
             staticMatch = genericCallResolver.FindStaticExact(
                 resolvedExpose.BaseOwner,
+                resolvedExpose.BaseTypeRef,
                 resolvedExpose.SourceName,
-                resolvedExpose.TypeArguments);
+                resolvedExpose.TypeArguments,
+                resolvedExpose.TypeArgumentRefs);
         }
 
         return staticMatch is null
@@ -82,27 +89,29 @@ internal sealed class GenericCallLowerer(
                 call.Arguments.Select(lowerExpression).ToList());
     }
 
-    private IReadOnlyList<string> TypeTexts(IReadOnlyList<TypeNode> typeNodes) =>
-        typeNodes
-            .Select(TypeText)
-            .Where(type => !string.IsNullOrWhiteSpace(type))
-            .Select(type => type!)
-            .ToList();
+    private static IReadOnlyList<string> TypeTexts(IReadOnlyList<TypeRef> typeRefs) =>
+        typeRefs.Select(TypeRefFormatter.ToCxString).ToList();
 
-    private string? TypeText(TypeNode? typeNode)
+    private bool TryResolveTypeArguments(IReadOnlyList<TypeNode> typeNodes, out IReadOnlyList<TypeRef> typeRefs)
     {
-        var type = scope.ResolveType(typeNode);
-        return type is null ? null : TypeRefFormatter.ToCxString(type);
+        var resolved = new List<TypeRef>();
+        foreach (var typeNode in typeNodes)
+        {
+            if (scope.ResolveType(typeNode) is not { } type)
+            {
+                typeRefs = [];
+                return false;
+            }
+
+            resolved.Add(type);
+        }
+
+        typeRefs = resolved;
+        return true;
     }
 
-    private string LowerGenericTypeName(string calleeName, IReadOnlyList<TypeNode> typeArgumentNodes) =>
-        lowerTypeRef(new TypeRef.Named(
-            calleeName,
-            typeArgumentNodes
-                .Select(typeNode => scope.ResolveType(typeNode))
-                .Where(type => type is not null)
-                .Select(type => type!)
-                .ToList()));
+    private string LowerGenericTypeName(string calleeName, IReadOnlyList<TypeRef> typeArguments) =>
+        lowerTypeRef(new TypeRef.Named(calleeName, typeArguments));
 
     private static bool TrySplitQualifiedMember(string text, out string ownerName, out string memberName)
     {

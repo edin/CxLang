@@ -6,7 +6,7 @@ internal sealed class AdapterExposeResolver(CLoweringContext context)
 {
     private TypeRef SubstituteBaseTypeRef(
         AdapterExposeInfo expose,
-        IReadOnlyList<string> receiverArguments)
+        IReadOnlyList<TypeRef> receiverArguments)
     {
         if (expose.TypeParameters.Count == 0 || expose.TypeParameters.Count != receiverArguments.Count)
         {
@@ -17,22 +17,24 @@ internal sealed class AdapterExposeResolver(CLoweringContext context)
             .Zip(receiverArguments)
             .ToDictionary(
                 pair => pair.First,
-                pair => context.TypeRefParser.Parse(pair.Second),
+                pair => pair.Second,
                 StringComparer.Ordinal);
         return TypeRefRewriter.Substitute(expose.BaseTypeRef, substitutions);
     }
 
     public ResolvedAdapterExpose Resolve(
         AdapterExposeInfo expose,
-        IReadOnlyList<string> receiverArguments)
+        IReadOnlyList<string> receiverArguments,
+        IReadOnlyList<TypeRef> receiverArgumentRefs)
     {
         var current = expose;
         var currentArguments = receiverArguments;
+        var currentArgumentRefs = receiverArgumentRefs;
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         while (true)
         {
-            var baseTypeRef = SubstituteBaseTypeRef(current, currentArguments);
+            var baseTypeRef = SubstituteBaseTypeRef(current, currentArgumentRefs);
             var baseType = TypeRefFormatter.ToCxString(baseTypeRef);
             var baseOwner = TypeRefFacts.GetBaseName(baseTypeRef) ?? baseType;
             var baseArgumentRefs = TypeRefFacts.TryGetGenericArguments(baseTypeRef, out var parsedBaseArguments)
@@ -55,6 +57,7 @@ internal sealed class AdapterExposeResolver(CLoweringContext context)
 
             current = next;
             currentArguments = baseArguments;
+            currentArgumentRefs = baseArgumentRefs;
         }
     }
 
