@@ -52,8 +52,7 @@ public sealed class SemanticAnalyzer(
         var requirementDeclarations = new RequirementDeclarationAnalyzer(
             diagnostics,
             program,
-            _requirementMatcher,
-            TypeText);
+            _requirementMatcher);
         new AttributeSemanticAnalyzer(diagnostics).Analyze(
             program,
             (typeNode, location, inScopeTypeParameters) => AnalyzeType(typeNode, location, program, inScopeTypeParameters));
@@ -222,7 +221,6 @@ public sealed class SemanticAnalyzer(
                 _symbolSuggestions,
                 _currentTypeParameters,
                 _currentGenericConstraints,
-                TypeText,
                 IsKnownTypeName);
 
     private void AnalyzeStatements(

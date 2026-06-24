@@ -41,7 +41,7 @@ internal sealed class ResolvedCallLowerer(
             return null;
         }
 
-        var takesPointerSelf = resolved.TypeArguments.Count > 0
+        var takesPointerSelf = resolved.TypeArgumentRefs.Count > 0
             ? genericCallResolver.FindResolved(resolvedCall)?.TakesPointerSelf
             : context.TryGetMethodTakesPointerSelf($"{ownerType}.{resolved.Function.Name}", out var methodTakesPointerSelf)
                 ? methodTakesPointerSelf
@@ -67,7 +67,7 @@ internal sealed class ResolvedCallLowerer(
 
     private CFunctionReference? ResolveFunctionReference(ResolvedCallInfo resolvedCall)
     {
-        if (resolvedCall.TypeArguments.Count > 0)
+        if (resolvedCall.TypeArgumentRefs.Count > 0)
         {
             var genericCall = genericCallResolver.FindResolved(resolvedCall);
             return genericCall is null

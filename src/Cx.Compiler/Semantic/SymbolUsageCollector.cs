@@ -339,9 +339,9 @@ internal sealed class SymbolUsageCollector
         if (node.Semantic.ResolvedCall is { } call)
         {
             builder.AddFunctionCall(GetFunctionKey(call.Function));
-            foreach (var argument in call.TypeArguments)
+            foreach (var argument in call.TypeArgumentRefs)
             {
-                builder.AddType(argument);
+                builder.AddResolvedType(argument);
             }
         }
 

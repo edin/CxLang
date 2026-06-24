@@ -4,5 +4,5 @@ namespace Cx.Compiler.Semantic;
 
 internal sealed record ResolvedCallInfo(
     FunctionNode Function,
-    IReadOnlyList<string> TypeArguments,
+    IReadOnlyList<TypeRef> TypeArgumentRefs,
     bool IsInstance);

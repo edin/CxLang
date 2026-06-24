@@ -233,7 +233,7 @@ public sealed class ScopeResolverTests
         Assert.Same(get.Semantic.Symbol, call.Semantic.Symbol);
         Assert.NotNull(call.Semantic.ResolvedCall);
         Assert.True(call.Semantic.ResolvedCall.IsInstance);
-        Assert.Equal(["int"], call.Semantic.ResolvedCall.TypeArguments);
+        Assert.Equal(["int"], TypeArgumentTexts(call.Semantic.ResolvedCall.TypeArgumentRefs));
     }
 
     [Fact]
@@ -270,7 +270,7 @@ public sealed class ScopeResolverTests
         Assert.NotNull(call.Semantic.ResolvedCall);
         Assert.Same(add, call.Semantic.ResolvedCall.Function);
         Assert.True(call.Semantic.ResolvedCall.IsInstance);
-        Assert.Equal(["int"], call.Semantic.ResolvedCall.TypeArguments);
+        Assert.Equal(["int"], TypeArgumentTexts(call.Semantic.ResolvedCall.TypeArgumentRefs));
     }
 
     [Fact]
@@ -304,7 +304,7 @@ public sealed class ScopeResolverTests
         Assert.NotNull(call.Semantic.ResolvedCall);
         Assert.Same(create, call.Semantic.ResolvedCall.Function);
         Assert.False(call.Semantic.ResolvedCall.IsInstance);
-        Assert.Equal(["int"], call.Semantic.ResolvedCall.TypeArguments);
+        Assert.Equal(["int"], TypeArgumentTexts(call.Semantic.ResolvedCall.TypeArgumentRefs));
     }
 
     [Fact]
@@ -362,5 +362,8 @@ public sealed class ScopeResolverTests
         Assert.Equal(SymbolKind.Function, member.Semantic.Symbol?.Kind);
         Assert.NotNull(member.Semantic.ResolvedCall);
     }
+
+    private static IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeRef> typeArguments) =>
+        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
 
 }

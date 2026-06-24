@@ -7,17 +7,25 @@ namespace Cx.Compiler.Lowering;
 
 internal static class GenericFunctionSpecializer
 {
-    public static FunctionNode Specialize(FunctionNode function, IReadOnlyList<string> arguments)
+    public static FunctionNode Specialize(
+        FunctionNode function,
+        IReadOnlyList<string> arguments,
+        IReadOnlyList<TypeRef>? argumentRefs = null)
     {
+        var resolvedArgumentRefs = argumentRefs is not null && argumentRefs.Count == arguments.Count
+            ? argumentRefs
+            : arguments.Select(argument => GenericTypeSubstitutionBuilder.ParseType(argument) ?? new TypeRef.Unknown()).ToList();
         var substitutions = function.TypeParameters
             .Zip(arguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-        var typeSubstitutions = GenericTypeSubstitutionBuilder.Build(substitutions);
+        var typeSubstitutions = function.TypeParameters
+            .Zip(resolvedArgumentRefs)
+            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
         var ownerType = function.OwnerTypeNode?.Semantic.Type;
         var selfType = ownerType is not null && arguments.Count > 0
             ? new TypeRef.Named(
                 TypeRefFormatter.ToCxString(ownerType),
-                arguments.Select(argument => GenericTypeSubstitutionBuilder.ParseType(argument) ?? new TypeRef.Unknown()).ToList())
+                resolvedArgumentRefs)
             : ownerType;
         var selfTypeText = selfType is null ? null : TypeRefFormatter.ToCxString(selfType);
         var selfTypeRef = selfType;
@@ -25,7 +33,8 @@ internal static class GenericFunctionSpecializer
         {
             TypeParameters = [],
             TypeArgumentNodes = arguments
-                .Select(argument => CreateTypeArgumentNode(function.Location, argument))
+                .Zip(resolvedArgumentRefs)
+                .Select(pair => CreateTypeArgumentNode(function.Location, pair.First, pair.Second))
                 .ToList(),
             ReturnTypeNode = SubstituteTypeNode(function.ReturnTypeNode, typeSubstitutions, selfTypeRef),
             Parameters = function.Parameters
@@ -41,10 +50,10 @@ internal static class GenericFunctionSpecializer
         return specialized;
     }
 
-    private static TypeNode CreateTypeArgumentNode(Location location, string argument)
+    private static TypeNode CreateTypeArgumentNode(Location location, string argument, TypeRef argumentRef)
     {
         var typeNode = TypeNode.CreateFromText(location, argument);
-        typeNode.Semantic.Type = GenericTypeSubstitutionBuilder.ParseType(argument);
+        typeNode.Semantic.Type = argumentRef;
         return typeNode;
     }
 

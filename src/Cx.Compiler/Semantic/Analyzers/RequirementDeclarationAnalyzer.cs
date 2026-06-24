@@ -7,8 +7,7 @@ namespace Cx.Compiler.Semantic.Analyzers;
 internal sealed class RequirementDeclarationAnalyzer(
     DiagnosticBag diagnostics,
     ProgramNode program,
-    RequirementMatcher requirementMatcher,
-    Func<TypeNode?, string> typeText)
+    RequirementMatcher requirementMatcher)
 {
     public void AnalyzeGenericConstraints(
         IReadOnlyList<string> typeParameters,
@@ -103,7 +102,7 @@ internal sealed class RequirementDeclarationAnalyzer(
             : $"{requirement.Name}<{string.Join(", ", TypeArguments(requirement.TypeArgumentNodes))}>";
 
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(typeText).ToList();
+        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
 
     private static string GetStructSelfType(StructNode structNode) =>
         structNode.TypeParameters.Count == 0

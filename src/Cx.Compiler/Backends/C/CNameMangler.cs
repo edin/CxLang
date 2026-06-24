@@ -27,7 +27,12 @@ internal sealed class CNameMangler(
     private string TypeArgumentSuffix(IReadOnlyList<TypeNode> arguments) =>
         arguments.Count == 0
             ? string.Empty
-            : "_" + string.Join("_", arguments.Select(TypeText).Select(lowerType).Select(sanitizeTypeName));
+            : "_" + string.Join("_", arguments.Select(TypeArgumentText).Select(lowerType).Select(sanitizeTypeName));
+
+    private static string TypeArgumentText(TypeNode typeNode) =>
+        typeNode.Syntax is { } syntax
+            ? TypeSyntaxFormatter.ToCxString(syntax)
+            : typeNode.TypeName;
 
     private static string TypeText(TypeNode typeNode) =>
         typeNode.Semantic.Type is { } type

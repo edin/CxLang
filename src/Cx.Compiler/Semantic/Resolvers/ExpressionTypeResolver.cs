@@ -626,7 +626,7 @@ internal sealed class ExpressionTypeResolver(
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> typeArgumentNodes) =>
-        typeArgumentNodes.Select(TypeText).ToList();
+        typeArgumentNodes.Select(typeNode => typeNode.ToSourceText()).ToList();
 
     private string TypeText(TypeNode? typeNode) => FormatTypeNode(typeNode, _typeRefParser);
 

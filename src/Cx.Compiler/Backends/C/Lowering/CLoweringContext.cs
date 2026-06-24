@@ -35,7 +35,6 @@ internal sealed record CLoweringContext(
             resolveExpressionType,
             (targetType, sourceType) => typeCompatibility.CanAssign(targetType, sourceType, out _),
             ParseTypeOrNull,
-            ParseTypeArguments,
             function => TypeTextOrNull(function.OwnerTypeNode, TypeRefParser));
     }
 
@@ -49,9 +48,6 @@ internal sealed record CLoweringContext(
         var parsed = TypeRefParser.Parse(type);
         return parsed is TypeRef.Unknown ? null : parsed;
     }
-
-    public IReadOnlyList<TypeRef> ParseTypeArguments(IReadOnlyList<string> typeArguments) =>
-        typeArguments.Select(TypeRefParser.Parse).ToList();
 
     public bool TryGetMethod(string key, out CLoweringMethodInfo method)
     {

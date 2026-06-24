@@ -52,6 +52,7 @@ internal sealed class MemberCallLowerer(
     public CExpression? TryLowerGenericMember(
         MemberExpressionNode member,
         IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef> typeArgumentRefs,
         IReadOnlyList<ExpressionNode> arguments)
     {
         if (resolvedCallLowerer.TryLowerInstance(member.Semantic.ResolvedCall, member, arguments) is { } resolvedInstanceCall)
@@ -71,7 +72,8 @@ internal sealed class MemberCallLowerer(
             targetType.GenericBaseName,
             concreteReceiverType,
             member.MemberName,
-            typeArguments) is not { } genericCall)
+            typeArguments,
+            typeArgumentRefs) is not { } genericCall)
         {
             return null;
         }
@@ -115,8 +117,10 @@ internal sealed class MemberCallLowerer(
             preferredTypeArgumentRefs: typeArgumentRefs)
             ?? genericCallResolver.FindExact(
                 baseOwner,
+                resolvedExpose.BaseTypeRef,
                 resolvedExpose.SourceName,
-                typeArguments);
+                typeArguments,
+                typeArgumentRefs);
         if (genericBaseCall is not null)
         {
             var loweredArguments = arguments.Select(lowerExpression).ToList();
@@ -238,10 +242,14 @@ internal sealed class MemberCallLowerer(
 
     private IEnumerable<CLoweringMethodInfo> GetInstanceMethodsForReceiver(ReceiverTypeInfo targetType)
     {
-        var restoredReceiverType = genericCallResolver.RestoreSourceGenericType(targetType.ReceiverType);
-        var restoredBaseType = CTypeLowerer.TryParseGenericUse(restoredReceiverType, out var restoredBase, out _)
-            ? restoredBase
-            : restoredReceiverType;
+        var restoredReceiverType = targetType.ReceiverType;
+        string? restoredBaseType = null;
+        if (genericCallResolver.TryRestoreSourceGenericType(targetType.ReceiverType, out var restored))
+        {
+            restoredReceiverType = restored.SourceType;
+            restoredBaseType = restored.OwnerType;
+        }
+
         var receiverTypes = new[]
             {
                     targetType.NormalizedType,

@@ -35,9 +35,12 @@ internal static class GenericCallRetargeter
         ExpressionNode expression,
         IReadOnlyDictionary<string, FunctionNode> specializations)
     {
+        var resolvedTypeArguments = expression.Semantic.ResolvedCall is { } call
+            ? TypeArgumentTexts(call.TypeArgumentRefs)
+            : [];
         if (expression.Semantic.ResolvedCall is not { Function.TypeParameters.Count: > 0 } resolved
-            || resolved.TypeArguments.Count != resolved.Function.TypeParameters.Count
-            || !specializations.TryGetValue(Key(resolved.Function, resolved.TypeArguments), out var specialized))
+            || resolved.TypeArgumentRefs.Count != resolved.Function.TypeParameters.Count
+            || !specializations.TryGetValue(Key(resolved.Function, resolvedTypeArguments), out var specialized))
         {
             return;
         }
@@ -46,7 +49,7 @@ internal static class GenericCallRetargeter
         expression.Semantic.Symbol = specialized.Semantic.Symbol;
         expression.Semantic.ResolvedCall = new ResolvedCallInfo(
             specialized,
-            resolved.TypeArguments,
+            resolved.TypeArgumentRefs,
             resolved.IsInstance);
 
         if (expression is CallExpressionNode { Callee: MemberExpressionNode member })
@@ -244,6 +247,9 @@ internal static class GenericCallRetargeter
 
         return $"{functionName}<{string.Join(",", arguments)}>";
     }
+
+    private static IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeRef> typeArguments) =>
+        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
 
     private static string OwnerTypeText(FunctionNode function)
     {

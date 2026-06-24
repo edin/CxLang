@@ -6,7 +6,6 @@ namespace Cx.Compiler;
 
 internal sealed class GenericCallLowerer(
     CLoweringContext context,
-    CLoweringScope scope,
     GenericCallResolver genericCallResolver,
     ResolvedCallLowerer resolvedCallLowerer,
     CFunctionReferenceResolver functionReferences,
@@ -31,7 +30,7 @@ internal sealed class GenericCallLowerer(
 
         var typeArguments = TypeTexts(typeArgumentRefs);
         if (call.Callee is MemberExpressionNode member
-            && memberCallLowerer.TryLowerGenericMember(member, typeArguments, call.Arguments) is { } memberCall)
+            && memberCallLowerer.TryLowerGenericMember(member, typeArguments, typeArgumentRefs, call.Arguments) is { } memberCall)
         {
             return memberCall;
         }
@@ -97,7 +96,8 @@ internal sealed class GenericCallLowerer(
         var resolved = new List<TypeRef>();
         foreach (var typeNode in typeNodes)
         {
-            if (scope.ResolveType(typeNode) is not { } type)
+            var type = context.TypeRefParser.Parse(typeNode.ToSourceText());
+            if (type is TypeRef.Unknown)
             {
                 typeRefs = [];
                 return false;

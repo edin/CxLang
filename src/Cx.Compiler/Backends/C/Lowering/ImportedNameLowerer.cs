@@ -128,7 +128,6 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
             LowerExpression);
         var genericCallLowerer = new GenericCallLowerer(
             _context,
-            _scope,
             _genericCallResolver,
             resolvedCallLowerer,
             functionReferences,

@@ -646,7 +646,7 @@ public sealed class RequirementMatcher
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(TypeText).ToList();
+        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
 
     private string TypeText(TypeNode? typeNode)
     {

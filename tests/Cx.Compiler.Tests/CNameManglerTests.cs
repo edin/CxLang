@@ -35,6 +35,16 @@ public sealed class CNameManglerTests
     }
 
     [Fact]
+    public void FunctionName_UsesGenericArgumentSyntaxForSuffix()
+    {
+        var mangler = CreateMangler();
+        var function = Function(ownerType: null, name: "none", typeArguments: ["u64"]);
+        function.TypeArgumentNodes![0].Semantic.Type = new TypeRef.Named("usize", []);
+
+        Assert.Equal("none_u64", mangler.FunctionName(function));
+    }
+
+    [Fact]
     public void SymbolName_PreservesCurrentSymbolName()
     {
         var mangler = CreateMangler();

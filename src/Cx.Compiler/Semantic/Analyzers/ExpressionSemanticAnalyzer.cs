@@ -14,7 +14,6 @@ internal sealed class ExpressionSemanticAnalyzer(
     SymbolSuggestionService? symbolSuggestions,
     IReadOnlyList<string> currentTypeParameters,
     IReadOnlyList<GenericConstraintNode> currentGenericConstraints,
-    Func<TypeNode?, string> typeText,
     Func<string, bool> isKnownTypeName)
 {
     public void Analyze(
@@ -297,7 +296,7 @@ internal sealed class ExpressionSemanticAnalyzer(
         TypeRefFacts.IsNamed(type, "any");
 
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(typeText).ToList();
+        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
 
     private sealed record CallSignature(
         string Name,

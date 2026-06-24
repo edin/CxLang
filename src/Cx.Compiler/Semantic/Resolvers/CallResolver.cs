@@ -9,6 +9,7 @@ internal sealed record CallResolution(
     bool IsVariadic,
     FunctionNode? Function = null,
     IReadOnlyList<string>? TypeArguments = null,
+    IReadOnlyList<TypeRef>? TypeArgumentRefs = null,
     bool IsInstance = false);
 
 internal sealed class CallResolver(
@@ -293,7 +294,7 @@ internal sealed class CallResolver(
                     : requirement.TypeParameters.Count == 1
                         ? [targetName]
                         : [];
-                var substitutions = BuildTypeSubstitutions(requirement.TypeParameters, arguments);
+                var substitutions = BuildTypeSubstitutionsFromRefs(requirement.TypeParameters, TypeArgumentRefs(arguments));
                 return new CallResolution(
                     $"{targetName}.{memberName}",
                     SubstituteType(
@@ -329,6 +330,7 @@ internal sealed class CallResolver(
             IsVariadic: false,
             function,
             typeArguments,
+            TypeArgumentRefs(typeArguments),
             methodCall.SkipSelf);
     }
 
@@ -342,7 +344,8 @@ internal sealed class CallResolver(
         bool skipSelf,
         bool isInstance)
     {
-        var substitutions = BuildTypeSubstitutions(typeParameters, typeArguments);
+        var typeArgumentRefs = TypeArgumentRefs(typeArguments);
+        var substitutions = BuildTypeSubstitutionsFromRefs(typeParameters, typeArgumentRefs);
         var filteredParameters = parameters
             .Skip(skipSelf ? 1 : 0)
             .ToList();
@@ -357,6 +360,7 @@ internal sealed class CallResolver(
             filteredParameters.Any(parameter => parameter.IsVariadic),
             function,
             typeArguments,
+            typeArgumentRefs,
             isInstance);
     }
 
@@ -524,12 +528,12 @@ internal sealed class CallResolver(
         ?? (typeNode?.Syntax is null ? null : _typeSyntaxConverter.Convert(typeNode))
         ?? Parse(TypeText(typeNode));
 
-    private IReadOnlyDictionary<string, TypeRef> BuildTypeSubstitutions(
+    private static IReadOnlyDictionary<string, TypeRef> BuildTypeSubstitutionsFromRefs(
         IReadOnlyList<string> typeParameters,
-        IReadOnlyList<string> typeArguments) =>
+        IReadOnlyList<TypeRef> typeArguments) =>
         typeParameters.Count == typeArguments.Count
             ? typeParameters.Zip(typeArguments)
-                .ToDictionary(pair => pair.First, pair => Parse(pair.Second), StringComparer.Ordinal)
+                .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal)
             : new Dictionary<string, TypeRef>(StringComparer.Ordinal);
 
     private TypeRef SubstituteType(TypeRef type, IReadOnlyDictionary<string, TypeRef> substitutions) =>
@@ -645,7 +649,10 @@ internal sealed class CallResolver(
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(TypeText).ToList();
+        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
+
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<string> typeArguments) =>
+        typeArguments.Select(argument => Parse(argument)).ToList();
 
     private string TypeText(TypeNode? typeNode)
     {

@@ -14,6 +14,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
     private readonly IReadOnlyList<TypeAdapterNode> _typeAdapters = program.TypeAdapters;
     private readonly ExpressionTypeResolver _resolver = new(program);
     private readonly TypeRefParser _typeRefParser = new(program);
+    private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
 
     public IReadOnlyList<RawGenericUseAuditEntry> RawGenericUseAuditEntries => [];
     public IEnumerable<GenericFunctionUse> Collect(ProgramNode program)
@@ -116,9 +117,12 @@ internal sealed class GenericUseCollector(ProgramNode program)
     private static IEnumerable<GenericFunctionUse> CollectResolvedUse(ExpressionNode expression)
     {
         if (expression.Semantic.ResolvedCall is { Function.TypeParameters.Count: > 0 } resolved
-            && resolved.TypeArguments.Count == resolved.Function.TypeParameters.Count)
+            && resolved.TypeArgumentRefs.Count == resolved.Function.TypeParameters.Count)
         {
-            yield return new GenericFunctionUse(resolved.Function, resolved.TypeArguments);
+            yield return GenericFunctionUse.Create(
+                resolved.Function,
+                TypeArgumentTexts(resolved.TypeArgumentRefs),
+                resolved.TypeArgumentRefs);
         }
     }
 
@@ -145,7 +149,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                             && function.Name == "iterator"
                             && function.TypeParameters.Count == ownerArguments.Count))
                         {
-                            yield return new GenericFunctionUse(iteratorFunction, ownerArguments);
+                            yield return GenericFunctionUse.Create(iteratorFunction, ownerArguments, iterableNamed.Arguments);
 
                             var substitutions = iteratorFunction.TypeParameters
                                 .Zip(iterableNamed.Arguments)
@@ -162,7 +166,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
                                         || function.Name == "value"
                                         || function.Name == "key")))
                                 {
-                                    yield return new GenericFunctionUse(iteratorMember, iteratorArguments);
+                                    yield return GenericFunctionUse.Create(iteratorMember, iteratorArguments, iteratorNamed.Arguments);
                                 }
                             }
                         }
@@ -295,9 +299,15 @@ internal sealed class GenericUseCollector(ProgramNode program)
             && resolved.TypeArguments is { } resolvedTypeArguments
             && resolvedTypeArguments.Count == function.TypeParameters.Count)
         {
-            yield return new GenericFunctionUse(function, resolvedTypeArguments);
+            yield return GenericFunctionUse.Create(
+                function,
+                resolvedTypeArguments,
+                resolved.TypeArgumentRefs);
         }
     }
+
+    private static IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeRef> typeArguments) =>
+        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
 
     private IEnumerable<GenericFunctionUse> FindInferredGenericFunctionUses(
         CallExpressionNode call,
@@ -384,7 +394,10 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 && candidate.TypeParameters.Count == TypeArguments(call.TypeArgumentNodes).Count);
             if (matchedFunction is not null)
             {
-                yield return new GenericFunctionUse(matchedFunction, TypeArguments(call.TypeArgumentNodes));
+                yield return GenericFunctionUse.Create(
+                    matchedFunction,
+                    TypeArguments(call.TypeArgumentNodes),
+                    TypeArgumentRefs(call.TypeArgumentNodes));
             }
 
             yield break;
@@ -410,7 +423,10 @@ internal sealed class GenericUseCollector(ProgramNode program)
                 && function.TypeParameters.Count == TypeArguments(call.TypeArgumentNodes).Count);
             if (staticFunction is not null)
             {
-                yield return new GenericFunctionUse(staticFunction, TypeArguments(call.TypeArgumentNodes));
+                yield return GenericFunctionUse.Create(
+                    staticFunction,
+                    TypeArguments(call.TypeArgumentNodes),
+                    TypeArgumentRefs(call.TypeArgumentNodes));
             }
 
             yield break;
@@ -424,7 +440,10 @@ internal sealed class GenericUseCollector(ProgramNode program)
             && candidate.TypeParameters.Count == TypeArguments(call.TypeArgumentNodes).Count);
         if (matchedMethod is not null)
         {
-            yield return new GenericFunctionUse(matchedMethod, TypeArguments(call.TypeArgumentNodes));
+            yield return GenericFunctionUse.Create(
+                matchedMethod,
+                TypeArguments(call.TypeArgumentNodes),
+                TypeArgumentRefs(call.TypeArgumentNodes));
         }
     }
 
@@ -799,7 +818,15 @@ internal sealed class GenericUseCollector(ProgramNode program)
     }
 
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode>? typeArgumentNodes) =>
-        (typeArgumentNodes ?? []).Select(TypeText).ToList();
+        (typeArgumentNodes ?? []).Select(typeNode => typeNode.ToSourceText()).ToList();
+
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode>? typeArgumentNodes) =>
+        (typeArgumentNodes ?? []).Select(TypeArgumentRef).ToList();
+
+    private TypeRef TypeArgumentRef(TypeNode typeNode) =>
+        typeNode.Syntax is { } syntax
+            ? _typeSyntaxConverter.Convert(syntax)
+            : _typeRefParser.Parse(typeNode.ToSourceText());
 
     private static IReadOnlyList<string> FormatTypeArguments(IReadOnlyList<TypeRef> typeArguments) =>
         typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
@@ -858,7 +885,33 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
 }
 
-internal sealed record GenericFunctionUse(FunctionNode Function, IReadOnlyList<string> TypeArguments);
+internal sealed record GenericFunctionUse(FunctionNode Function, IReadOnlyList<string> TypeArguments)
+{
+    public IReadOnlyList<TypeRef> TypeArgumentRefs { get; init; } = [];
+
+    public static GenericFunctionUse Create(
+        FunctionNode function,
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef>? typeArgumentRefs = null)
+    {
+        var resolvedTypeArgumentRefs = TypeArgumentRefsMatch(typeArguments, typeArgumentRefs)
+            ? typeArgumentRefs!
+            : [];
+        return new(function, typeArguments)
+        {
+            TypeArgumentRefs = resolvedTypeArgumentRefs,
+        };
+    }
+
+    private static bool TypeArgumentRefsMatch(
+        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef>? typeArgumentRefs) =>
+        typeArgumentRefs is not null
+        && typeArgumentRefs.Count == typeArguments.Count
+        && typeArguments
+            .Zip(typeArgumentRefs)
+            .All(pair => string.Equals(pair.First, TypeRefFormatter.ToCxString(pair.Second), StringComparison.Ordinal));
+}
 
 internal readonly record struct GenericFunctionUseKey(string FunctionName, string TypeArguments)
 {

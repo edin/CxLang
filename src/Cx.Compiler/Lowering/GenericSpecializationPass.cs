@@ -39,12 +39,12 @@ internal static class GenericSpecializationPass
             var key = Key(use.Function, use.TypeArguments, typeRefParser);
             if (specializedFunctions.ContainsKey(key)
                 || use.Function.TypeParameters.Count != use.TypeArguments.Count
-                || !IsClosedTypeArgumentList(use.TypeArguments, openTypeParameterNames))
+                || !IsClosedTypeArgumentList(use, openTypeParameterNames))
             {
                 continue;
             }
 
-            var specialized = GenericFunctionSpecializer.Specialize(use.Function, use.TypeArguments);
+            var specialized = GenericFunctionSpecializer.Specialize(use.Function, use.TypeArguments, use.TypeArgumentRefs);
             specializedFunctions.Add(key, specialized);
             foreach (var discovered in collector.Collect(specialized))
             {
@@ -125,9 +125,37 @@ internal static class GenericSpecializationPass
             .ToHashSet(StringComparer.Ordinal);
 
     private static bool IsClosedTypeArgumentList(
+        GenericFunctionUse use,
+        IReadOnlySet<string> openTypeParameterNames) =>
+        use.TypeArgumentRefs.Count == use.TypeArguments.Count
+            ? IsClosedTypeArgumentList(use.TypeArgumentRefs, openTypeParameterNames)
+            : IsClosedTypeArgumentList(use.TypeArguments, openTypeParameterNames);
+
+    private static bool IsClosedTypeArgumentList(
+        IReadOnlyList<TypeRef> typeArguments,
+        IReadOnlySet<string> openTypeParameterNames) =>
+        typeArguments.All(argument => !ContainsOpenTypeParameter(argument, openTypeParameterNames));
+
+    private static bool IsClosedTypeArgumentList(
         IReadOnlyList<string> typeArguments,
         IReadOnlySet<string> openTypeParameterNames) =>
         typeArguments.All(argument => !ContainsOpenTypeParameter(argument, openTypeParameterNames));
+
+    private static bool ContainsOpenTypeParameter(
+        TypeRef type,
+        IReadOnlySet<string> openTypeParameterNames) =>
+        type switch
+        {
+            TypeRef.Named named => openTypeParameterNames.Contains(named.Name)
+                || named.Arguments.Any(argument => ContainsOpenTypeParameter(argument, openTypeParameterNames)),
+            TypeRef.Alias alias => openTypeParameterNames.Contains(alias.Name)
+                || ContainsOpenTypeParameter(alias.Target, openTypeParameterNames),
+            TypeRef.Pointer pointer => ContainsOpenTypeParameter(pointer.Element, openTypeParameterNames),
+            TypeRef.FixedArray fixedArray => ContainsOpenTypeParameter(fixedArray.Element, openTypeParameterNames),
+            TypeRef.Function function => function.Parameters.Any(parameter => ContainsOpenTypeParameter(parameter, openTypeParameterNames))
+                || ContainsOpenTypeParameter(function.ReturnType, openTypeParameterNames),
+            _ => false,
+        };
 
     private static bool ContainsOpenTypeParameter(
         string type,
