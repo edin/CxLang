@@ -59,8 +59,7 @@ public sealed class GenericLoweringServicesTests
         Assert.Equal(["float"], use.TypeArguments);
         var rawUse = Assert.Single(collector.AuditEntries);
         Assert.Equal("raw test", rawUse.Context);
-        Assert.Equal("identity", rawUse.FunctionName);
-        Assert.Equal(["float"], rawUse.TypeArguments);
+        Assert.Equal("identity<float>", rawUse.FunctionSignature);
         Assert.Equal("explicit type argument call", rawUse.Reason);
     }
 

@@ -44,7 +44,7 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
                     }
 
                     AddAuditEntry(context, expression, function, arguments, "explicit type argument call");
-                    yield return new GenericFunctionUse(function, arguments);
+                    yield return GenericFunctionUse.FromText(function, arguments, _typeRefParser);
                 }
             }
         }
@@ -72,7 +72,7 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
                     }
 
                     AddAuditEntry(context, expression, function, receiverArguments, "receiver type argument inference");
-                    yield return new GenericFunctionUse(function, receiverArguments);
+                    yield return GenericFunctionUse.FromText(function, receiverArguments, _typeRefParser);
                 }
 
                 foreach (var arguments in FindExplicitTypeArgumentCalls(expression, $"{variable}.{function.Name}"))
@@ -85,7 +85,7 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
                         }
 
                         AddAuditEntry(context, expression, function, arguments, "explicit receiver type argument call");
-                        yield return new GenericFunctionUse(function, arguments);
+                        yield return GenericFunctionUse.FromText(function, arguments, _typeRefParser);
                     }
                 }
             }
@@ -108,10 +108,12 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
         _auditEntries.Add(new RawGenericUseAuditEntry(
             string.IsNullOrWhiteSpace(context) ? "<unknown>" : context,
             TrimForAudit(expression),
-            FormatFunctionName(function),
-            typeArguments.ToList(),
+            FormatFunctionSignature(function, typeArguments),
             reason));
     }
+
+    private string FormatFunctionSignature(FunctionNode function, IReadOnlyList<string> typeArguments) =>
+        $"{FormatFunctionName(function)}<{string.Join(", ", typeArguments)}>";
 
     private string FormatFunctionName(FunctionNode function)
     {
@@ -184,6 +186,5 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
 internal sealed record RawGenericUseAuditEntry(
     string Context,
     string Expression,
-    string FunctionName,
-    IReadOnlyList<string> TypeArguments,
+    string FunctionSignature,
     string Reason);

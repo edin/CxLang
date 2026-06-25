@@ -465,7 +465,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         callExpression.Semantic.Symbol = functionSymbol;
         callExpression.Semantic.ResolvedCall = CreateResolvedCallInfo(
             resolved.Function,
-            resolved.TypeArguments ?? [],
+            TypeArgumentTexts(resolved.TypeArgumentRefs),
             resolved.IsInstance,
             resolved.TypeArgumentRefs);
 
@@ -773,6 +773,9 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<string> typeArguments) =>
         typeArguments.Select(argument => ParseTypeRefOrNull(argument) ?? new TypeRef.Unknown()).ToList();
+
+    private static IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeRef> typeArguments) =>
+        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
 
     private static bool TypeArgumentRefsMatch(
         IReadOnlyList<string> typeArguments,

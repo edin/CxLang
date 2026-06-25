@@ -206,8 +206,9 @@ public sealed class RequirementMatcher
             var constrainedType = TypeRefFormatter.ToCxString(constrainedTypeRef);
             foreach (var required in constraint.Requirements)
             {
-                var arguments = TypeArguments(required.TypeArgumentNodes)
-                    .Select(argument => Substitute(argument, bindings))
+                var arguments = TypeArgumentRefs(required.TypeArgumentNodes)
+                    .Select(argument => TypeRefRewriter.Substitute(argument, bindings.Bindings))
+                    .Select(TypeRefFormatter.ToCxString)
                     .ToList();
                 var match = Match(constrainedType, required.Name, arguments, activeMatches);
                 if (match.Success)
@@ -645,8 +646,8 @@ public sealed class RequirementMatcher
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
+        nodes.Select(typeNode => typeNode.ToTypeRef(_typeRefParser)).ToList();
 
     private string TypeText(TypeNode? typeNode)
     {

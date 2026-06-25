@@ -149,7 +149,7 @@ public sealed class CallResolverTests
         Assert.Equal("create", resolved.Function.Name);
         Assert.Equal("Vec", resolved.Function.OwnerTypeNode?.ToSourceText());
         Assert.False(resolved.IsInstance);
-        Assert.Equal(["int"], resolved.TypeArguments);
+        Assert.Equal(["int"], TypeArgumentTexts(resolved.TypeArgumentRefs));
     }
 
     [Fact]
@@ -224,4 +224,7 @@ public sealed class CallResolverTests
         environment.Set(variable.Name, parser.Parse(variable.Type));
         return environment;
     }
+
+    private static IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeRef> typeArguments) =>
+        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
 }

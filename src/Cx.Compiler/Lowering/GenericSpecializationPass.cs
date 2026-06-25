@@ -1,7 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
-using System.Text.RegularExpressions;
 
 namespace Cx.Compiler.Lowering;
 
@@ -36,9 +35,9 @@ internal static class GenericSpecializationPass
 
         while (pending.TryDequeue(out var use))
         {
-            var key = Key(use.Function, use.TypeArguments, typeRefParser);
+            var key = Key(use.Function, use.TypeArgumentRefs, typeRefParser);
             if (specializedFunctions.ContainsKey(key)
-                || use.Function.TypeParameters.Count != use.TypeArguments.Count
+                || use.Function.TypeParameters.Count != use.TypeArgumentRefs.Count
                 || !IsClosedTypeArgumentList(use, openTypeParameterNames))
             {
                 continue;
@@ -104,6 +103,9 @@ internal static class GenericSpecializationPass
         return $"{(string.IsNullOrWhiteSpace(ownerType) ? function.Name : $"{ownerType}.{function.Name}")}<{string.Join(",", arguments)}>";
     }
 
+    private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments, TypeRefParser typeRefParser) =>
+        Key(function, arguments.Select(TypeRefFormatter.ToCxString).ToList(), typeRefParser);
+
     private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
     {
         if (typeNode is null)
@@ -127,17 +129,10 @@ internal static class GenericSpecializationPass
     private static bool IsClosedTypeArgumentList(
         GenericFunctionUse use,
         IReadOnlySet<string> openTypeParameterNames) =>
-        use.TypeArgumentRefs.Count == use.TypeArguments.Count
-            ? IsClosedTypeArgumentList(use.TypeArgumentRefs, openTypeParameterNames)
-            : IsClosedTypeArgumentList(use.TypeArguments, openTypeParameterNames);
+        IsClosedTypeArgumentList(use.TypeArgumentRefs, openTypeParameterNames);
 
     private static bool IsClosedTypeArgumentList(
         IReadOnlyList<TypeRef> typeArguments,
-        IReadOnlySet<string> openTypeParameterNames) =>
-        typeArguments.All(argument => !ContainsOpenTypeParameter(argument, openTypeParameterNames));
-
-    private static bool IsClosedTypeArgumentList(
-        IReadOnlyList<string> typeArguments,
         IReadOnlySet<string> openTypeParameterNames) =>
         typeArguments.All(argument => !ContainsOpenTypeParameter(argument, openTypeParameterNames));
 
@@ -157,9 +152,4 @@ internal static class GenericSpecializationPass
             _ => false,
         };
 
-    private static bool ContainsOpenTypeParameter(
-        string type,
-        IReadOnlySet<string> openTypeParameterNames) =>
-        openTypeParameterNames.Any(parameter =>
-            Regex.IsMatch(type, $@"\b{Regex.Escape(parameter)}\b"));
 }

@@ -8,9 +8,10 @@ internal sealed record CallResolution(
     IReadOnlyList<TypeRef> ParameterTypes,
     bool IsVariadic,
     FunctionNode? Function = null,
-    IReadOnlyList<string>? TypeArguments = null,
-    IReadOnlyList<TypeRef>? TypeArgumentRefs = null,
-    bool IsInstance = false);
+    bool IsInstance = false)
+{
+    public IReadOnlyList<TypeRef> TypeArgumentRefs { get; init; } = [];
+}
 
 internal sealed class CallResolver(
     ProgramNode program,
@@ -329,9 +330,10 @@ internal sealed class CallResolver(
             parameterTypes,
             IsVariadic: false,
             function,
-            typeArguments,
-            TypeArgumentRefs(typeArguments),
-            methodCall.SkipSelf);
+            methodCall.SkipSelf)
+        {
+            TypeArgumentRefs = TypeArgumentRefs(typeArguments),
+        };
     }
 
     private CallResolution BuildFunctionResolution(
@@ -359,9 +361,10 @@ internal sealed class CallResolver(
             parameterTypes,
             filteredParameters.Any(parameter => parameter.IsVariadic),
             function,
-            typeArguments,
-            typeArgumentRefs,
-            isInstance);
+            isInstance)
+        {
+            TypeArgumentRefs = typeArgumentRefs,
+        };
     }
 
     private IReadOnlyList<string> ResolveFunctionTypeArguments(

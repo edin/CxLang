@@ -36,8 +36,9 @@ internal sealed class RequirementDeclarationAnalyzer(
         {
             AnalyzeRequirementReference(requirement, allowInferredTypeArguments: true);
             var selfType = GetStructSelfType(structNode);
-            var arguments = TypeArguments(requirement.TypeArgumentNodes).Count > 0
-                ? TypeArguments(requirement.TypeArgumentNodes)
+            var declaredArguments = TypeArguments(requirement.TypeArgumentNodes);
+            var arguments = declaredArguments.Count > 0
+                ? declaredArguments
                 : structNode.TypeParameters;
             var match = requirementMatcher.Match(selfType, requirement.Name, arguments);
             if (match.Success)
@@ -47,7 +48,7 @@ internal sealed class RequirementDeclarationAnalyzer(
 
             diagnostics.Report(
                 requirement.Location,
-                $"Struct '{selfType}' declares '{FormatRequirementReference(requirement)}' but does not satisfy it: {FormatRequirementFailures(match.Failures)}");
+                $"Struct '{selfType}' declares '{FormatRequirementReference(requirement, declaredArguments)}' but does not satisfy it: {FormatRequirementFailures(match.Failures)}");
         }
     }
 
@@ -83,7 +84,7 @@ internal sealed class RequirementDeclarationAnalyzer(
             string.Equals(interfaceNode.Name, reference.Name, StringComparison.Ordinal));
         if (interfaceNode is not null)
         {
-            if (TypeArguments(reference.TypeArgumentNodes).Count > 0)
+            if (reference.TypeArgumentNodes.Count > 0)
             {
                 diagnostics.Report(
                     reference.Location,
@@ -96,10 +97,12 @@ internal sealed class RequirementDeclarationAnalyzer(
         diagnostics.Report(reference.Location, $"Unknown requirement '{reference.Name}'.");
     }
 
-    private string FormatRequirementReference(StructRequirementNode requirement) =>
-        TypeArguments(requirement.TypeArgumentNodes).Count == 0
+    private static string FormatRequirementReference(
+        StructRequirementNode requirement,
+        IReadOnlyList<string> typeArguments) =>
+        typeArguments.Count == 0
             ? requirement.Name
-            : $"{requirement.Name}<{string.Join(", ", TypeArguments(requirement.TypeArgumentNodes))}>";
+            : $"{requirement.Name}<{string.Join(", ", typeArguments)}>";
 
     private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(typeNode => typeNode.ToSourceText()).ToList();

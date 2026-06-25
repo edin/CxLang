@@ -16,6 +16,8 @@ internal sealed class ExpressionSemanticAnalyzer(
     IReadOnlyList<GenericConstraintNode> currentGenericConstraints,
     Func<string, bool> isKnownTypeName)
 {
+    private readonly TypeRefParser _typeRefParser = new(program);
+
     public void Analyze(
         ExpressionNode? expression,
         Location location,
@@ -159,7 +161,7 @@ internal sealed class ExpressionSemanticAnalyzer(
         Location location,
         TypeEnvironment typeEnvironment)
     {
-        if (ResolveCallSignature(call.Callee, TypeArguments(call.TypeArgumentNodes), call.Arguments, typeEnvironment) is { } signature)
+        if (ResolveCallSignature(call.Callee, TypeArgumentTexts(call.TypeArgumentNodes), call.Arguments, typeEnvironment) is { } signature)
         {
             CheckCallArguments(location, signature, call.Arguments, typeEnvironment);
             return;
@@ -295,8 +297,8 @@ internal sealed class ExpressionSemanticAnalyzer(
     private static bool IsAnyType(TypeRef? type) =>
         TypeRefFacts.IsNamed(type, "any");
 
-    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
+    private IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeNode> nodes) =>
+        nodes.Select(typeNode => TypeRefFormatter.ToCxString(typeNode.ToTypeRef(_typeRefParser))).ToList();
 
     private sealed record CallSignature(
         string Name,

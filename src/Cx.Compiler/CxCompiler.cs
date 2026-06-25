@@ -609,7 +609,7 @@ public sealed class CxCompiler
         builder.AppendLine($"Raw generic use fallback: {entries.Count}");
         foreach (var entry in entries)
         {
-            builder.AppendLine($"- {entry.Context}: {entry.FunctionName}<{string.Join(", ", entry.TypeArguments)}>");
+            builder.AppendLine($"- {entry.Context}: {entry.FunctionSignature}");
             builder.AppendLine($"  reason: {entry.Reason}");
             builder.AppendLine($"  expression: {entry.Expression}");
         }

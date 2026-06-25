@@ -414,7 +414,7 @@ internal sealed class ExpressionTypeResolver(
             : null;
 
     private string? ResolveGenericCall(GenericCallExpressionNode call, TypeEnvironment variables) =>
-        CallResolver.Resolve(call.Callee, TypeArguments(call.TypeArgumentNodes), call.Arguments, variables) is { } resolvedCall
+        CallResolver.Resolve(call.Callee, TypeArgumentTexts(call.TypeArgumentNodes), call.Arguments, variables) is { } resolvedCall
             ? TypeRefFormatter.ToCxString(resolvedCall.ReturnType)
             : null;
 
@@ -619,14 +619,10 @@ internal sealed class ExpressionTypeResolver(
     private static bool SameType(TypeRef? left, TypeRef? right) =>
         TypeRefFacts.SameType(left, right);
 
-    private static bool SameTypeArguments(IReadOnlyList<string> left, IReadOnlyList<string> right) =>
-        left.Count == right.Count
-        && left.Zip(right).All(pair => string.Equals(pair.First, pair.Second, StringComparison.Ordinal));
-
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> typeArgumentNodes) =>
-        typeArgumentNodes.Select(typeNode => typeNode.ToSourceText()).ToList();
+    private IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeNode> typeArgumentNodes) =>
+        typeArgumentNodes.Select(typeNode => TypeText(typeNode)).ToList();
 
     private string TypeText(TypeNode? typeNode) => FormatTypeNode(typeNode, _typeRefParser);
 
