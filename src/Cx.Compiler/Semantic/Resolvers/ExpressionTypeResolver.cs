@@ -424,6 +424,17 @@ internal sealed class ExpressionTypeResolver(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables,
         bool skipSelf,
+        IReadOnlyList<string>? seedArguments = null) =>
+        InferFunctionTypeArgumentRefs(typeParameters, parameters, arguments, variables, skipSelf, seedArguments) is { } inferred
+            ? inferred.Select(TypeRefFormatter.ToCxString).ToList()
+            : null;
+
+    private IReadOnlyList<TypeRef>? InferFunctionTypeArgumentRefs(
+        IReadOnlyList<string> typeParameters,
+        IReadOnlyList<ParameterNode> parameters,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables,
+        bool skipSelf,
         IReadOnlyList<string>? seedArguments = null)
     {
         if (typeParameters.Count == 0)
@@ -464,7 +475,7 @@ internal sealed class ExpressionTypeResolver(
         }
 
         return typeParameters.All(parameter => bindings.Bindings.ContainsKey(parameter))
-            ? typeParameters.Select(parameter => TypeRefFormatter.ToCxString(bindings.Bindings[parameter])).ToList()
+            ? typeParameters.Select(parameter => bindings.Bindings[parameter]).ToList()
             : null;
     }
 

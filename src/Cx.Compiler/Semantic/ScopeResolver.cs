@@ -395,18 +395,18 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             name.Semantic.Symbol = symbol;
             if (symbol.Node is FunctionNode function)
             {
-                call.Semantic.ResolvedCall = CreateResolvedCallInfo(function, [], isInstance: false);
+                call.Semantic.ResolvedCall = CreateResolvedCallInfo(function, Array.Empty<TypeRef>(), isInstance: false);
             }
 
             return;
         }
 
         if (call.Callee is MemberExpressionNode member
-            && ResolveMemberFunction(member, scope, typeArguments: []) is { } resolved)
+            && ResolveMemberFunction(member, scope, typeArgumentRefs: Array.Empty<TypeRef>()) is { } resolved)
         {
             var functionSymbol = FunctionSymbol(resolved.Function);
             call.Semantic.Symbol = functionSymbol;
-            call.Semantic.ResolvedCall = CreateResolvedCallInfo(resolved.Function, resolved.TypeArguments, resolved.IsInstance);
+            call.Semantic.ResolvedCall = CreateResolvedCallInfo(resolved.Function, resolved.TypeArgumentRefs, resolved.IsInstance);
             member.Semantic.Symbol = functionSymbol;
             member.Semantic.ResolvedCall = call.Semantic.ResolvedCall;
         }
@@ -414,28 +414,29 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private void BindGenericCall(GenericCallExpressionNode call, Scope scope)
     {
-        var typeArguments = TypeArguments(call.TypeArgumentNodes);
+        var typeArguments = TypeArgumentTexts(call.TypeArgumentNodes);
+        var typeArgumentRefs = TypeArgumentRefs(call.TypeArgumentNodes);
         if (TryBindResolvedCall(call, call.Callee, typeArguments, call.Arguments, scope))
         {
             return;
         }
 
         if (call.Callee is NameExpressionNode name
-            && FindFreeFunction(name.Name, typeArguments) is { } function)
+            && FindFreeFunction(name.Name, typeArgumentRefs) is { } function)
         {
             var symbol = FunctionSymbol(function);
             call.Semantic.Symbol = symbol;
-            call.Semantic.ResolvedCall = CreateResolvedCallInfo(function, typeArguments, isInstance: false);
+            call.Semantic.ResolvedCall = CreateResolvedCallInfo(function, typeArgumentRefs, isInstance: false);
             name.Semantic.Symbol = symbol;
             return;
         }
 
         if (call.Callee is MemberExpressionNode member
-            && ResolveMemberFunction(member, scope, typeArguments) is { } resolved)
+            && ResolveMemberFunction(member, scope, typeArgumentRefs) is { } resolved)
         {
             var functionSymbol = FunctionSymbol(resolved.Function);
             call.Semantic.Symbol = functionSymbol;
-            call.Semantic.ResolvedCall = CreateResolvedCallInfo(resolved.Function, resolved.TypeArguments, resolved.IsInstance);
+            call.Semantic.ResolvedCall = CreateResolvedCallInfo(resolved.Function, resolved.TypeArgumentRefs, resolved.IsInstance);
             member.Semantic.Symbol = functionSymbol;
             member.Semantic.ResolvedCall = call.Semantic.ResolvedCall;
         }
@@ -465,9 +466,8 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         callExpression.Semantic.Symbol = functionSymbol;
         callExpression.Semantic.ResolvedCall = CreateResolvedCallInfo(
             resolved.Function,
-            TypeArgumentTexts(resolved.TypeArgumentRefs),
-            resolved.IsInstance,
-            resolved.TypeArgumentRefs);
+            resolved.TypeArgumentRefs,
+            resolved.IsInstance);
 
         switch (callee)
         {
@@ -548,49 +548,43 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private void BindMemberReference(MemberExpressionNode member, Scope scope)
     {
-        if (ResolveMemberFunction(member, scope, typeArguments: []) is { } resolved)
+        if (ResolveMemberFunction(member, scope, typeArgumentRefs: Array.Empty<TypeRef>()) is { } resolved)
         {
             var functionSymbol = FunctionSymbol(resolved.Function);
             member.Semantic.Symbol = functionSymbol;
-            member.Semantic.ResolvedCall = CreateResolvedCallInfo(resolved.Function, resolved.TypeArguments, resolved.IsInstance);
+            member.Semantic.ResolvedCall = CreateResolvedCallInfo(resolved.Function, resolved.TypeArgumentRefs, resolved.IsInstance);
         }
     }
 
-    private ResolvedCallInfo CreateResolvedCallInfo(
+    private static ResolvedCallInfo CreateResolvedCallInfo(
         FunctionNode function,
-        IReadOnlyList<string> typeArguments,
-        bool isInstance,
-        IReadOnlyList<TypeRef>? typeArgumentRefs = null)
-    {
-        var resolvedTypeArgumentRefs = TypeArgumentRefsMatch(typeArguments, typeArgumentRefs)
-            ? typeArgumentRefs!
-            : TypeArgumentRefs(typeArguments);
-        return new(function, resolvedTypeArgumentRefs, isInstance);
-    }
+        IReadOnlyList<TypeRef> typeArgumentRefs,
+        bool isInstance) =>
+        new(function, typeArgumentRefs, isInstance);
 
     private ResolvedFunction? ResolveMemberFunction(
         MemberExpressionNode member,
         Scope scope,
-        IReadOnlyList<string> typeArguments)
+        IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         var targetName = ExpressionNameFacts.GetQualifiedName(member.Target);
         if (targetName is not null
-            && FindModuleFunction(targetName, member.MemberName, typeArguments) is { } moduleFunction)
+            && FindModuleFunction(targetName, member.MemberName, typeArgumentRefs) is { } moduleFunction)
         {
-            return new ResolvedFunction(moduleFunction, ResolveFunctionTypeArguments(moduleFunction, typeArguments), IsInstance: false);
+            return new ResolvedFunction(moduleFunction, ResolveFunctionTypeArgumentRefs(moduleFunction, typeArgumentRefs), IsInstance: false);
         }
 
         if (targetName is not null
-            && FindStaticFunction(targetName, member.MemberName, typeArguments) is { } staticFunction)
+            && FindStaticFunction(targetName, member.MemberName, typeArgumentRefs) is { } staticFunction)
         {
-            return new ResolvedFunction(staticFunction, ResolveFunctionTypeArguments(staticFunction, typeArguments), IsInstance: false);
+            return new ResolvedFunction(staticFunction, ResolveFunctionTypeArgumentRefs(staticFunction, typeArgumentRefs), IsInstance: false);
         }
 
         if (member.Target is NameExpressionNode receiver
             && scope.TryResolve(receiver.Name, out var receiverSymbol)
-            && FindInstanceFunction(receiverSymbol, member.MemberName, typeArguments) is { } instanceFunction)
+            && FindInstanceFunction(receiverSymbol, member.MemberName, typeArgumentRefs) is { } instanceFunction)
         {
-            var receiverTypeArguments = ResolveFunctionTypeArguments(instanceFunction, typeArguments, receiverSymbol);
+            var receiverTypeArguments = ResolveFunctionTypeArgumentRefs(instanceFunction, typeArgumentRefs, receiverSymbol);
             return new ResolvedFunction(
                 instanceFunction,
                 receiverTypeArguments,
@@ -600,28 +594,28 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         return null;
     }
 
-    private FunctionNode? FindFreeFunction(string name, IReadOnlyList<string> typeArguments) =>
+    private FunctionNode? FindFreeFunction(string name, IReadOnlyList<TypeRef> typeArgumentRefs) =>
         _functions.FirstOrDefault(function =>
             OwnerType(function) is null
             && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArguments));
+            && MatchesTypeArguments(function, typeArgumentRefs));
 
-    private FunctionNode? FindStaticFunction(string ownerType, string name, IReadOnlyList<string> typeArguments) =>
+    private FunctionNode? FindStaticFunction(string ownerType, string name, IReadOnlyList<TypeRef> typeArgumentRefs) =>
         _functions.FirstOrDefault(function =>
             function.IsStatic
             && OwnerType(function) is not null
             && string.Equals(OwnerType(function), ownerType, StringComparison.Ordinal)
             && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArguments));
+            && MatchesTypeArguments(function, typeArgumentRefs));
 
-    private FunctionNode? FindModuleFunction(string moduleName, string name, IReadOnlyList<string> typeArguments) =>
+    private FunctionNode? FindModuleFunction(string moduleName, string name, IReadOnlyList<TypeRef> typeArgumentRefs) =>
         _functions.FirstOrDefault(function =>
             OwnerType(function) is null
             && string.Equals(function.Semantic.ModuleName, moduleName, StringComparison.Ordinal)
             && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArguments));
+            && MatchesTypeArguments(function, typeArgumentRefs));
 
-    private FunctionNode? FindInstanceFunction(string receiverType, string name, IReadOnlyList<string> typeArguments)
+    private FunctionNode? FindInstanceFunction(string receiverType, string name, IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         var receiverTypeRef = ParseTypeRefOrNull(receiverType);
         if (receiverTypeRef is null)
@@ -635,10 +629,10 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             && OwnerType(function) is not null
             && string.Equals(OwnerType(function), ownerType, StringComparison.Ordinal)
             && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArguments, receiverTypeRef));
+            && MatchesTypeArguments(function, typeArgumentRefs, receiverTypeRef));
     }
 
-    private FunctionNode? FindInstanceFunction(Symbol receiverSymbol, string name, IReadOnlyList<string> typeArguments)
+    private FunctionNode? FindInstanceFunction(Symbol receiverSymbol, string name, IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         if (receiverSymbol.TypeRef is not null)
         {
@@ -650,28 +644,28 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                     && OwnerType(function) is not null
                     && string.Equals(OwnerType(function), ownerType, StringComparison.Ordinal)
                     && string.Equals(function.Name, name, StringComparison.Ordinal)
-                    && MatchesTypeArguments(function, typeArguments, receiverSymbol.TypeRef));
+                    && MatchesTypeArguments(function, typeArgumentRefs, receiverSymbol.TypeRef));
             }
         }
 
         var receiverType = receiverSymbol.TypeText;
         return string.IsNullOrWhiteSpace(receiverType)
             ? null
-            : FindInstanceFunction(receiverType, name, typeArguments);
+            : FindInstanceFunction(receiverType, name, typeArgumentRefs);
     }
 
     private static bool MatchesTypeArguments(
         FunctionNode function,
-        IReadOnlyList<string> typeArguments)
+        IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         if (function.TypeParameters.Count == 0)
         {
-            return typeArguments.Count == 0;
+            return typeArgumentRefs.Count == 0;
         }
 
-        if (typeArguments.Count > 0)
+        if (typeArgumentRefs.Count > 0)
         {
-            return typeArguments.Count == function.TypeParameters.Count;
+            return typeArgumentRefs.Count == function.TypeParameters.Count;
         }
 
         return false;
@@ -679,43 +673,43 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private static bool MatchesTypeArguments(
         FunctionNode function,
-        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef> typeArgumentRefs,
         TypeRef? receiverType)
     {
         if (function.TypeParameters.Count == 0)
         {
-            return typeArguments.Count == 0;
+            return typeArgumentRefs.Count == 0;
         }
 
-        if (typeArguments.Count > 0)
+        if (typeArgumentRefs.Count > 0)
         {
-            return typeArguments.Count == function.TypeParameters.Count;
+            return typeArgumentRefs.Count == function.TypeParameters.Count;
         }
 
         return TypeRefFacts.TryGetGenericArguments(receiverType, out var receiverArguments)
             && receiverArguments.Count == function.TypeParameters.Count;
     }
 
-    private static IReadOnlyList<string> ResolveFunctionTypeArguments(
+    private IReadOnlyList<TypeRef> ResolveFunctionTypeArgumentRefs(
         FunctionNode function,
-        IReadOnlyList<string> explicitTypeArguments)
+        IReadOnlyList<TypeRef> explicitTypeArgumentRefs)
     {
         if (function.TypeParameters.Count == 0)
         {
             return [];
         }
 
-        if (explicitTypeArguments.Count > 0)
+        if (explicitTypeArgumentRefs.Count > 0)
         {
-            return explicitTypeArguments;
+            return explicitTypeArgumentRefs;
         }
 
         return [];
     }
 
-    private IReadOnlyList<string> ResolveFunctionTypeArguments(
+    private IReadOnlyList<TypeRef> ResolveFunctionTypeArgumentRefs(
         FunctionNode function,
-        IReadOnlyList<string> explicitTypeArguments,
+        IReadOnlyList<TypeRef> explicitTypeArgumentRefs,
         Symbol receiverSymbol)
     {
         if (function.TypeParameters.Count == 0)
@@ -723,22 +717,22 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return [];
         }
 
-        if (explicitTypeArguments.Count > 0)
+        if (explicitTypeArgumentRefs.Count > 0)
         {
-            return explicitTypeArguments;
+            return explicitTypeArgumentRefs;
         }
 
         if (receiverSymbol.TypeRef is not null
             && TypeRefFacts.TryGetGenericArguments(receiverSymbol.TypeRef, out var receiverArguments)
             && receiverArguments.Count == function.TypeParameters.Count)
         {
-            return receiverArguments.Select(TypeRefFormatter.ToCxString).ToList();
+            return receiverArguments;
         }
 
         var receiverType = ParseTypeRefOrNull(receiverSymbol.TypeText);
         return TypeRefFacts.TryGetGenericArguments(receiverType, out var fallbackArguments)
             && fallbackArguments.Count == function.TypeParameters.Count
-                ? fallbackArguments.Select(TypeRefFormatter.ToCxString).ToList()
+                ? fallbackArguments
                 : [];
     }
 
@@ -763,28 +757,19 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private sealed record ResolvedFunction(
         FunctionNode Function,
-        IReadOnlyList<string> TypeArguments,
+        IReadOnlyList<TypeRef> TypeArgumentRefs,
         bool IsInstance);
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
+    private IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeNode> nodes) =>
+        TypeArgumentRefs(nodes).Select(TypeRefFormatter.ToCxString).ToList();
 
-    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<string> typeArguments) =>
-        typeArguments.Select(argument => ParseTypeRefOrNull(argument) ?? new TypeRef.Unknown()).ToList();
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
+        nodes.Select(TypeRefOrUnknown).ToList();
 
-    private static IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeRef> typeArguments) =>
-        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
-
-    private static bool TypeArgumentRefsMatch(
-        IReadOnlyList<string> typeArguments,
-        IReadOnlyList<TypeRef>? typeArgumentRefs) =>
-        typeArgumentRefs is not null
-        && typeArgumentRefs.Count == typeArguments.Count
-        && typeArguments
-            .Zip(typeArgumentRefs)
-            .All(pair => string.Equals(pair.First, TypeRefFormatter.ToCxString(pair.Second), StringComparison.Ordinal));
+    private TypeRef TypeRefOrUnknown(TypeNode typeNode) =>
+        TypeRefOrNull(typeNode) ?? new TypeRef.Unknown();
 
     private TypeRef? TypeRefOrNull(TypeNode? typeNode)
     {

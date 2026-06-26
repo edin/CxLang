@@ -107,15 +107,15 @@ internal sealed class CallResolver(
                 && (MatchesGenericArguments(function.TypeParameters, typeArguments)
                     || typeArguments.Count == 0
                         && function.TypeParameters.Count > 0
-                        && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
+                        && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
             if (staticFunction is null)
             {
                 return null;
             }
 
             var staticArguments = typeArguments.Count > 0
-                ? typeArguments
-                : InferFunctionTypeArguments(staticFunction.TypeParameters, staticFunction.Parameters, arguments, variables, skipSelf: false) ?? [];
+                ? TypeArgumentRefs(typeArguments)
+                : InferFunctionTypeArgumentRefs(staticFunction.TypeParameters, staticFunction.Parameters, arguments, variables, skipSelf: false) ?? [];
             return BuildFunctionResolution(
                 $"{targetName}.{member.MemberName}",
                 staticFunction,
@@ -156,14 +156,14 @@ internal sealed class CallResolver(
                 || typeArguments.Count == 0 && function.TypeParameters.Count == receiverArguments.Count
                 || typeArguments.Count == 0
                     && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: true, receiverArguments) is not null));
+                    && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: true, receiverArguments) is not null));
         if (instanceFunction is not null)
         {
             var instanceArguments = typeArguments.Count > 0
-                ? typeArguments
+                ? TypeArgumentRefs(typeArguments)
                 : receiverArguments.Count == instanceFunction.TypeParameters.Count
-                    ? receiverArguments
-                    : InferFunctionTypeArguments(instanceFunction.TypeParameters, instanceFunction.Parameters, arguments, variables, skipSelf: true, receiverArguments) ?? [];
+                    ? TypeArgumentRefs(receiverArguments)
+                    : InferFunctionTypeArgumentRefs(instanceFunction.TypeParameters, instanceFunction.Parameters, arguments, variables, skipSelf: true, receiverArguments) ?? [];
             var resolution = BuildFunctionResolution(
                 $"{receiverBaseType}.{member.MemberName}",
                 instanceFunction,
@@ -211,15 +211,15 @@ internal sealed class CallResolver(
             && (MatchesGenericArguments(function.TypeParameters, typeArguments)
                 || typeArguments.Count == 0
                     && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
+                    && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
         if (function is null)
         {
             return null;
         }
 
         var resolvedArguments = typeArguments.Count > 0
-            ? typeArguments
-            : InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) ?? [];
+            ? TypeArgumentRefs(typeArguments)
+            : InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) ?? [];
         return BuildFunctionResolution(
             function.Name,
             function,
@@ -242,15 +242,15 @@ internal sealed class CallResolver(
             && (MatchesGenericArguments(function.TypeParameters, typeArguments)
                 || typeArguments.Count == 0
                     && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
+                    && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
         if (function is null)
         {
             return null;
         }
 
         var resolvedArguments = typeArguments.Count > 0
-            ? typeArguments
-            : InferFunctionTypeArguments(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) ?? [];
+            ? TypeArgumentRefs(typeArguments)
+            : InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) ?? [];
         return BuildFunctionResolution(
             function.Name,
             function: null,
@@ -289,13 +289,13 @@ internal sealed class CallResolver(
                     continue;
                 }
 
-                var referenceTypeArguments = TypeArguments(reference.TypeArgumentNodes);
-                var arguments = referenceTypeArguments.Count == requirement.TypeParameters.Count
-                    ? referenceTypeArguments
+                var referenceTypeArgumentRefs = TypeArgumentRefs(reference.TypeArgumentNodes);
+                var arguments = referenceTypeArgumentRefs.Count == requirement.TypeParameters.Count
+                    ? referenceTypeArgumentRefs
                     : requirement.TypeParameters.Count == 1
-                        ? [targetName]
+                        ? [new TypeRef.Named(targetName, [])]
                         : [];
-                var substitutions = BuildTypeSubstitutionsFromRefs(requirement.TypeParameters, TypeArgumentRefs(arguments));
+                var substitutions = BuildTypeSubstitutionsFromRefs(requirement.TypeParameters, arguments);
                 return new CallResolution(
                     $"{targetName}.{memberName}",
                     SubstituteType(
@@ -323,7 +323,7 @@ internal sealed class CallResolver(
             .Skip(methodCall.SkipSelf ? 1 : 0)
             .ToList();
         var function = methodCall.Method.Declaration;
-        var typeArguments = ResolveFunctionTypeArguments(function, explicitTypeArguments, receiverType);
+        var typeArgumentRefs = ResolveFunctionTypeArgumentRefs(function, explicitTypeArguments, receiverType);
         return new CallResolution(
             methodCall.DisplayName,
             methodCall.Method.ReturnType,
@@ -332,7 +332,7 @@ internal sealed class CallResolver(
             function,
             methodCall.SkipSelf)
         {
-            TypeArgumentRefs = TypeArgumentRefs(typeArguments),
+            TypeArgumentRefs = typeArgumentRefs,
         };
     }
 
@@ -342,11 +342,10 @@ internal sealed class CallResolver(
         IReadOnlyList<string> typeParameters,
         IReadOnlyList<ParameterNode> parameters,
         TypeNode? returnTypeNode,
-        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef> typeArgumentRefs,
         bool skipSelf,
         bool isInstance)
     {
-        var typeArgumentRefs = TypeArgumentRefs(typeArguments);
         var substitutions = BuildTypeSubstitutionsFromRefs(typeParameters, typeArgumentRefs);
         var filteredParameters = parameters
             .Skip(skipSelf ? 1 : 0)
@@ -367,7 +366,7 @@ internal sealed class CallResolver(
         };
     }
 
-    private IReadOnlyList<string> ResolveFunctionTypeArguments(
+    private IReadOnlyList<TypeRef> ResolveFunctionTypeArgumentRefs(
         FunctionNode function,
         IReadOnlyList<string> explicitTypeArguments,
         string? receiverType)
@@ -379,12 +378,12 @@ internal sealed class CallResolver(
 
         if (explicitTypeArguments.Count == function.TypeParameters.Count)
         {
-            return explicitTypeArguments;
+            return TypeArgumentRefs(explicitTypeArguments);
         }
 
         var receiverTypeRef = receiverType is null ? null : NormalizeReceiverType(receiverType);
         if (receiverTypeRef is not null
-            && TryResolveAdapterBaseArguments(function, receiverTypeRef) is { } adapterBaseArguments)
+            && TryResolveAdapterBaseArgumentRefs(function, receiverTypeRef) is { } adapterBaseArguments)
         {
             return adapterBaseArguments;
         }
@@ -392,11 +391,11 @@ internal sealed class CallResolver(
         return receiverTypeRef is not null
             && TypeRefFacts.TryGetGenericArguments(receiverTypeRef, out var receiverArguments)
             && receiverArguments.Count == function.TypeParameters.Count
-                ? receiverArguments.Select(TypeRefFormatter.ToCxString).ToList()
+                ? receiverArguments
                 : [];
     }
 
-    private IReadOnlyList<string>? TryResolveAdapterBaseArguments(
+    private IReadOnlyList<TypeRef>? TryResolveAdapterBaseArgumentRefs(
         FunctionNode function,
         TypeRef receiverType)
     {
@@ -414,7 +413,7 @@ internal sealed class CallResolver(
                 && TypeRefFacts.TryGetGenericArguments(currentType, out var currentArguments)
                 && currentArguments.Count == function.TypeParameters.Count)
             {
-                return currentArguments.Select(TypeRefFormatter.ToCxString).ToList();
+                return currentArguments;
             }
 
             var adapter = program.TypeAdapters.FirstOrDefault(adapter =>
@@ -468,6 +467,17 @@ internal sealed class CallResolver(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables,
         bool skipSelf,
+        IReadOnlyList<string>? seedArguments = null) =>
+        InferFunctionTypeArgumentRefs(typeParameters, parameters, arguments, variables, skipSelf, seedArguments) is { } inferred
+            ? inferred.Select(TypeRefFormatter.ToCxString).ToList()
+            : null;
+
+    private IReadOnlyList<TypeRef>? InferFunctionTypeArgumentRefs(
+        IReadOnlyList<string> typeParameters,
+        IReadOnlyList<ParameterNode> parameters,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables,
+        bool skipSelf,
         IReadOnlyList<string>? seedArguments = null)
     {
         if (typeParameters.Count == 0)
@@ -508,7 +518,7 @@ internal sealed class CallResolver(
         }
 
         return typeParameters.All(parameter => bindings.Bindings.ContainsKey(parameter))
-            ? typeParameters.Select(parameter => TypeRefFormatter.ToCxString(bindings.Bindings[parameter])).ToList()
+            ? typeParameters.Select(parameter => bindings.Bindings[parameter]).ToList()
             : null;
     }
 
@@ -651,8 +661,8 @@ internal sealed class CallResolver(
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
+        nodes.Select(ResolveType).ToList();
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<string> typeArguments) =>
         typeArguments.Select(argument => Parse(argument)).ToList();
