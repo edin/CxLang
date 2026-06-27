@@ -99,10 +99,19 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         }
 
         var covered = switchStatement.Cases
-            .Select(switchCase => switchCase.Pattern.ToSourceText())
+            .Select(switchCase => GetSwitchCaseMemberName(switchCase.Pattern))
+            .Where(name => name is not null)
             .ToHashSet(StringComparer.Ordinal);
         return enumNode.Members.All(member => covered.Contains(member.Name));
     }
+
+    private static string? GetSwitchCaseMemberName(ExpressionNode pattern) =>
+        pattern switch
+        {
+            NameExpressionNode name => name.Name,
+            MemberExpressionNode member => member.MemberName,
+            _ => null,
+        };
 
     private bool MatchStatementAlwaysReturns(
         MatchStatement matchStatement,

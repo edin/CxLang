@@ -43,7 +43,7 @@ internal static class GenericSpecializationPass
                 continue;
             }
 
-            var specialized = GenericFunctionSpecializer.Specialize(use.Function, use.TypeArguments, use.TypeArgumentRefs);
+            var specialized = GenericFunctionSpecializer.Specialize(use.Function, use.TypeArgumentRefs);
             specializedFunctions.Add(key, specialized);
             foreach (var discovered in collector.Collect(specialized))
             {

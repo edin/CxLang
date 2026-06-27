@@ -161,7 +161,7 @@ internal sealed class ExpressionSemanticAnalyzer(
         Location location,
         TypeEnvironment typeEnvironment)
     {
-        if (ResolveCallSignature(call.Callee, TypeArgumentTexts(call.TypeArgumentNodes), call.Arguments, typeEnvironment) is { } signature)
+        if (ResolveCallSignature(call.Callee, TypeArgumentRefs(call.TypeArgumentNodes), call.Arguments, typeEnvironment) is { } signature)
         {
             CheckCallArguments(location, signature, call.Arguments, typeEnvironment);
             return;
@@ -172,7 +172,7 @@ internal sealed class ExpressionSemanticAnalyzer(
 
     private CallSignature? ResolveCallSignature(
         ExpressionNode callee,
-        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment typeEnvironment)
     {
@@ -182,7 +182,7 @@ internal sealed class ExpressionSemanticAnalyzer(
             currentTypeParameters,
             currentGenericConstraints);
 
-        var resolution = resolvedCall.Resolve(callee, typeArguments, arguments, typeEnvironment);
+        var resolution = resolvedCall.ResolveTypeRefs(callee, typeArguments, arguments, typeEnvironment);
         return resolution is null
             ? null
             : new CallSignature(resolution.Name, resolution.ParameterTypes, resolution.IsVariadic);
@@ -297,8 +297,8 @@ internal sealed class ExpressionSemanticAnalyzer(
     private static bool IsAnyType(TypeRef? type) =>
         TypeRefFacts.IsNamed(type, "any");
 
-    private IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(typeNode => TypeRefFormatter.ToCxString(typeNode.ToTypeRef(_typeRefParser))).ToList();
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
+        nodes.Select(typeNode => typeNode.ToTypeRef(_typeRefParser)).ToList();
 
     private sealed record CallSignature(
         string Name,

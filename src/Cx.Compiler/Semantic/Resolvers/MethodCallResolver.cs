@@ -9,9 +9,9 @@ internal sealed record ResolvedMethodCall(
 
 internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSystem)
 {
-    public ResolvedMethodCall? Resolve(
+    public ResolvedMethodCall? ResolveTypeRefs(
         MemberExpressionNode member,
-        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef> typeArguments,
         int argumentCount,
         TypeEnvironment variables)
     {
@@ -36,7 +36,7 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
             : null;
     }
 
-    private string BuildStaticReceiverType(string targetName, IReadOnlyList<string> typeArguments)
+    private string BuildStaticReceiverType(string targetName, IReadOnlyList<TypeRef> typeArguments)
     {
         if (typeArguments.Count == 0)
         {
@@ -51,7 +51,7 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
                 ?.TypeParameters.Count
             ?? 0;
         return typeParameterCount == typeArguments.Count
-            ? $"{targetName}<{string.Join(",", typeArguments)}>"
+            ? $"{targetName}<{string.Join(",", typeArguments.Select(TypeRefFormatter.ToCxString))}>"
             : targetName;
     }
 

@@ -98,7 +98,7 @@ internal static class GenericStructSpecializer
         while (pending.TryDequeue(out var use))
         {
             var concreteName = GenericTypeRewriter.LowerGenericTypeName(use.Name, use.Arguments);
-            if (ContainsOpenTypeParameter(use.Arguments, openTypeParameterNames)
+            if (ContainsOpenTypeParameter(use.Arguments.Select(typeRefParser.Parse), openTypeParameterNames)
                 || !emitted.Add(concreteName)
                 || !genericDefinitions.TryGetValue(use.Name, out var definition)
                 || definition.TypeParameters.Count != use.Arguments.Count)
@@ -307,10 +307,24 @@ internal static class GenericStructSpecializer
             .ToHashSet(StringComparer.Ordinal);
 
     private static bool ContainsOpenTypeParameter(
-        IReadOnlyList<string> typeArguments,
+        IEnumerable<TypeRef> typeArguments,
         IReadOnlySet<string> openTypeParameterNames) =>
-        typeArguments.Any(argument => openTypeParameterNames.Any(parameter =>
-            Regex.IsMatch(argument, $@"\b{Regex.Escape(parameter)}\b")));
+        typeArguments.Any(typeArgument => ContainsOpenTypeParameter(typeArgument, openTypeParameterNames));
+
+    private static bool ContainsOpenTypeParameter(
+        TypeRef type,
+        IReadOnlySet<string> openTypeParameterNames) =>
+        type switch
+        {
+            TypeRef.Named named => openTypeParameterNames.Contains(named.Name)
+                || named.Arguments.Any(argument => ContainsOpenTypeParameter(argument, openTypeParameterNames)),
+            TypeRef.Pointer pointer => ContainsOpenTypeParameter(pointer.Element, openTypeParameterNames),
+            TypeRef.FixedArray fixedArray => ContainsOpenTypeParameter(fixedArray.Element, openTypeParameterNames),
+            TypeRef.Function function => function.Parameters.Any(parameter => ContainsOpenTypeParameter(parameter, openTypeParameterNames))
+                || ContainsOpenTypeParameter(function.ReturnType, openTypeParameterNames),
+            TypeRef.Alias alias => ContainsOpenTypeParameter(alias.Target, openTypeParameterNames),
+            _ => false,
+        };
 
     private static T CopySemantic<T>(SyntaxNode source, T target)
         where T : SyntaxNode

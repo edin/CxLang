@@ -414,28 +414,17 @@ internal sealed class ExpressionTypeResolver(
             : null;
 
     private string? ResolveGenericCall(GenericCallExpressionNode call, TypeEnvironment variables) =>
-        CallResolver.Resolve(call.Callee, TypeArgumentTexts(call.TypeArgumentNodes), call.Arguments, variables) is { } resolvedCall
+        CallResolver.ResolveTypeRefs(call.Callee, TypeArgumentRefs(call.TypeArgumentNodes), call.Arguments, variables) is { } resolvedCall
             ? TypeRefFormatter.ToCxString(resolvedCall.ReturnType)
             : null;
 
-    public IReadOnlyList<string>? InferFunctionTypeArguments(
+    internal IReadOnlyList<TypeRef>? InferFunctionTypeArgumentRefs(
         IReadOnlyList<string> typeParameters,
         IReadOnlyList<ParameterNode> parameters,
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables,
         bool skipSelf,
-        IReadOnlyList<string>? seedArguments = null) =>
-        InferFunctionTypeArgumentRefs(typeParameters, parameters, arguments, variables, skipSelf, seedArguments) is { } inferred
-            ? inferred.Select(TypeRefFormatter.ToCxString).ToList()
-            : null;
-
-    private IReadOnlyList<TypeRef>? InferFunctionTypeArgumentRefs(
-        IReadOnlyList<string> typeParameters,
-        IReadOnlyList<ParameterNode> parameters,
-        IReadOnlyList<ExpressionNode> arguments,
-        TypeEnvironment variables,
-        bool skipSelf,
-        IReadOnlyList<string>? seedArguments = null)
+        IReadOnlyList<TypeRef>? seedArguments = null)
     {
         if (typeParameters.Count == 0)
         {
@@ -456,7 +445,7 @@ internal sealed class ExpressionTypeResolver(
         {
             foreach (var (parameter, argument) in typeParameters.Zip(seedArguments))
             {
-                bindings.Set(parameter, ParseResolvedType(argument) ?? new TypeRef.Unknown());
+                bindings.Set(parameter, argument);
             }
         }
 
@@ -632,8 +621,8 @@ internal sealed class ExpressionTypeResolver(
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
 
-    private IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeNode> typeArgumentNodes) =>
-        typeArgumentNodes.Select(typeNode => TypeText(typeNode)).ToList();
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> typeArgumentNodes) =>
+        typeArgumentNodes.Select(typeNode => ResolveTypeNode(typeNode) ?? new TypeRef.Unknown()).ToList();
 
     private string TypeText(TypeNode? typeNode) => FormatTypeNode(typeNode, _typeRefParser);
 

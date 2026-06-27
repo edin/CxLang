@@ -26,7 +26,7 @@ public sealed class GenericLoweringServicesTests
         var collector = new GenericUseCollector(program);
         var uses = collector
             .Collect(program)
-            .Select(use => $"{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{use.Function.Name}<{string.Join(",", TypeArguments(use))}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("identity<int>", uses);
@@ -56,7 +56,7 @@ public sealed class GenericLoweringServicesTests
 
         var use = Assert.Single(uses);
         Assert.Equal(generic, use.Function);
-        Assert.Equal(["float"], use.TypeArguments);
+        Assert.Equal(["float"], TypeArguments(use));
         var rawUse = Assert.Single(collector.AuditEntries);
         Assert.Equal("raw test", rawUse.Context);
         Assert.Equal("identity<float>", rawUse.FunctionSignature);
@@ -95,7 +95,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{(use.Function.OwnerTypeNode is null ? "" : use.Function.OwnerTypeNode.ToSourceText() + ".")}{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{(use.Function.OwnerTypeNode is null ? "" : use.Function.OwnerTypeNode.ToSourceText() + ".")}{use.Function.Name}<{string.Join(",", TypeArguments(use))}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("Box.make<int>", uses);
@@ -144,7 +144,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{use.Function.OwnerTypeNode?.ToSourceText()}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{use.Function.OwnerTypeNode?.ToSourceText()}.{use.Function.Name}<{string.Join(",", TypeArguments(use))}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MiniVec.with_capacity<u8>", uses);
@@ -188,7 +188,7 @@ public sealed class GenericLoweringServicesTests
 
         var uses = new GenericUseCollector(program)
             .Collect(program)
-            .Select(use => $"{use.Function.OwnerTypeNode?.ToSourceText()}.{use.Function.Name}<{string.Join(",", use.TypeArguments)}>")
+            .Select(use => $"{use.Function.OwnerTypeNode?.ToSourceText()}.{use.Function.Name}<{string.Join(",", TypeArguments(use))}>")
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MiniVec.add<u8>", uses);
@@ -423,4 +423,7 @@ public sealed class GenericLoweringServicesTests
         Assert.Equal("Box<int>*", next.TypeNode?.TypeName);
         Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(next.TypeNode!.Semantic.Type!));
     }
+
+    private static IReadOnlyList<string> TypeArguments(GenericFunctionUse use) =>
+        use.TypeArgumentRefs.Select(TypeRefFormatter.ToCxString).ToList();
 }

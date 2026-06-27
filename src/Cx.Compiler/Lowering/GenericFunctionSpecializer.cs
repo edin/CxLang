@@ -9,23 +9,27 @@ internal static class GenericFunctionSpecializer
 {
     public static FunctionNode Specialize(
         FunctionNode function,
-        IReadOnlyList<string> arguments,
-        IReadOnlyList<TypeRef>? argumentRefs = null)
+        IReadOnlyList<string> arguments) =>
+        Specialize(
+            function,
+            arguments.Select(argument => GenericTypeSubstitutionBuilder.ParseType(argument) ?? new TypeRef.Unknown()).ToList());
+
+    public static FunctionNode Specialize(
+        FunctionNode function,
+        IReadOnlyList<TypeRef> argumentRefs)
     {
-        var resolvedArgumentRefs = argumentRefs is not null && argumentRefs.Count == arguments.Count
-            ? argumentRefs
-            : arguments.Select(argument => GenericTypeSubstitutionBuilder.ParseType(argument) ?? new TypeRef.Unknown()).ToList();
+        var arguments = argumentRefs.Select(TypeRefFormatter.ToCxString).ToList();
         var substitutions = function.TypeParameters
             .Zip(arguments)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
         var typeSubstitutions = function.TypeParameters
-            .Zip(resolvedArgumentRefs)
+            .Zip(argumentRefs)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
         var ownerType = function.OwnerTypeNode?.Semantic.Type;
         var selfType = ownerType is not null && arguments.Count > 0
             ? new TypeRef.Named(
                 TypeRefFormatter.ToCxString(ownerType),
-                resolvedArgumentRefs)
+                argumentRefs)
             : ownerType;
         var selfTypeText = selfType is null ? null : TypeRefFormatter.ToCxString(selfType);
         var selfTypeRef = selfType;
@@ -33,7 +37,7 @@ internal static class GenericFunctionSpecializer
         {
             TypeParameters = [],
             TypeArgumentNodes = arguments
-                .Zip(resolvedArgumentRefs)
+                .Zip(argumentRefs)
                 .Select(pair => CreateTypeArgumentNode(function.Location, pair.First, pair.Second))
                 .ToList(),
             ReturnTypeNode = SubstituteTypeNode(function.ReturnTypeNode, typeSubstitutions, selfTypeRef),

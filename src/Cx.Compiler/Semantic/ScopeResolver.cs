@@ -414,9 +414,8 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private void BindGenericCall(GenericCallExpressionNode call, Scope scope)
     {
-        var typeArguments = TypeArgumentTexts(call.TypeArgumentNodes);
         var typeArgumentRefs = TypeArgumentRefs(call.TypeArgumentNodes);
-        if (TryBindResolvedCall(call, call.Callee, typeArguments, call.Arguments, scope))
+        if (TryBindResolvedCall(call, call.Callee, typeArgumentRefs, call.Arguments, scope))
         {
             return;
         }
@@ -445,7 +444,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     private bool TryBindResolvedCall(
         ExpressionNode callExpression,
         ExpressionNode callee,
-        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef> typeArguments,
         IReadOnlyList<ExpressionNode> arguments,
         Scope scope)
     {
@@ -456,7 +455,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
         var resolver = new CallResolver(_program, _expressionTypeResolver.ResolveTypeRef);
         var variables = BuildTypeEnvironment(scope);
-        var resolved = resolver.Resolve(callee, typeArguments, arguments, variables);
+        var resolved = resolver.ResolveTypeRefs(callee, typeArguments, arguments, variables);
         if (resolved?.Function is null)
         {
             return false;
@@ -761,9 +760,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         bool IsInstance);
 
     private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
-
-    private IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeNode> nodes) =>
-        TypeArgumentRefs(nodes).Select(TypeRefFormatter.ToCxString).ToList();
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(TypeRefOrUnknown).ToList();

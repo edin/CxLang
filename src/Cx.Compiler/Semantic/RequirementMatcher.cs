@@ -32,6 +32,15 @@ public sealed class RequirementMatcher
         IReadOnlyList<string>? requirementArguments = null)
         => Match(concreteType, requirementName, requirementArguments, new HashSet<string>(StringComparer.Ordinal));
 
+    internal RequirementMatch MatchTypeRefs(
+        string concreteType,
+        string requirementName,
+        IReadOnlyList<TypeRef>? requirementArguments = null) =>
+        Match(
+            concreteType,
+            requirementName,
+            requirementArguments?.Select(TypeRefFormatter.ToCxString).ToList());
+
     private RequirementMatch Match(
         string concreteType,
         string requirementName,

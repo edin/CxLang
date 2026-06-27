@@ -9,6 +9,8 @@ internal sealed class RequirementDeclarationAnalyzer(
     ProgramNode program,
     RequirementMatcher requirementMatcher)
 {
+    private readonly TypeRefParser _typeRefParser = new(program);
+
     public void AnalyzeGenericConstraints(
         IReadOnlyList<string> typeParameters,
         IReadOnlyList<GenericConstraintNode> constraints,
@@ -36,11 +38,11 @@ internal sealed class RequirementDeclarationAnalyzer(
         {
             AnalyzeRequirementReference(requirement, allowInferredTypeArguments: true);
             var selfType = GetStructSelfType(structNode);
-            var declaredArguments = TypeArguments(requirement.TypeArgumentNodes);
+            var declaredArguments = TypeArgumentRefs(requirement.TypeArgumentNodes);
             var arguments = declaredArguments.Count > 0
                 ? declaredArguments
-                : structNode.TypeParameters;
-            var match = requirementMatcher.Match(selfType, requirement.Name, arguments);
+                : structNode.TypeParameters.Select(typeParameter => new TypeRef.Named(typeParameter, [])).ToList();
+            var match = requirementMatcher.MatchTypeRefs(selfType, requirement.Name, arguments);
             if (match.Success)
             {
                 continue;
@@ -60,7 +62,7 @@ internal sealed class RequirementDeclarationAnalyzer(
             string.Equals(requirement.Name, reference.Name, StringComparison.Ordinal));
         if (requirement is not null)
         {
-            var typeArguments = TypeArguments(reference.TypeArgumentNodes);
+            var typeArguments = TypeArgumentRefs(reference.TypeArgumentNodes);
             if (typeArguments.Count > 0
                 && typeArguments.Count != requirement.TypeParameters.Count)
             {
@@ -99,13 +101,13 @@ internal sealed class RequirementDeclarationAnalyzer(
 
     private static string FormatRequirementReference(
         StructRequirementNode requirement,
-        IReadOnlyList<string> typeArguments) =>
+        IReadOnlyList<TypeRef> typeArguments) =>
         typeArguments.Count == 0
             ? requirement.Name
-            : $"{requirement.Name}<{string.Join(", ", typeArguments)}>";
+            : $"{requirement.Name}<{string.Join(", ", typeArguments.Select(TypeRefFormatter.ToCxString))}>";
 
-    private IReadOnlyList<string> TypeArguments(IReadOnlyList<TypeNode> nodes) =>
-        nodes.Select(typeNode => typeNode.ToSourceText()).ToList();
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
+        nodes.Select(typeNode => typeNode.ToTypeRef(_typeRefParser)).ToList();
 
     private static string GetStructSelfType(StructNode structNode) =>
         structNode.TypeParameters.Count == 0

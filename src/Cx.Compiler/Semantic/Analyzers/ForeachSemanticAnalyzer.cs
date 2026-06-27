@@ -22,7 +22,7 @@ internal sealed class ForeachSemanticAnalyzer(
     {
         var foreachTypeEnvironment = variables.Clone();
         var foreachMutability = new Dictionary<string, LocalMutability>(mutability, StringComparer.Ordinal);
-        var iterableExpression = foreachStatement.IterableExpression.ToSourceText();
+        var iterableName = ExpressionNameFacts.GetQualifiedName(foreachStatement.IterableExpression);
         if (foreachStatement.IterableExpression is ScalarRangeExpressionNode rangeExpression)
         {
             if (foreachStatement.KeyBinding is not null)
@@ -38,8 +38,9 @@ internal sealed class ForeachSemanticAnalyzer(
                 foreachMutability,
                 rangeType);
         }
-        else if (!TryResolveVariableType(iterableExpression, variables, out var iterableTypeRef))
+        else if (iterableName is null || !variables.TryGet(iterableName, out var iterableTypeRef))
         {
+            var iterableExpression = foreachStatement.IterableExpression.ToSourceText();
             diagnostics.Report(
                 foreachStatement.Location,
                 $"Cannot resolve foreach iterable '{iterableExpression}'. Use a visible local/global value, fixed array, scalar range like 0..10, or a type satisfying foreach requirements.");
@@ -247,14 +248,6 @@ internal sealed class ForeachSemanticAnalyzer(
 
     private static string FormatRequirementFailures(IReadOnlyList<string> failures) =>
         RequirementDeclarationAnalyzer.FormatRequirementFailures(failures);
-
-    private static bool TryResolveVariableType(
-        string expression,
-        TypeEnvironment variables,
-        out TypeRef type)
-    {
-        return variables.TryGet(expression.Trim(), out type!);
-    }
 
     private static bool TryGetFixedArrayElementType(TypeRef type, out TypeRef elementType)
     {

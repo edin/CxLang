@@ -375,7 +375,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             && unresolved.ExpressionCandidate is NameExpressionNode name
             && name.Semantic.Symbol is null or { Kind: SymbolKind.Type })
         {
-            var typeNode = TypeNode.CreateFromText(unresolved.Location, unresolved.ToSourceText());
+            var typeNode = TypeNode.CreateFromText(unresolved.Location, name.Name);
             sizeOf.TypeOperandNode = typeNode;
             sizeOf.ExpressionOperand = null;
             sizeOf.OperandNode = new SizeOfTypeOperandNode(typeNode.Location, typeNode);

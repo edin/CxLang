@@ -38,13 +38,14 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
             {
                 if (arguments.Count == function.TypeParameters.Count)
                 {
-                    if (ShouldSkip(function, arguments, knownUses))
+                    var argumentRefs = TypeArgumentRefs(arguments);
+                    if (ShouldSkip(function, argumentRefs, knownUses))
                     {
                         continue;
                     }
 
                     AddAuditEntry(context, expression, function, arguments, "explicit type argument call");
-                    yield return GenericFunctionUse.FromText(function, arguments, _typeRefParser);
+                    yield return new GenericFunctionUse(function, argumentRefs);
                 }
             }
         }
@@ -58,7 +59,7 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
             }
 
             var receiverArguments = TypeRefFacts.TryGetGenericArguments(variableType, out var parsedReceiverArguments)
-                ? FormatTypeArguments(parsedReceiverArguments)
+                ? parsedReceiverArguments
                 : [];
             foreach (var function in genericFunctions.Where(function => OwnerType(function) == owner && !function.IsStatic))
             {
@@ -71,21 +72,22 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
                         continue;
                     }
 
-                    AddAuditEntry(context, expression, function, receiverArguments, "receiver type argument inference");
-                    yield return GenericFunctionUse.FromText(function, receiverArguments, _typeRefParser);
+                    AddAuditEntry(context, expression, function, FormatTypeArguments(receiverArguments), "receiver type argument inference");
+                    yield return new GenericFunctionUse(function, receiverArguments);
                 }
 
                 foreach (var arguments in FindExplicitTypeArgumentCalls(expression, $"{variable}.{function.Name}"))
                 {
                     if (arguments.Count == function.TypeParameters.Count)
                     {
-                        if (ShouldSkip(function, arguments, knownUses))
+                        var argumentRefs = TypeArgumentRefs(arguments);
+                        if (ShouldSkip(function, argumentRefs, knownUses))
                         {
                             continue;
                         }
 
                         AddAuditEntry(context, expression, function, arguments, "explicit receiver type argument call");
-                        yield return GenericFunctionUse.FromText(function, arguments, _typeRefParser);
+                        yield return new GenericFunctionUse(function, argumentRefs);
                     }
                 }
             }
@@ -94,9 +96,9 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
 
     private static bool ShouldSkip(
         FunctionNode function,
-        IReadOnlyList<string> typeArguments,
+        IReadOnlyList<TypeRef> typeArguments,
         IReadOnlySet<GenericFunctionUseKey>? knownUses) =>
-        knownUses is not null && knownUses.Contains(GenericFunctionUseKey.Create(function, typeArguments));
+        knownUses is not null && knownUses.Contains(GenericFunctionUseKey.Create(function, typeArguments, typeRefParser: null));
 
     private void AddAuditEntry(
         string context,
@@ -142,6 +144,9 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
 
     private static IReadOnlyList<string> FormatTypeArguments(IReadOnlyList<TypeRef> typeArguments) =>
         typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
+
+    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<string> typeArguments) =>
+        typeArguments.Select(_typeRefParser.Parse).ToList();
 
     private static string TrimForAudit(string expression)
     {

@@ -467,7 +467,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
                 && function.Name == functionName.Name
                 && function.TypeParameters.Count > 0);
             if (function is null
-                || _resolver.InferFunctionTypeArguments(function.TypeParameters, function.Parameters, call.Arguments, typeEnvironment, skipSelf: false) is not null)
+                || _resolver.InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, call.Arguments, typeEnvironment, skipSelf: false) is not null)
             {
                 return null;
             }
@@ -488,7 +488,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
                 && function.Name == member.MemberName
                 && function.TypeParameters.Count > 0);
             if (staticFunction is null
-                || _resolver.InferFunctionTypeArguments(staticFunction.TypeParameters, staticFunction.Parameters, call.Arguments, typeEnvironment, skipSelf: false) is not null)
+                || _resolver.InferFunctionTypeArgumentRefs(staticFunction.TypeParameters, staticFunction.Parameters, call.Arguments, typeEnvironment, skipSelf: false) is not null)
             {
                 return null;
             }
