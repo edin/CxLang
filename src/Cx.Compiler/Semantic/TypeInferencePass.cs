@@ -293,16 +293,16 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     {
         var iterableExpression = InferExpression(foreachStatement.IterableExpression, typeEnvironment);
         var foreachTypeEnvironment = typeEnvironment.Clone();
-        var iterableType = _resolver?.Resolve(iterableExpression, typeEnvironment);
+        var iterableTypeRef = _resolver?.ResolveTypeRef(iterableExpression, typeEnvironment);
         string? elementType = null;
         string? keyType = null;
-        if (iterableExpression is ScalarRangeExpressionNode && iterableType is not null)
+        if (iterableExpression is ScalarRangeExpressionNode && iterableTypeRef is not null)
         {
-            elementType = iterableType;
+            elementType = TypeRefFormatter.ToCxString(iterableTypeRef);
             AddForeachBindings(foreachStatement, foreachTypeEnvironment, elementType);
         }
-        else if (iterableType is not null
-            && TryResolveForeachTypes(foreachStatement, iterableType, out elementType, out keyType))
+        else if (iterableTypeRef is not null
+            && TryResolveForeachTypes(foreachStatement, iterableTypeRef, out elementType, out keyType))
         {
             if (foreachStatement.KeyBinding is { } keyBinding && keyType is not null)
             {
@@ -372,18 +372,25 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private bool TryResolveForeachTypes(
         ForeachStatement foreachStatement,
-        string iterableType,
+        TypeRef iterableType,
         out string elementType,
         out string? keyType)
     {
         elementType = string.Empty;
         keyType = null;
 
-        return _typeSystem?.TryResolveForeachTypes(
+        if (_typeSystem?.TryResolveForeachTypes(
             iterableType,
             keyValue: foreachStatement.KeyBinding is not null,
-            out elementType,
-            out keyType) == true;
+            out var elementTypeRef,
+            out var keyTypeRef) != true)
+        {
+            return false;
+        }
+
+        elementType = TypeRefFormatter.ToCxString(elementTypeRef);
+        keyType = keyTypeRef is null ? null : TypeRefFormatter.ToCxString(keyTypeRef);
+        return true;
     }
 
     private string InferVariableType(

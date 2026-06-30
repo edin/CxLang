@@ -91,7 +91,7 @@ internal static class IteratorForeachLowerer
             }
 
             var requirementName = node.KeyBinding is null ? "Iterable" : "KeyValueIterable";
-            var match = _requirements.Match(iterableType, requirementName);
+            var match = _requirements.MatchTypeRefs(iterableType, requirementName);
             if (!match.Success || !match.TryGetTypeBindingText("I", out var iteratorType))
             {
                 return false;
@@ -121,21 +121,21 @@ internal static class IteratorForeachLowerer
         private static bool TryGetIterableType(
             ExpressionNode expression,
             AstTransformContext context,
-            out string type)
+            out TypeRef type)
         {
             if (expression.Semantic.Type is { } semanticType)
             {
-                type = TypeRefFormatter.ToCxString(semanticType);
+                type = semanticType;
                 return true;
             }
 
             if (expression is NameExpressionNode name && context.TryGetLocalTypeRef(name.Name, out var localType))
             {
-                type = TypeRefFormatter.ToCxString(localType);
+                type = localType;
                 return true;
             }
 
-            type = string.Empty;
+            type = new TypeRef.Unknown();
             return false;
         }
 

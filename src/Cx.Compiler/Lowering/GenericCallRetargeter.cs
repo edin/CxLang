@@ -35,12 +35,9 @@ internal static class GenericCallRetargeter
         ExpressionNode expression,
         IReadOnlyDictionary<string, FunctionNode> specializations)
     {
-        var resolvedTypeArguments = expression.Semantic.ResolvedCall is { } call
-            ? TypeArgumentTexts(call.TypeArgumentRefs)
-            : [];
         if (expression.Semantic.ResolvedCall is not { Function.TypeParameters.Count: > 0 } resolved
             || resolved.TypeArgumentRefs.Count != resolved.Function.TypeParameters.Count
-            || !specializations.TryGetValue(Key(resolved.Function, resolvedTypeArguments), out var specialized))
+            || !specializations.TryGetValue(Key(resolved.Function, resolved.TypeArgumentRefs), out var specialized))
         {
             return;
         }
@@ -238,18 +235,16 @@ internal static class GenericCallRetargeter
         }
     }
 
-    private static string Key(FunctionNode function, IReadOnlyList<string> arguments)
+    private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments)
     {
         var ownerType = OwnerTypeText(function);
         var functionName = string.IsNullOrWhiteSpace(ownerType)
             ? function.Name
             : $"{ownerType}.{function.Name}";
+        var argumentText = arguments.Select(TypeRefFormatter.ToCxString);
 
-        return $"{functionName}<{string.Join(",", arguments)}>";
+        return $"{functionName}<{string.Join(",", argumentText)}>";
     }
-
-    private static IReadOnlyList<string> TypeArgumentTexts(IReadOnlyList<TypeRef> typeArguments) =>
-        typeArguments.Select(TypeRefFormatter.ToCxString).ToList();
 
     private static string OwnerTypeText(FunctionNode function)
     {

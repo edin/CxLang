@@ -114,7 +114,7 @@ internal static class ContiguousForeachLowerer
                 return true;
             }
 
-            var contiguous = _requirements.Match(iterableType, "Contiguous");
+            var contiguous = _requirements.MatchTypeRefs(iterableTypeRef, "Contiguous");
             if (contiguous.Success && contiguous.TryGetTypeBindingText("T", out var contiguousElementType))
             {
                 iterable = new ContiguousIterable(
@@ -125,7 +125,7 @@ internal static class ContiguousForeachLowerer
                 return true;
             }
 
-            var range = _requirements.Match(iterableType, "ContiguousRange");
+            var range = _requirements.MatchTypeRefs(iterableTypeRef, "ContiguousRange");
             if (range.Success && range.TryGetTypeBindingText("T", out var rangeElementType))
             {
                 iterable = new ContiguousIterable(

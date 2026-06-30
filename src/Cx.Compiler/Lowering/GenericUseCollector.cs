@@ -870,11 +870,6 @@ internal readonly record struct GenericFunctionUseKey(string FunctionName, strin
             FormatFunctionName(function, typeRefParser),
             string.Join(",", typeArguments.Select(TypeRefFormatter.ToCxString)));
 
-    public static GenericFunctionUseKey Create(FunctionNode function, IReadOnlyList<string> typeArguments) =>
-        new(
-            FormatFunctionName(function, typeRefParser: null),
-            string.Join(",", typeArguments));
-
     private static string FormatFunctionName(FunctionNode function, TypeRefParser? typeRefParser)
     {
         if (function.OwnerTypeNode is null)

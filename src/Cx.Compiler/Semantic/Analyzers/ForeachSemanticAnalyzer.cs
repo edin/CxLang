@@ -49,7 +49,7 @@ internal sealed class ForeachSemanticAnalyzer(
         {
             var iterableType = TypeRefFormatter.ToCxString(iterableTypeRef);
             if (TryResolveForeachTypes(
-                iterableType,
+                iterableTypeRef,
                 keyValue: true,
                 out var keyValueElementType,
                 out var keyValueKeyType))
@@ -57,7 +57,7 @@ internal sealed class ForeachSemanticAnalyzer(
                 if (keyValueKeyType is not null)
                 {
                     var keyBindingType = SemanticFacts.TypeRefOrNull(foreachStatement.KeyBinding.TypeNode, typeRefParser)
-                        ?? typeRefParser.Parse(keyValueKeyType);
+                        ?? keyValueKeyType;
                     SemanticFacts.SetVariableType(foreachTypeEnvironment, foreachStatement.KeyBinding.Name, keyBindingType);
                     foreachMutability[foreachStatement.KeyBinding.Name] = LocalMutability.ForeachKey;
                 }
@@ -66,7 +66,7 @@ internal sealed class ForeachSemanticAnalyzer(
                     foreachStatement,
                     foreachTypeEnvironment,
                     foreachMutability,
-                    typeRefParser.Parse(keyValueElementType));
+                    keyValueElementType);
             }
             else
             {
@@ -84,7 +84,7 @@ internal sealed class ForeachSemanticAnalyzer(
         {
             var iterableType = TypeRefFormatter.ToCxString(iterableTypeRef);
             if (TryResolveForeachTypes(
-                iterableType,
+                iterableTypeRef,
                 keyValue: false,
                 out var iteratorElementType,
                 out _))
@@ -93,9 +93,9 @@ internal sealed class ForeachSemanticAnalyzer(
                     foreachStatement,
                     foreachTypeEnvironment,
                     foreachMutability,
-                    typeRefParser.Parse(iteratorElementType));
+                    iteratorElementType);
             }
-            else if (SatisfiesRequirement(iterableType, "Contiguous") is { Success: true } contiguous
+            else if (SatisfiesRequirement(iterableTypeRef, "Contiguous") is { Success: true } contiguous
                 && contiguous.TryGetTypeBinding("T", out var contiguousElementType))
             {
                 AddForeachValueBindings(
@@ -104,7 +104,7 @@ internal sealed class ForeachSemanticAnalyzer(
                     foreachMutability,
                     contiguousElementType);
             }
-            else if (SatisfiesRequirement(iterableType, "ContiguousRange") is { Success: true } range
+            else if (SatisfiesRequirement(iterableTypeRef, "ContiguousRange") is { Success: true } range
                 && range.TryGetTypeBinding("T", out var rangeElementType))
             {
                 AddForeachValueBindings(
@@ -113,7 +113,7 @@ internal sealed class ForeachSemanticAnalyzer(
                     foreachMutability,
                     rangeElementType);
             }
-            else if (SatisfiesRequirement(iterableType, "Contiguous") is { } match && !match.Success)
+            else if (SatisfiesRequirement(iterableTypeRef, "Contiguous") is { } match && !match.Success)
             {
                 ReportForeachRequirementFailure(foreachStatement, iterableType, match);
             }
@@ -177,12 +177,12 @@ internal sealed class ForeachSemanticAnalyzer(
     }
 
     private bool TryResolveForeachTypes(
-        string iterableType,
+        TypeRef iterableType,
         bool keyValue,
-        out string valueType,
-        out string? keyType)
+        out TypeRef valueType,
+        out TypeRef? keyType)
     {
-        valueType = string.Empty;
+        valueType = new TypeRef.Unknown();
         keyType = null;
         return typeSystem.TryResolveForeachTypes(iterableType, keyValue, out valueType, out keyType);
     }
@@ -244,6 +244,12 @@ internal sealed class ForeachSemanticAnalyzer(
         string concreteType,
         string requirementName,
         IReadOnlyList<string>? requirementArguments = null) =>
+        typeSystem.SatisfiesRequirement(concreteType, requirementName, requirementArguments);
+
+    private RequirementMatch SatisfiesRequirement(
+        TypeRef concreteType,
+        string requirementName,
+        IReadOnlyList<TypeRef>? requirementArguments = null) =>
         typeSystem.SatisfiesRequirement(concreteType, requirementName, requirementArguments);
 
     private static string FormatRequirementFailures(IReadOnlyList<string> failures) =>

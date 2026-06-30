@@ -83,10 +83,7 @@ internal sealed class TypeSystem
         TypeRef concreteType,
         string requirementName,
         IReadOnlyList<TypeRef>? requirementArguments = null) =>
-        SatisfiesRequirement(
-            TypeRefFormatter.ToCxString(concreteType),
-            requirementName,
-            requirementArguments?.Select(TypeRefFormatter.ToCxString).ToList());
+        _requirementMatcher.Value.MatchTypeRefs(concreteType, requirementName, requirementArguments);
 
     public bool TryResolveForeachTypes(
         string iterableType,
@@ -94,15 +91,33 @@ internal sealed class TypeSystem
         out string valueType,
         out string? keyType)
     {
+        if (TryResolveForeachTypes(Parse(iterableType), keyValue, out var valueTypeRef, out var keyTypeRef))
+        {
+            valueType = TypeRefFormatter.ToCxString(valueTypeRef);
+            keyType = keyTypeRef is null ? null : TypeRefFormatter.ToCxString(keyTypeRef);
+            return true;
+        }
+
         valueType = string.Empty;
+        keyType = null;
+        return false;
+    }
+
+    public bool TryResolveForeachTypes(
+        TypeRef iterableType,
+        bool keyValue,
+        out TypeRef valueType,
+        out TypeRef? keyType)
+    {
+        valueType = new TypeRef.Unknown();
         keyType = null;
 
         if (keyValue)
         {
             var keyValueMatch = SatisfiesRequirement(iterableType, "KeyValueIterable");
             if (!keyValueMatch.Success
-                || !keyValueMatch.TryGetTypeBindingText("K", out var matchedKeyType)
-                || !keyValueMatch.TryGetTypeBindingText("V", out var matchedValueType))
+                || !keyValueMatch.TryGetTypeBinding("K", out var matchedKeyType)
+                || !keyValueMatch.TryGetTypeBinding("V", out var matchedValueType))
             {
                 return false;
             }
@@ -112,28 +127,28 @@ internal sealed class TypeSystem
             return true;
         }
 
-        if (TryGetFixedArrayElementType(Parse(iterableType), out var arrayElementType))
+        if (TryGetFixedArrayElementType(iterableType, out var arrayElementType))
         {
             valueType = arrayElementType;
             return true;
         }
 
         var iterable = SatisfiesRequirement(iterableType, "Iterable");
-        if (iterable.Success && iterable.TryGetTypeBindingText("T", out var iterableElementType))
+        if (iterable.Success && iterable.TryGetTypeBinding("T", out var iterableElementType))
         {
             valueType = iterableElementType;
             return true;
         }
 
         var contiguous = SatisfiesRequirement(iterableType, "Contiguous");
-        if (contiguous.Success && contiguous.TryGetTypeBindingText("T", out var contiguousElementType))
+        if (contiguous.Success && contiguous.TryGetTypeBinding("T", out var contiguousElementType))
         {
             valueType = contiguousElementType;
             return true;
         }
 
         var range = SatisfiesRequirement(iterableType, "ContiguousRange");
-        if (range.Success && range.TryGetTypeBindingText("T", out var rangeElementType))
+        if (range.Success && range.TryGetTypeBinding("T", out var rangeElementType))
         {
             valueType = rangeElementType;
             return true;
@@ -142,9 +157,9 @@ internal sealed class TypeSystem
         return false;
     }
 
-    private static bool TryGetFixedArrayElementType(TypeRef type, out string elementType)
+    private static bool TryGetFixedArrayElementType(TypeRef type, out TypeRef elementType)
     {
-        elementType = string.Empty;
+        elementType = new TypeRef.Unknown();
         while (type is TypeRef.Alias alias)
         {
             type = alias.Target;
@@ -155,7 +170,7 @@ internal sealed class TypeSystem
             return false;
         }
 
-        elementType = TypeRefFormatter.ToCxString(fixedArray.Element);
+        elementType = fixedArray.Element;
         return true;
     }
 

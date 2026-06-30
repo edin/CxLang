@@ -50,7 +50,7 @@ internal sealed class RequirementDeclarationAnalyzer(
 
             diagnostics.Report(
                 requirement.Location,
-                $"Struct '{selfType}' declares '{FormatRequirementReference(requirement, declaredArguments)}' but does not satisfy it: {FormatRequirementFailures(match.Failures)}");
+                $"Struct '{TypeRefFormatter.ToCxString(selfType)}' declares '{FormatRequirementReference(requirement, declaredArguments)}' but does not satisfy it: {FormatRequirementFailures(match.Failures)}");
         }
     }
 
@@ -109,10 +109,12 @@ internal sealed class RequirementDeclarationAnalyzer(
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(typeNode => typeNode.ToTypeRef(_typeRefParser)).ToList();
 
-    private static string GetStructSelfType(StructNode structNode) =>
+    private static TypeRef GetStructSelfType(StructNode structNode) =>
         structNode.TypeParameters.Count == 0
-            ? structNode.Name
-            : $"{structNode.Name}<{string.Join(",", structNode.TypeParameters)}>";
+            ? new TypeRef.Named(structNode.Name, [])
+            : new TypeRef.Named(
+                structNode.Name,
+                structNode.TypeParameters.Select(typeParameter => new TypeRef.Named(typeParameter, [])).ToList());
 
     public static string FormatRequirementFailures(IReadOnlyList<string> failures) =>
         failures.Count == 0

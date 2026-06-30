@@ -235,15 +235,12 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
                 return false;
             }
 
-            var concreteType = TypeRefFormatter.ToCxString(concreteTypeRef);
             foreach (var requirement in constraint.Requirements)
             {
                 var arguments = requirement.TypeArgumentNodes
-                    .Select(argument =>
-                        TypeRefFormatter.ToCxString(
-                            TypeRefRewriter.Substitute(argument.ToTypeRef(_parser), type.Substitutions)))
+                    .Select(argument => TypeRefRewriter.Substitute(argument.ToTypeRef(_parser), type.Substitutions))
                     .ToList();
-                if (!_requirementMatcher.Value.Match(concreteType, requirement.Name, arguments).Success)
+                if (!_requirementMatcher.Value.MatchTypeRefs(concreteTypeRef, requirement.Name, arguments).Success)
                 {
                     return false;
                 }

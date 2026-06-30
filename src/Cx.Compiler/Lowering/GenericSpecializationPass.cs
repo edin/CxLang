@@ -97,14 +97,12 @@ internal static class GenericSpecializationPass
         };
     }
 
-    private static string Key(FunctionNode function, IReadOnlyList<string> arguments, TypeRefParser typeRefParser)
+    private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments, TypeRefParser typeRefParser)
     {
         var ownerType = TypeText(function.OwnerTypeNode, typeRefParser);
-        return $"{(string.IsNullOrWhiteSpace(ownerType) ? function.Name : $"{ownerType}.{function.Name}")}<{string.Join(",", arguments)}>";
+        var argumentText = arguments.Select(TypeRefFormatter.ToCxString);
+        return $"{(string.IsNullOrWhiteSpace(ownerType) ? function.Name : $"{ownerType}.{function.Name}")}<{string.Join(",", argumentText)}>";
     }
-
-    private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments, TypeRefParser typeRefParser) =>
-        Key(function, arguments.Select(TypeRefFormatter.ToCxString).ToList(), typeRefParser);
 
     private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
     {

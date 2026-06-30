@@ -9,36 +9,23 @@ internal static class GenericFunctionSpecializer
 {
     public static FunctionNode Specialize(
         FunctionNode function,
-        IReadOnlyList<string> arguments) =>
-        Specialize(
-            function,
-            arguments.Select(argument => GenericTypeSubstitutionBuilder.ParseType(argument) ?? new TypeRef.Unknown()).ToList());
-
-    public static FunctionNode Specialize(
-        FunctionNode function,
         IReadOnlyList<TypeRef> argumentRefs)
     {
-        var arguments = argumentRefs.Select(TypeRefFormatter.ToCxString).ToList();
-        var substitutions = function.TypeParameters
-            .Zip(arguments)
-            .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
         var typeSubstitutions = function.TypeParameters
             .Zip(argumentRefs)
             .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
         var ownerType = function.OwnerTypeNode?.Semantic.Type;
-        var selfType = ownerType is not null && arguments.Count > 0
+        var selfType = ownerType is not null && argumentRefs.Count > 0
             ? new TypeRef.Named(
                 TypeRefFormatter.ToCxString(ownerType),
                 argumentRefs)
             : ownerType;
-        var selfTypeText = selfType is null ? null : TypeRefFormatter.ToCxString(selfType);
         var selfTypeRef = selfType;
         var specialized = function with
         {
             TypeParameters = [],
-            TypeArgumentNodes = arguments
-                .Zip(argumentRefs)
-                .Select(pair => CreateTypeArgumentNode(function.Location, pair.First, pair.Second))
+            TypeArgumentNodes = argumentRefs
+                .Select(argumentRef => CreateTypeArgumentNode(function.Location, argumentRef))
                 .ToList(),
             ReturnTypeNode = SubstituteTypeNode(function.ReturnTypeNode, typeSubstitutions, selfTypeRef),
             Parameters = function.Parameters
@@ -47,15 +34,16 @@ internal static class GenericFunctionSpecializer
                     TypeNode = SubstituteTypeNode(parameter.TypeNode, typeSubstitutions, selfTypeRef),
                 })
                 .ToList(),
-            Body = function.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+            Body = function.Body.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
         };
         specialized.Semantic.ModuleName = function.Semantic.ModuleName;
         EnsureFunctionSymbol(specialized);
         return specialized;
     }
 
-    private static TypeNode CreateTypeArgumentNode(Location location, string argument, TypeRef argumentRef)
+    private static TypeNode CreateTypeArgumentNode(Location location, TypeRef argumentRef)
     {
+        var argument = TypeRefFormatter.ToCxString(argumentRef);
         var typeNode = TypeNode.CreateFromText(location, argument);
         typeNode.Semantic.Type = argumentRef;
         return typeNode;
@@ -81,7 +69,6 @@ internal static class GenericFunctionSpecializer
 
     private static StatementNode SubstituteStatement(
         StatementNode statement,
-        IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions)
     {
         return statement switch
@@ -89,59 +76,59 @@ internal static class GenericFunctionSpecializer
             LetStatement let => let with
             {
                 TypeNode = SubstituteTypeNode(let.TypeNode, typeSubstitutions),
-                Initializer = SubstituteOptionalExpression(let.Initializer, substitutions, typeSubstitutions),
+                Initializer = SubstituteOptionalExpression(let.Initializer, typeSubstitutions),
             },
-            ReturnStatement ret => ret with { Expression = SubstituteOptionalExpression(ret.Expression, substitutions, typeSubstitutions) },
-            CStatement c => c with { Expression = SubstituteExpression(c.Expression, substitutions, typeSubstitutions) },
+            ReturnStatement ret => ret with { Expression = SubstituteOptionalExpression(ret.Expression, typeSubstitutions) },
+            CStatement c => c with { Expression = SubstituteExpression(c.Expression, typeSubstitutions) },
             IfStatement ifStatement => ifStatement with
             {
-                Condition = SubstituteExpression(ifStatement.Condition, substitutions, typeSubstitutions),
-                ThenBody = ifStatement.ThenBody.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
-                ElseBranch = ifStatement.ElseBranch is null ? null : SubstituteStatement(ifStatement.ElseBranch, substitutions, typeSubstitutions),
+                Condition = SubstituteExpression(ifStatement.Condition, typeSubstitutions),
+                ThenBody = ifStatement.ThenBody.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
+                ElseBranch = ifStatement.ElseBranch is null ? null : SubstituteStatement(ifStatement.ElseBranch, typeSubstitutions),
             },
             ElseBlockStatement elseBlock => elseBlock with
             {
-                Body = elseBlock.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                Body = elseBlock.Body.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
             },
             WhileStatement whileStatement => whileStatement with
             {
-                Condition = SubstituteExpression(whileStatement.Condition, substitutions, typeSubstitutions),
-                Body = whileStatement.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                Condition = SubstituteExpression(whileStatement.Condition, typeSubstitutions),
+                Body = whileStatement.Body.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
             },
             ForStatement forStatement => forStatement with
             {
-                CachedRangeEndInitializer = SubstituteOptionalForDeclarationInitializer(forStatement.CachedRangeEndInitializer, substitutions, typeSubstitutions),
-                CounterInitializer = SubstituteOptionalForDeclarationInitializer(forStatement.CounterInitializer, substitutions, typeSubstitutions),
-                Initializer = SubstituteForInitializer(forStatement.Initializer, substitutions, typeSubstitutions),
-                Condition = SubstituteExpression(forStatement.Condition, substitutions, typeSubstitutions),
-                Increment = SubstituteExpression(forStatement.Increment, substitutions, typeSubstitutions),
-                CounterIncrement = SubstituteOptionalExpression(forStatement.CounterIncrement, substitutions, typeSubstitutions),
-                Body = forStatement.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                CachedRangeEndInitializer = SubstituteOptionalForDeclarationInitializer(forStatement.CachedRangeEndInitializer, typeSubstitutions),
+                CounterInitializer = SubstituteOptionalForDeclarationInitializer(forStatement.CounterInitializer, typeSubstitutions),
+                Initializer = SubstituteForInitializer(forStatement.Initializer, typeSubstitutions),
+                Condition = SubstituteExpression(forStatement.Condition, typeSubstitutions),
+                Increment = SubstituteExpression(forStatement.Increment, typeSubstitutions),
+                CounterIncrement = SubstituteOptionalExpression(forStatement.CounterIncrement, typeSubstitutions),
+                Body = forStatement.Body.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
             },
             ForeachStatement foreachStatement => foreachStatement with
             {
-                IndexBinding = SubstituteForeachBinding(foreachStatement.IndexBinding, substitutions, typeSubstitutions),
-                KeyBinding = SubstituteForeachBinding(foreachStatement.KeyBinding, substitutions, typeSubstitutions),
-                ValueBinding = SubstituteForeachBinding(foreachStatement.ValueBinding, substitutions, typeSubstitutions)!,
-                IterableExpression = SubstituteExpression(foreachStatement.IterableExpression, substitutions, typeSubstitutions),
-                Body = foreachStatement.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                IndexBinding = SubstituteForeachBinding(foreachStatement.IndexBinding, typeSubstitutions),
+                KeyBinding = SubstituteForeachBinding(foreachStatement.KeyBinding, typeSubstitutions),
+                ValueBinding = SubstituteForeachBinding(foreachStatement.ValueBinding, typeSubstitutions)!,
+                IterableExpression = SubstituteExpression(foreachStatement.IterableExpression, typeSubstitutions),
+                Body = foreachStatement.Body.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
             },
             SwitchStatement switchStatement => switchStatement with
             {
-                Expression = SubstituteExpression(switchStatement.Expression, substitutions, typeSubstitutions),
+                Expression = SubstituteExpression(switchStatement.Expression, typeSubstitutions),
                 Cases = switchStatement.Cases.Select(switchCase => switchCase with
                 {
-                    Pattern = SubstituteExpression(switchCase.Pattern, substitutions, typeSubstitutions),
-                    Body = switchCase.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                    Pattern = SubstituteExpression(switchCase.Pattern, typeSubstitutions),
+                    Body = switchCase.Body.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
                 }).ToList(),
-                DefaultBody = switchStatement.DefaultBody.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                DefaultBody = switchStatement.DefaultBody.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
             },
             MatchStatement matchStatement => matchStatement with
             {
-                Expression = SubstituteExpression(matchStatement.Expression, substitutions, typeSubstitutions),
+                Expression = SubstituteExpression(matchStatement.Expression, typeSubstitutions),
                 Arms = matchStatement.Arms.Select(arm => arm with
                 {
-                    Body = arm.Body.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                    Body = arm.Body.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
                 }).ToList(),
             },
             _ => statement,
@@ -150,42 +137,38 @@ internal static class GenericFunctionSpecializer
 
     private static ExpressionNode? SubstituteOptionalExpression(
         ExpressionNode? expression,
-        IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
-        expression is null ? null : SubstituteExpression(expression, substitutions, typeSubstitutions);
+        expression is null ? null : SubstituteExpression(expression, typeSubstitutions);
 
     private static ForInitializerNode SubstituteForInitializer(
         ForInitializerNode initializer,
-        IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions) => initializer switch
     {
         ForDeclarationInitializerNode declaration => declaration with
         {
             TypeNode = SubstituteTypeNode(declaration.TypeNode, typeSubstitutions),
-            Initializer = SubstituteOptionalExpression(declaration.Initializer, substitutions, typeSubstitutions),
+            Initializer = SubstituteOptionalExpression(declaration.Initializer, typeSubstitutions),
         },
         ForExpressionInitializerNode expression => expression with
         {
-            Expression = SubstituteExpression(expression.Expression, substitutions, typeSubstitutions),
+            Expression = SubstituteExpression(expression.Expression, typeSubstitutions),
         },
         _ => initializer,
     };
 
     private static ForDeclarationInitializerNode? SubstituteOptionalForDeclarationInitializer(
         ForDeclarationInitializerNode? initializer,
-        IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
         initializer is null
             ? null
             : initializer with
             {
                 TypeNode = SubstituteTypeNode(initializer.TypeNode, typeSubstitutions),
-                Initializer = SubstituteOptionalExpression(initializer.Initializer, substitutions, typeSubstitutions),
+                Initializer = SubstituteOptionalExpression(initializer.Initializer, typeSubstitutions),
             };
 
     private static ForeachBinding? SubstituteForeachBinding(
         ForeachBinding? binding,
-        IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
         binding is null
             ? null
@@ -196,60 +179,59 @@ internal static class GenericFunctionSpecializer
 
     private static ExpressionNode SubstituteExpression(
         ExpressionNode expression,
-        IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions)
     {
         return expression switch
         {
             RawExpressionNode raw => raw,
             LiteralExpressionNode literal => literal,
-            NameExpressionNode name => substitutions.TryGetValue(name.Name, out var substitutedName)
-                ? name with { Name = substitutedName }
+            NameExpressionNode name => typeSubstitutions.TryGetValue(name.Name, out var substitutedType)
+                ? name with { Name = TypeRefFormatter.ToCxString(substitutedType) }
                 : name,
             ParenthesizedExpressionNode parenthesized => parenthesized with
             {
-                Expression = SubstituteExpression(parenthesized.Expression, substitutions, typeSubstitutions),
+                Expression = SubstituteExpression(parenthesized.Expression, typeSubstitutions),
             },
             CastExpressionNode cast => cast with
             {
                 TargetTypeNode = SubstituteTypeNode(cast.TargetTypeNode, typeSubstitutions),
-                Expression = SubstituteExpression(cast.Expression, substitutions, typeSubstitutions),
+                Expression = SubstituteExpression(cast.Expression, typeSubstitutions),
             },
             UnaryExpressionNode unary => unary with
             {
-                Operand = SubstituteExpression(unary.Operand, substitutions, typeSubstitutions),
+                Operand = SubstituteExpression(unary.Operand, typeSubstitutions),
             },
             PostfixExpressionNode postfix => postfix with
             {
-                Operand = SubstituteExpression(postfix.Operand, substitutions, typeSubstitutions),
+                Operand = SubstituteExpression(postfix.Operand, typeSubstitutions),
             },
             SizeOfExpressionNode sizeOf => sizeOf with
             {
                 TypeOperandNode = SubstituteTypeNode(sizeOf.TypeOperandNode, typeSubstitutions),
-                ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, substitutions, typeSubstitutions),
-                OperandNode = SubstituteSizeOfOperand(sizeOf.OperandNode, substitutions, typeSubstitutions),
+                ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, typeSubstitutions),
+                OperandNode = SubstituteSizeOfOperand(sizeOf.OperandNode, typeSubstitutions),
             },
             BinaryExpressionNode binary => binary with
             {
-                Left = SubstituteExpression(binary.Left, substitutions, typeSubstitutions),
-                Right = SubstituteExpression(binary.Right, substitutions, typeSubstitutions),
+                Left = SubstituteExpression(binary.Left, typeSubstitutions),
+                Right = SubstituteExpression(binary.Right, typeSubstitutions),
             },
             ScalarRangeExpressionNode range => range with
             {
-                Start = SubstituteExpression(range.Start, substitutions, typeSubstitutions),
-                End = SubstituteExpression(range.End, substitutions, typeSubstitutions),
+                Start = SubstituteExpression(range.Start, typeSubstitutions),
+                End = SubstituteExpression(range.End, typeSubstitutions),
             },
             ConditionalExpressionNode conditional => conditional with
             {
-                Condition = SubstituteExpression(conditional.Condition, substitutions, typeSubstitutions),
-                WhenTrue = SubstituteExpression(conditional.WhenTrue, substitutions, typeSubstitutions),
-                WhenFalse = SubstituteExpression(conditional.WhenFalse, substitutions, typeSubstitutions),
+                Condition = SubstituteExpression(conditional.Condition, typeSubstitutions),
+                WhenTrue = SubstituteExpression(conditional.WhenTrue, typeSubstitutions),
+                WhenFalse = SubstituteExpression(conditional.WhenFalse, typeSubstitutions),
             },
             InitializerExpressionNode initializer => initializer with
             {
                 TypeNameNode = SubstituteTypeNode(initializer.TypeNameNode, typeSubstitutions),
-                Fields = initializer.Fields.Select(field => field with { Value = SubstituteExpression(field.Value, substitutions, typeSubstitutions) }).ToList(),
-                Values = initializer.Values.Select(value => SubstituteExpression(value, substitutions, typeSubstitutions)).ToList(),
+                Fields = initializer.Fields.Select(field => field with { Value = SubstituteExpression(field.Value, typeSubstitutions) }).ToList(),
+                Values = initializer.Values.Select(value => SubstituteExpression(value, typeSubstitutions)).ToList(),
             },
             FunctionExpressionNode functionExpression => functionExpression with
             {
@@ -260,35 +242,35 @@ internal static class GenericFunctionSpecializer
                     })
                     .ToList(),
                 ReturnTypeNode = SubstituteTypeNode(functionExpression.ReturnTypeNode, typeSubstitutions),
-                ExpressionBody = SubstituteOptionalExpression(functionExpression.ExpressionBody, substitutions, typeSubstitutions),
-                BlockBody = functionExpression.BlockBody?.Select(statement => SubstituteStatement(statement, substitutions, typeSubstitutions)).ToList(),
+                ExpressionBody = SubstituteOptionalExpression(functionExpression.ExpressionBody, typeSubstitutions),
+                BlockBody = functionExpression.BlockBody?.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
             },
             AssignmentExpressionNode assignment => assignment with
             {
-                Target = SubstituteExpression(assignment.Target, substitutions, typeSubstitutions),
-                Value = SubstituteExpression(assignment.Value, substitutions, typeSubstitutions),
+                Target = SubstituteExpression(assignment.Target, typeSubstitutions),
+                Value = SubstituteExpression(assignment.Value, typeSubstitutions),
             },
             CallExpressionNode call => call with
             {
-                Callee = SubstituteExpression(call.Callee, substitutions, typeSubstitutions),
-                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions, typeSubstitutions)).ToList(),
+                Callee = SubstituteExpression(call.Callee, typeSubstitutions),
+                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, typeSubstitutions)).ToList(),
             },
             GenericCallExpressionNode call => call with
             {
-                Callee = SubstituteExpression(call.Callee, substitutions, typeSubstitutions),
+                Callee = SubstituteExpression(call.Callee, typeSubstitutions),
                 TypeArgumentNodes = call.TypeArgumentNodes
                     .Select(typeNode => SubstituteTypeNode(typeNode, typeSubstitutions)!)
                     .ToList(),
-                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, substitutions, typeSubstitutions)).ToList(),
+                Arguments = call.Arguments.Select(argument => SubstituteExpression(argument, typeSubstitutions)).ToList(),
             },
             MemberExpressionNode member => member with
             {
-                Target = SubstituteExpression(member.Target, substitutions, typeSubstitutions),
+                Target = SubstituteExpression(member.Target, typeSubstitutions),
             },
             IndexExpressionNode index => index with
             {
-                Target = SubstituteExpression(index.Target, substitutions, typeSubstitutions),
-                Index = SubstituteExpression(index.Index, substitutions, typeSubstitutions),
+                Target = SubstituteExpression(index.Target, typeSubstitutions),
+                Index = SubstituteExpression(index.Index, typeSubstitutions),
             },
             _ => expression,
         };
@@ -296,7 +278,6 @@ internal static class GenericFunctionSpecializer
 
     private static SizeOfOperandNode SubstituteSizeOfOperand(
         SizeOfOperandNode operand,
-        IReadOnlyDictionary<string, string> substitutions,
         IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
         operand switch
         {
@@ -306,11 +287,11 @@ internal static class GenericFunctionSpecializer
             },
             SizeOfExpressionOperandNode expressionOperand => expressionOperand with
             {
-                Expression = SubstituteExpression(expressionOperand.Expression, substitutions, typeSubstitutions),
+                Expression = SubstituteExpression(expressionOperand.Expression, typeSubstitutions),
             },
             SizeOfUnresolvedOperandNode unresolved => unresolved with
             {
-                ExpressionCandidate = SubstituteOptionalExpression(unresolved.ExpressionCandidate, substitutions, typeSubstitutions),
+                ExpressionCandidate = SubstituteOptionalExpression(unresolved.ExpressionCandidate, typeSubstitutions),
             },
             _ => operand,
         };

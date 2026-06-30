@@ -81,9 +81,8 @@ internal sealed class TypeUsageAnalyzer(
                     var arguments = requirement.TypeArgumentNodes
                         .Select(typeNode => typeNode.ToTypeRef(_typeRefParser))
                         .Select(argument => TypeRefRewriter.Substitute(argument, substitutions))
-                        .Select(TypeRefFormatter.ToCxString)
                         .ToList();
-                    var match = requirementMatcher.Match(concreteType, requirement.Name, arguments);
+                    var match = requirementMatcher.MatchTypeRefs(concreteTypeRef, requirement.Name, arguments);
                     if (match.Success)
                     {
                         continue;

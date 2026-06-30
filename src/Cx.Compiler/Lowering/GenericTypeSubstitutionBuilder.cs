@@ -15,7 +15,4 @@ internal static class GenericTypeSubstitutionBuilder
             pair => pair.Key,
             pair => TypeParser.Parse(pair.Value),
             StringComparer.Ordinal);
-
-    public static TypeRef? ParseType(string? type) =>
-        type is null ? null : TypeParser.Parse(type);
 }

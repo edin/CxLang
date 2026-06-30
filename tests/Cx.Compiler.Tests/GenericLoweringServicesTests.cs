@@ -45,7 +45,7 @@ public sealed class GenericLoweringServicesTests
         var generic = Assert.Single(program.Functions);
         var knownUses = new HashSet<GenericFunctionUseKey>
         {
-            GenericFunctionUseKey.Create(generic, ["int"]),
+            GenericFunctionUseKey.Create(generic, [new TypeRef.Named("int", [])]),
         };
         var collector = new RawGenericUseCollector([generic]);
 
@@ -237,7 +237,7 @@ public sealed class GenericLoweringServicesTests
             """);
         var generic = Assert.Single(program.Functions);
 
-        var specialized = GenericFunctionSpecializer.Specialize(generic, ["int"]);
+        var specialized = GenericFunctionSpecializer.Specialize(generic, [Type("int")]);
         var parameter = Assert.Single(specialized.Parameters);
         var local = Assert.IsType<LetStatement>(specialized.Body[0]);
 
@@ -265,7 +265,7 @@ public sealed class GenericLoweringServicesTests
         CompilerTestHelpers.AssertNoErrors(diagnostics);
         var generic = program.Functions.Single();
 
-        var specialized = GenericFunctionSpecializer.Specialize(generic, ["int"]);
+        var specialized = GenericFunctionSpecializer.Specialize(generic, [Type("int")]);
         var parameter = Assert.Single(specialized.Parameters);
         var local = Assert.IsType<LetStatement>(specialized.Body[0]);
 
@@ -358,7 +358,7 @@ public sealed class GenericLoweringServicesTests
             """);
         CompilerTestHelpers.Resolve(program);
         var generic = program.Functions.Single(function => function.Name == "identity");
-        var specialized = GenericFunctionSpecializer.Specialize(generic, ["int"]);
+        var specialized = GenericFunctionSpecializer.Specialize(generic, [Type("int")]);
         var specializations = new Dictionary<string, FunctionNode>(StringComparer.Ordinal)
         {
             ["identity<int>"] = specialized,
@@ -426,4 +426,6 @@ public sealed class GenericLoweringServicesTests
 
     private static IReadOnlyList<string> TypeArguments(GenericFunctionUse use) =>
         use.TypeArgumentRefs.Select(TypeRefFormatter.ToCxString).ToList();
+
+    private static TypeRef Type(string name) => new TypeRef.Named(name, []);
 }
