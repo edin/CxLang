@@ -523,7 +523,7 @@ internal sealed class CallResolver(
     private TypeRef ResolveType(TypeNode? typeNode) =>
         typeNode?.Semantic.Type
         ?? (typeNode?.Syntax is null ? null : _typeSyntaxConverter.Convert(typeNode))
-        ?? Parse(TypeText(typeNode));
+        ?? new TypeRef.Unknown();
 
     private static IReadOnlyDictionary<string, TypeRef> BuildTypeSubstitutionsFromRefs(
         IReadOnlyList<string> typeParameters,
@@ -643,7 +643,8 @@ internal sealed class CallResolver(
         return TypeRefFacts.SameType(existing, typeArgument);
     }
 
-    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) =>
+        TypeRefFacts.GetBaseName(ResolveType(function.OwnerTypeNode));
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(ResolveType).ToList();
@@ -651,20 +652,4 @@ internal sealed class CallResolver(
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<string> typeArguments) =>
         typeArguments.Select(argument => Parse(argument)).ToList();
 
-    private string TypeText(TypeNode? typeNode)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
-
-    private string? TypeTextOrNull(TypeNode? typeNode)
-    {
-        var type = TypeText(typeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
-    }
 }

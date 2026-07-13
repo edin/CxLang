@@ -792,8 +792,8 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     private string? OwnerType(FunctionNode function)
     {
-        var type = TypeText(function.OwnerTypeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
+        var type = TypeRefOrUnknown(function.OwnerTypeNode);
+        return type is TypeRef.Unknown ? null : TypeRefFacts.GetBaseName(type);
     }
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode>? typeArgumentNodes) =>
@@ -803,17 +803,6 @@ internal sealed class GenericUseCollector(ProgramNode program)
         typeNode.Semantic.Type
         ?? (typeNode.Syntax is { } syntax ? _typeSyntaxConverter.Convert(syntax) : null)
         ?? typeNode.ToTypeRef(_typeRefParser);
-
-    private string TypeText(TypeNode? typeNode)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
 
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
         typeNode.ToTypeRef(_typeRefParser);

@@ -44,7 +44,6 @@ public sealed class SemanticAnalyzer(
             diagnostics,
             program,
             _requirementMatcher,
-            TypeText,
             IsKnownTypeName,
             _symbolSuggestions.FindAliasSuggestionForType,
             _symbolSuggestions.FindPartialImportSuggestionForType,
@@ -74,10 +73,11 @@ public sealed class SemanticAnalyzer(
         var definiteAssignment = new DefiniteAssignmentAnalyzer(diagnostics, program, _expressionTypeResolver, returnFlow);
         foreach (var global in program.GlobalVariables)
         {
-            var globalType = TypeText(global.TypeNode);
+            var globalTypeRef = TypeRefOrUnknown(global.TypeNode);
+            var globalType = TypeText(globalTypeRef);
             AnalyzeType(global.TypeNode, global.Location, program, []);
             AnalyzeExpression(global.Initializer, global.Location, globalTypeEnvironment, null);
-            if (global.Initializer is not null && SemanticFacts.IsBareNull(global.Initializer) && !SemanticFacts.IsNullableType(ParseTypeRef(globalType)))
+            if (global.Initializer is not null && SemanticFacts.IsBareNull(global.Initializer) && !SemanticFacts.IsNullableType(globalTypeRef))
             {
                 diagnostics.Report(global.Location, $"Cannot assign null to non-pointer global '{global.Name}' of type '{globalType}'.");
             }
@@ -132,7 +132,7 @@ public sealed class SemanticAnalyzer(
             _foreachAnalyzer = CreateForeachAnalyzer();
             _expressionAnalyzer = CreateExpressionAnalyzer();
 
-            var functionReturnType = function.ReturnTypeNode?.Semantic.Type ?? ParseTypeRef(TypeText(function.ReturnTypeNode));
+            var functionReturnType = TypeRefOrUnknown(function.ReturnTypeNode);
             AnalyzeStatements(function.Body, functionReturnType, typeEnvironment, mutability, program, function.TypeParameters);
 
             _currentTypeParameters = previousTypeParameters;
@@ -248,16 +248,17 @@ public sealed class SemanticAnalyzer(
         switch (statement)
         {
             case LetStatement let:
-                var letType = TypeText(let.TypeNode);
+                var letTypeRef = TypeRefOrUnknown(let.TypeNode);
+                var letType = TypeText(letTypeRef);
                 AnalyzeType(let.TypeNode, let.Location, program, inScopeTypeParameters);
                 AnalyzeExpression(let.Initializer, let.Location, typeEnvironment, mutability);
-                if (let.Initializer is not null && SemanticFacts.IsBareNull(let.Initializer) && !SemanticFacts.IsNullableType(ParseTypeRef(letType)))
+                if (let.Initializer is not null && SemanticFacts.IsBareNull(let.Initializer) && !SemanticFacts.IsNullableType(letTypeRef))
                 {
                     diagnostics.Report(let.Location, $"Cannot assign null to non-pointer type '{letType}'.");
                 }
 
                 _assignmentAnalyzer?.CheckAssignmentCompatibility(let.Location, letType, let.Initializer, typeEnvironment, $"local '{let.Name}'");
-                SemanticFacts.SetVariableType(typeEnvironment, let.Name, ParseTypeRef(letType));
+                SemanticFacts.SetVariableType(typeEnvironment, let.Name, letTypeRef);
                 mutability[let.Name] = let.IsConst ? LocalMutability.Const : LocalMutability.Mutable;
                 break;
 
@@ -384,11 +385,11 @@ public sealed class SemanticAnalyzer(
     }
 
     private RequirementMatch SatisfiesRequirement(
-        string concreteType,
+        TypeRef concreteType,
         string requirementName,
-        IReadOnlyList<string>? requirementArguments = null) =>
+        IReadOnlyList<TypeRef>? requirementArguments = null) =>
         _typeSystem?.SatisfiesRequirement(concreteType, requirementName, requirementArguments)
-        ?? RequirementMatch.Failed(concreteType, requirementName, []);
+        ?? RequirementMatch.Failed(TypeRefFormatter.ToCxString(concreteType), requirementName, []);
 
     private string GetFunctionDisplayName(FunctionNode function) =>
         OwnerType(function) is null
@@ -429,7 +430,7 @@ public sealed class SemanticAnalyzer(
             return;
         }
 
-        var match = SatisfiesRequirement(leftTypeText, "Compare", [leftTypeText]);
+        var match = SatisfiesRequirement(leftType, "Compare", [leftType]);
         if (match is { Success: false })
         {
             diagnostics.Report(
@@ -448,12 +449,13 @@ public sealed class SemanticAnalyzer(
         switch (initializer)
         {
             case ForDeclarationInitializerNode declaration:
-                var declarationType = TypeText(declaration.TypeNode);
+                var declarationTypeRef = TypeRefOrUnknown(declaration.TypeNode);
+                var declarationType = TypeText(declarationTypeRef);
                 AnalyzeType(declaration.TypeNode, declaration.Location, program, inScopeTypeParameters);
                 AnalyzeExpression(declaration.Initializer, declaration.Location, typeEnvironment, mutability);
                 if (declaration.Initializer is not null
                     && SemanticFacts.IsBareNull(declaration.Initializer)
-                    && !SemanticFacts.IsNullableType(ParseTypeRef(declarationType)))
+                    && !SemanticFacts.IsNullableType(declarationTypeRef))
                 {
                     diagnostics.Report(
                         declaration.Location,
@@ -466,7 +468,7 @@ public sealed class SemanticAnalyzer(
                     declaration.Initializer,
                     typeEnvironment,
                     $"for variable '{declaration.Name}'");
-                SemanticFacts.SetVariableType(typeEnvironment, declaration.Name, ParseTypeRef(declarationType));
+                SemanticFacts.SetVariableType(typeEnvironment, declaration.Name, declarationTypeRef);
                 mutability[declaration.Name] = declaration.IsConst ? LocalMutability.Const : LocalMutability.Mutable;
                 break;
 
@@ -752,13 +754,14 @@ public sealed class SemanticAnalyzer(
         expression is LiteralExpressionNode { LiteralText: "null" }
         || expression is ParenthesizedExpressionNode parenthesized && IsNullLiteral(parenthesized.Expression);
 
-    private TypeRef ParseTypeRef(string type) =>
-        _typeRefParser?.Parse(type) ?? new TypeRef.Unknown();
-
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
         SemanticFacts.TypeRefOrUnknown(typeNode, _typeRefParser);
 
-    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) =>
+        TypeRefFacts.GetBaseName(TypeRefOrUnknown(function.OwnerTypeNode));
+
+    private static string TypeText(TypeRef type) =>
+        type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
 
     private string TypeText(TypeNode? typeNode)
     {
@@ -774,12 +777,6 @@ public sealed class SemanticAnalyzer(
 
         var type = typeNode.ToTypeRef(_typeRefParser);
         return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
-
-    private string? TypeTextOrNull(TypeNode? typeNode)
-    {
-        var type = TypeText(typeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
     }
 
 }

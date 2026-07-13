@@ -237,25 +237,25 @@ internal static class GenericCallRetargeter
 
     private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments)
     {
-        var ownerType = OwnerTypeText(function);
-        var functionName = string.IsNullOrWhiteSpace(ownerType)
+        var ownerType = OwnerType(function);
+        var ownerTypeText = ownerType is null ? string.Empty : TypeRefFormatter.ToCxString(ownerType);
+        var functionName = string.IsNullOrWhiteSpace(ownerTypeText)
             ? function.Name
-            : $"{ownerType}.{function.Name}";
+            : $"{ownerTypeText}.{function.Name}";
         var argumentText = arguments.Select(TypeRefFormatter.ToCxString);
 
         return $"{functionName}<{string.Join(",", argumentText)}>";
     }
 
-    private static string OwnerTypeText(FunctionNode function)
+    private static TypeRef? OwnerType(FunctionNode function)
     {
         if (function.OwnerTypeNode is null)
         {
-            return string.Empty;
+            return null;
         }
 
-        return function.OwnerTypeNode.Semantic.Type is { } ownerType
-            ? TypeRefFormatter.ToCxString(ownerType)
-            : throw new InvalidOperationException(
+        return function.OwnerTypeNode.Semantic.Type
+            ?? throw new InvalidOperationException(
                 $"Generic call retargeter expected resolved owner type for '{function.Name}'.");
     }
 }

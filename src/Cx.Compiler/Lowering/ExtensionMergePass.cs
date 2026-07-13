@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Lowering;
@@ -13,7 +14,7 @@ internal static class ExtensionMergePass
         }
 
         var extensionsByTarget = program.Extensions
-            .GroupBy(extension => TargetTypeText(extension.TargetTypeNode), StringComparer.Ordinal)
+            .GroupBy(extension => TargetTypeName(extension.TargetTypeNode), StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
         var structs = program.Structs
             .Select(structNode => MergeStructExtensions(structNode, extensionsByTarget))
@@ -29,7 +30,7 @@ internal static class ExtensionMergePass
 
         foreach (var extension in program.Extensions)
         {
-            var targetType = TargetTypeText(extension.TargetTypeNode);
+            var targetType = TargetTypeName(extension.TargetTypeNode);
             if (!knownTargets.Contains(targetType))
             {
                 diagnostics.Report(extension.Location, $"Extension target type '{targetType}' was not found.");
@@ -94,9 +95,29 @@ internal static class ExtensionMergePass
         };
     }
 
-    private static string TargetTypeText(TypeNode? typeNode) =>
-        typeNode?.Syntax is { } syntax
-            ? TypeSyntaxFormatter.ToCxString(syntax)
-            : string.Empty;
+    private static string TargetTypeName(TypeNode? typeNode)
+    {
+        if (typeNode?.Semantic.Type is { } type)
+        {
+            return TypeRefFacts.GetBaseName(type) ?? string.Empty;
+        }
+
+        return typeNode?.Syntax switch
+        {
+            NamedTypeSyntaxNode named => named.Name,
+            GenericTypeSyntaxNode generic => TargetTypeName(generic.Target),
+            PointerTypeSyntaxNode pointer => TargetTypeName(pointer.Element),
+            _ => string.Empty,
+        };
+    }
+
+    private static string TargetTypeName(TypeSyntaxNode syntax) =>
+        syntax switch
+        {
+            NamedTypeSyntaxNode named => named.Name,
+            GenericTypeSyntaxNode generic => TargetTypeName(generic.Target),
+            PointerTypeSyntaxNode pointer => TargetTypeName(pointer.Element),
+            _ => string.Empty,
+        };
 
 }

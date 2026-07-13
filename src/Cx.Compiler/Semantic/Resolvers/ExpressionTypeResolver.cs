@@ -32,7 +32,7 @@ internal sealed class ExpressionTypeResolver(
             LiteralExpressionNode literal => ResolveLiteral(literal.LiteralText),
             NameExpressionNode name => ResolveName(name.Name, variables),
             ParenthesizedExpressionNode parenthesized => Resolve(parenthesized.Expression, variables),
-            CastExpressionNode cast => TypeText(cast.TargetTypeNode),
+            CastExpressionNode cast => FormatTypeRef(ResolveTypeNode(cast.TargetTypeNode)),
             UnaryExpressionNode unary => ResolveUnary(unary, variables),
             PostfixExpressionNode postfix => Resolve(postfix.Operand, variables),
             SizeOfExpressionNode => "usize",
@@ -160,7 +160,7 @@ internal sealed class ExpressionTypeResolver(
     private TypeRef? ResolveTypeNode(TypeNode? typeNode) =>
         typeNode?.Semantic.Type
         ?? (typeNode?.Syntax is null ? null : _typeSyntaxConverter.Convert(typeNode))
-        ?? ParseResolvedType(TypeTextOrNull(typeNode));
+        ?? new TypeRef.Unknown();
 
     private TypeRef? ParseResolvedType(string? type) =>
         string.IsNullOrWhiteSpace(type)
@@ -272,13 +272,8 @@ internal sealed class ExpressionTypeResolver(
             : null;
     }
 
-    private string ResolveFunctionExpression(FunctionExpressionNode functionExpression)
-    {
-        var returnType = functionExpression.ReturnTypeNode is null
-            ? "int"
-            : TypeText(functionExpression.ReturnTypeNode);
-        return GetFunctionType(functionExpression.Parameters, returnType);
-    }
+    private string ResolveFunctionExpression(FunctionExpressionNode functionExpression) =>
+        TypeRefFormatter.ToCxString(ResolveFunctionExpressionTypeRef(functionExpression));
 
     private TypeRef ResolveFunctionExpressionTypeRef(FunctionExpressionNode functionExpression)
     {
@@ -291,9 +286,6 @@ internal sealed class ExpressionTypeResolver(
             ?? new TypeRef.Unknown();
         return new TypeRef.Function(parameters, returnType);
     }
-
-    private string GetFunctionType(IReadOnlyList<ParameterNode> parameters, string returnType) =>
-        $"fn({string.Join(",", parameters.Select(parameter => TypeText(parameter.TypeNode)))})->{returnType}";
 
     private TypeRef GetFunctionTypeRef(IReadOnlyList<ParameterNode> parameters, TypeNode? returnTypeNode) =>
         new TypeRef.Function(
@@ -312,7 +304,7 @@ internal sealed class ExpressionTypeResolver(
             var staticFunctionType = ResolveStaticFunctionReference(member);
             if (staticFunctionType is not null)
             {
-                return ParseResolvedType(staticFunctionType);
+                return staticFunctionType;
             }
 
             var qualifiedName = ExpressionNameFacts.GetQualifiedName(member);
@@ -362,7 +354,7 @@ internal sealed class ExpressionTypeResolver(
         return null;
     }
 
-    private string? ResolveStaticFunctionReference(MemberExpressionNode member)
+    private TypeRef? ResolveStaticFunctionReference(MemberExpressionNode member)
     {
         var targetName = ExpressionNameFacts.GetQualifiedName(member.Target);
         if (targetName is null)
@@ -378,7 +370,7 @@ internal sealed class ExpressionTypeResolver(
             && function.Name == member.MemberName);
         return function is null
             ? null
-            : GetFunctionType(function.Parameters, TypeText(function.ReturnTypeNode));
+            : GetFunctionTypeRef(function.Parameters, function.ReturnTypeNode);
     }
 
     private string? ResolveIndex(IndexExpressionNode index, TypeEnvironment variables)
@@ -619,29 +611,11 @@ internal sealed class ExpressionTypeResolver(
     private static bool SameType(TypeRef? left, TypeRef? right) =>
         TypeRefFacts.SameType(left, right);
 
-    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) =>
+        TypeRefFacts.GetBaseName(ResolveTypeNode(function.OwnerTypeNode));
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> typeArgumentNodes) =>
         typeArgumentNodes.Select(typeNode => ResolveTypeNode(typeNode) ?? new TypeRef.Unknown()).ToList();
-
-    private string TypeText(TypeNode? typeNode) => FormatTypeNode(typeNode, _typeRefParser);
-
-    private string? TypeTextOrNull(TypeNode? typeNode)
-    {
-        var type = TypeText(typeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
-    }
-
-    private static string FormatTypeNode(TypeNode? typeNode, TypeRefParser parser)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(parser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
 
     private static string? FormatTypeRef(TypeRef? type) =>
         type is null ? null : TypeRefFormatter.ToCxString(type);

@@ -99,20 +99,22 @@ internal static class GenericSpecializationPass
 
     private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments, TypeRefParser typeRefParser)
     {
-        var ownerType = TypeText(function.OwnerTypeNode, typeRefParser);
+        var ownerType = OwnerType(function, typeRefParser);
+        var ownerTypeText = ownerType is null ? string.Empty : TypeRefFormatter.ToCxString(ownerType);
         var argumentText = arguments.Select(TypeRefFormatter.ToCxString);
-        return $"{(string.IsNullOrWhiteSpace(ownerType) ? function.Name : $"{ownerType}.{function.Name}")}<{string.Join(",", argumentText)}>";
+        return $"{(string.IsNullOrWhiteSpace(ownerTypeText) ? function.Name : $"{ownerTypeText}.{function.Name}")}<{string.Join(",", argumentText)}>";
     }
 
-    private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
+    private static TypeRef? OwnerType(FunctionNode function, TypeRefParser typeRefParser)
     {
+        var typeNode = function.OwnerTypeNode;
         if (typeNode is null)
         {
-            return string.Empty;
+            return null;
         }
 
-        var type = typeNode.ToTypeRef(typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+        var type = typeNode.Semantic.Type ?? typeNode.ToTypeRef(typeRefParser);
+        return type is TypeRef.Unknown ? null : type;
     }
 
     private static IReadOnlySet<string> GetOpenTypeParameterNames(ProgramNode program) =>

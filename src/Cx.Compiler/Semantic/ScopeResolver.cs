@@ -519,7 +519,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         return Symbol.FromLegacyType(
             name,
             kind,
-            TypeTextOrNull(typeNode),
+            typeRef is null ? null : TypeRefFormatter.ToCxString(typeRef),
             typeRef,
             location,
             node);
@@ -759,7 +759,8 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         IReadOnlyList<TypeRef> TypeArgumentRefs,
         bool IsInstance);
 
-    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerType(FunctionNode function) =>
+        TypeRefFacts.GetBaseName(TypeRefOrNull(function.OwnerTypeNode));
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(TypeRefOrUnknown).ToList();
@@ -797,18 +798,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
         var parsed = _typeRefParser.Parse(type);
         return parsed is TypeRef.Unknown ? null : parsed;
-    }
-
-    private string TypeText(TypeNode? typeNode)
-    {
-        var type = TypeRefOrNull(typeNode);
-        return type is null ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
-
-    private string? TypeTextOrNull(TypeNode? typeNode)
-    {
-        var type = TypeText(typeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
     }
 
     private static string Describe(SymbolKind kind) =>

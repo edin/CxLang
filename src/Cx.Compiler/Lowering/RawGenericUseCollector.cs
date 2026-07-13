@@ -127,19 +127,8 @@ internal sealed class RawGenericUseCollector(IReadOnlyList<FunctionNode> generic
 
     private string? OwnerType(FunctionNode function)
     {
-        var type = TypeText(function.OwnerTypeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
-    }
-
-    private string TypeText(TypeNode? typeNode)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
+        var type = function.OwnerTypeNode.ToTypeRef(_typeRefParser);
+        return type is TypeRef.Unknown ? null : TypeRefFacts.GetBaseName(type);
     }
 
     private static IReadOnlyList<string> FormatTypeArguments(IReadOnlyList<TypeRef> typeArguments) =>

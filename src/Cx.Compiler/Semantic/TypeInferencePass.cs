@@ -48,22 +48,22 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
         foreach (var global in globals)
         {
-        var declaredTypeRef = TypeRefOrUnknown(global.TypeNode);
-        var initializer = InferExpression(
-            global.Initializer,
-            typeEnvironment,
-            declaredTypeRef is TypeRef.Unknown ? null : declaredTypeRef);
-            var type = InferVariableType(
+            var declaredTypeRef = TypeRefOrNull(global.TypeNode);
+            var initializer = InferExpression(
+                global.Initializer,
+                typeEnvironment,
+                declaredTypeRef);
+            var type = InferVariableTypeRef(
                 global.Location,
                 global.Name,
-                TypeText(global.TypeNode),
+                declaredTypeRef,
                 initializer,
                 typeEnvironment,
                 "global");
 
-            if (!string.IsNullOrWhiteSpace(type))
+            if (type is not null)
             {
-                SetVariableType(typeEnvironment, global.Name, ParseTypeRef(type));
+                SetVariableType(typeEnvironment, global.Name, type);
             }
 
             inferred.Add(global with
@@ -173,15 +173,15 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         LetStatement let,
         TypeEnvironment typeEnvironment)
     {
-        var declaredTypeRef = TypeRefOrUnknown(let.TypeNode);
+        var declaredTypeRef = TypeRefOrNull(let.TypeNode);
         var initializer = InferExpression(
             let.Initializer,
             typeEnvironment,
-            declaredTypeRef is TypeRef.Unknown ? null : declaredTypeRef);
-        var type = InferVariableType(let.Location, let.Name, TypeText(let.TypeNode), initializer, typeEnvironment, "local");
-        if (!string.IsNullOrWhiteSpace(type))
+            declaredTypeRef);
+        var type = InferVariableTypeRef(let.Location, let.Name, declaredTypeRef, initializer, typeEnvironment, "local");
+        if (type is not null)
         {
-            SetVariableType(typeEnvironment, let.Name, ParseTypeRef(type));
+            SetVariableType(typeEnvironment, let.Name, type);
         }
 
         return let with
@@ -228,21 +228,21 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         ForDeclarationInitializerNode declaration,
         TypeEnvironment typeEnvironment)
     {
-        var declaredTypeRef = TypeRefOrUnknown(declaration.TypeNode);
+        var declaredTypeRef = TypeRefOrNull(declaration.TypeNode);
         var initializer = InferExpression(
             declaration.Initializer,
             typeEnvironment,
-            declaredTypeRef is TypeRef.Unknown ? null : declaredTypeRef);
-        var type = InferVariableType(
+            declaredTypeRef);
+        var type = InferVariableTypeRef(
             declaration.Location,
             declaration.Name,
-            TypeText(declaration.TypeNode),
+            declaredTypeRef,
             initializer,
             typeEnvironment,
             "for variable");
-        if (!string.IsNullOrWhiteSpace(type))
+        if (type is not null)
         {
-            SetVariableType(typeEnvironment, declaration.Name, ParseTypeRef(type));
+            SetVariableType(typeEnvironment, declaration.Name, type);
         }
 
         return declaration with
@@ -256,18 +256,6 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         ForDeclarationInitializerNode? declaration,
         TypeEnvironment typeEnvironment) =>
         declaration is null ? null : InferForDeclarationInitializer(declaration, typeEnvironment);
-
-    private TypeNode? CreateInferredTypeNode(Location location, string type)
-    {
-        if (string.IsNullOrWhiteSpace(type))
-        {
-            return null;
-        }
-
-        var typeNode = TypeNode.CreateFromText(location, type);
-        typeNode.Semantic.Type = ParseTypeRef(type);
-        return typeNode;
-    }
 
     private static TypeNode? CreateInferredTypeNode(Location location, TypeRef? type)
     {
@@ -294,11 +282,11 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         var iterableExpression = InferExpression(foreachStatement.IterableExpression, typeEnvironment);
         var foreachTypeEnvironment = typeEnvironment.Clone();
         var iterableTypeRef = _resolver?.ResolveTypeRef(iterableExpression, typeEnvironment);
-        string? elementType = null;
-        string? keyType = null;
+        TypeRef? elementType = null;
+        TypeRef? keyType = null;
         if (iterableExpression is ScalarRangeExpressionNode && iterableTypeRef is not null)
         {
-            elementType = TypeRefFormatter.ToCxString(iterableTypeRef);
+            elementType = iterableTypeRef;
             AddForeachBindings(foreachStatement, foreachTypeEnvironment, elementType);
         }
         else if (iterableTypeRef is not null
@@ -306,11 +294,10 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         {
             if (foreachStatement.KeyBinding is { } keyBinding && keyType is not null)
             {
-                var keyBindingType = TypeTextOrNull(keyBinding.TypeNode);
                 SetVariableType(
                     foreachTypeEnvironment,
                     keyBinding.Name,
-                    ParseTypeRef(keyBindingType ?? keyType));
+                    TypeRefOrNull(keyBinding.TypeNode) ?? keyType);
             }
 
             AddForeachBindings(foreachStatement, foreachTypeEnvironment, elementType);
@@ -332,14 +319,14 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private ForeachStatement ApplyForeachBindingTypes(
         ForeachStatement foreachStatement,
-        string elementType,
-        string? keyType)
+        TypeRef elementType,
+        TypeRef? keyType)
     {
         return foreachStatement with
         {
             IndexBinding = foreachStatement.IndexBinding is null
                 ? null
-                : FillBindingType(foreachStatement.IndexBinding, "usize"),
+                : FillBindingType(foreachStatement.IndexBinding, new TypeRef.Named("usize", [])),
             KeyBinding = foreachStatement.KeyBinding is null || keyType is null
                 ? foreachStatement.KeyBinding
                 : FillBindingType(foreachStatement.KeyBinding, keyType),
@@ -347,61 +334,51 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         };
     }
 
-    private ForeachBinding FillBindingType(ForeachBinding binding, string inferredType) =>
-        string.IsNullOrWhiteSpace(TypeText(binding.TypeNode))
+    private ForeachBinding FillBindingType(ForeachBinding binding, TypeRef inferredType) =>
+        TypeRefOrNull(binding.TypeNode) is null
             ? binding with { TypeNode = CreateInferredTypeNode(binding.Location, inferredType) }
             : binding;
 
     private void AddForeachBindings(
         ForeachStatement foreachStatement,
         TypeEnvironment typeEnvironment,
-        string elementType)
+        TypeRef elementType)
     {
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
-            var indexBindingType = TypeTextOrNull(indexBinding.TypeNode);
-            SetVariableType(typeEnvironment, indexBinding.Name, ParseTypeRef(indexBindingType ?? "usize"));
+            var indexBindingType = TypeRefOrNull(indexBinding.TypeNode);
+            SetVariableType(typeEnvironment, indexBinding.Name, indexBindingType ?? new TypeRef.Named("usize", []));
         }
 
-        var valueBindingType = TypeTextOrNull(foreachStatement.ValueBinding.TypeNode);
-        var valueType = valueBindingType is null
-            ? elementType
-            : valueBindingType;
-        SetVariableType(typeEnvironment, foreachStatement.ValueBinding.Name, ParseTypeRef(valueType));
+        var valueBindingType = TypeRefOrNull(foreachStatement.ValueBinding.TypeNode);
+        SetVariableType(typeEnvironment, foreachStatement.ValueBinding.Name, valueBindingType ?? elementType);
     }
 
     private bool TryResolveForeachTypes(
         ForeachStatement foreachStatement,
         TypeRef iterableType,
-        out string elementType,
-        out string? keyType)
+        out TypeRef elementType,
+        out TypeRef? keyType)
     {
-        elementType = string.Empty;
+        elementType = new TypeRef.Unknown();
         keyType = null;
 
-        if (_typeSystem?.TryResolveForeachTypes(
+        return _typeSystem?.TryResolveForeachTypes(
             iterableType,
             keyValue: foreachStatement.KeyBinding is not null,
-            out var elementTypeRef,
-            out var keyTypeRef) != true)
-        {
-            return false;
-        }
-
-        elementType = TypeRefFormatter.ToCxString(elementTypeRef);
-        keyType = keyTypeRef is null ? null : TypeRefFormatter.ToCxString(keyTypeRef);
-        return true;
+            out elementType,
+            out keyType) == true;
     }
 
-    private string InferVariableType(
+    private TypeRef? InferVariableTypeRef(
         Location location,
         string name,
-        string declaredType,
+        TypeRef? declaredType,
         ExpressionNode? initializer,
         TypeEnvironment typeEnvironment,
         string subject)
     {
-        if (!string.IsNullOrWhiteSpace(declaredType))
+        if (declaredType is not null and not TypeRef.Unknown)
         {
             return declaredType;
         }
@@ -424,8 +401,8 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             return declaredType;
         }
 
-        var inferredType = _resolver?.Resolve(initializer, typeEnvironment);
-        if (string.IsNullOrWhiteSpace(inferredType) || inferredType == "null")
+        var inferredType = _resolver?.ResolveTypeRef(initializer, typeEnvironment);
+        if (inferredType is null or TypeRef.Unknown or TypeRef.Null)
         {
             diagnostics.Report(
                 location,
@@ -470,7 +447,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         if (call.Callee is NameExpressionNode functionName)
         {
             var function = _program.Functions.FirstOrDefault(function =>
-                OwnerType(function) is null
+                OwnerTypeName(function) is null
                 && function.Name == functionName.Name
                 && function.TypeParameters.Count > 0);
             if (function is null
@@ -491,7 +468,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         {
             var staticFunction = _program.Functions.FirstOrDefault(function =>
                 function.IsStatic
-                && OwnerType(function) == targetName
+                && OwnerTypeName(function) == targetName
                 && function.Name == member.MemberName
                 && function.TypeParameters.Count > 0);
             if (staticFunction is null
@@ -528,8 +505,8 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             .ToList();
         var unbound = function.TypeParameters
             .Where(typeParameter =>
-                !fixedParameters.Any(parameter => TypeMentionsParameter(TypeText(parameter.TypeNode), typeParameter))
-                && TypeMentionsParameter(TypeText(function.ReturnTypeNode), typeParameter))
+                !fixedParameters.Any(parameter => TypeMentionsParameter(TypeRefOrUnknown(parameter.TypeNode), typeParameter))
+                && TypeMentionsParameter(TypeRefOrUnknown(function.ReturnTypeNode), typeParameter))
             .ToList();
 
         if (unbound.Count == 0)
@@ -542,17 +519,24 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         var pronoun = unbound.Count == 1 ? "it" : "they";
         var appears = unbound.Count == 1 ? "appears" : "appear";
         var argumentText = arguments.Count == 0 ? "no arguments" : "the provided arguments";
-        var suggestion = function.IsStatic && OwnerType(function) is not null
+        var suggestion = function.IsStatic && OwnerTypeName(function) is not null
             ? $" Try '{suggestedCall}(...)' and replace 'int' with the desired type."
             : $" Try '{suggestedCall}<int>(...)' and replace 'int' with the desired type.";
 
         return $"Cannot infer type for {subject} '{variableName}'; generic type {plural} {parameterText} for '{callName}' cannot be inferred from {argumentText} because {pronoun} only {appears} in the return type.{suggestion}";
     }
 
-    private static bool TypeMentionsParameter(string type, string typeParameter) =>
-        System.Text.RegularExpressions.Regex.IsMatch(
-            type,
-            $@"(?<![A-Za-z0-9_]){System.Text.RegularExpressions.Regex.Escape(typeParameter)}(?![A-Za-z0-9_])");
+    private static bool TypeMentionsParameter(TypeRef type, string typeParameter) =>
+        TypeRefFacts.UnwrapAlias(type) switch
+        {
+            TypeRef.Named named => string.Equals(named.Name, typeParameter, StringComparison.Ordinal)
+                || named.Arguments.Any(argument => TypeMentionsParameter(argument, typeParameter)),
+            TypeRef.Pointer pointer => TypeMentionsParameter(pointer.Element, typeParameter),
+            TypeRef.FixedArray fixedArray => TypeMentionsParameter(fixedArray.Element, typeParameter),
+            TypeRef.Function function => function.Parameters.Any(parameter => TypeMentionsParameter(parameter, typeParameter))
+                || TypeMentionsParameter(function.ReturnType, typeParameter),
+            _ => false,
+        };
 
     private static ExpressionNode UnwrapParentheses(ExpressionNode expression) =>
         expression is ParenthesizedExpressionNode parenthesized
@@ -680,7 +664,8 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         };
     }
 
-    private string? OwnerType(FunctionNode function) => TypeTextOrNull(function.OwnerTypeNode);
+    private string? OwnerTypeName(FunctionNode function) =>
+        TypeRefOrNull(function.OwnerTypeNode) is TypeRef.Named named ? named.Name : null;
 
     private void AddImplicitSelfBinding(FunctionNode function, TypeEnvironment typeEnvironment)
     {
@@ -735,33 +720,14 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     private static TypeRef SubstituteSelf(TypeRef type, TypeRef? selfType) =>
         selfType is null ? type : TypeRefRewriter.SubstituteSelf(type, selfType);
 
-    private string TypeText(TypeNode? typeNode)
+    private TypeRef? TypeRefOrNull(TypeNode? typeNode)
     {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        if (_typeRefParser is null)
-        {
-            throw new InvalidOperationException("Type inference has no TypeRef parser.");
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
-
-    private string? TypeTextOrNull(TypeNode? typeNode)
-    {
-        var type = TypeText(typeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
+        var type = TypeRefOrUnknown(typeNode);
+        return type is TypeRef.Unknown ? null : type;
     }
 
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
         typeNode.ToTypeRef(RequireTypeRefParser());
-
-    private TypeRef ParseTypeRef(string type) =>
-        string.IsNullOrWhiteSpace(type) ? new TypeRef.Unknown() : RequireTypeRefParser().Parse(type);
 
     private TypeRefParser RequireTypeRefParser() =>
         _typeRefParser ?? throw new InvalidOperationException("Type inference has no TypeRef parser.");

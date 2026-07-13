@@ -47,7 +47,6 @@ internal sealed class ForeachSemanticAnalyzer(
         }
         else if (foreachStatement.KeyBinding is not null)
         {
-            var iterableType = TypeRefFormatter.ToCxString(iterableTypeRef);
             if (TryResolveForeachTypes(
                 iterableTypeRef,
                 keyValue: true,
@@ -72,8 +71,8 @@ internal sealed class ForeachSemanticAnalyzer(
             {
                 ReportForeachRequirementFailure(
                     foreachStatement,
-                    iterableType,
-                    SatisfiesRequirement(iterableType, "Contiguous"));
+                    iterableTypeRef,
+                    SatisfiesRequirement(iterableTypeRef, "Contiguous"));
             }
         }
         else if (TryGetFixedArrayElementType(iterableTypeRef, out var arrayElementType))
@@ -82,7 +81,6 @@ internal sealed class ForeachSemanticAnalyzer(
         }
         else
         {
-            var iterableType = TypeRefFormatter.ToCxString(iterableTypeRef);
             if (TryResolveForeachTypes(
                 iterableTypeRef,
                 keyValue: false,
@@ -115,7 +113,7 @@ internal sealed class ForeachSemanticAnalyzer(
             }
             else if (SatisfiesRequirement(iterableTypeRef, "Contiguous") is { } match && !match.Success)
             {
-                ReportForeachRequirementFailure(foreachStatement, iterableType, match);
+                ReportForeachRequirementFailure(foreachStatement, iterableTypeRef, match);
             }
         }
 
@@ -189,15 +187,16 @@ internal sealed class ForeachSemanticAnalyzer(
 
     private void ReportForeachRequirementFailure(
         ForeachStatement foreachStatement,
-        string iterableType,
+        TypeRef iterableTypeRef,
         RequirementMatch contiguousMatch)
     {
+        var iterableType = TypeRefFormatter.ToCxString(iterableTypeRef);
         var keyValue = foreachStatement.KeyBinding is not null;
         var iterableRequirementName = keyValue ? "KeyValueIterable" : "Iterable";
         var iteratorRequirementName = keyValue ? "KeyValueIterator" : "Iterator";
         var iterableRequirementDisplay = keyValue ? "KeyValueIterable<K, V, I>" : "Iterable<T, I>";
-        var rangeMatch = SatisfiesRequirement(iterableType, "ContiguousRange");
-        var iteratorMatch = SatisfiesRequirement(iterableType, iterableRequirementName);
+        var rangeMatch = SatisfiesRequirement(iterableTypeRef, "ContiguousRange");
+        var iteratorMatch = SatisfiesRequirement(iterableTypeRef, iterableRequirementName);
         var parts = new List<string>
         {
             $"Type '{iterableType}' cannot be used in foreach.",
@@ -210,7 +209,7 @@ internal sealed class ForeachSemanticAnalyzer(
         {
             parts.Add($"{iterableRequirementDisplay}: " + FormatRequirementFailures(iteratorMatch.Failures));
         }
-        else if (!iteratorMatch.TryGetTypeBindingText("I", out var iteratorType))
+        else if (!iteratorMatch.TryGetTypeBinding("I", out var iteratorType))
         {
             parts.Add($"{iterableRequirementDisplay}: could not infer iterator type 'I' from iterator().");
         }
@@ -219,7 +218,7 @@ internal sealed class ForeachSemanticAnalyzer(
             var concreteIteratorMatch = SatisfiesRequirement(iteratorType, iteratorRequirementName);
             if (!concreteIteratorMatch.Success)
             {
-                parts.Add($"{iteratorType} must satisfy {iteratorRequirementName}: {FormatRequirementFailures(concreteIteratorMatch.Failures)}");
+                parts.Add($"{TypeRefFormatter.ToCxString(iteratorType)} must satisfy {iteratorRequirementName}: {FormatRequirementFailures(concreteIteratorMatch.Failures)}");
             }
         }
 
@@ -239,12 +238,6 @@ internal sealed class ForeachSemanticAnalyzer(
 
         diagnostics.Report(foreachStatement.Location, string.Join(" ", parts));
     }
-
-    private RequirementMatch SatisfiesRequirement(
-        string concreteType,
-        string requirementName,
-        IReadOnlyList<string>? requirementArguments = null) =>
-        typeSystem.SatisfiesRequirement(concreteType, requirementName, requirementArguments);
 
     private RequirementMatch SatisfiesRequirement(
         TypeRef concreteType,

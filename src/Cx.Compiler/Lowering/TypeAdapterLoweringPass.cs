@@ -25,7 +25,7 @@ internal static class TypeAdapterLoweringPass
         foreach (var adapter in program.TypeAdapters)
         {
             var baseTypeRef = adapter.BaseTypeNode.ToTypeRef(typeRefParser);
-            var baseType = TypeText(adapter.BaseTypeNode, typeRefParser);
+            var baseType = baseTypeRef is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(baseTypeRef);
             var baseName = TypeRefFacts.GetBaseName(baseTypeRef) ?? string.Empty;
             var baseTypeParameters = Array.Empty<string>() as IReadOnlyList<string>;
             if (structs.TryGetValue(baseName, out var baseStruct))
@@ -74,16 +74,4 @@ internal static class TypeAdapterLoweringPass
 
         return program with { Declarations = declarations };
     }
-
-    private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
-
 }

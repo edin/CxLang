@@ -8,7 +8,6 @@ internal sealed class TypeUsageAnalyzer(
     DiagnosticBag diagnostics,
     ProgramNode program,
     RequirementMatcher requirementMatcher,
-    Func<TypeNode?, string> typeText,
     Func<string, bool> isKnownTypeName,
     Func<string, string?> findAliasSuggestionForType,
     Func<string, string?> findPartialImportSuggestionForType,
@@ -19,15 +18,39 @@ internal sealed class TypeUsageAnalyzer(
     public void Analyze(
         TypeNode? typeNode,
         Location location,
-        IReadOnlyList<string> inScopeTypeParameters) =>
-        Analyze(typeText(typeNode), location, inScopeTypeParameters);
+        IReadOnlyList<string> inScopeTypeParameters)
+    {
+        if (typeNode is null)
+        {
+            return;
+        }
+
+        Analyze(
+            typeNode.Syntax,
+            typeNode.ToTypeRef(_typeRefParser),
+            location,
+            inScopeTypeParameters);
+    }
 
     public void Analyze(
         string type,
         Location location,
         IReadOnlyList<string> inScopeTypeParameters)
     {
-        foreach (var typeName in FindTypeNames(type)
+        Analyze(
+            TypeSyntaxParser.Parse(type),
+            _typeRefParser.Parse(type),
+            location,
+            inScopeTypeParameters);
+    }
+
+    private void Analyze(
+        TypeSyntaxNode? syntax,
+        TypeRef type,
+        Location location,
+        IReadOnlyList<string> inScopeTypeParameters)
+    {
+        foreach (var typeName in FindTypeNames(syntax)
             .Where(typeName => !inScopeTypeParameters.Contains(typeName, StringComparer.Ordinal))
             .Distinct(StringComparer.Ordinal))
         {
@@ -62,7 +85,7 @@ internal sealed class TypeUsageAnalyzer(
 
             var substitutions = definition.TypeParameters
                 .Zip(use.Arguments)
-                .ToDictionary(pair => pair.First, pair => _typeRefParser.Parse(pair.Second), StringComparer.Ordinal);
+                .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
             foreach (var constraint in definition.GenericConstraints)
             {
                 if (!substitutions.TryGetValue(constraint.TypeParameter, out var concreteTypeRef))
@@ -71,7 +94,7 @@ internal sealed class TypeUsageAnalyzer(
                 }
 
                 var concreteType = TypeRefFormatter.ToCxString(concreteTypeRef);
-                if (inScopeTypeParameters.Contains(concreteType, StringComparer.Ordinal))
+                if (IsInScopeTypeParameter(concreteTypeRef, inScopeTypeParameters))
                 {
                     continue;
                 }
@@ -96,46 +119,47 @@ internal sealed class TypeUsageAnalyzer(
         }
     }
 
-    private static IReadOnlyList<GenericStructUse> FindGenericStructUses(string type)
+    private static IReadOnlyList<GenericStructUse> FindGenericStructUses(TypeRef type)
     {
         var uses = new List<GenericStructUse>();
-        CollectGenericStructUses(TypeSyntaxParser.Parse(type), uses);
+        CollectGenericStructUses(type, uses);
         return uses;
     }
 
-    private static IReadOnlyList<string> FindTypeNames(string type)
+    private static IReadOnlyList<string> FindTypeNames(TypeSyntaxNode? syntax)
     {
         var names = new List<string>();
-        CollectTypeNames(TypeSyntaxParser.Parse(type), names);
+        CollectTypeNames(syntax, names);
         return names
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.Ordinal)
             .ToList();
     }
 
-    private static void CollectGenericStructUses(TypeSyntaxNode? syntax, List<GenericStructUse> uses)
+    private static void CollectGenericStructUses(TypeRef type, List<GenericStructUse> uses)
     {
-        switch (syntax)
+        type = TypeRefFacts.UnwrapAlias(type);
+        switch (type)
         {
-            case null:
-                break;
-            case GenericTypeSyntaxNode generic:
-                uses.Add(new GenericStructUse(
-                    TypeSyntaxFormatter.ToCxString(generic.Target),
-                    generic.Arguments.Select(TypeSyntaxFormatter.ToCxString).ToList()));
-                CollectGenericStructUses(generic.Target, uses);
-                foreach (var argument in generic.Arguments)
+            case TypeRef.Named named:
+                if (named.Arguments.Count > 0)
+                {
+                    uses.Add(new GenericStructUse(named.Name, named.Arguments));
+                }
+
+                foreach (var argument in named.Arguments)
                 {
                     CollectGenericStructUses(argument, uses);
                 }
+
                 break;
-            case PointerTypeSyntaxNode pointer:
+            case TypeRef.Pointer pointer:
                 CollectGenericStructUses(pointer.Element, uses);
                 break;
-            case FixedArrayTypeSyntaxNode fixedArray:
+            case TypeRef.FixedArray fixedArray:
                 CollectGenericStructUses(fixedArray.Element, uses);
                 break;
-            case FunctionTypeSyntaxNode function:
+            case TypeRef.Function function:
                 foreach (var parameter in function.Parameters)
                 {
                     CollectGenericStructUses(parameter, uses);
@@ -183,5 +207,11 @@ internal sealed class TypeUsageAnalyzer(
         return BuiltinTypes.IsBuiltin(type) ? string.Empty : type;
     }
 
-    private sealed record GenericStructUse(string Name, IReadOnlyList<string> Arguments);
+    private static bool IsInScopeTypeParameter(
+        TypeRef type,
+        IReadOnlyList<string> inScopeTypeParameters) =>
+        TypeRefFacts.UnwrapAlias(type) is TypeRef.Named { Arguments.Count: 0 } named
+        && inScopeTypeParameters.Contains(named.Name, StringComparer.Ordinal);
+
+    private sealed record GenericStructUse(string Name, IReadOnlyList<TypeRef> Arguments);
 }
