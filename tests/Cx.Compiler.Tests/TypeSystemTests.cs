@@ -18,7 +18,7 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var resolved = typeSystem.ResolveDefinition("IntVec");
+        var resolved = typeSystem.ResolveDefinition(typeSystem.Parse("IntVec"));
 
         var symbol = Assert.IsType<TypeSymbol.Struct>(resolved.Symbol);
         Assert.Equal("Vec", symbol.Name);
@@ -44,8 +44,8 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var fields = typeSystem.GetFields("Vec<int>");
-        var methods = typeSystem.GetMethods("Vec<int>");
+        var fields = typeSystem.GetFields(typeSystem.Parse("Vec<int>"));
+        var methods = typeSystem.GetMethods(typeSystem.Parse("Vec<int>"));
 
         Assert.Equal("int*", TypeRefFormatter.ToCxString(fields.Single(field => field.Name == "data").Type));
         var add = Assert.Single(methods, method => method.Name == "add");
@@ -84,10 +84,10 @@ public sealed class TypeSystemTests
     {
         var typeSystem = new TypeSystem(ResolveTypes(""));
 
-        var success = typeSystem.TryResolveForeachTypes("int[4]", keyValue: false, out var valueType, out var keyType);
+        var success = typeSystem.TryResolveForeachTypes(typeSystem.Parse("int[4]"), keyValue: false, out var valueType, out var keyType);
 
         Assert.True(success);
-        Assert.Equal("int", valueType);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(valueType));
         Assert.Null(keyType);
     }
 
@@ -133,10 +133,10 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var success = typeSystem.TryResolveForeachTypes("IntList", keyValue: false, out var valueType, out var keyType);
+        var success = typeSystem.TryResolveForeachTypes(typeSystem.Parse("IntList"), keyValue: false, out var valueType, out var keyType);
 
         Assert.True(success);
-        Assert.Equal("int", valueType);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(valueType));
         Assert.Null(keyType);
     }
 
@@ -187,11 +187,11 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var success = typeSystem.TryResolveForeachTypes("Entries", keyValue: true, out var valueType, out var keyType);
+        var success = typeSystem.TryResolveForeachTypes(typeSystem.Parse("Entries"), keyValue: true, out var valueType, out var keyType);
 
         Assert.True(success);
-        Assert.Equal("int", keyType);
-        Assert.Equal("double", valueType);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(keyType!));
+        Assert.Equal("double", TypeRefFormatter.ToCxString(valueType));
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var method = typeSystem.FindMethod("Box<int>", "get", isStatic: false, argumentCount: 0);
+        var method = typeSystem.FindMethod(typeSystem.Parse("Box<int>"), "get", isStatic: false, argumentCount: 0);
 
         Assert.NotNull(method);
         Assert.Equal("int", TypeRefFormatter.ToCxString(method.ReturnType));
@@ -234,7 +234,7 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var method = typeSystem.FindMethod("Box<int>", "create", isStatic: true, argumentCount: 1);
+        var method = typeSystem.FindMethod(typeSystem.Parse("Box<int>"), "create", isStatic: true, argumentCount: 1);
 
         Assert.NotNull(method);
         Assert.Equal("Box<int>", TypeRefFormatter.ToCxString(method.ReturnType));
@@ -263,7 +263,7 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var method = typeSystem.FindMethod("Stack<int>", "push", isStatic: false, argumentCount: 1);
+        var method = typeSystem.FindMethod(typeSystem.Parse("Stack<int>"), "push", isStatic: false, argumentCount: 1);
 
         Assert.NotNull(method);
         Assert.Equal("bool", TypeRefFormatter.ToCxString(method.ReturnType));
@@ -303,7 +303,7 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var method = typeSystem.FindMethod("StringBuilder", "write_u8", isStatic: false, argumentCount: 1);
+        var method = typeSystem.FindMethod(typeSystem.Parse("StringBuilder"), "write_u8", isStatic: false, argumentCount: 1);
 
         Assert.NotNull(method);
         Assert.Equal("bool", TypeRefFormatter.ToCxString(method.ReturnType));
@@ -341,7 +341,7 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        var method = typeSystem.FindMethod("Stack<int>", "with_value", isStatic: true, argumentCount: 1);
+        var method = typeSystem.FindMethod(typeSystem.Parse("Stack<int>"), "with_value", isStatic: true, argumentCount: 1);
 
         Assert.NotNull(method);
         Assert.Equal("Stack<int>", TypeRefFormatter.ToCxString(method.ReturnType));
@@ -383,8 +383,8 @@ public sealed class TypeSystemTests
             """);
         var typeSystem = new TypeSystem(program);
 
-        Assert.NotNull(typeSystem.FindMethod("Option<File>", "free", isStatic: false, argumentCount: 0));
-        Assert.Null(typeSystem.FindMethod("Option<Plain>", "free", isStatic: false, argumentCount: 0));
+        Assert.NotNull(typeSystem.FindMethod(typeSystem.Parse("Option<File>"), "free", isStatic: false, argumentCount: 0));
+        Assert.Null(typeSystem.FindMethod(typeSystem.Parse("Option<Plain>"), "free", isStatic: false, argumentCount: 0));
     }
 
     private static Cx.Compiler.Syntax.Nodes.ProgramNode ResolveTypes(string source)

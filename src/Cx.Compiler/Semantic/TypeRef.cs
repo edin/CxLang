@@ -4,6 +4,22 @@ namespace Cx.Compiler.Semantic;
 
 internal abstract record TypeRef
 {
+    public static Named Void { get; } = new("void", []);
+
+    public static Named Bool { get; } = new("bool", []);
+
+    public static Named Int { get; } = new("int", []);
+
+    public static Named Char { get; } = new("char", []);
+
+    public static Named Double { get; } = new("double", []);
+
+    public static Named Usize { get; } = new("usize", []);
+
+    public static Named U8 { get; } = new("u8", []);
+
+    public static Named Any { get; } = new("any", []);
+
     public sealed record Unknown : TypeRef;
 
     public sealed record Null : TypeRef;

@@ -21,16 +21,8 @@ internal sealed class CallResolver(
 {
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
-    private readonly TypeRefParser _typeRefParser = new(program);
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
     private readonly MethodCallResolver _methodCallResolver = new(program, new TypeSystem(program, currentTypeParameters));
-
-    public CallResolution? Resolve(
-        ExpressionNode callee,
-        IReadOnlyList<string> typeArguments,
-        IReadOnlyList<ExpressionNode> arguments,
-        TypeEnvironment variables) =>
-        ResolveTypeRefs(callee, TypeArgumentRefs(typeArguments), arguments, variables);
 
     public CallResolution? ResolveTypeRefs(
         ExpressionNode callee,
@@ -517,9 +509,6 @@ internal sealed class CallResolver(
         return resolveExpressionType(argument, variables);
     }
 
-    private TypeRef Parse(string? type) =>
-        _typeRefParser.Parse(type);
-
     private TypeRef ResolveType(TypeNode? typeNode) =>
         typeNode?.Semantic.Type
         ?? (typeNode?.Syntax is null ? null : _typeSyntaxConverter.Convert(typeNode))
@@ -537,14 +526,6 @@ internal sealed class CallResolver(
         substitutions.Count == 0
             ? type
             : TypeRefRewriter.Substitute(type, substitutions);
-
-    private TypeRef? NormalizeReceiverType(string type)
-    {
-        var parsed = Parse(type);
-        return parsed is TypeRef.Unknown
-            ? null
-            : TypeRefFacts.StripPointersAndAliases(parsed);
-    }
 
     private static TypeRef? NormalizeReceiverType(TypeRef type) =>
         type is TypeRef.Unknown ? null : TypeRefFacts.StripPointersAndAliases(type);
@@ -648,8 +629,5 @@ internal sealed class CallResolver(
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(ResolveType).ToList();
-
-    private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<string> typeArguments) =>
-        typeArguments.Select(argument => Parse(argument)).ToList();
 
 }

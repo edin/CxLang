@@ -44,7 +44,7 @@ internal static class ContiguousForeachLowerer
             var dataName = context.UniqueName("__cx_foreach_data");
             var lengthName = context.UniqueName("__cx_foreach_length");
             var indexName = context.UniqueName("__cx_foreach_index");
-            var dataType = CreateTypeNode(node.Location, iterable.ElementType + "*");
+            var dataType = CreateTypeNode(node.Location, new TypeRef.Pointer(iterable.ElementType));
             statements.Add(new LetStatement(
                 node.Location,
                 IsConst: true,
@@ -56,7 +56,7 @@ internal static class ContiguousForeachLowerer
                 IsConst: true,
                 lengthName,
                 iterable.LengthExpression(source),
-                CreateTypeNode(node.Location, "usize")));
+                CreateTypeNode(node.Location, TypeRef.Usize)));
 
             var body = new List<StatementNode>();
             if (node.IndexBinding is { } indexBinding)
@@ -66,7 +66,7 @@ internal static class ContiguousForeachLowerer
                     indexBinding.IsConst,
                     indexBinding.Name,
                     new NameExpressionNode(indexBinding.Location, indexName),
-                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, "usize")));
+                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, TypeRef.Usize)));
             }
 
             body.Add(BuildValueBinding(node.ValueBinding, iterable.ElementType, dataName, indexName));
@@ -79,7 +79,7 @@ internal static class ContiguousForeachLowerer
                     IsConst: false,
                     indexName,
                     new LiteralExpressionNode(node.Location, "0"),
-                    CreateTypeNode(node.Location, "usize")),
+                    CreateTypeNode(node.Location, TypeRef.Usize)),
                 new BinaryExpressionNode(
                     node.Location,
                     new NameExpressionNode(node.Location, indexName),
@@ -98,24 +98,23 @@ internal static class ContiguousForeachLowerer
             out ContiguousIterable iterable)
         {
             iterable = default;
-            if (!TryGetIterableType(expression, context, out var iterableTypeRef, out var iterableType))
+            if (!TryGetIterableType(expression, context, out var iterableType))
             {
                 return false;
             }
 
-            if (TypeRefFacts.UnwrapAlias(iterableTypeRef) is TypeRef.FixedArray fixedArray)
+            if (TypeRefFacts.UnwrapAlias(iterableType) is TypeRef.FixedArray fixedArray)
             {
-                var elementType = TypeRefFormatter.ToCxString(fixedArray.Element);
                 iterable = new ContiguousIterable(
                     iterableType,
-                    elementType,
+                    fixedArray.Element,
                     source => source,
                     source => new LiteralExpressionNode(source.Location, fixedArray.Length));
                 return true;
             }
 
-            var contiguous = _requirements.MatchTypeRefs(iterableTypeRef, "Contiguous");
-            if (contiguous.Success && contiguous.TryGetTypeBindingText("T", out var contiguousElementType))
+            var contiguous = _requirements.MatchTypeRefs(iterableType, "Contiguous");
+            if (contiguous.Success && contiguous.TryGetTypeBinding("T", out var contiguousElementType))
             {
                 iterable = new ContiguousIterable(
                     iterableType,
@@ -125,8 +124,8 @@ internal static class ContiguousForeachLowerer
                 return true;
             }
 
-            var range = _requirements.MatchTypeRefs(iterableTypeRef, "ContiguousRange");
-            if (range.Success && range.TryGetTypeBindingText("T", out var rangeElementType))
+            var range = _requirements.MatchTypeRefs(iterableType, "ContiguousRange");
+            if (range.Success && range.TryGetTypeBinding("T", out var rangeElementType))
             {
                 iterable = new ContiguousIterable(
                     iterableType,
@@ -142,31 +141,27 @@ internal static class ContiguousForeachLowerer
         private bool TryGetIterableType(
             ExpressionNode expression,
             AstTransformContext context,
-            out TypeRef typeRef,
-            out string type)
+            out TypeRef type)
         {
             if (expression.Semantic.Type is { } semanticType)
             {
-                typeRef = semanticType;
-                type = TypeRefFormatter.ToCxString(semanticType);
+                type = semanticType;
                 return true;
             }
 
             if (expression is NameExpressionNode name && context.TryGetLocalTypeRef(name.Name, out var localType))
             {
-                typeRef = localType;
-                type = TypeRefFormatter.ToCxString(localType);
+                type = localType;
                 return true;
             }
 
-            typeRef = new TypeRef.Unknown();
-            type = string.Empty;
+            type = new TypeRef.Unknown();
             return false;
         }
 
         private LetStatement BuildValueBinding(
             ForeachBinding binding,
-            string elementType,
+            TypeRef elementType,
             string dataName,
             string indexName)
         {
@@ -190,19 +185,8 @@ internal static class ContiguousForeachLowerer
                 : CreateTypeNode(location, new TypeRef.Pointer(type));
         }
 
-        private TypeNode CreateTypeNode(Location location, string type)
-        {
-            var typeNode = TypeNode.CreateFromText(location, type);
-            typeNode.Semantic.Type = _typeRefParser.Parse(typeNode);
-            return typeNode;
-        }
-
         private static TypeNode CreateTypeNode(Location location, TypeRef type)
-        {
-            var typeNode = TypeNode.CreateFromText(location, TypeRefFormatter.ToCxString(type));
-            typeNode.Semantic.Type = type;
-            return typeNode;
-        }
+            => type.ToTypeNode(location);
 
         private static ExpressionNode PointerLength(ExpressionNode source)
         {
@@ -244,8 +228,8 @@ internal static class ContiguousForeachLowerer
                     new LiteralExpressionNode(location, "1")));
 
         private readonly record struct ContiguousIterable(
-            string SourceType,
-            string ElementType,
+            TypeRef SourceType,
+            TypeRef ElementType,
             Func<ExpressionNode, ExpressionNode> DataExpression,
             Func<ExpressionNode, ExpressionNode> LengthExpression);
     }

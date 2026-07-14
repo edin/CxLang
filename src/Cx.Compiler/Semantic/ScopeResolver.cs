@@ -52,7 +52,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
         foreach (var requirement in program.Requirements)
         {
-            DeclareTopLevel(requirement.Name, SymbolKind.Type, (string?)null, requirement.Location, requirement);
+            DeclareTopLevel(CreateNamedTypeSymbol(requirement.Name, requirement.Location, requirement));
         }
 
         foreach (var enumNode in program.Enums)
@@ -202,7 +202,10 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                     var armScope = scope.CreateChild();
                     if (arm.BindingName is not null)
                     {
-                        Declare(armScope, arm.BindingName, SymbolKind.MatchBinding, (string?)null, arm.Location, arm);
+                        Declare(
+                            armScope,
+                            Symbol.FromTypeRef(arm.BindingName, SymbolKind.MatchBinding, typeRef: null, arm.Location, arm),
+                            arm.Location);
                     }
 
                     ResolveStatements(arm.Body, armScope);
@@ -347,9 +350,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     private Symbol? Declare(Scope scope, string name, SymbolKind kind, TypeNode? typeNode, Location location, SyntaxNode? node = null) =>
         Declare(scope, CreateSymbol(name, kind, typeNode, location, node), location);
 
-    private Symbol? Declare(Scope scope, string name, SymbolKind kind, string? type, Location location, SyntaxNode? node = null) =>
-        Declare(scope, CreateSymbol(name, kind, type, location, node), location);
-
     private Symbol? Declare(Scope scope, Symbol symbol, Location location)
     {
         if (scope.TryDeclare(symbol))
@@ -368,9 +368,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private void DeclareTopLevel(string name, SymbolKind kind, TypeNode? typeNode, Location location, SyntaxNode node) =>
         DeclareTopLevel(CreateSymbol(name, kind, typeNode, location, node));
-
-    private void DeclareTopLevel(string name, SymbolKind kind, string? type, Location location, SyntaxNode node) =>
-        DeclareTopLevel(CreateSymbol(name, kind, type, location, node));
 
     private void DeclareTopLevel(Symbol symbol)
     {
@@ -499,14 +496,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 {
                     environment.Set(symbol.Name, symbol.TypeRef);
                 }
-                else if (!string.IsNullOrWhiteSpace(symbol.Type))
-                {
-                    var typeRef = ParseTypeRefOrNull(symbol.Type);
-                    if (typeRef is not null)
-                    {
-                        environment.Set(symbol.Name, typeRef);
-                    }
-                }
             }
         }
 
@@ -516,22 +505,9 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     private Symbol CreateSymbol(string name, SymbolKind kind, TypeNode? typeNode, Location location, SyntaxNode? node)
     {
         var typeRef = TypeRefOrNull(typeNode);
-        return Symbol.FromLegacyType(
+        return Symbol.FromTypeRef(
             name,
             kind,
-            typeRef is null ? null : TypeRefFormatter.ToCxString(typeRef),
-            typeRef,
-            location,
-            node);
-    }
-
-    private Symbol CreateSymbol(string name, SymbolKind kind, string? type, Location location, SyntaxNode? node)
-    {
-        var typeRef = ParseTypeRefOrNull(type);
-        return Symbol.FromLegacyType(
-            name,
-            kind,
-            type,
             typeRef,
             location,
             node);
@@ -614,23 +590,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             && string.Equals(function.Name, name, StringComparison.Ordinal)
             && MatchesTypeArguments(function, typeArgumentRefs));
 
-    private FunctionNode? FindInstanceFunction(string receiverType, string name, IReadOnlyList<TypeRef> typeArgumentRefs)
-    {
-        var receiverTypeRef = ParseTypeRefOrNull(receiverType);
-        if (receiverTypeRef is null)
-        {
-            return null;
-        }
-
-        var ownerType = TypeRefFacts.GetBaseName(receiverTypeRef);
-        return _functions.FirstOrDefault(function =>
-            !function.IsStatic
-            && OwnerType(function) is not null
-            && string.Equals(OwnerType(function), ownerType, StringComparison.Ordinal)
-            && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArgumentRefs, receiverTypeRef));
-    }
-
     private FunctionNode? FindInstanceFunction(Symbol receiverSymbol, string name, IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         if (receiverSymbol.TypeRef is not null)
@@ -647,10 +606,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             }
         }
 
-        var receiverType = receiverSymbol.TypeText;
-        return string.IsNullOrWhiteSpace(receiverType)
-            ? null
-            : FindInstanceFunction(receiverType, name, typeArgumentRefs);
+        return null;
     }
 
     private static bool MatchesTypeArguments(
@@ -728,11 +684,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return receiverArguments;
         }
 
-        var receiverType = ParseTypeRefOrNull(receiverSymbol.TypeText);
-        return TypeRefFacts.TryGetGenericArguments(receiverType, out var fallbackArguments)
-            && fallbackArguments.Count == function.TypeParameters.Count
-                ? fallbackArguments
-                : [];
+        return [];
     }
 
     private Symbol FunctionSymbol(FunctionNode function)
@@ -782,22 +734,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
         var type = typeNode.ToTypeRef(_typeRefParser);
         return type is TypeRef.Unknown ? null : type;
-    }
-
-    private TypeRef? ParseTypeRefOrNull(string? type)
-    {
-        if (string.IsNullOrWhiteSpace(type))
-        {
-            return null;
-        }
-
-        if (_typeRefParser is null)
-        {
-            throw new InvalidOperationException("Scope resolver has no TypeRef parser.");
-        }
-
-        var parsed = _typeRefParser.Parse(type);
-        return parsed is TypeRef.Unknown ? null : parsed;
     }
 
     private static string Describe(SymbolKind kind) =>

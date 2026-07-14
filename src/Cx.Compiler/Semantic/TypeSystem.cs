@@ -25,20 +25,11 @@ internal sealed class TypeSystem
     public TypeRef Parse(string? type) =>
         _parser.Parse(type);
 
-    public ResolvedType Resolve(string? type) =>
-        Resolve(Parse(type));
-
     public ResolvedType Resolve(TypeRef type) =>
         _resolver.Resolve(type);
 
-    public ResolvedType ResolveDefinition(string? type) =>
-        ResolveDefinition(Parse(type));
-
     public ResolvedType ResolveDefinition(TypeRef type) =>
         _resolver.ResolveDefinition(type);
-
-    public IReadOnlyList<ResolvedField> GetFields(string? type) =>
-        GetFields(ResolveDefinition(type));
 
     public IReadOnlyList<ResolvedField> GetFields(TypeRef type) =>
         GetFields(ResolveDefinition(type));
@@ -46,21 +37,11 @@ internal sealed class TypeSystem
     public IReadOnlyList<ResolvedField> GetFields(ResolvedType type) =>
         _memberResolver.GetFields(type);
 
-    public IReadOnlyList<ResolvedMethod> GetMethods(string? type) =>
-        GetMethods(ResolveDefinition(type));
-
     public IReadOnlyList<ResolvedMethod> GetMethods(TypeRef type) =>
         GetMethods(ResolveDefinition(type));
 
     public IReadOnlyList<ResolvedMethod> GetMethods(ResolvedType type) =>
         _memberResolver.GetMethods(type);
-
-    public ResolvedMethod? FindMethod(
-        string receiverType,
-        string name,
-        bool isStatic,
-        int argumentCount) =>
-        FindMethod(Parse(receiverType), name, isStatic, argumentCount);
 
     public ResolvedMethod? FindMethod(
         TypeRef receiverType,
@@ -74,34 +55,10 @@ internal sealed class TypeSystem
                 && GetCallableParameterCount(method, isStatic) == argumentCount);
 
     public RequirementMatch SatisfiesRequirement(
-        string concreteType,
-        string requirementName,
-        IReadOnlyList<string>? requirementArguments = null) =>
-        _requirementMatcher.Value.Match(concreteType, requirementName, requirementArguments);
-
-    public RequirementMatch SatisfiesRequirement(
         TypeRef concreteType,
         string requirementName,
         IReadOnlyList<TypeRef>? requirementArguments = null) =>
         _requirementMatcher.Value.MatchTypeRefs(concreteType, requirementName, requirementArguments);
-
-    public bool TryResolveForeachTypes(
-        string iterableType,
-        bool keyValue,
-        out string valueType,
-        out string? keyType)
-    {
-        if (TryResolveForeachTypes(Parse(iterableType), keyValue, out var valueTypeRef, out var keyTypeRef))
-        {
-            valueType = TypeRefFormatter.ToCxString(valueTypeRef);
-            keyType = keyTypeRef is null ? null : TypeRefFormatter.ToCxString(keyTypeRef);
-            return true;
-        }
-
-        valueType = string.Empty;
-        keyType = null;
-        return false;
-    }
 
     public bool TryResolveForeachTypes(
         TypeRef iterableType,

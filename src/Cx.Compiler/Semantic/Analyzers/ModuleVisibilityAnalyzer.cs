@@ -8,10 +8,6 @@ internal sealed class ModuleVisibilityAnalyzer(
     DiagnosticBag diagnostics,
     IReadOnlyList<ProgramNode> availablePrograms)
 {
-    private readonly TypeRefParser _typeRefParser = new(availablePrograms.FirstOrDefault() ?? new ProgramNode(
-        Location.Synthetic("<module-visibility>"),
-        []));
-
     private readonly IReadOnlyDictionary<string, ModuleSymbols> _modules = availablePrograms
         .GroupBy(program => program.Module?.Name ?? string.Empty, StringComparer.Ordinal)
         .ToDictionary(
@@ -351,16 +347,9 @@ internal sealed class ModuleVisibilityAnalyzer(
         TypeNode? typeNode,
         Location location,
         ModuleVisibility visibility,
-        IReadOnlyList<string>? typeParameters = null) =>
-        AnalyzeType(TypeText(typeNode), location, visibility, typeParameters);
-
-    private void AnalyzeType(
-        string type,
-        Location location,
-        ModuleVisibility visibility,
         IReadOnlyList<string>? typeParameters = null)
     {
-        foreach (var typeName in FindTypeNames(type)
+        foreach (var typeName in FindTypeNames(typeNode)
             .Where(typeName => typeParameters is null || !typeParameters.Contains(typeName, StringComparer.Ordinal)))
         {
             if (!visibility.SymbolExistsAsType(typeName) || visibility.IsVisibleType(typeName))
@@ -455,10 +444,13 @@ internal sealed class ModuleVisibilityAnalyzer(
         yield return foreachStatement.ValueBinding.Name;
     }
 
-    private static IReadOnlyList<string> FindTypeNames(string type)
+    private static IReadOnlyList<string> FindTypeNames(TypeNode? typeNode) =>
+        FindTypeNames(typeNode?.Syntax);
+
+    private static IReadOnlyList<string> FindTypeNames(TypeSyntaxNode? syntax)
     {
         var names = new List<string>();
-        CollectTypeNames(TypeSyntaxParser.Parse(type), names);
+        CollectTypeNames(syntax, names);
         return names
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.Ordinal)
@@ -505,25 +497,10 @@ internal sealed class ModuleVisibilityAnalyzer(
 
     private static string? OwnerType(FunctionNode function)
     {
-        var type = function.OwnerTypeNode?.TypeName ?? string.Empty;
-        return string.IsNullOrWhiteSpace(type) ? null : type;
-    }
-
-    private string TypeText(TypeNode? typeNode)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
-
-    private string? TypeTextOrNull(TypeNode? typeNode)
-    {
-        var type = TypeText(typeNode);
-        return string.IsNullOrWhiteSpace(type) ? null : type;
+        var type = function.OwnerTypeNode?.Semantic.Type;
+        return type is null or TypeRef.Unknown
+            ? null
+            : TypeRefFacts.GetBaseName(type);
     }
 
     private sealed record ModuleVisibility(

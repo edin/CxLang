@@ -10,6 +10,28 @@ namespace Cx.Compiler.Tests;
 public sealed class ExpressionTypeResolverTypeRefTests
 {
     [Fact]
+    public void ResolveTypeRef_ResolvesKnownLiteralAliasesWithoutStringParsing()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            type bool = int;
+
+            fn main() -> bool {
+                return true;
+            }
+            """);
+        var resolver = new ExpressionTypeResolver(program);
+        var literal = Assert.IsType<LiteralExpressionNode>(
+            Assert.IsType<ReturnStatement>(Assert.Single(program.Functions).Body.Single()).Expression);
+
+        var resolved = resolver.ResolveTypeRef(literal, new TypeEnvironment());
+
+        var alias = Assert.IsType<TypeRef.Alias>(resolved);
+        Assert.Equal("bool", alias.Name);
+        Assert.Equal("int", Assert.IsType<TypeRef.Named>(alias.Target).Name);
+    }
+
+    [Fact]
     public void ResolveTypeRef_PreservesAliasFromTypeEnvironment()
     {
         var program = CompilerTestHelpers.Parse(

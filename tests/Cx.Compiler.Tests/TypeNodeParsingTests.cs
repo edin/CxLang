@@ -265,6 +265,25 @@ public sealed class TypeNodeParsingTests
     }
 
     [Fact]
+    public void ToTypeNode_CreatesSyntaxWithoutReparsingTypeText()
+    {
+        var location = Location.Synthetic("<generated-type>");
+        var type = new TypeRef.Function(
+            [new TypeRef.Pointer(new TypeRef.Named("Vec", [new TypeRef.Named("int", [])]))],
+            new TypeRef.FixedArray(new TypeRef.Alias("Byte", new TypeRef.Named("u8", [])), "4"),
+            IsVariadic: true);
+
+        var node = type.ToTypeNode(location);
+
+        Assert.Equal("fn(Vec<int>*,...)->Byte[4]", node.ToSourceText());
+        Assert.Same(type, node.Semantic.Type);
+        var function = Assert.IsType<FunctionTypeSyntaxNode>(node.Syntax);
+        Assert.True(function.IsVariadic);
+        Assert.IsType<PointerTypeSyntaxNode>(Assert.Single(function.Parameters));
+        Assert.IsType<FixedArrayTypeSyntaxNode>(function.ReturnType);
+    }
+
+    [Fact]
     public void ResolveType_PrefersTypeSyntaxOverCompatibilityText()
     {
         var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);

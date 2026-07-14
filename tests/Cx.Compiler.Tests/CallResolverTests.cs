@@ -25,7 +25,7 @@ public sealed class CallResolverTests
         var call = GetReturnCall(program);
         var resolver = CreateResolver(program);
 
-        var resolved = resolver.Resolve(call.Callee, [], call.Arguments, new TypeEnvironment());
+        var resolved = resolver.ResolveTypeRefs(call.Callee, [], call.Arguments, new TypeEnvironment());
 
         Assert.NotNull(resolved);
         Assert.Equal("add", resolved.Name);
@@ -62,7 +62,7 @@ public sealed class CallResolverTests
         var call = Assert.IsType<CallExpressionNode>(statement.Expression);
         var resolver = CreateResolver(program);
 
-        var resolved = resolver.Resolve(
+        var resolved = resolver.ResolveTypeRefs(
             call.Callee,
             [],
             call.Arguments,
@@ -106,7 +106,7 @@ public sealed class CallResolverTests
         var variables = new TypeEnvironment();
         variables.Set("stack", parser.Parse("Stack<int>"));
 
-        var resolved = resolver.Resolve(call.Callee, [], call.Arguments, variables);
+        var resolved = resolver.ResolveTypeRefs(call.Callee, [], call.Arguments, variables);
 
         Assert.NotNull(resolved);
         Assert.Equal("Stack<int>.push", resolved.Name);
@@ -138,7 +138,7 @@ public sealed class CallResolverTests
         var call = Assert.IsType<CallExpressionNode>(local.Initializer);
         var resolver = CreateResolver(program);
 
-        var resolved = resolver.Resolve(
+        var resolved = resolver.ResolveTypeRefs(
             call.Callee,
             [],
             call.Arguments,
@@ -191,7 +191,7 @@ public sealed class CallResolverTests
         var call = GetReturnCall(rewrittenProgram);
         var resolver = CreateResolver(rewrittenProgram);
 
-        var resolved = resolver.Resolve(call.Callee, [], call.Arguments, new TypeEnvironment());
+        var resolved = resolver.ResolveTypeRefs(call.Callee, [], call.Arguments, new TypeEnvironment());
 
         Assert.NotNull(resolved);
         Assert.Equal("int", TypeRefFormatter.ToCxString(resolved.ReturnType));

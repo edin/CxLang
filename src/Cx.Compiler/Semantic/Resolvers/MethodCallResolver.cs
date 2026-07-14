@@ -25,7 +25,7 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
         {
             var staticReceiverType = BuildStaticReceiverType(targetName, typeArguments);
             return typeSystem.FindMethod(staticReceiverType, member.MemberName, isStatic: true, argumentCount) is { } staticMethod
-                ? new ResolvedMethodCall($"{staticReceiverType}.{member.MemberName}", staticMethod, SkipSelf: false)
+                ? new ResolvedMethodCall($"{TypeRefFormatter.ToCxString(staticReceiverType)}.{member.MemberName}", staticMethod, SkipSelf: false)
                 : null;
         }
 
@@ -36,11 +36,11 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
             : null;
     }
 
-    private string BuildStaticReceiverType(string targetName, IReadOnlyList<TypeRef> typeArguments)
+    private TypeRef BuildStaticReceiverType(string targetName, IReadOnlyList<TypeRef> typeArguments)
     {
         if (typeArguments.Count == 0)
         {
-            return targetName;
+            return new TypeRef.Named(targetName, []);
         }
 
         var typeParameterCount = program.Structs
@@ -50,9 +50,9 @@ internal sealed class MethodCallResolver(ProgramNode program, TypeSystem typeSys
                 .FirstOrDefault(adapter => string.Equals(adapter.Name, targetName, StringComparison.Ordinal))
                 ?.TypeParameters.Count
             ?? 0;
-        return typeParameterCount == typeArguments.Count
-            ? $"{targetName}<{string.Join(",", typeArguments.Select(TypeRefFormatter.ToCxString))}>"
-            : targetName;
+        return new TypeRef.Named(
+            targetName,
+            typeParameterCount == typeArguments.Count ? typeArguments : []);
     }
 
     private static TypeRef? NormalizeInstanceReceiverType(TypeRef type) =>

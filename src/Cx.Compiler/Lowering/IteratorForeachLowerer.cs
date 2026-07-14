@@ -45,13 +45,13 @@ internal static class IteratorForeachLowerer
                     IsConst: false,
                     indexCounterName,
                     new LiteralExpressionNode(indexBinding.Location, "0"),
-                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, "usize"));
+                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, TypeRef.Usize));
                 body.Add(new LetStatement(
                     indexBinding.Location,
                     indexBinding.IsConst,
                     indexBinding.Name,
-                    Name(indexBinding.Location, indexCounterName, "usize"),
-                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, "usize")));
+                    Name(indexBinding.Location, indexCounterName, TypeRef.Usize),
+                    indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, TypeRef.Usize)));
             }
 
             if (node.KeyBinding is { } keyBinding && iterable.KeyType is { } keyType)
@@ -92,15 +92,15 @@ internal static class IteratorForeachLowerer
 
             var requirementName = node.KeyBinding is null ? "Iterable" : "KeyValueIterable";
             var match = _requirements.MatchTypeRefs(iterableType, requirementName);
-            if (!match.Success || !match.TryGetTypeBindingText("I", out var iteratorType))
+            if (!match.Success || !match.TryGetTypeBinding("I", out var iteratorType))
             {
                 return false;
             }
 
             if (node.KeyBinding is not null)
             {
-                if (!match.TryGetTypeBindingText("K", out var keyType)
-                    || !match.TryGetTypeBindingText("V", out var valueType))
+                if (!match.TryGetTypeBinding("K", out var keyType)
+                    || !match.TryGetTypeBinding("V", out var valueType))
                 {
                     return false;
                 }
@@ -109,7 +109,7 @@ internal static class IteratorForeachLowerer
                 return true;
             }
 
-            if (!match.TryGetTypeBindingText("T", out var itemType))
+            if (!match.TryGetTypeBinding("T", out var itemType))
             {
                 return false;
             }
@@ -142,9 +142,9 @@ internal static class IteratorForeachLowerer
         private LetStatement BuildBindingLet(
             ForeachBinding binding,
             string iteratorName,
-            string iteratorType,
+            TypeRef iteratorType,
             string memberName,
-            string valueType)
+            TypeRef valueType)
         {
             var valueCall = MemberCall(Name(binding.Location, iteratorName, iteratorType), memberName);
             var bindingType = binding.TypeNode ?? CreateTypeNode(binding.Location, valueType);
@@ -181,35 +181,24 @@ internal static class IteratorForeachLowerer
         private AssignmentExpressionNode IncrementExpression(Location location, string name) =>
             new(
                 location,
-                Name(location, name, "usize"),
+                Name(location, name, TypeRef.Usize),
                 "=",
                 new BinaryExpressionNode(
                     location,
-                    Name(location, name, "usize"),
+                    Name(location, name, TypeRef.Usize),
                     "+",
                     new LiteralExpressionNode(location, "1")));
 
-        private TypeNode CreateTypeNode(Location location, string type)
-        {
-            var typeNode = TypeNode.CreateFromText(location, type);
-            typeNode.Semantic.Type = _typeRefParser.Parse(typeNode);
-            return typeNode;
-        }
-
         private static TypeNode CreateTypeNode(Location location, TypeRef type)
-        {
-            var typeNode = TypeNode.CreateFromText(location, TypeRefFormatter.ToCxString(type));
-            typeNode.Semantic.Type = type;
-            return typeNode;
-        }
+            => type.ToTypeNode(location);
 
-        private NameExpressionNode Name(Location location, string name, string type)
+        private static NameExpressionNode Name(Location location, string name, TypeRef type)
         {
             var expression = new NameExpressionNode(location, name);
-            expression.Semantic.Type = _typeRefParser.Parse(type);
+            expression.Semantic.Type = type;
             return expression;
         }
 
-        private readonly record struct IteratorIterable(string IteratorType, string ValueType, string? KeyType);
+        private readonly record struct IteratorIterable(TypeRef IteratorType, TypeRef ValueType, TypeRef? KeyType);
     }
 }

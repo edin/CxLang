@@ -84,7 +84,7 @@ public sealed class SemanticAnalyzer(
 
             _assignmentAnalyzer?.CheckAssignmentCompatibility(
                 global.Location,
-                globalType,
+                globalTypeRef,
                 global.Initializer,
                 globalTypeEnvironment,
                 $"global '{global.Name}'");
@@ -257,7 +257,7 @@ public sealed class SemanticAnalyzer(
                     diagnostics.Report(let.Location, $"Cannot assign null to non-pointer type '{letType}'.");
                 }
 
-                _assignmentAnalyzer?.CheckAssignmentCompatibility(let.Location, letType, let.Initializer, typeEnvironment, $"local '{let.Name}'");
+                _assignmentAnalyzer?.CheckAssignmentCompatibility(let.Location, letTypeRef, let.Initializer, typeEnvironment, $"local '{let.Name}'");
                 SemanticFacts.SetVariableType(typeEnvironment, let.Name, letTypeRef);
                 mutability[let.Name] = let.IsConst ? LocalMutability.Const : LocalMutability.Mutable;
                 break;
@@ -402,17 +402,10 @@ public sealed class SemanticAnalyzer(
         TypeNode? typeNode,
         Location location,
         ProgramNode program,
-        IReadOnlyList<string> inScopeTypeParameters) =>
-        AnalyzeType(TypeText(typeNode), location, program, inScopeTypeParameters);
-
-    private void AnalyzeType(
-        string type,
-        Location location,
-        ProgramNode program,
         IReadOnlyList<string> inScopeTypeParameters)
     {
         _ = program;
-        _typeUsageAnalyzer?.Analyze(type, location, inScopeTypeParameters);
+        _typeUsageAnalyzer?.Analyze(typeNode, location, inScopeTypeParameters);
     }
 
     private void AnalyzeSpaceshipTypes(
@@ -464,7 +457,7 @@ public sealed class SemanticAnalyzer(
 
                 _assignmentAnalyzer?.CheckAssignmentCompatibility(
                     declaration.Location,
-                    declarationType,
+                    declarationTypeRef,
                     declaration.Initializer,
                     typeEnvironment,
                     $"for variable '{declaration.Name}'");
@@ -762,21 +755,5 @@ public sealed class SemanticAnalyzer(
 
     private static string TypeText(TypeRef type) =>
         type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-
-    private string TypeText(TypeNode? typeNode)
-    {
-        if (typeNode is null)
-        {
-            return string.Empty;
-        }
-
-        if (_typeRefParser is null)
-        {
-            throw new InvalidOperationException("Semantic analyzer has no TypeRef parser.");
-        }
-
-        var type = typeNode.ToTypeRef(_typeRefParser);
-        return type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
-    }
 
 }

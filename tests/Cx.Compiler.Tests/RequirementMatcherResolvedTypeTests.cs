@@ -29,6 +29,11 @@ public sealed class RequirementMatcherResolvedTypeTests
         Assert.True(match.Success, string.Join(Environment.NewLine, match.Failures));
         Assert.Equal("Vec<int>", match.TypeBindings["Self"]);
         Assert.Equal("int", match.TypeBindings["T"]);
+        Assert.Equal("Vec<int>", TypeRefFormatter.ToCxString(match.ConcreteTypeRef));
+        Assert.True(match.TryGetTypeBinding("Self", out var selfType));
+        Assert.Equal("Vec<int>", TypeRefFormatter.ToCxString(selfType));
+        Assert.True(match.TryGetTypeBinding("T", out var elementType));
+        Assert.Equal("int", TypeRefFormatter.ToCxString(elementType));
     }
 
     [Fact]

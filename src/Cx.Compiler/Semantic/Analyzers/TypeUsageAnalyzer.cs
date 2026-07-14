@@ -32,18 +32,6 @@ internal sealed class TypeUsageAnalyzer(
             inScopeTypeParameters);
     }
 
-    public void Analyze(
-        string type,
-        Location location,
-        IReadOnlyList<string> inScopeTypeParameters)
-    {
-        Analyze(
-            TypeSyntaxParser.Parse(type),
-            _typeRefParser.Parse(type),
-            location,
-            inScopeTypeParameters);
-    }
-
     private void Analyze(
         TypeSyntaxNode? syntax,
         TypeRef type,

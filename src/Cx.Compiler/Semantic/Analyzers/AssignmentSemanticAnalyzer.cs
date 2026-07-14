@@ -73,14 +73,6 @@ internal sealed class AssignmentSemanticAnalyzer(
 
     public void CheckAssignmentCompatibility(
         Location location,
-        string targetType,
-        ExpressionNode? sourceExpression,
-        TypeEnvironment typeEnvironment,
-        string subject) =>
-        CheckAssignmentCompatibility(location, typeRefParser.Parse(targetType), sourceExpression, typeEnvironment, subject);
-
-    public void CheckAssignmentCompatibility(
-        Location location,
         TypeRef? targetType,
         ExpressionNode? sourceExpression,
         TypeEnvironment typeEnvironment,

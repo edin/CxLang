@@ -326,7 +326,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         {
             IndexBinding = foreachStatement.IndexBinding is null
                 ? null
-                : FillBindingType(foreachStatement.IndexBinding, new TypeRef.Named("usize", [])),
+                : FillBindingType(foreachStatement.IndexBinding, TypeRef.Usize),
             KeyBinding = foreachStatement.KeyBinding is null || keyType is null
                 ? foreachStatement.KeyBinding
                 : FillBindingType(foreachStatement.KeyBinding, keyType),
@@ -347,7 +347,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
             var indexBindingType = TypeRefOrNull(indexBinding.TypeNode);
-            SetVariableType(typeEnvironment, indexBinding.Name, indexBindingType ?? new TypeRef.Named("usize", []));
+            SetVariableType(typeEnvironment, indexBinding.Name, indexBindingType ?? TypeRef.Usize);
         }
 
         var valueBindingType = TypeRefOrNull(foreachStatement.ValueBinding.TypeNode);

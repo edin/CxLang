@@ -31,7 +31,7 @@ internal sealed class ForeachSemanticAnalyzer(
             }
 
             var rangeType = expressionTypeResolver.ResolveTypeRef(rangeExpression, variables)
-                ?? new TypeRef.Named("int", []);
+                ?? TypeRef.Int;
             AddForeachScalarRangeBindings(
                 foreachStatement,
                 foreachTypeEnvironment,
@@ -129,7 +129,7 @@ internal sealed class ForeachSemanticAnalyzer(
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
             var indexType = SemanticFacts.TypeRefOrNull(indexBinding.TypeNode, typeRefParser)
-                ?? new TypeRef.Named("usize", []);
+                ?? TypeRef.Usize;
             SemanticFacts.SetVariableType(typeEnvironment, indexBinding.Name, indexType);
             mutability[indexBinding.Name] = LocalMutability.ForeachIndex;
         }
@@ -162,7 +162,7 @@ internal sealed class ForeachSemanticAnalyzer(
         if (foreachStatement.IndexBinding is { } indexBinding)
         {
             var indexType = SemanticFacts.TypeRefOrNull(indexBinding.TypeNode, typeRefParser)
-                ?? new TypeRef.Named("usize", []);
+                ?? TypeRef.Usize;
             SemanticFacts.SetVariableType(typeEnvironment, indexBinding.Name, indexType);
             mutability[indexBinding.Name] = LocalMutability.ForeachIndex;
         }
