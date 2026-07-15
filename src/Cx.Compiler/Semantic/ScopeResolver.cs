@@ -104,12 +104,17 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     private void ResolveFunction(FunctionNode function)
     {
         var functionScope = model.RootScope.CreateChild();
-        var ownerType = OwnerType(function);
+        var ownerType = TypeRefOrNull(function.OwnerTypeNode);
         if (!function.IsStatic
             && ownerType is not null
             && !function.Parameters.Any(parameter => string.Equals(parameter.Name, "self", StringComparison.Ordinal)))
         {
-            Declare(functionScope, "self", SymbolKind.Parameter, TypeNode.CreateFromText(function.Location, ownerType + "*"), function.Location);
+            Declare(
+                functionScope,
+                "self",
+                SymbolKind.Parameter,
+                new TypeRef.Pointer(ownerType).ToTypeNode(function.Location),
+                function.Location);
         }
 
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))

@@ -28,9 +28,8 @@ internal sealed class GenericCallLowerer(
             return null;
         }
 
-        var typeArguments = TypeTexts(typeArgumentRefs);
         if (call.Callee is MemberExpressionNode member
-            && memberCallLowerer.TryLowerGenericMember(member, typeArguments, typeArgumentRefs, call.Arguments) is { } memberCall)
+            && memberCallLowerer.TryLowerGenericMember(member, typeArgumentRefs, call.Arguments) is { } memberCall)
         {
             return memberCall;
         }
@@ -58,45 +57,48 @@ internal sealed class GenericCallLowerer(
                 call.Arguments);
         }
 
-        var freeMatch = genericCallResolver.FindFreeExact(calleeName, typeArguments, typeArgumentRefs);
+        var freeMatch = genericCallResolver.FindFreeExact(calleeName, typeArgumentRefs);
         if (freeMatch is not null)
         {
             return new CCallExpression(
-                functionReferences.Resolve(freeMatch.OwnerType, freeMatch.Name, freeMatch.CName),
+                functionReferences.Resolve(freeMatch.OwnerTypeRef, freeMatch.Name, freeMatch.CName),
                 call.Arguments.Select(lowerExpression).ToList());
         }
 
-        var staticMatch = genericCallResolver.FindStaticExact(calleeName, typeArguments, typeArgumentRefs);
-        if (staticMatch is null
-            && TrySplitQualifiedMember(calleeName, out var ownerName, out var memberName)
-            && context.TryGetAdapterExpose($"{ownerName}.{memberName}", out var staticExpose)
-            && staticExpose.IsStatic)
+        GenericCallInfo? staticMatch = null;
+        if (TrySplitQualifiedMember(calleeName, out var ownerName, out var memberName))
         {
-            var resolvedExpose = adapterExposeResolver.Resolve(staticExpose, typeArguments, typeArgumentRefs);
-            staticMatch = genericCallResolver.FindStaticExact(
-                resolvedExpose.BaseOwner,
-                resolvedExpose.BaseTypeRef,
-                resolvedExpose.SourceName,
-                resolvedExpose.TypeArguments,
-                resolvedExpose.TypeArgumentRefs);
+            var ownerTypeRef = context.TypeRefParser.Parse(ownerName);
+            if (ownerTypeRef is not TypeRef.Unknown)
+            {
+                staticMatch = genericCallResolver.FindStaticExact(ownerTypeRef, memberName, typeArgumentRefs);
+            }
+
+            if (staticMatch is null
+                && context.TryGetAdapterExpose($"{ownerName}.{memberName}", out var staticExpose)
+                && staticExpose.IsStatic)
+            {
+                var resolvedExpose = adapterExposeResolver.Resolve(staticExpose, typeArgumentRefs);
+                staticMatch = genericCallResolver.FindStaticExact(
+                    resolvedExpose.BaseTypeRef,
+                    resolvedExpose.SourceName,
+                    resolvedExpose.TypeArgumentRefs);
+            }
         }
 
         return staticMatch is null
             ? null
             : new CCallExpression(
-                functionReferences.Resolve(staticMatch.OwnerType, staticMatch.Name, staticMatch.CName),
+                functionReferences.Resolve(staticMatch.OwnerTypeRef, staticMatch.Name, staticMatch.CName),
                 call.Arguments.Select(lowerExpression).ToList());
     }
-
-    private static IReadOnlyList<string> TypeTexts(IReadOnlyList<TypeRef> typeRefs) =>
-        typeRefs.Select(TypeRefFormatter.ToCxString).ToList();
 
     private bool TryResolveTypeArguments(IReadOnlyList<TypeNode> typeNodes, out IReadOnlyList<TypeRef> typeRefs)
     {
         var resolved = new List<TypeRef>();
         foreach (var typeNode in typeNodes)
         {
-            var type = context.TypeRefParser.Parse(typeNode.ToSourceText());
+            var type = typeNode.ToTypeRef(context.TypeRefParser);
             if (type is TypeRef.Unknown)
             {
                 typeRefs = [];

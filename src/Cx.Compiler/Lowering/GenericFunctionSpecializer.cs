@@ -1,5 +1,4 @@
 using Cx.Compiler.Semantic;
-using Cx.Compiler.Source;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -25,7 +24,7 @@ internal static class GenericFunctionSpecializer
         {
             TypeParameters = [],
             TypeArgumentNodes = argumentRefs
-                .Select(argumentRef => CreateTypeArgumentNode(function.Location, argumentRef))
+                .Select(argumentRef => argumentRef.ToTypeNode(function.Location))
                 .ToList(),
             ReturnTypeNode = SubstituteTypeNode(function.ReturnTypeNode, typeSubstitutions, selfTypeRef),
             Parameters = function.Parameters
@@ -41,14 +40,6 @@ internal static class GenericFunctionSpecializer
         return specialized;
     }
 
-    private static TypeNode CreateTypeArgumentNode(Location location, TypeRef argumentRef)
-    {
-        var argument = TypeRefFormatter.ToCxString(argumentRef);
-        var typeNode = TypeNode.CreateFromText(location, argument);
-        typeNode.Semantic.Type = argumentRef;
-        return typeNode;
-    }
-
     public static void EnsureFunctionSymbol(FunctionNode function)
     {
         if (function.Semantic.Symbol is { Kind: SymbolKind.Function })
@@ -56,12 +47,9 @@ internal static class GenericFunctionSpecializer
             return;
         }
 
-        function.Semantic.Symbol = Symbol.FromLegacyType(
+        function.Semantic.Symbol = Symbol.FromTypeRef(
             function.Name,
             SymbolKind.Function,
-            function.ReturnTypeNode?.Semantic.Type is { } returnType
-                ? TypeRefFormatter.ToCxString(returnType)
-                : string.Empty,
             function.ReturnTypeNode?.Semantic.Type,
             function.Location,
             function);

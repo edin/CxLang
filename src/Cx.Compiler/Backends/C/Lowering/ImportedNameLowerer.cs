@@ -7,6 +7,9 @@ namespace Cx.Compiler;
 
 internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
 {
+    private static TypeRef AllocatorPointerType { get; } =
+        new TypeRef.Pointer(new TypeRef.Named("Allocator", []));
+
     private readonly CBackendContext _backend;
     private readonly CLoweringContext _context;
     private readonly CLoweringScope _scope;
@@ -299,7 +302,7 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
     {
         if (member is { MemberName: "allocator", Target: NameExpressionNode { Name: "self" } })
         {
-            return _context.TypeRefParser.Parse("Allocator*");
+            return AllocatorPointerType;
         }
 
         var targetType = TryResolveExpressionTypeRef(member.Target);
@@ -321,7 +324,7 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
         }
 
         return member.MemberName == "allocator"
-            ? _context.TypeRefParser.Parse("Allocator*")
+            ? AllocatorPointerType
             : null;
     }
 

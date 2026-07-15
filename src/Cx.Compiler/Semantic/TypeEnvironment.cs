@@ -16,20 +16,6 @@ internal sealed class TypeEnvironment
 
     public IReadOnlyDictionary<string, TypeRef> Types => _types;
 
-    [Cx.Compiler.LegacyStringType("Adapter for legacy string type maps during the TypeEnvironment migration.")]
-    public static TypeEnvironment FromLegacyStrings(
-        TypeRefParser parser,
-        IReadOnlyDictionary<string, string> types)
-    {
-        var environment = new TypeEnvironment();
-        foreach (var (name, type) in types)
-        {
-            environment.Set(name, parser.Parse(type));
-        }
-
-        return environment;
-    }
-
     public TypeEnvironment Clone() =>
         new(new Dictionary<string, TypeRef>(_types, StringComparer.Ordinal));
 
@@ -45,15 +31,6 @@ internal sealed class TypeEnvironment
     public bool Remove(string name) =>
         _types.Remove(name);
 
-    [Cx.Compiler.LegacyStringType("Adapter for legacy string type consumers during the TypeEnvironment migration.")]
-    public IReadOnlyDictionary<string, string> ToLegacyStrings() =>
-        _types.ToDictionary(
-            pair => pair.Key,
-            pair => Format(pair.Value),
-            StringComparer.Ordinal);
-
-    private static string Format(TypeRef type) =>
-        type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);
 }
 
 internal sealed class TypeBindings
@@ -72,20 +49,6 @@ internal sealed class TypeBindings
 
     public IReadOnlyDictionary<string, TypeRef> Bindings => _bindings;
 
-    [Cx.Compiler.LegacyStringType("Adapter for legacy string type bindings during the TypeBindings migration.")]
-    public static TypeBindings FromLegacyStrings(
-        TypeRefParser parser,
-        IReadOnlyDictionary<string, string> bindings)
-    {
-        var typedBindings = new TypeBindings();
-        foreach (var (name, type) in bindings)
-        {
-            typedBindings.Set(name, parser.Parse(type));
-        }
-
-        return typedBindings;
-    }
-
     public TypeBindings Clone() =>
         new(new Dictionary<string, TypeRef>(_bindings, StringComparer.Ordinal));
 
@@ -101,8 +64,7 @@ internal sealed class TypeBindings
     public bool Remove(string name) =>
         _bindings.Remove(name);
 
-    [Cx.Compiler.LegacyStringType("Adapter for legacy string type binding consumers during the TypeBindings migration.")]
-    public IReadOnlyDictionary<string, string> ToLegacyStrings() =>
+    public IReadOnlyDictionary<string, string> ToDisplayStrings() =>
         _bindings.ToDictionary(
             pair => pair.Key,
             pair => Format(pair.Value),

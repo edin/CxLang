@@ -24,39 +24,29 @@ internal sealed class AdapterExposeResolver(CLoweringContext context)
 
     public ResolvedAdapterExpose Resolve(
         AdapterExposeInfo expose,
-        IReadOnlyList<string> receiverArguments,
         IReadOnlyList<TypeRef> receiverArgumentRefs)
     {
         var current = expose;
-        var currentArguments = receiverArguments;
         var currentArgumentRefs = receiverArgumentRefs;
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         while (true)
         {
             var baseTypeRef = SubstituteBaseTypeRef(current, currentArgumentRefs);
-            var baseType = TypeRefFormatter.ToCxString(baseTypeRef);
-            var baseOwner = TypeRefFacts.GetBaseName(baseTypeRef) ?? baseType;
+            var baseOwner = TypeRefFacts.GetBaseName(baseTypeRef)
+                ?? TypeRefFormatter.ToCxString(baseTypeRef);
             var baseArgumentRefs = TypeRefFacts.TryGetGenericArguments(baseTypeRef, out var parsedBaseArguments)
                 ? parsedBaseArguments
                 : [];
-            var baseArguments = baseArgumentRefs.Select(TypeRefFormatter.ToCxString).ToList();
             var key = $"{current.AdapterName}.{current.ExposedName}";
             if (!seen.Add(key)
                 || !TryGetAdapterExpose(baseOwner, current.SourceName, out var next)
                 || next.IsStatic != current.IsStatic)
             {
-                return new ResolvedAdapterExpose(
-                    baseType,
-                    baseTypeRef,
-                    baseOwner,
-                    current.SourceName,
-                    baseArguments,
-                    baseArgumentRefs);
+                return new ResolvedAdapterExpose(baseTypeRef, current.SourceName);
             }
 
             current = next;
-            currentArguments = baseArguments;
             currentArgumentRefs = baseArgumentRefs;
         }
     }

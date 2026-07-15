@@ -5,7 +5,6 @@ namespace Cx.Compiler.Semantic;
 internal sealed class TypeSystem
 {
     private readonly ProgramNode _program;
-    private readonly TypeRefParser _parser;
     private readonly TypeResolver _resolver;
     private readonly ResolvedTypeMemberResolver _memberResolver;
     private readonly Lazy<RequirementMatcher> _requirementMatcher;
@@ -16,14 +15,10 @@ internal sealed class TypeSystem
         IReadOnlyList<StructNode>? concreteStructs = null)
     {
         _program = program;
-        _parser = new TypeRefParser(program);
         _resolver = new TypeResolver(program, genericParameters);
         _memberResolver = new ResolvedTypeMemberResolver(program);
         _requirementMatcher = new Lazy<RequirementMatcher>(() => new RequirementMatcher(_program, concreteStructs));
     }
-
-    public TypeRef Parse(string? type) =>
-        _parser.Parse(type);
 
     public ResolvedType Resolve(TypeRef type) =>
         _resolver.Resolve(type);

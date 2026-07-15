@@ -73,12 +73,12 @@ internal sealed class ResolvedCallLowerer(
             return genericCall is null
                 ? null
                 : functionReferences.Resolve(
-                    genericCall.OwnerType ?? OwnerType(resolvedCall.Function),
+                    genericCall.OwnerTypeRef ?? OwnerTypeRef(resolvedCall.Function),
                     genericCall.Name,
                     genericCall.CName);
         }
 
-        var ownerType = OwnerType(resolvedCall.Function);
+        var ownerType = OwnerTypeRef(resolvedCall.Function);
         return functionReferences.Resolve(
             ownerType,
             resolvedCall.Function.Name,
@@ -99,13 +99,19 @@ internal sealed class ResolvedCallLowerer(
 
     private string? OwnerType(FunctionNode function)
     {
+        var ownerType = OwnerTypeRef(function);
+        return ownerType is null ? null : TypeRefFormatter.ToCxString(ownerType);
+    }
+
+    private TypeRef? OwnerTypeRef(FunctionNode function)
+    {
         if (function.OwnerTypeNode is null)
         {
             return null;
         }
 
         return scope.ResolveType(function.OwnerTypeNode) is { } ownerType
-            ? TypeRefFormatter.ToCxString(ownerType)
+            ? ownerType
             : null;
     }
 }

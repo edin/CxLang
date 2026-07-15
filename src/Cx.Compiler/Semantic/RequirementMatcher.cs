@@ -242,12 +242,6 @@ public sealed class RequirementMatcher
             ? string.Empty
             : "<" + string.Join(",", arguments.Select(TypeRefFormatter.ToIdentityString)) + ">";
 
-    public string ResolveAlias(string type)
-    {
-        var resolved = ResolveAlias(_typeRefParser.Parse(type), new HashSet<string>(StringComparer.Ordinal));
-        return TypeRefFormatter.ToCxString(resolved);
-    }
-
     private TypeRef ResolveAlias(TypeRef type, HashSet<string> seen) =>
         type switch
         {
@@ -625,82 +619,55 @@ public sealed class RequirementMatcher
         typeNode?.ToTypeRef(_typeRefParser) ?? new TypeRef.Unknown();
 }
 
-public sealed record RequirementMatch(
-    bool Success,
-    [property: Cx.Compiler.LegacyStringType("Compatibility concrete type text. Prefer a TypeRef-backed match result.")]
-    string ConcreteType,
-    string RequirementName,
-    [property: Cx.Compiler.LegacyStringType("Compatibility type binding text. Prefer TypeBindings once consumers are migrated.")]
-    IReadOnlyDictionary<string, string> TypeBindings,
-    IReadOnlyList<string> Failures)
+public sealed record RequirementMatch
 {
-    internal TypeRef ConcreteTypeRef { get; init; } = new TypeRef.Unknown();
+    private RequirementMatch(
+        bool success,
+        TypeRef concreteType,
+        string requirementName,
+        Cx.Compiler.Semantic.TypeBindings typeBindings,
+        IReadOnlyList<string> failures)
+    {
+        Success = success;
+        ConcreteTypeRef = concreteType;
+        RequirementName = requirementName;
+        TypedTypeBindings = typeBindings.Clone();
+        Failures = failures;
+    }
 
-    internal Cx.Compiler.Semantic.TypeBindings TypedTypeBindings { get; init; } = new();
+    public bool Success { get; }
+
+    public string ConcreteType => TypeRefFormatter.ToCxString(ConcreteTypeRef);
+
+    public string RequirementName { get; }
+
+    public IReadOnlyDictionary<string, string> TypeBindings => TypedTypeBindings.ToDisplayStrings();
+
+    public IReadOnlyList<string> Failures { get; }
+
+    internal TypeRef ConcreteTypeRef { get; }
+
+    internal Cx.Compiler.Semantic.TypeBindings TypedTypeBindings { get; }
 
     internal bool TryGetTypeBinding(string name, out TypeRef type) =>
         TypedTypeBindings.TryGet(name, out type);
-
-    public static RequirementMatch Succeeded(
-        string concreteType,
-        string requirementName,
-        IReadOnlyDictionary<string, string> typeBindings) =>
-        new(true, concreteType, requirementName, typeBindings, []);
 
     internal static RequirementMatch Succeeded(
         TypeRef concreteType,
         string requirementName,
         TypeBindings typedTypeBindings) =>
-        new RequirementMatch(
-            true,
-            TypeRefFormatter.ToCxString(concreteType),
-            requirementName,
-            typedTypeBindings.ToLegacyStrings(),
-            [])
-        {
-            ConcreteTypeRef = concreteType,
-            TypedTypeBindings = typedTypeBindings.Clone(),
-        };
-
-    public static RequirementMatch Failed(
-        string concreteType,
-        string requirementName,
-        IReadOnlyList<string> failures,
-        IReadOnlyDictionary<string, string>? typeBindings = null) =>
-        new(
-            false,
-            concreteType,
-            requirementName,
-            typeBindings ?? new Dictionary<string, string>(),
-            failures);
+        new(true, concreteType, requirementName, typedTypeBindings, []);
 
     internal static RequirementMatch Failed(
         TypeRef concreteType,
         string requirementName,
         IReadOnlyList<string> failures,
         TypeBindings typedTypeBindings) =>
-        new RequirementMatch(
-            false,
-            TypeRefFormatter.ToCxString(concreteType),
-            requirementName,
-            typedTypeBindings.ToLegacyStrings(),
-            failures)
-        {
-            ConcreteTypeRef = concreteType,
-            TypedTypeBindings = typedTypeBindings.Clone(),
-        };
+        new(false, concreteType, requirementName, typedTypeBindings, failures);
 
     internal static RequirementMatch Failed(
         TypeRef concreteType,
         string requirementName,
         IReadOnlyList<string> failures) =>
-        new RequirementMatch(
-            false,
-            TypeRefFormatter.ToCxString(concreteType),
-            requirementName,
-            new Dictionary<string, string>(),
-            failures)
-        {
-            ConcreteTypeRef = concreteType,
-        };
+        new(false, concreteType, requirementName, new TypeBindings(), failures);
 }

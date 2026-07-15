@@ -63,7 +63,7 @@ internal static class LambdaLowerer
             FunctionExpressionNode node) =>
             node.ReturnTypeNode
             ?? TryGetFunctionReturnTypeNode(node)
-            ?? TypeNode.CreateFromText(Location.Synthetic("<lambda>"), "int");
+            ?? TypeRef.Int.ToTypeNode(Location.Synthetic("<lambda>"));
 
         private static TypeNode? TryGetFunctionReturnTypeNode(FunctionExpressionNode node)
         {
@@ -72,9 +72,7 @@ internal static class LambdaLowerer
                 return null;
             }
 
-            var returnTypeNode = TypeNode.CreateFromText(node.Location, TypeRefFormatter.ToCxString(function.ReturnType));
-            returnTypeNode.Semantic.Type = function.ReturnType;
-            return returnTypeNode;
+            return function.ReturnType.ToTypeNode(node.Location);
         }
     }
 }

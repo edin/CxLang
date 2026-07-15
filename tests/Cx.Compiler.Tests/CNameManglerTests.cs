@@ -88,7 +88,7 @@ public sealed class CNameManglerTests
 
     private static CNameMangler CreateMangler(CNameManglerOptions? options = null) =>
         new(
-            type => type.Replace("<", "_").Replace(">", string.Empty),
+            syntax => TypeSyntaxFormatter.ToCxString(syntax).Replace("<", "_").Replace(">", string.Empty),
             type => type.Replace("*", "_ptr"),
             options);
 

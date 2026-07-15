@@ -8,29 +8,34 @@ internal sealed class GenericCallResolver(
     IReadOnlyList<GenericCallInfo> calls,
     Func<ExpressionNode, TypeRef?> resolveExpressionType,
     Func<TypeRef, TypeRef?, bool> canAssign,
-    Func<string?, TypeRef?> parseTypeOrNull,
-    Func<FunctionNode, string?> resolveFunctionOwnerType)
+    Func<FunctionNode, TypeRef?> resolveFunctionOwnerType)
 {
-    public bool TryRestoreSourceGenericType(string type, out RestoredGenericType restored)
+    public bool TryRestoreSourceGenericType(TypeRef type, out RestoredGenericType restored)
     {
-        var pointerSuffix = "";
-        var normalized = type.Trim();
-        while (normalized.EndsWith("*", StringComparison.Ordinal))
+        var pointerDepth = 0;
+        var normalized = type;
+        while (normalized is TypeRef.Pointer pointer)
         {
-            pointerSuffix += "*";
-            normalized = normalized[..^1].TrimEnd();
+            pointerDepth++;
+            normalized = pointer.Element;
         }
 
-        foreach (var call in calls.Where(call => call.OwnerType is not null))
+        var normalizedName = TypeRefFacts.GetBaseName(normalized)
+            ?? TypeRefFormatter.ToCxString(normalized);
+
+        foreach (var call in calls.Where(call => call.OwnerTypeRef is not null))
         {
-            var concreteName = GenericTypeRewriter.LowerGenericTypeName(call.OwnerType!, call.TypeArguments);
-            if (concreteName == normalized)
+            var concreteName = ConcreteOwnerName(call);
+            if (concreteName == normalizedName)
             {
-                restored = new(
-                    $"{call.OwnerType}<{string.Join(",", call.TypeArguments)}>{pointerSuffix}",
-                    call.OwnerType!,
-                    call.TypeArguments,
-                    call.TypeArgumentRefs);
+                var ownerName = TypeRefFacts.GetBaseName(call.OwnerTypeRef!)!;
+                TypeRef sourceType = new TypeRef.Named(ownerName, call.TypeArgumentRefs);
+                for (var i = 0; i < pointerDepth; i++)
+                {
+                    sourceType = new TypeRef.Pointer(sourceType);
+                }
+
+                restored = new(sourceType, call.OwnerTypeRef!, call.TypeArgumentRefs);
                 return true;
             }
         }
@@ -39,130 +44,100 @@ internal sealed class GenericCallResolver(
         return false;
     }
 
-    public GenericCallInfo? FindIterator(string? sourceOwnerType, string concreteOwnerType) =>
-        calls.FirstOrDefault(call =>
-            !call.IsStatic
-            && call.Name == "iterator"
-            && MatchesGenericOwner(call, sourceOwnerType, concreteOwnerType));
-
     public GenericCallInfo? FindFreeExact(
         string name,
-        IReadOnlyList<string> typeArguments,
         IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         return calls.FirstOrDefault(candidate =>
-            candidate.OwnerType is null
+            candidate.OwnerTypeRef is null
             && candidate.Name == name
-            && SameTypeArguments(candidate, typeArguments, typeArgumentRefs));
+            && SameTypeArguments(candidate, typeArgumentRefs));
     }
 
     public GenericCallInfo? FindStaticExact(
-        string calleeName,
-        IReadOnlyList<string> typeArguments,
-        IReadOnlyList<TypeRef> typeArgumentRefs)
-    {
-        return calls.FirstOrDefault(candidate =>
-            candidate.IsStatic
-            && candidate.OwnerType is not null
-            && calleeName == $"{candidate.OwnerType}.{candidate.Name}"
-            && SameTypeArguments(candidate, typeArguments, typeArgumentRefs));
-    }
-
-    public GenericCallInfo? FindStaticExact(
-        string ownerType,
-        TypeRef? ownerTypeRef,
+        TypeRef ownerTypeRef,
         string name,
-        IReadOnlyList<string> typeArguments,
         IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         return calls.FirstOrDefault(candidate =>
             candidate.IsStatic
-            && MatchesOwner(candidate, ownerType, ownerTypeRef)
+            && MatchesOwner(candidate, ownerTypeRef)
             && candidate.Name == name
-            && SameTypeArguments(candidate, typeArguments, typeArgumentRefs));
+            && SameTypeArguments(candidate, typeArgumentRefs));
     }
 
     public GenericCallInfo? FindExact(
-        string? ownerType,
         TypeRef? ownerTypeRef,
         string name,
-        IReadOnlyList<string> typeArguments,
         IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         return calls.FirstOrDefault(candidate =>
-            MatchesOwner(candidate, ownerType, ownerTypeRef)
+            TypeRefFacts.SameType(candidate.OwnerTypeRef, ownerTypeRef)
             && candidate.Name == name
-            && SameTypeArguments(candidate, typeArguments, typeArgumentRefs));
+            && SameTypeArguments(candidate, typeArgumentRefs));
     }
 
     public GenericCallInfo? FindGenericMemberExact(
-        string? sourceOwnerType,
+        TypeRef? sourceOwnerType,
         string concreteOwnerType,
         string name,
-        IReadOnlyList<string> typeArguments,
         IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         return calls.FirstOrDefault(call =>
             !call.IsStatic
             && MatchesGenericOwner(call, sourceOwnerType, concreteOwnerType)
             && call.Name == name
-            && SameTypeArguments(call, typeArguments, typeArgumentRefs));
+            && SameTypeArguments(call, typeArgumentRefs));
     }
 
     public GenericCallInfo? FindInferredCall(
-        string? ownerType,
+        TypeRef? ownerType,
         string name,
         IReadOnlyList<ExpressionNode> arguments,
         bool skipSelf,
-        IReadOnlyList<string>? preferredTypeArguments = null,
         IReadOnlyList<TypeRef>? preferredTypeArgumentRefs = null)
     {
-        var ownerTypeRef = parseTypeOrNull(ownerType);
         var candidates = calls.Where(call =>
-            MatchesOwner(call, ownerType, ownerTypeRef)
+            MatchesOwner(call, ownerType)
             && call.Name == name);
-        return FindInferred(candidates, arguments, skipSelf, preferredTypeArguments, preferredTypeArgumentRefs);
+        return FindInferred(candidates, arguments, skipSelf, preferredTypeArgumentRefs);
     }
 
     public GenericCallInfo? FindInferredMemberCall(
-        string? sourceOwnerType,
+        TypeRef? sourceOwnerType,
         string concreteOwnerType,
         string name,
         IReadOnlyList<ExpressionNode> arguments,
         bool skipSelf,
-        IReadOnlyList<string>? preferredTypeArguments = null,
         IReadOnlyList<TypeRef>? preferredTypeArgumentRefs = null)
     {
         var candidates = calls.Where(call =>
             !call.IsStatic
             && MatchesGenericOwner(call, sourceOwnerType, concreteOwnerType)
             && call.Name == name);
-        return FindInferred(candidates, arguments, skipSelf, preferredTypeArguments, preferredTypeArgumentRefs);
+        return FindInferred(candidates, arguments, skipSelf, preferredTypeArgumentRefs);
     }
 
     public GenericCallInfo? FindResolved(ResolvedCallInfo resolvedCall)
     {
-        var ownerType = resolveFunctionOwnerType(resolvedCall.Function);
-        var ownerTypeRef = parseTypeOrNull(ownerType);
-        var typeArguments = resolvedCall.TypeArgumentRefs.Select(TypeRefFormatter.ToCxString).ToList();
+        var ownerTypeRef = resolveFunctionOwnerType(resolvedCall.Function);
         return calls.FirstOrDefault(call =>
-            MatchesOwner(call, ownerType, ownerTypeRef)
+            SameOptionalType(call.OwnerTypeRef, ownerTypeRef)
             && string.Equals(call.Name, resolvedCall.Function.Name, StringComparison.Ordinal)
-            && SameTypeArguments(call, typeArguments, resolvedCall.TypeArgumentRefs));
+            && SameTypeArguments(call, resolvedCall.TypeArgumentRefs));
     }
 
     private GenericCallInfo? FindInferred(
         IEnumerable<GenericCallInfo> candidates,
         IReadOnlyList<ExpressionNode> arguments,
         bool skipSelf,
-        IReadOnlyList<string>? preferredTypeArguments,
         IReadOnlyList<TypeRef>? preferredTypeArgumentRefs)
     {
         preferredTypeArgumentRefs = preferredTypeArgumentRefs is { Count: > 0 } ? preferredTypeArgumentRefs : [];
-        if (preferredTypeArguments is { Count: > 0 })
+        if (preferredTypeArgumentRefs.Count > 0)
         {
             candidates = candidates
-                .OrderByDescending(call => SameTypeArguments(call, preferredTypeArguments, preferredTypeArgumentRefs));
+                .OrderByDescending(call => SameTypeArguments(call, preferredTypeArgumentRefs));
         }
 
         foreach (var candidate in candidates)
@@ -175,9 +150,9 @@ internal sealed class GenericCallResolver(
                 continue;
             }
 
-            if (preferredTypeArguments is { Count: > 0 })
+            if (preferredTypeArgumentRefs.Count > 0)
             {
-                if (SameTypeArguments(candidate, preferredTypeArguments, preferredTypeArgumentRefs))
+                if (SameTypeArguments(candidate, preferredTypeArgumentRefs))
                 {
                     return candidate;
                 }
@@ -206,41 +181,46 @@ internal sealed class GenericCallResolver(
     }
 
     private static bool SameTypeArguments(
-        IReadOnlyList<string> left,
-        IReadOnlyList<string> right) =>
-        left.Count == right.Count
-        && left.Zip(right).All(pair => string.Equals(pair.First, pair.Second, StringComparison.Ordinal));
-
-    private static bool SameTypeArguments(
         GenericCallInfo candidate,
-        IReadOnlyList<string> typeArguments,
         IReadOnlyList<TypeRef> typeArgumentRefs) =>
-        candidate.TypeArguments.Count == typeArguments.Count && typeArguments.Count > 0
-            ? SameTypeArguments(candidate.TypeArguments, typeArguments)
-            : SameTypeArguments(candidate.TypeArgumentRefs, typeArgumentRefs)
-                || SameTypeArguments(candidate.TypeArguments, typeArguments);
+        SameTypes(candidate.TypeArgumentRefs, typeArgumentRefs);
 
-    private static bool SameTypeArguments(
+    private static bool SameTypes(
         IReadOnlyList<TypeRef> left,
         IReadOnlyList<TypeRef> right) =>
         left.Count == right.Count
-        && left.Zip(right).All(pair => TypeRefFacts.SameType(pair.First, pair.Second));
+        && left.Zip(right).All(pair =>
+            TypeRefFacts.SameTypeIgnoringModule(pair.First, pair.Second));
 
-    private static bool MatchesOwner(GenericCallInfo call, string? ownerType, TypeRef? ownerTypeRef) =>
-        TypeRefFacts.SameType(call.OwnerTypeRef, ownerTypeRef)
-        || string.Equals(call.OwnerType, ownerType, StringComparison.Ordinal);
+    private static bool MatchesOwner(GenericCallInfo call, TypeRef? ownerType) =>
+        TypeRefFacts.SameType(call.OwnerTypeRef, ownerType)
+        || TypeRefFacts.SameTypeIgnoringModule(call.OwnerTypeRef, ownerType);
+
+    private static bool SameOptionalType(TypeRef? left, TypeRef? right) =>
+        left is null && right is null
+        || TypeRefFacts.SameType(left, right);
 
     private bool MatchesGenericOwner(
         GenericCallInfo call,
-        string? sourceOwner,
+        TypeRef? sourceOwner,
         string concreteOwner)
     {
-        if (MatchesOwner(call, sourceOwner, parseTypeOrNull(sourceOwner)))
+        if (MatchesOwner(call, sourceOwner))
         {
             return true;
         }
 
-        return call.OwnerType is not null
-            && GenericTypeRewriter.LowerGenericTypeName(call.OwnerType, call.TypeArguments) == concreteOwner;
+        return call.OwnerTypeRef is not null
+            && ConcreteOwnerName(call) == concreteOwner;
+    }
+
+    private static string? ConcreteOwnerName(GenericCallInfo call)
+    {
+        var ownerName = TypeRefFacts.GetBaseName(call.OwnerTypeRef);
+        return ownerName is null
+            ? null
+            : GenericTypeRewriter.LowerGenericTypeName(
+                ownerName,
+                call.TypeArgumentRefs.Select(TypeRefFormatter.ToCxString).ToList());
     }
 }

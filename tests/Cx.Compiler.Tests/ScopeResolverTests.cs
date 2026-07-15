@@ -203,6 +203,11 @@ public sealed class ScopeResolverTests
         Assert.Equal(SymbolKind.Function, call.Semantic.Symbol?.Kind);
         Assert.NotNull(call.Semantic.ResolvedCall);
         Assert.True(call.Semantic.ResolvedCall.IsInstance);
+
+        var getReturn = Assert.IsType<ReturnStatement>(Assert.Single(get.Body));
+        var self = Assert.IsType<NameExpressionNode>(Assert.IsType<MemberExpressionNode>(getReturn.Expression).Target);
+        var selfPointer = Assert.IsType<TypeRef.Pointer>(self.Semantic.Symbol?.TypeRef);
+        Assert.Equal("Self", Assert.IsType<TypeRef.Named>(selfPointer.Element).Name);
     }
 
     [Fact]

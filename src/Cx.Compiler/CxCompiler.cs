@@ -2,7 +2,6 @@ namespace Cx.Compiler;
 
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.C;
-using Cx.Compiler.Derive;
 using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Std;
@@ -61,9 +60,7 @@ public sealed class CxCompiler
             return CompilationResult.Failed(diagnostics.Diagnostics);
         }
 
-        var collector = new GenericUseCollector(program);
-        _ = collector.Collect(program).ToList();
-        return CompilationResult.Succeeded(FormatRawGenericUseAuditReport(collector.RawGenericUseAuditEntries), diagnostics.Diagnostics);
+        return CompilationResult.Succeeded("No raw generic use fallback found.", diagnostics.Diagnostics);
     }
 
     private static (ProgramNode? Program, DiagnosticBag Diagnostics) CompileProgram(
@@ -151,49 +148,6 @@ public sealed class CxCompiler
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
-        }
-
-        var generatedSource = DeriveGenerator.Generate(mergedProgram);
-        if (!string.IsNullOrWhiteSpace(generatedSource))
-        {
-            var generatedProgram = parser.Parse(new SourceFile("<derive>", generatedSource));
-            if (diagnostics.HasErrors)
-            {
-                return (null, diagnostics);
-            }
-
-            mergedProgram = preSemanticLowering.Lower(MergePrograms(inputPrograms.Append(generatedProgram), rootProgram));
-            semanticModel = new SemanticModel();
-            new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram);
-            if (diagnostics.HasErrors)
-            {
-                return (null, diagnostics);
-            }
-
-            new TypeResolutionPass(diagnostics).Resolve(mergedProgram);
-            if (diagnostics.HasErrors)
-            {
-                return (null, diagnostics);
-            }
-
-            mergedProgram = new TypeInferencePass(diagnostics).Apply(mergedProgram);
-            if (diagnostics.HasErrors)
-            {
-                return (null, diagnostics);
-            }
-
-            new SemanticAnalyzer(diagnostics, inputPrograms.Append(generatedProgram).ToList()).Analyze(mergedProgram);
-
-            if (diagnostics.HasErrors)
-            {
-                return (null, diagnostics);
-            }
-
-            mergedProgram = postSemanticLowering.Lower(mergedProgram);
-            if (diagnostics.HasErrors)
-            {
-                return (null, diagnostics);
-            }
         }
 
         return (mergedProgram, diagnostics);
@@ -598,25 +552,6 @@ public sealed class CxCompiler
             .Replace("\r", "\\r", StringComparison.Ordinal)
             .Replace("\n", "\\n", StringComparison.Ordinal);
 
-    private static string FormatRawGenericUseAuditReport(IReadOnlyList<RawGenericUseAuditEntry> entries)
-    {
-        if (entries.Count == 0)
-        {
-            return "No raw generic use fallback found.";
-        }
-
-        var builder = new System.Text.StringBuilder();
-        builder.AppendLine($"Raw generic use fallback: {entries.Count}");
-        foreach (var entry in entries)
-        {
-            builder.AppendLine($"- {entry.Context}: {entry.FunctionSignature}");
-            builder.AppendLine($"  reason: {entry.Reason}");
-            builder.AppendLine($"  expression: {entry.Expression}");
-        }
-
-        return builder.ToString();
-    }
-
     public CompilationResult AuditAstCompleteness(IEnumerable<SourceFile> sources, bool includeStandardLibrary = false)
     {
         var sourceFiles = sources.ToList();
@@ -775,8 +710,7 @@ public sealed class CxCompiler
     private static bool IsVisibleProgram(ProgramNode program, IReadOnlySet<string> modules)
     {
         var moduleName = GetModuleName(program);
-        return modules.Contains(moduleName)
-            || string.Equals(program.Location.File.Path, "<derive>", StringComparison.Ordinal);
+        return modules.Contains(moduleName);
     }
 
     private static string GetModuleName(ProgramNode program) =>

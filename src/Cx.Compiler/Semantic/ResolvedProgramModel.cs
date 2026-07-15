@@ -31,8 +31,9 @@ internal sealed record ResolvedProgramModel(
         CNameManglerOptions? nameManglerOptions = null)
     {
         var parser = new TypeRefParser(program);
+        var abiNames = new CAbiNameService(program.TypeAdapters);
         var nameMangler = new CNameMangler(
-            type => CTypeLowerer.LowerType(type, program.TypeAdapters),
+            syntax => abiNames.LowerType(syntax),
             CTypeLowerer.SanitizeTypeName,
             nameManglerOptions);
 

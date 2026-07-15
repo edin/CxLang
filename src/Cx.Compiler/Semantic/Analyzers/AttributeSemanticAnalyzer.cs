@@ -8,8 +8,7 @@ internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
 {
     public void Analyze(ProgramNode program, Action<TypeNode?, Location, IReadOnlyList<string>> analyzeType)
     {
-        var declarations = BuiltInAttributeDeclarations()
-            .Concat(program.AttributeDeclarations)
+        var declarations = program.AttributeDeclarations
             .GroupBy(attribute => attribute.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
 
@@ -117,11 +116,6 @@ internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
                 diagnostics.Report(application.Location, $"Attribute '{application.Name}' cannot be applied to {target}.");
             }
 
-            if (application.Name == "derive")
-            {
-                continue;
-            }
-
             var namedArguments = application.Arguments.Where(argument => argument.Name is not null).ToList();
             foreach (var argument in namedArguments)
             {
@@ -151,12 +145,4 @@ internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
         }
     }
 
-    private static IReadOnlyList<AttributeDeclarationNode> BuiltInAttributeDeclarations() =>
-    [
-        new AttributeDeclarationNode(
-            Location.Synthetic("<built-in>"),
-            "derive",
-            ["struct", "union", "enum"],
-            [])
-    ];
 }

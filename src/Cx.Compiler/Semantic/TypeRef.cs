@@ -170,20 +170,6 @@ internal sealed class TypeRefParser(ProgramNode program)
 
 internal sealed class TypeCompatibility(TypeRefParser parser)
 {
-    public bool CanAssign(string targetType, string? sourceType, out string reason)
-    {
-        reason = string.Empty;
-        if (string.IsNullOrWhiteSpace(sourceType))
-        {
-            return true;
-        }
-
-        return CanAssign(parser.Parse(targetType), parser.Parse(sourceType), out reason);
-    }
-
-    public bool CanAssign(string targetType, TypeRef? sourceType, out string reason) =>
-        CanAssign(parser.Parse(targetType), sourceType, out reason);
-
     public bool CanAssign(TypeRef targetType, TypeRef? sourceType, out string reason)
     {
         reason = string.Empty;

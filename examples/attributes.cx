@@ -5,20 +5,16 @@ attribute json_name on field {
 }
 
 attribute json_skip on field;
-attribute debug_skip on field;
-
 attribute range on field {
     min: int;
     max: int;
 }
 
-@derive(Debug)
 struct Address {
     city: char*;
     zip: int;
 }
 
-@derive(Debug)
 struct User {
     @json_name("id")
     id: int;
@@ -27,7 +23,6 @@ struct User {
     name: char*;
 
     @json_skip
-    @debug_skip
     password_hash: char*;
 
     @range(min: 0, max: 150)
@@ -52,7 +47,6 @@ fn main() -> int {
         friend: null
     };
 
-    user.debug();
-    printf("\n");
+    printf("%s (%d), %s %d\n", user.name, user.age, user.address.city, user.address.zip);
     return 0;
 }

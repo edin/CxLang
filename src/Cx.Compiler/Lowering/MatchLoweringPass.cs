@@ -145,7 +145,7 @@ internal static class MatchLoweringPass
                 && arm.Pattern != "_"
                 && implementations.Contains(arm.Pattern))
             {
-                var targetType = TypeNode.CreateFromText(arm.Location, arm.Pattern + "*");
+                var targetType = new TypeRef.Pointer(new TypeRef.Named(arm.Pattern, [])).ToTypeNode(arm.Location);
                 body.Add(new LetStatement(
                     arm.Location,
                     IsConst: false,
@@ -173,7 +173,7 @@ internal static class MatchLoweringPass
             }
 
             var sourceName = context.UniqueName("__cx_match_source");
-            var typeNode = TypeNode.CreateFromText(source.Location, TypeRefFormatter.ToCxString(sourceType));
+            var typeNode = sourceType.ToTypeNode(source.Location);
             return ([
                 new LetStatement(
                     source.Location,

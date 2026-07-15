@@ -19,9 +19,6 @@ internal sealed class ExpressionTypeResolver(
         _currentTypeParameters,
         _currentGenericConstraints);
 
-    public string? Resolve(ExpressionNode? expression, TypeEnvironment variables) =>
-        FormatTypeRef(ResolveTypeRef(expression, variables));
-
     public TypeRef? ResolveTypeRef(ExpressionNode? expression, TypeEnvironment variables)
     {
         if (expression is null)
@@ -561,8 +558,5 @@ internal sealed class ExpressionTypeResolver(
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> typeArgumentNodes) =>
         typeArgumentNodes.Select(typeNode => ResolveTypeNode(typeNode) ?? new TypeRef.Unknown()).ToList();
-
-    private static string? FormatTypeRef(TypeRef? type) =>
-        type is null ? null : TypeRefFormatter.ToCxString(type);
 
 }

@@ -389,7 +389,7 @@ public sealed class SemanticAnalyzer(
         string requirementName,
         IReadOnlyList<TypeRef>? requirementArguments = null) =>
         _typeSystem?.SatisfiesRequirement(concreteType, requirementName, requirementArguments)
-        ?? RequirementMatch.Failed(TypeRefFormatter.ToCxString(concreteType), requirementName, []);
+        ?? RequirementMatch.Failed(concreteType, requirementName, []);
 
     private string GetFunctionDisplayName(FunctionNode function) =>
         OwnerType(function) is null

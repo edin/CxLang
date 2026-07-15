@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -24,7 +25,7 @@ internal static class RangeForeachLowerer
             }
 
             var endName = context.UniqueName("__cx_range_end");
-            var loopValueType = node.ValueBinding.TypeNode ?? TypeNode.CreateFromText(node.ValueBinding.Location, "int");
+            var loopValueType = node.ValueBinding.TypeNode ?? TypeRef.Int.ToTypeNode(node.ValueBinding.Location);
             var cachedEnd = new ForDeclarationInitializerNode(
                 range.End.Location,
                 IsConst: true,
@@ -56,14 +57,14 @@ internal static class RangeForeachLowerer
                     IsConst: false,
                     hiddenIndexName,
                     new LiteralExpressionNode(indexBinding.Location, "0"),
-                    indexBinding.TypeNode ?? TypeNode.CreateFromText(indexBinding.Location, "usize"));
+                    indexBinding.TypeNode ?? TypeRef.Usize.ToTypeNode(indexBinding.Location));
                 counterIncrement = IncrementExpression(indexBinding.Location, hiddenIndexName);
                 body.Add(new LetStatement(
                     indexBinding.Location,
                     indexBinding.IsConst,
                     indexBinding.Name,
                     new NameExpressionNode(indexBinding.Location, hiddenIndexName),
-                    indexBinding.TypeNode ?? TypeNode.CreateFromText(indexBinding.Location, "usize")));
+                    indexBinding.TypeNode ?? TypeRef.Usize.ToTypeNode(indexBinding.Location)));
             }
 
             body.AddRange(node.Body);

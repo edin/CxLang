@@ -138,8 +138,8 @@ internal sealed class ForeachSemanticAnalyzer(
         var declaredElementType = valueBindingType ?? elementType;
         if (valueBindingType is not null
             && !typeCompatibility.CanAssign(
-                TypeRefFormatter.ToCxString(valueBindingType),
-                TypeRefFormatter.ToCxString(elementType),
+                valueBindingType,
+                elementType,
                 out var reason))
         {
             diagnostics.Report(

@@ -16,7 +16,6 @@ internal sealed class GenericUseCollector(ProgramNode program)
     private readonly TypeRefParser _typeRefParser = new(program);
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
 
-    public IReadOnlyList<RawGenericUseAuditEntry> RawGenericUseAuditEntries => [];
     public IEnumerable<GenericFunctionUse> Collect(ProgramNode program)
     {
         foreach (var expression in program.Functions

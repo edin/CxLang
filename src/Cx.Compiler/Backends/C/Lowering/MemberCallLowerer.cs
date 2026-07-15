@@ -51,7 +51,6 @@ internal sealed class MemberCallLowerer(
 
     public CExpression? TryLowerGenericMember(
         MemberExpressionNode member,
-        IReadOnlyList<string> typeArguments,
         IReadOnlyList<TypeRef> typeArgumentRefs,
         IReadOnlyList<ExpressionNode> arguments)
     {
@@ -69,10 +68,9 @@ internal sealed class MemberCallLowerer(
         var target = targetName.Name;
         var concreteReceiverType = targetType.ReceiverType;
         if (genericCallResolver.FindGenericMemberExact(
-            targetType.GenericBaseName,
+            targetType.SourceOwnerTypeRef,
             concreteReceiverType,
             member.MemberName,
-            typeArguments,
             typeArgumentRefs) is not { } genericCall)
         {
             return null;
@@ -84,49 +82,45 @@ internal sealed class MemberCallLowerer(
             targetType.IsPointer,
             genericCall.TakesPointerSelf));
         return new CCallExpression(
-            functionReferences.Resolve(genericCall.OwnerType, genericCall.Name, genericCall.CName),
+            functionReferences.Resolve(genericCall.OwnerTypeRef, genericCall.Name, genericCall.CName),
             loweredArguments);
     }
 
     public CExpression? TryLowerAdapterExposeCall(
         AdapterExposeInfo adapterExpose,
-        IReadOnlyList<string> receiverArguments,
         IReadOnlyList<TypeRef> receiverArgumentRefs,
         IReadOnlyList<ExpressionNode> arguments,
         string target,
         bool isPointer)
     {
-        var resolvedExpose = adapterExposeResolver.Resolve(adapterExpose, receiverArguments, receiverArgumentRefs);
+        var resolvedExpose = adapterExposeResolver.Resolve(adapterExpose, receiverArgumentRefs);
         var baseOwner = resolvedExpose.BaseOwner;
-        var typeArguments = resolvedExpose.TypeArguments;
+        var baseOwnerTypeRef = resolvedExpose.BaseTypeRef;
         var typeArgumentRefs = resolvedExpose.TypeArgumentRefs;
-        if (typeArguments.Count == 0
-            && genericCallResolver.TryRestoreSourceGenericType(resolvedExpose.BaseType, out var restoredBaseType))
+        if (typeArgumentRefs.Count == 0
+            && genericCallResolver.TryRestoreSourceGenericType(resolvedExpose.BaseTypeRef, out var restoredBaseType))
         {
-            baseOwner = restoredBaseType.OwnerType;
-            typeArguments = restoredBaseType.TypeArguments;
+            baseOwnerTypeRef = restoredBaseType.OwnerTypeRef;
+            baseOwner = TypeRefFormatter.ToCxString(baseOwnerTypeRef);
             typeArgumentRefs = restoredBaseType.TypeArgumentRefs;
         }
 
         var genericBaseCall = genericCallResolver.FindInferredCall(
-            baseOwner,
+            baseOwnerTypeRef,
             resolvedExpose.SourceName,
             arguments,
             skipSelf: true,
-            preferredTypeArguments: typeArguments,
             preferredTypeArgumentRefs: typeArgumentRefs)
             ?? genericCallResolver.FindExact(
-                baseOwner,
                 resolvedExpose.BaseTypeRef,
                 resolvedExpose.SourceName,
-                typeArguments,
                 typeArgumentRefs);
         if (genericBaseCall is not null)
         {
             var loweredArguments = arguments.Select(lowerExpression).ToList();
             loweredArguments.Insert(0, receiverExpressionBuilder.Build(target, isPointer, takesPointerSelf: true));
             return new CCallExpression(
-                functionReferences.Resolve(genericBaseCall.OwnerType, genericBaseCall.Name, genericBaseCall.CName),
+                functionReferences.Resolve(genericBaseCall.OwnerTypeRef, genericBaseCall.Name, genericBaseCall.CName),
                 loweredArguments);
         }
 
@@ -148,11 +142,15 @@ internal sealed class MemberCallLowerer(
         string memberName,
         IReadOnlyList<ExpressionNode> arguments)
     {
-        var staticGenericCall = genericCallResolver.FindInferredCall(target, memberName, arguments, skipSelf: false);
+        var staticGenericCall = genericCallResolver.FindInferredCall(
+            new TypeRef.Named(target, []),
+            memberName,
+            arguments,
+            skipSelf: false);
         if (staticGenericCall is not null)
         {
             return new CCallExpression(
-                functionReferences.Resolve(staticGenericCall.OwnerType, staticGenericCall.Name, staticGenericCall.CName),
+                functionReferences.Resolve(staticGenericCall.OwnerTypeRef, staticGenericCall.Name, staticGenericCall.CName),
                 arguments.Select(lowerExpression).ToList());
         }
 
@@ -179,13 +177,11 @@ internal sealed class MemberCallLowerer(
     {
         var normalizedType = targetType.NormalizedType;
         var isPointer = targetType.IsPointer;
-        var receiverArguments = targetType.TypeArguments;
         var adapterName = targetType.GenericBaseName ?? targetType.ReceiverType;
         if (context.TryGetAdapterExpose($"{adapterName}.{memberName}", out var adapterExpose)
             && !adapterExpose.IsStatic
             && TryLowerAdapterExposeCall(
                 adapterExpose,
-                receiverArguments,
                 targetType.TypeArgumentRefs,
                 arguments,
                 target,
@@ -195,19 +191,18 @@ internal sealed class MemberCallLowerer(
         }
 
         var genericMemberCall = genericCallResolver.FindInferredMemberCall(
-            targetType.GenericBaseName,
+            targetType.SourceOwnerTypeRef,
             targetType.ReceiverType,
             memberName,
             arguments,
             skipSelf: true,
-            preferredTypeArguments: receiverArguments,
             preferredTypeArgumentRefs: targetType.TypeArgumentRefs);
         if (genericMemberCall is not null)
         {
             var loweredArguments = arguments.Select(lowerExpression).ToList();
             loweredArguments.Insert(0, receiverExpressionBuilder.Build(target, isPointer, genericMemberCall.TakesPointerSelf));
             return new CCallExpression(
-                functionReferences.Resolve(genericMemberCall.OwnerType, genericMemberCall.Name, genericMemberCall.CName),
+                functionReferences.Resolve(genericMemberCall.OwnerTypeRef, genericMemberCall.Name, genericMemberCall.CName),
                 loweredArguments);
         }
 
@@ -244,10 +239,10 @@ internal sealed class MemberCallLowerer(
     {
         var restoredReceiverType = targetType.ReceiverType;
         string? restoredBaseType = null;
-        if (genericCallResolver.TryRestoreSourceGenericType(targetType.ReceiverType, out var restored))
+        if (genericCallResolver.TryRestoreSourceGenericType(targetType.ReceiverTypeRef, out var restored))
         {
-            restoredReceiverType = restored.SourceType;
-            restoredBaseType = restored.OwnerType;
+            restoredReceiverType = TypeRefFormatter.ToCxString(restored.SourceTypeRef);
+            restoredBaseType = TypeRefFormatter.ToCxString(restored.OwnerTypeRef);
         }
 
         var receiverTypes = new[]
@@ -301,15 +296,13 @@ internal sealed class MemberCallLowerer(
         var targetTypeInfo = ReceiverTypeInfo.FromTypeRef(targetType);
         var isPointer = targetTypeInfo.IsPointer;
         var receiverType = targetTypeInfo.ReceiverType;
-        var receiverArguments = targetTypeInfo.TypeArguments;
         var ownerType = targetTypeInfo.GenericBaseName ?? receiverType;
 
         var genericMemberCall = genericCallResolver.FindInferredCall(
-            ownerType,
+            targetTypeInfo.SourceOwnerTypeRef,
             member.MemberName,
             arguments,
             skipSelf: true,
-            preferredTypeArguments: receiverArguments,
             preferredTypeArgumentRefs: targetTypeInfo.TypeArgumentRefs);
         if (genericMemberCall is not null)
         {
@@ -317,7 +310,7 @@ internal sealed class MemberCallLowerer(
             var loweredArguments = arguments.Select(lowerExpression).ToList();
             loweredArguments.Insert(0, ReceiverExpressionBuilder.Build(targetExpression, isPointer, genericMemberCall.TakesPointerSelf));
             return new CCallExpression(
-                functionReferences.Resolve(genericMemberCall.OwnerType, genericMemberCall.Name, genericMemberCall.CName),
+                functionReferences.Resolve(genericMemberCall.OwnerTypeRef, genericMemberCall.Name, genericMemberCall.CName),
                 loweredArguments);
         }
 

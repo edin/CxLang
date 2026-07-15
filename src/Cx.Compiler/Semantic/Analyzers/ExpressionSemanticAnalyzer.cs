@@ -120,7 +120,7 @@ internal sealed class ExpressionSemanticAnalyzer(
         Location location,
         TypeEnvironment typeEnvironment)
     {
-        if (ResolveExpression(name, typeEnvironment) is not null
+        if (ResolveExpressionTypeRef(name, typeEnvironment) is not null
             || isKnownTypeName(name.Name)
             || currentTypeParameters.Contains(name.Name, StringComparer.Ordinal)
             || IsKnownConstructorOrVariantCall(name.Name))
@@ -233,7 +233,7 @@ internal sealed class ExpressionSemanticAnalyzer(
         Location location,
         TypeEnvironment typeEnvironment)
     {
-        if (ResolveExpression(callee, typeEnvironment) is not null)
+        if (ResolveExpressionTypeRef(callee, typeEnvironment) is not null)
         {
             return;
         }
@@ -269,11 +269,6 @@ internal sealed class ExpressionSemanticAnalyzer(
                     : $"Unknown function '{name}'. Did you mean to import {suggestion}?");
         }
     }
-
-    private string? ResolveExpression(
-        ExpressionNode expression,
-        TypeEnvironment typeEnvironment) =>
-        expressionTypeResolver.Resolve(expression, typeEnvironment);
 
     private TypeRef? ResolveExpressionTypeRef(
         ExpressionNode expression,

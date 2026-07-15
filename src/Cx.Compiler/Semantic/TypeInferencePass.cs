@@ -264,9 +264,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             return null;
         }
 
-        var typeNode = TypeNode.CreateFromText(location, TypeRefFormatter.ToCxString(type));
-        typeNode.Semantic.Type = type;
-        return typeNode;
+        return type.ToTypeNode(location);
     }
 
     private static TypeNode? PreserveTypeNode(TypeNode? typeNode) =>

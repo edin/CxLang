@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lowering;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
@@ -78,6 +79,27 @@ public sealed class RangeForeachLowererTests
 
         var indexIncrement = Assert.IsType<AssignmentExpressionNode>(forStatement.CounterIncrement);
         Assert.Equal(hiddenIndex.Name, Assert.IsType<NameExpressionNode>(indexIncrement.Target).Name);
+    }
+
+    [Fact]
+    public void Lower_CreatesTypedSyntaxForDefaultRangeBindings()
+    {
+        var lowered = LowerFirstForeach(
+            """
+            fn main() -> void {
+                foreach index, value in 0..10 {
+                }
+            }
+            """);
+
+        var forStatement = Assert.IsType<ForStatement>(Assert.Single(lowered));
+        var loopValue = Assert.IsType<ForDeclarationInitializerNode>(forStatement.Initializer);
+        Assert.Same(TypeRef.Int, loopValue.TypeNode?.Semantic.Type);
+        Assert.IsType<NamedTypeSyntaxNode>(loopValue.TypeNode?.Syntax);
+
+        var hiddenIndex = Assert.IsType<ForDeclarationInitializerNode>(forStatement.CounterInitializer);
+        Assert.Same(TypeRef.Usize, hiddenIndex.TypeNode?.Semantic.Type);
+        Assert.IsType<NamedTypeSyntaxNode>(hiddenIndex.TypeNode?.Syntax);
     }
 
     private static IReadOnlyList<StatementNode> LowerFirstForeach(string source)

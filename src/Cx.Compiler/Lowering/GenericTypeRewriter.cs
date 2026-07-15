@@ -149,55 +149,6 @@ internal static class GenericTypeRewriter
     public static string LowerGenericTypeName(string name, IReadOnlyList<string> arguments) =>
         SanitizeTypeName($"{name}_{string.Join("_", arguments.Select(LowerTypeName))}");
 
-    public static IReadOnlyList<GenericStructUse> FindGenericStructUses(string type)
-    {
-        var uses = new List<GenericStructUse>();
-
-        for (var i = 0; i < type.Length; i++)
-        {
-            if (!IsIdentifierStart(type[i]))
-            {
-                continue;
-            }
-
-            var nameStart = i;
-            while (i < type.Length && IsIdentifierPart(type[i]))
-            {
-                i++;
-            }
-
-            var nameEnd = i;
-            while (i < type.Length && char.IsWhiteSpace(type[i]))
-            {
-                i++;
-            }
-
-            if (i >= type.Length || type[i] != '<')
-            {
-                continue;
-            }
-
-            var close = FindMatchingGenericClose(type, i);
-            if (close < 0)
-            {
-                continue;
-            }
-
-            var name = type[nameStart..nameEnd];
-            var arguments = SplitGenericArguments(type[(i + 1)..close]);
-            uses.Add(new GenericStructUse(name, arguments, type[nameStart..(close + 1)]));
-
-            foreach (var argument in arguments)
-            {
-                uses.AddRange(FindGenericStructUses(argument));
-            }
-
-            i = close;
-        }
-
-        return uses;
-    }
-
     private static IReadOnlyList<ParameterNode> RewriteParameters(
         IReadOnlyList<ParameterNode> parameters,
         IReadOnlySet<string> concreteStructNames) =>
@@ -506,34 +457,15 @@ internal static class GenericTypeRewriter
 
     private static string LowerTypeName(string type)
     {
-        type = type.Trim();
-        foreach (var use in FindGenericStructUses(type).OrderByDescending(use => use.Text.Length))
-        {
-            type = type.Replace(use.Text, LowerGenericTypeName(use.Name, use.Arguments), StringComparison.Ordinal);
-        }
+        var syntax = TypeSyntaxParser.Parse(type);
+        type = syntax is null
+            ? type.Trim()
+            : TypeSyntaxFormatter.ToCxString(LowerGenericTypeSyntax(syntax));
 
         return SanitizeTypeName(type
             .Replace("const ", "const_", StringComparison.Ordinal)
             .Replace("*", "_ptr", StringComparison.Ordinal)
             .Replace(" ", "_", StringComparison.Ordinal));
-    }
-
-    private static string RewriteConcreteGenericStructTypes(
-        string type,
-        IReadOnlySet<string> concreteStructNames)
-    {
-        foreach (var use in FindGenericStructUses(type).OrderByDescending(use => use.Text.Length))
-        {
-            var concreteName = LowerGenericTypeName(use.Name, use.Arguments);
-            if (!concreteStructNames.Contains(concreteName))
-            {
-                continue;
-            }
-
-            type = type.Replace(use.Text, concreteName, StringComparison.Ordinal);
-        }
-
-        return type;
     }
 
     private static TypeNode? RewriteTypeNode(
@@ -545,9 +477,14 @@ internal static class GenericTypeRewriter
             return null;
         }
 
-        var rewritten = TypeNode.CreateFromText(
+        if (typeNode.Syntax is null)
+        {
+            throw new InvalidOperationException($"TypeNode '{typeNode.TypeName}' has no parsed type syntax.");
+        }
+
+        var rewritten = TypeNode.Create(
             typeNode.Location,
-            RewriteConcreteGenericStructTypes(typeNode.TypeName, concreteStructNames));
+            RewriteTypeSyntax(typeNode.Syntax, concreteStructNames));
         SyntaxNode.CloneSemantic(typeNode, rewritten);
         if (typeNode.Semantic.Type is not null)
         {
@@ -560,78 +497,71 @@ internal static class GenericTypeRewriter
         return rewritten;
     }
 
+    private static TypeSyntaxNode RewriteTypeSyntax(
+        TypeSyntaxNode syntax,
+        IReadOnlySet<string> concreteStructNames) =>
+        syntax switch
+        {
+            GenericTypeSyntaxNode generic => RewriteGenericTypeSyntax(generic, concreteStructNames),
+            PointerTypeSyntaxNode pointer => new PointerTypeSyntaxNode(
+                RewriteTypeSyntax(pointer.Element, concreteStructNames)),
+            FixedArrayTypeSyntaxNode array => new FixedArrayTypeSyntaxNode(
+                RewriteTypeSyntax(array.Element, concreteStructNames),
+                array.Length),
+            FunctionTypeSyntaxNode function => new FunctionTypeSyntaxNode(
+                function.Parameters
+                    .Select(parameter => RewriteTypeSyntax(parameter, concreteStructNames))
+                    .ToList(),
+                RewriteTypeSyntax(function.ReturnType, concreteStructNames),
+                function.IsVariadic),
+            _ => syntax,
+        };
+
+    private static TypeSyntaxNode LowerGenericTypeSyntax(TypeSyntaxNode syntax) =>
+        syntax switch
+        {
+            GenericTypeSyntaxNode generic => LowerGenericTypeSyntax(generic),
+            PointerTypeSyntaxNode pointer => new PointerTypeSyntaxNode(LowerGenericTypeSyntax(pointer.Element)),
+            FixedArrayTypeSyntaxNode array => new FixedArrayTypeSyntaxNode(
+                LowerGenericTypeSyntax(array.Element),
+                array.Length),
+            FunctionTypeSyntaxNode function => new FunctionTypeSyntaxNode(
+                function.Parameters.Select(LowerGenericTypeSyntax).ToList(),
+                LowerGenericTypeSyntax(function.ReturnType),
+                function.IsVariadic),
+            _ => syntax,
+        };
+
+    private static TypeSyntaxNode LowerGenericTypeSyntax(GenericTypeSyntaxNode generic)
+    {
+        var target = LowerGenericTypeSyntax(generic.Target);
+        var arguments = generic.Arguments.Select(LowerGenericTypeSyntax).ToList();
+        return new NamedTypeSyntaxNode(LowerGenericTypeName(
+            TypeSyntaxFormatter.ToCxString(target),
+            arguments.Select(TypeSyntaxFormatter.ToCxString).ToList()));
+    }
+
+    private static TypeSyntaxNode RewriteGenericTypeSyntax(
+        GenericTypeSyntaxNode generic,
+        IReadOnlySet<string> concreteStructNames)
+    {
+        var target = RewriteTypeSyntax(generic.Target, concreteStructNames);
+        var arguments = generic.Arguments
+            .Select(argument => RewriteTypeSyntax(argument, concreteStructNames))
+            .ToList();
+        var concreteName = LowerGenericTypeName(
+            TypeSyntaxFormatter.ToCxString(target),
+            arguments.Select(TypeSyntaxFormatter.ToCxString).ToList());
+
+        return concreteStructNames.Contains(concreteName)
+            ? new NamedTypeSyntaxNode(concreteName)
+            : new GenericTypeSyntaxNode(target, arguments);
+    }
+
     private static string SanitizeTypeName(string type) =>
         Regex.Replace(type, "[^A-Za-z0-9_]", "_");
-
-    private static int FindMatchingGenericClose(string type, int openIndex)
-    {
-        var depth = 0;
-        for (var i = openIndex; i < type.Length; i++)
-        {
-            if (type[i] == '<')
-            {
-                depth++;
-            }
-            else if (type[i] == '>')
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return i;
-                }
-            }
-        }
-
-        return -1;
-    }
-
-    private static IReadOnlyList<string> SplitGenericArguments(string argumentsText)
-    {
-        if (string.IsNullOrWhiteSpace(argumentsText))
-        {
-            return [];
-        }
-
-        var arguments = new List<string>();
-        var start = 0;
-        var angleDepth = 0;
-        var parenDepth = 0;
-        var bracketDepth = 0;
-
-        for (var i = 0; i < argumentsText.Length; i++)
-        {
-            switch (argumentsText[i])
-            {
-                case '<': angleDepth++; break;
-                case '>': angleDepth--; break;
-                case '(': parenDepth++; break;
-                case ')': parenDepth--; break;
-                case '[': bracketDepth++; break;
-                case ']': bracketDepth--; break;
-            }
-
-            if (argumentsText[i] != ',' || angleDepth != 0 || parenDepth != 0 || bracketDepth != 0)
-            {
-                continue;
-            }
-
-            arguments.Add(argumentsText[start..i].Trim());
-            start = i + 1;
-        }
-
-        arguments.Add(argumentsText[start..].Trim());
-        return arguments;
-    }
-
-    private static bool IsIdentifierStart(char ch) =>
-        char.IsLetter(ch) || ch == '_';
-
-    private static bool IsIdentifierPart(char ch) =>
-        char.IsLetterOrDigit(ch) || ch == '_';
 
     private static T CopySemantic<T>(SyntaxNode source, T target)
         where T : SyntaxNode
         => SyntaxNode.CloneSemantic(source, target);
 }
-
-internal sealed record GenericStructUse(string Name, IReadOnlyList<string> Arguments, string Text);

@@ -73,7 +73,7 @@ public sealed class ExpressionTypeResolverTypeRefTests
         var resolved = resolver.ResolveTypeRef(expression, environment);
 
         Assert.Same(type, resolved);
-        Assert.Equal("usize", resolver.Resolve(expression, environment));
+        Assert.Equal("usize", TypeRefFormatter.ToCxString(resolved!));
     }
 
     [Fact]

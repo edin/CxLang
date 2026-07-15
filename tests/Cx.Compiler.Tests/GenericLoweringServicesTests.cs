@@ -30,37 +30,26 @@ public sealed class GenericLoweringServicesTests
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("identity<int>", uses);
-        Assert.Empty(collector.RawGenericUseAuditEntries);
     }
 
     [Fact]
-    public void RawGenericUseCollector_ReportsOnlyUsesNotAlreadyKnown()
+    public void AuditRawGenericUses_ReportsCompletedAstMigration()
     {
-        var program = CompilerTestHelpers.Parse(
-            """
-            fn identity<T>(value: T) -> T {
-                return value;
-            }
-            """);
-        var generic = Assert.Single(program.Functions);
-        var knownUses = new HashSet<GenericFunctionUseKey>
-        {
-            GenericFunctionUseKey.Create(generic, [new TypeRef.Named("int", [])]),
-        };
-        var collector = new RawGenericUseCollector([generic]);
+        var result = new CxCompiler().AuditRawGenericUses([
+            CompilerTestHelpers.Source(
+                """
+                fn identity<T>(value: T) -> T {
+                    return value;
+                }
 
-        Assert.Empty(collector.Collect("identity<int>(10)", new Dictionary<string, string>(), "raw test", knownUses));
-        Assert.Empty(collector.AuditEntries);
+                fn main() -> int {
+                    return identity<int>(10);
+                }
+                """),
+        ]);
 
-        var uses = collector.Collect("identity<float>(1.0)", new Dictionary<string, string>(), "raw test", knownUses).ToList();
-
-        var use = Assert.Single(uses);
-        Assert.Equal(generic, use.Function);
-        Assert.Equal(["float"], TypeArguments(use));
-        var rawUse = Assert.Single(collector.AuditEntries);
-        Assert.Equal("raw test", rawUse.Context);
-        Assert.Equal("identity<float>", rawUse.FunctionSignature);
-        Assert.Equal("explicit type argument call", rawUse.Reason);
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Equal("No raw generic use fallback found.", result.Output);
     }
 
     [Fact]
@@ -338,6 +327,10 @@ public sealed class GenericLoweringServicesTests
 
         Assert.Equal("app.main", rewrittenFunction.Semantic.ModuleName);
         Assert.NotSame(original.Semantic, rewrittenFunction.Semantic);
+        var returnTypeNode = Assert.IsType<TypeNode>(rewrittenFunction.ReturnTypeNode);
+        Assert.Equal("Box_int", returnTypeNode.ToSourceText());
+        Assert.IsType<NamedTypeSyntaxNode>(returnTypeNode.Syntax);
+        Assert.Null(returnTypeNode.Semantic.Type);
 
         rewrittenFunction.Semantic.ModuleName = "rewritten";
         Assert.Equal("app.main", original.Semantic.ModuleName);

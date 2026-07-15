@@ -6,7 +6,7 @@ namespace Cx.Compiler.C;
 internal sealed record CNameManglerOptions(bool UseModulePrefixes = false);
 
 internal sealed class CNameMangler(
-    Func<string, string> lowerType,
+    Func<TypeSyntaxNode, string> lowerTypeSyntax,
     Func<string, string> sanitizeTypeName,
     CNameManglerOptions? options = null)
 {
@@ -27,12 +27,11 @@ internal sealed class CNameMangler(
     private string TypeArgumentSuffix(IReadOnlyList<TypeNode> arguments) =>
         arguments.Count == 0
             ? string.Empty
-            : "_" + string.Join("_", arguments.Select(TypeArgumentText).Select(lowerType).Select(sanitizeTypeName));
+            : "_" + string.Join("_", arguments.Select(TypeArgumentSyntax).Select(lowerTypeSyntax).Select(sanitizeTypeName));
 
-    private static string TypeArgumentText(TypeNode typeNode) =>
-        typeNode.Syntax is { } syntax
-            ? TypeSyntaxFormatter.ToCxString(syntax)
-            : typeNode.TypeName;
+    private static TypeSyntaxNode TypeArgumentSyntax(TypeNode typeNode) =>
+        typeNode.Syntax
+        ?? throw new InvalidOperationException($"C name mangler expected parsed syntax for type argument '{typeNode.TypeName}'.");
 
     private static string TypeText(TypeNode typeNode) =>
         typeNode.Semantic.Type is { } type

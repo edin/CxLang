@@ -8,6 +8,25 @@ internal static class TypeNodeSemanticExtensions
     public static TypeRef ToTypeRef(this TypeNode? typeNode, TypeRefParser parser) =>
         parser.Parse(typeNode);
 
+    public static TypeRef ToUnresolvedTypeRef(this TypeSyntaxNode syntax) =>
+        syntax switch
+        {
+            NamedTypeSyntaxNode { Name: "null" } => new TypeRef.Null(),
+            NamedTypeSyntaxNode named => new TypeRef.Named(named.Name, []),
+            GenericTypeSyntaxNode generic => new TypeRef.Named(
+                TypeSyntaxFormatter.ToCxString(generic.Target),
+                generic.Arguments.Select(ToUnresolvedTypeRef).ToList()),
+            PointerTypeSyntaxNode pointer => new TypeRef.Pointer(ToUnresolvedTypeRef(pointer.Element)),
+            FixedArrayTypeSyntaxNode array => new TypeRef.FixedArray(
+                ToUnresolvedTypeRef(array.Element),
+                array.Length),
+            FunctionTypeSyntaxNode function => new TypeRef.Function(
+                function.Parameters.Select(ToUnresolvedTypeRef).ToList(),
+                ToUnresolvedTypeRef(function.ReturnType),
+                function.IsVariadic),
+            _ => new TypeRef.Unknown(),
+        };
+
     public static TypeNode ToTypeNode(this TypeRef type, Location location)
     {
         var node = TypeNode.Create(location, ToTypeSyntax(type));

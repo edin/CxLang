@@ -32,7 +32,7 @@ internal sealed class CBackendContext
     {
         var abiNames = new CAbiNameService(typeAdapters);
         var nameMangler = new CNameMangler(
-            type => abiNames.LowerType(type),
+            syntax => abiNames.LowerType(syntax),
             abiNames.SanitizeTypeName,
             nameManglerOptions);
         return new CBackendContext(typeAdapters, abiNames, nameMangler, typeRefParser);

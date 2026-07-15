@@ -34,19 +34,7 @@ internal sealed record CLoweringContext(
             GenericCalls,
             resolveExpressionType,
             (targetType, sourceType) => typeCompatibility.CanAssign(targetType, sourceType, out _),
-            ParseTypeOrNull,
-            function => TypeTextOrNull(function.OwnerTypeNode, TypeRefParser));
-    }
-
-    private TypeRef? ParseTypeOrNull(string? type)
-    {
-        if (string.IsNullOrWhiteSpace(type))
-        {
-            return null;
-        }
-
-        var parsed = TypeRefParser.Parse(type);
-        return parsed is TypeRef.Unknown ? null : parsed;
+            function => TypeRefOrNull(function.OwnerTypeNode, TypeRefParser));
     }
 
     public bool TryGetMethod(string key, out CLoweringMethodInfo method)
@@ -257,10 +245,8 @@ internal sealed record CLoweringContext(
             program.Functions
                 .Where(function => (function.TypeArgumentNodes ?? []).Count > 0)
                 .Select(function => new GenericCallInfo(
-                    TypeTextOrNull(function.OwnerTypeNode, typeRefParser),
                     TypeRefOrNull(function.OwnerTypeNode, typeRefParser),
                     function.Name,
-                    TypeTexts(function.TypeArgumentNodes ?? [], typeRefParser),
                     TypeRefs(function.TypeArgumentNodes ?? [], typeRefParser),
                     function.Parameters.Where(parameter => !parameter.IsVariadic).Select(parameter => parameter.TypeNode.ToTypeRef(typeRefParser)).ToList(),
                     backend.NameMangler.FunctionName(function),
@@ -367,15 +353,6 @@ internal sealed record CLoweringContext(
 
     private static string TypeText(TypeNode? typeNode, TypeRefParser typeRefParser) =>
         TypeText(typeNode.ToTypeRef(typeRefParser));
-
-    private static string? TypeTextOrNull(TypeNode? typeNode, TypeRefParser typeRefParser)
-    {
-        var type = typeNode.ToTypeRef(typeRefParser);
-        return type is TypeRef.Unknown ? null : TypeText(type);
-    }
-
-    private static IReadOnlyList<string> TypeTexts(IReadOnlyList<TypeNode> typeNodes, TypeRefParser typeRefParser) =>
-        typeNodes.Select(typeNode => TypeText(typeNode, typeRefParser)).ToList();
 
     private static IReadOnlyList<TypeRef> TypeRefs(IReadOnlyList<TypeNode> typeNodes, TypeRefParser typeRefParser) =>
         typeNodes.Select(typeNode => typeNode.ToTypeRef(typeRefParser)).ToList();

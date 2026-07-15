@@ -48,7 +48,7 @@ internal sealed class CallLowerer(
             if (genericCall is not null)
             {
                 return new CCallExpression(
-                    functionReferences.Resolve(genericCall.OwnerType, genericCall.Name, genericCall.CName),
+                    functionReferences.Resolve(genericCall.OwnerTypeRef, genericCall.Name, genericCall.CName),
                     call.Arguments.Select(lowerExpression).ToList());
             }
 
