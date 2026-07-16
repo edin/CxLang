@@ -33,7 +33,9 @@ internal abstract record TypeRef
 
     public sealed record Pointer(TypeRef Element) : TypeRef;
 
-    public sealed record FixedArray(TypeRef Element, string Length) : TypeRef;
+    public sealed record Const(TypeRef Element) : TypeRef;
+
+    public sealed record FixedArray(TypeRef Element, ArrayLengthNode Length) : TypeRef;
 
     public sealed record Function(IReadOnlyList<TypeRef> Parameters, TypeRef ReturnType, bool IsVariadic = false) : TypeRef;
 }
@@ -91,6 +93,7 @@ internal sealed class TypeRefParser(ProgramNode program)
             NamedTypeSyntaxNode named => ParseNamedSyntax(named, resolvingAliases),
             GenericTypeSyntaxNode generic => ParseGenericSyntax(generic, resolvingAliases),
             PointerTypeSyntaxNode pointer => new TypeRef.Pointer(Parse(pointer.Element, resolvingAliases)),
+            ConstTypeSyntaxNode constType => new TypeRef.Const(Parse(constType.Element, resolvingAliases)),
             FixedArrayTypeSyntaxNode array => new TypeRef.FixedArray(Parse(array.Element, resolvingAliases), array.Length),
             FunctionTypeSyntaxNode function => new TypeRef.Function(
                 function.Parameters
@@ -209,6 +212,16 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
             return IsAssignablePointer(targetPointer.Element, sourcePointer.Element);
         }
 
+        if (target is TypeRef.Const targetConst)
+        {
+            return IsAssignable(targetConst.Element, source is TypeRef.Const sourceConst ? sourceConst.Element : source);
+        }
+
+        if (source is TypeRef.Const sourceConstValue)
+        {
+            return IsAssignable(target, sourceConstValue.Element);
+        }
+
         if (target is TypeRef.Named targetNamed && source is TypeRef.Named sourceNamed)
         {
             if (IsIntegerCompatible(targetNamed.Name) && IsIntegerCompatible(sourceNamed.Name))
@@ -223,7 +236,7 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
 
         if (target is TypeRef.FixedArray targetArray && source is TypeRef.FixedArray sourceArray)
         {
-            return string.Equals(targetArray.Length, sourceArray.Length, StringComparison.Ordinal)
+            return targetArray.Length == sourceArray.Length
                 && IsAssignable(targetArray.Element, sourceArray.Element);
         }
 
@@ -243,20 +256,24 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
         target = UnwrapAlias(target);
         source = UnwrapAlias(source);
 
-        if (IsAssignable(target, source))
-        {
-            return true;
-        }
-
         if (IsVoidPointerElement(target) || IsVoidPointerElement(source))
         {
             return true;
         }
 
-        if (target is TypeRef.Named { Name: var targetName, Arguments: { Count: 0 } }
-            && source is TypeRef.Named { Name: var sourceName, Arguments: { Count: 0 } }
-            && targetName.StartsWith("const ", StringComparison.Ordinal)
-            && string.Equals(targetName["const ".Length..], sourceName, StringComparison.Ordinal))
+        if (target is TypeRef.Const targetConst)
+        {
+            return IsAssignable(
+                targetConst.Element,
+                source is TypeRef.Const sourceConst ? sourceConst.Element : source);
+        }
+
+        if (source is TypeRef.Const)
+        {
+            return false;
+        }
+
+        if (IsAssignable(target, source))
         {
             return true;
         }
@@ -265,7 +282,7 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
     }
 
     private static bool IsVoidPointerElement(TypeRef type) =>
-        UnwrapAlias(type) is TypeRef.Named { Name: "void" or "const void", Arguments: { Count: 0 } };
+        UnwrapConst(UnwrapAlias(type)) is TypeRef.Named { Name: "void", Arguments: { Count: 0 } };
 
     private static bool IsUnknown(TypeRef type) => UnwrapAlias(type) is TypeRef.Unknown;
 
@@ -281,13 +298,10 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
 
     private bool IsIntegerCompatible(string name)
     {
-        name = StripConst(name.Trim());
         return BuiltinTypes.IsNumeric(name) || parser.IsEnumName(name);
     }
 
-    private static string StripConst(string name) =>
-        name.StartsWith("const ", StringComparison.Ordinal)
-            ? name["const ".Length..].TrimStart()
-            : name;
+    private static TypeRef UnwrapConst(TypeRef type) =>
+        type is TypeRef.Const constType ? constType.Element : type;
 
 }

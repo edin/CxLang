@@ -144,6 +144,9 @@ internal sealed class TypeUsageAnalyzer(
             case TypeRef.Pointer pointer:
                 CollectGenericStructUses(pointer.Element, uses);
                 break;
+            case TypeRef.Const constType:
+                CollectGenericStructUses(constType.Element, uses);
+                break;
             case TypeRef.FixedArray fixedArray:
                 CollectGenericStructUses(fixedArray.Element, uses);
                 break;
@@ -175,6 +178,9 @@ internal sealed class TypeUsageAnalyzer(
                 break;
             case PointerTypeSyntaxNode pointer:
                 CollectTypeNames(pointer.Element, names);
+                break;
+            case ConstTypeSyntaxNode constType:
+                CollectTypeNames(constType.Element, names);
                 break;
             case FixedArrayTypeSyntaxNode fixedArray:
                 CollectTypeNames(fixedArray.Element, names);

@@ -146,6 +146,7 @@ internal static class GenericSpecializationPass
             TypeRef.Alias alias => openTypeParameterNames.Contains(alias.Name)
                 || ContainsOpenTypeParameter(alias.Target, openTypeParameterNames),
             TypeRef.Pointer pointer => ContainsOpenTypeParameter(pointer.Element, openTypeParameterNames),
+            TypeRef.Const constType => ContainsOpenTypeParameter(constType.Element, openTypeParameterNames),
             TypeRef.FixedArray fixedArray => ContainsOpenTypeParameter(fixedArray.Element, openTypeParameterNames),
             TypeRef.Function function => function.Parameters.Any(parameter => ContainsOpenTypeParameter(parameter, openTypeParameterNames))
                 || ContainsOpenTypeParameter(function.ReturnType, openTypeParameterNames),

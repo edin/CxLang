@@ -1,3 +1,5 @@
+using Cx.Compiler.Syntax.Nodes;
+
 namespace Cx.Compiler.Semantic;
 
 internal static class TypeRefFormatter
@@ -11,7 +13,8 @@ internal static class TypeRefFormatter
             TypeRef.Named named when named.Arguments.Count == 0 => named.Name,
             TypeRef.Named named => $"{named.Name}<{string.Join(",", named.Arguments.Select(ToCxString))}>",
             TypeRef.Pointer pointer => ToCxString(pointer.Element) + "*",
-            TypeRef.FixedArray array => $"{ToCxString(array.Element)}[{array.Length}]",
+            TypeRef.Const constType => "const " + ToCxString(constType.Element),
+            TypeRef.FixedArray array => $"{ToCxString(array.Element)}[{ArrayLengthFormatter.ToCxString(array.Length)}]",
             TypeRef.Function function => $"fn({FormatFunctionParameters(function)})->{ToCxString(function.ReturnType)}",
             _ => type.ToString() ?? "unknown",
         };
@@ -24,7 +27,8 @@ internal static class TypeRefFormatter
             TypeRef.Alias alias => alias.Name,
             TypeRef.Named named => FormatNamedIdentity(named),
             TypeRef.Pointer pointer => ToIdentityString(pointer.Element) + "*",
-            TypeRef.FixedArray array => $"{ToIdentityString(array.Element)}[{array.Length}]",
+            TypeRef.Const constType => "const " + ToIdentityString(constType.Element),
+            TypeRef.FixedArray array => $"{ToIdentityString(array.Element)}[{ArrayLengthFormatter.ToCxString(array.Length)}]",
             TypeRef.Function function => $"fn({FormatFunctionParameters(function, ToIdentityString)})->{ToIdentityString(function.ReturnType)}",
             _ => type.ToString() ?? "unknown",
         };

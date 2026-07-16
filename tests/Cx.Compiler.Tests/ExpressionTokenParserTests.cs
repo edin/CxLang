@@ -368,6 +368,9 @@ public sealed class ExpressionTokenParserTests
 
         var cast = Assert.IsType<CastExpressionNode>(expression);
         Assert.Equal("const char*", cast.TargetTypeNode?.ToSourceText());
+        var pointer = Assert.IsType<PointerTypeSyntaxNode>(cast.TargetTypeNode?.Syntax);
+        var constType = Assert.IsType<ConstTypeSyntaxNode>(pointer.Element);
+        Assert.Equal("char", Assert.IsType<NamedTypeSyntaxNode>(constType.Element).Name);
         Assert.IsType<NameExpressionNode>(cast.Expression);
     }
 

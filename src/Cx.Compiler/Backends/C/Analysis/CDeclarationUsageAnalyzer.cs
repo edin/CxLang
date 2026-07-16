@@ -291,6 +291,12 @@ internal static class CDeclarationUsageAnalyzer
                     yield return name;
                 }
                 break;
+            case TypeRef.Const constType:
+                foreach (var name in ExtractTypeNames(constType.Element))
+                {
+                    yield return name;
+                }
+                break;
             case TypeRef.FixedArray fixedArray:
                 foreach (var name in ExtractTypeNames(fixedArray.Element))
                 {

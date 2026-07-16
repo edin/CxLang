@@ -342,6 +342,7 @@ internal sealed record CLoweringContext(
             TypeRef.Alias alias => string.Equals(alias.Name, "Self", StringComparison.Ordinal)
                 || ContainsSelf(alias.Target),
             TypeRef.Pointer pointer => ContainsSelf(pointer.Element),
+            TypeRef.Const constType => ContainsSelf(constType.Element),
             TypeRef.FixedArray array => ContainsSelf(array.Element),
             TypeRef.Function function => function.Parameters.Any(ContainsSelf)
                 || ContainsSelf(function.ReturnType),

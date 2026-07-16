@@ -27,6 +27,7 @@ internal sealed class TypeSyntaxTypeRefConverter(ProgramNode program)
             NamedTypeSyntaxNode named => ConvertNamed(named, resolvingAliases),
             GenericTypeSyntaxNode generic => ConvertGeneric(generic, resolvingAliases),
             PointerTypeSyntaxNode pointer => new TypeRef.Pointer(Convert(pointer.Element, resolvingAliases)),
+            ConstTypeSyntaxNode constType => new TypeRef.Const(Convert(constType.Element, resolvingAliases)),
             FixedArrayTypeSyntaxNode array => new TypeRef.FixedArray(Convert(array.Element, resolvingAliases), array.Length),
             FunctionTypeSyntaxNode function => new TypeRef.Function(
                 function.Parameters.Select(parameter => Convert(parameter, resolvingAliases)).ToList(),

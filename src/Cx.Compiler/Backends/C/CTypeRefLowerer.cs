@@ -17,7 +17,10 @@ internal sealed class CTypeRefLowerer(IReadOnlyList<TypeAdapterNode> typeAdapter
             TypeRef.Alias alias => new CNamedTypeRef(CTypeLowerer.LowerType(alias, typeAdapters)),
             TypeRef.Named named => new CNamedTypeRef(CTypeLowerer.LowerType(named, typeAdapters)),
             TypeRef.Pointer pointer => new CPointerTypeRef(Lower(pointer.Element, selfType: null)),
-            TypeRef.FixedArray fixedArray => new CFixedArrayTypeRef(Lower(fixedArray.Element, selfType: null), fixedArray.Length),
+            TypeRef.Const constType => new CConstTypeRef(Lower(constType.Element, selfType: null)),
+            TypeRef.FixedArray fixedArray => new CFixedArrayTypeRef(
+                Lower(fixedArray.Element, selfType: null),
+                ArrayLengthFormatter.ToCxString(fixedArray.Length)),
             TypeRef.Function function => new CFunctionTypeRef(
                 Lower(function.ReturnType, selfType: null),
                 LowerFunctionParameters(function)),

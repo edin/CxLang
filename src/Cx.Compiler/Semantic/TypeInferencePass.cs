@@ -530,6 +530,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             TypeRef.Named named => string.Equals(named.Name, typeParameter, StringComparison.Ordinal)
                 || named.Arguments.Any(argument => TypeMentionsParameter(argument, typeParameter)),
             TypeRef.Pointer pointer => TypeMentionsParameter(pointer.Element, typeParameter),
+            TypeRef.Const constType => TypeMentionsParameter(constType.Element, typeParameter),
             TypeRef.FixedArray fixedArray => TypeMentionsParameter(fixedArray.Element, typeParameter),
             TypeRef.Function function => function.Parameters.Any(parameter => TypeMentionsParameter(parameter, typeParameter))
                 || TypeMentionsParameter(function.ReturnType, typeParameter),

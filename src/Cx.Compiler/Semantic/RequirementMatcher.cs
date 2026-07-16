@@ -253,6 +253,7 @@ public sealed class RequirementMatcher
                 named.Name,
                 named.Arguments.Select(argument => ResolveAlias(argument, new HashSet<string>(seen, StringComparer.Ordinal))).ToList()),
             TypeRef.Pointer pointer => new TypeRef.Pointer(ResolveAlias(pointer.Element, seen)),
+            TypeRef.Const constType => new TypeRef.Const(ResolveAlias(constType.Element, seen)),
             TypeRef.FixedArray fixedArray => new TypeRef.FixedArray(ResolveAlias(fixedArray.Element, seen), fixedArray.Length),
             TypeRef.Function function => new TypeRef.Function(
                 function.Parameters.Select(parameter => ResolveAlias(parameter, new HashSet<string>(seen, StringComparer.Ordinal))).ToList(),
@@ -517,6 +518,12 @@ public sealed class RequirementMatcher
         expectedPattern = TypeRefFacts.UnwrapAlias(expectedPattern);
         actualType = TypeRefFacts.UnwrapAlias(actualType);
 
+        if (expectedPattern is TypeRef.Const expectedConst
+            && actualType is TypeRef.Const actualConst)
+        {
+            return Unify(expectedConst.Element, actualConst.Element, bindings);
+        }
+
         if (TypeRefFacts.TryGetPointerElement(expectedPattern, out var expectedElement)
             && TypeRefFacts.TryGetPointerElement(actualType, out var actualElement))
         {
@@ -559,7 +566,7 @@ public sealed class RequirementMatcher
 
         if (expectedPattern is TypeRef.FixedArray expectedArray
             && actualType is TypeRef.FixedArray actualArray
-            && string.Equals(expectedArray.Length, actualArray.Length, StringComparison.Ordinal))
+            && expectedArray.Length == actualArray.Length)
         {
             return Unify(expectedArray.Element, actualArray.Element, bindings);
         }
@@ -599,6 +606,7 @@ public sealed class RequirementMatcher
         {
             TypeRef.Alias alias => LowerType(alias.Target),
             TypeRef.Pointer pointer => LowerType(pointer.Element) + "*",
+            TypeRef.Const constType => "const_" + LowerType(constType.Element),
             TypeRef.Named { Arguments.Count: 0 } named => named.Name,
             TypeRef.Named named => $"{named.Name}_{string.Join("_", named.Arguments.Select(LowerType).Select(SanitizeTypeName))}",
             _ => TypeRefFormatter.ToCxString(type),

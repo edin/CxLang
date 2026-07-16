@@ -576,6 +576,11 @@ internal sealed class GenericUseCollector(ProgramNode program)
             return new TypeRef.Pointer(ResolveAdapterStorageTypeRef(pointer.Element));
         }
 
+        if (type is TypeRef.Const constType)
+        {
+            return new TypeRef.Const(ResolveAdapterStorageTypeRef(constType.Element));
+        }
+
         var current = type;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         while (true)
@@ -637,6 +642,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             GenericTypeSyntaxNode generic => ContainsSelf(generic.Target)
                 || generic.Arguments.Any(ContainsSelf),
             PointerTypeSyntaxNode pointer => ContainsSelf(pointer.Element),
+            ConstTypeSyntaxNode constType => ContainsSelf(constType.Element),
             FixedArrayTypeSyntaxNode fixedArray => ContainsSelf(fixedArray.Element),
             FunctionTypeSyntaxNode function => function.Parameters.Any(ContainsSelf)
                 || ContainsSelf(function.ReturnType),

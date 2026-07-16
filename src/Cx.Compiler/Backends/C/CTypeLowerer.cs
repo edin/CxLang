@@ -25,6 +25,7 @@ internal static class CTypeLowerer
             TypeRef.Alias alias => StripModuleQualifier(alias.Name),
             TypeRef.Named named => LowerNamedType(named, typeAdapters),
             TypeRef.Pointer pointer => LowerType(pointer.Element, typeAdapters) + "*",
+            TypeRef.Const constType => "const " + LowerType(constType.Element, typeAdapters),
             TypeRef.FixedArray array => LowerType(array.Element, typeAdapters),
             TypeRef.Function => TypeRefFormatter.ToCxString(type),
             _ => TypeRefFormatter.ToCxString(type),
@@ -36,6 +37,7 @@ internal static class CTypeLowerer
         IReadOnlySet<string> compositeTypeNames,
         IReadOnlyList<TypeAdapterNode> typeAdapters)
     {
+        type = TypeRefFacts.UnwrapConst(TypeRefFacts.UnwrapAlias(type));
         if (type is TypeRef.Function function)
         {
             return function.Parameters.Any(parameter => ReferencesCompositeType(parameter, compositeTypeNames, typeAdapters))
@@ -88,6 +90,11 @@ internal static class CTypeLowerer
             return new TypeRef.Pointer(ResolveAdapterStorageType(pointer.Element, typeAdapters));
         }
 
+        if (type is TypeRef.Const constType)
+        {
+            return new TypeRef.Const(ResolveAdapterStorageType(constType.Element, typeAdapters));
+        }
+
         if (type is TypeRef.Alias)
         {
             return type;
@@ -98,14 +105,7 @@ internal static class CTypeLowerer
             return type;
         }
 
-        var isConst = named.Name.StartsWith("const ", StringComparison.Ordinal);
-        var adapterName = isConst
-            ? named.Name["const ".Length..].TrimStart()
-            : named.Name;
-        if (isConst)
-        {
-            named = named with { Name = adapterName };
-        }
+        var adapterName = named.Name;
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         while (true)
@@ -113,12 +113,12 @@ internal static class CTypeLowerer
             var adapter = typeAdapters.LastOrDefault(adapter => adapter.Name == adapterName);
             if (adapter is null || !seen.Add(adapter.Name))
             {
-                return isConst ? AddConst(named) : named;
+                return named;
             }
 
             if (adapter.TypeParameters.Count != named.Arguments.Count)
             {
-                return isConst ? AddConst(named) : named;
+                return named;
             }
 
             var substitutions = adapter.TypeParameters
@@ -128,7 +128,7 @@ internal static class CTypeLowerer
             var resolved = TypeRefRewriter.Substitute(baseType, substitutions);
             if (resolved is not TypeRef.Named resolvedNamed)
             {
-                return isConst ? AddConst(resolved) : resolved;
+                return resolved;
             }
 
             named = resolvedNamed;
@@ -136,26 +136,10 @@ internal static class CTypeLowerer
         }
     }
 
-    private static TypeRef AddConst(TypeRef type) =>
-        type switch
-        {
-            TypeRef.Named named => named with { Name = "const " + named.Name },
-            TypeRef.Pointer pointer => new TypeRef.Pointer(AddConst(pointer.Element)),
-            TypeRef.FixedArray array => new TypeRef.FixedArray(AddConst(array.Element), array.Length),
-            _ => type,
-        };
-
     private static string StripModuleQualifier(string type)
     {
-        var prefix = "";
-        if (type.StartsWith("const ", StringComparison.Ordinal))
-        {
-            prefix = "const ";
-            type = type["const ".Length..].TrimStart();
-        }
-
         var dot = type.LastIndexOf('.');
-        return prefix + (dot < 0 ? type : type[(dot + 1)..]);
+        return dot < 0 ? type : type[(dot + 1)..];
     }
 
 }

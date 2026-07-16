@@ -95,11 +95,6 @@ internal static class BuiltinTypes
             name = name[..^1].TrimEnd();
         }
 
-        if (name.StartsWith("const ", StringComparison.Ordinal))
-        {
-            name = name["const ".Length..].TrimStart();
-        }
-
         return name;
     }
 }

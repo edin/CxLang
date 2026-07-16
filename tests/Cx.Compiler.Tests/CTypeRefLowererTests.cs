@@ -1,5 +1,6 @@
 using Cx.Compiler.C;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
 
@@ -12,7 +13,9 @@ public sealed class CTypeRefLowererTests
 
         var generic = lowerer.Lower(new TypeRef.Named("Vec", [new TypeRef.Named("int", [])]));
         var pointer = lowerer.Lower(new TypeRef.Pointer(new TypeRef.Named("Point", [])));
-        var fixedArray = lowerer.Lower(new TypeRef.FixedArray(new TypeRef.Named("u8", []), "32"));
+        var fixedArray = lowerer.Lower(new TypeRef.FixedArray(
+            new TypeRef.Named("u8", []),
+            new ArrayLengthNode.Integer(32)));
         var function = lowerer.Lower(new TypeRef.Function(
             [new TypeRef.Named("int", [])],
             new TypeRef.Named("bool", [])));

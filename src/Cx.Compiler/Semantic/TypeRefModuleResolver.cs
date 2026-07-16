@@ -488,6 +488,7 @@ internal sealed class TypeRefModuleResolver
             TypeRef.Named named => QualifyNamed(named, currentModule, typeParameters),
             TypeRef.Alias alias => new TypeRef.Alias(alias.Name, Qualify(alias.Target, currentModule, typeParameters)),
             TypeRef.Pointer pointer => new TypeRef.Pointer(Qualify(pointer.Element, currentModule, typeParameters)),
+            TypeRef.Const constType => new TypeRef.Const(Qualify(constType.Element, currentModule, typeParameters)),
             TypeRef.FixedArray array => new TypeRef.FixedArray(Qualify(array.Element, currentModule, typeParameters), array.Length),
             TypeRef.Function function => new TypeRef.Function(
                 function.Parameters.Select(parameter => Qualify(parameter, currentModule, typeParameters)).ToList(),

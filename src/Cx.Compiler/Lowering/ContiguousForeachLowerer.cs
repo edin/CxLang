@@ -109,7 +109,7 @@ internal static class ContiguousForeachLowerer
                     iterableType,
                     fixedArray.Element,
                     source => source,
-                    source => new LiteralExpressionNode(source.Location, fixedArray.Length));
+                    source => ArrayLengthExpression(source.Location, fixedArray.Length));
                 return true;
             }
 
@@ -233,4 +233,13 @@ internal static class ContiguousForeachLowerer
             Func<ExpressionNode, ExpressionNode> DataExpression,
             Func<ExpressionNode, ExpressionNode> LengthExpression);
     }
+
+    private static ExpressionNode ArrayLengthExpression(Location location, ArrayLengthNode length) => length switch
+    {
+        ArrayLengthNode.Integer integer => LiteralExpressionNode.Integer(
+            location,
+            integer.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ArrayLengthNode.Symbol symbol => new NameExpressionNode(location, symbol.Name),
+        _ => new ErrorExpressionNode(location),
+    };
 }

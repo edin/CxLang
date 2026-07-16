@@ -1050,34 +1050,15 @@ public sealed class CxCompiler
         string name,
         string alias,
         IReadOnlySet<string> typeNames) =>
-        RewriteDeclaredTypeName(
-            name,
-            typeName => typeNames.Contains(typeName) ? QualifyName(alias, typeName) : null);
+        typeNames.Contains(name) ? QualifyName(alias, name) : name;
 
     private static string ProjectSymbolImportNamedType(
         string name,
         IReadOnlyDictionary<string, string> symbols,
         IReadOnlySet<string> typeNames) =>
-        RewriteDeclaredTypeName(
-            name,
-            typeName => typeNames.Contains(typeName) && symbols.TryGetValue(typeName, out var visibleName)
-                ? visibleName
-                : null);
-
-    private static string RewriteDeclaredTypeName(
-        string name,
-        Func<string, string?> rewrite)
-    {
-        const string constPrefix = "const ";
-        var isConst = name.StartsWith(constPrefix, StringComparison.Ordinal);
-        var declaredName = isConst ? name[constPrefix.Length..] : name;
-        if (rewrite(declaredName) is not { } rewritten)
-        {
-            return name;
-        }
-
-        return isConst ? constPrefix + rewritten : rewritten;
-    }
+        typeNames.Contains(name) && symbols.TryGetValue(name, out var visibleName)
+            ? visibleName
+            : name;
 
     private static TypeNode RewriteTypeSyntax(TypeNode? typeNode, Func<string, string> rewriteName)
     {
@@ -1098,6 +1079,7 @@ public sealed class CxCompiler
                 Arguments = generic.Arguments.Select(argument => RewriteTypeSyntax(argument, rewriteName)).ToList(),
             },
             PointerTypeSyntaxNode pointer => pointer with { Element = RewriteTypeSyntax(pointer.Element, rewriteName) },
+            ConstTypeSyntaxNode constType => constType with { Element = RewriteTypeSyntax(constType.Element, rewriteName) },
             FixedArrayTypeSyntaxNode array => array with { Element = RewriteTypeSyntax(array.Element, rewriteName) },
             FunctionTypeSyntaxNode function => function with
             {

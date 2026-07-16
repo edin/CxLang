@@ -479,13 +479,14 @@ internal static class GenericTypeRewriter
             TypeRef.Alias alias => SanitizeTypeName(alias.Name),
             TypeRef.Named named => LowerNamedTypeName(named),
             TypeRef.Pointer pointer => LowerTypeName(pointer.Element) + "_ptr",
-            TypeRef.FixedArray array => $"{LowerTypeName(array.Element)}_{SanitizeTypeName(array.Length)}",
+            TypeRef.Const constType => "const_" + LowerTypeName(constType.Element),
+            TypeRef.FixedArray array => $"{LowerTypeName(array.Element)}_{SanitizeTypeName(ArrayLengthFormatter.ToCxString(array.Length))}",
             _ => SanitizeTypeName(TypeRefFormatter.ToIdentityString(type)),
         };
 
     private static string LowerNamedTypeName(TypeRef.Named named)
     {
-        var name = SanitizeTypeName(named.Name.Replace("const ", "const_", StringComparison.Ordinal));
+        var name = SanitizeTypeName(named.Name);
         return named.Arguments.Count == 0
             ? name
             : $"{name}_{string.Join("_", named.Arguments.Select(LowerTypeName))}";
@@ -527,6 +528,8 @@ internal static class GenericTypeRewriter
             GenericTypeSyntaxNode generic => RewriteGenericTypeSyntax(generic, concreteStructNames),
             PointerTypeSyntaxNode pointer => new PointerTypeSyntaxNode(
                 RewriteTypeSyntax(pointer.Element, concreteStructNames)),
+            ConstTypeSyntaxNode constType => new ConstTypeSyntaxNode(
+                RewriteTypeSyntax(constType.Element, concreteStructNames)),
             FixedArrayTypeSyntaxNode array => new FixedArrayTypeSyntaxNode(
                 RewriteTypeSyntax(array.Element, concreteStructNames),
                 array.Length),
@@ -544,6 +547,7 @@ internal static class GenericTypeRewriter
         {
             GenericTypeSyntaxNode generic => LowerGenericTypeSyntax(generic),
             PointerTypeSyntaxNode pointer => new PointerTypeSyntaxNode(LowerGenericTypeSyntax(pointer.Element)),
+            ConstTypeSyntaxNode constType => new ConstTypeSyntaxNode(LowerGenericTypeSyntax(constType.Element)),
             FixedArrayTypeSyntaxNode array => new FixedArrayTypeSyntaxNode(
                 LowerGenericTypeSyntax(array.Element),
                 array.Length),
@@ -587,10 +591,11 @@ internal static class GenericTypeRewriter
     private static string LowerTypeName(TypeSyntaxNode type) =>
         type switch
         {
-            NamedTypeSyntaxNode named => SanitizeTypeName(named.Name.Replace("const ", "const_", StringComparison.Ordinal)),
+            NamedTypeSyntaxNode named => SanitizeTypeName(named.Name),
             GenericTypeSyntaxNode generic => LowerGenericTypeName(generic.Target, generic.Arguments),
             PointerTypeSyntaxNode pointer => LowerTypeName(pointer.Element) + "_ptr",
-            FixedArrayTypeSyntaxNode array => $"{LowerTypeName(array.Element)}_{SanitizeTypeName(array.Length)}",
+            ConstTypeSyntaxNode constType => "const_" + LowerTypeName(constType.Element),
+            FixedArrayTypeSyntaxNode array => $"{LowerTypeName(array.Element)}_{SanitizeTypeName(ArrayLengthFormatter.ToCxString(array.Length))}",
             FunctionTypeSyntaxNode function => SanitizeTypeName(TypeSyntaxFormatter.ToCxString(function)),
             _ => SanitizeTypeName(TypeSyntaxFormatter.ToCxString(type)),
         };

@@ -391,6 +391,15 @@ internal sealed class ExpressionTypeResolver(
         parameterType = TypeRefFacts.UnwrapAlias(parameterType);
         argumentType = TypeRefFacts.UnwrapAlias(argumentType);
 
+        if (parameterType is TypeRef.Const parameterConst)
+        {
+            return TryBindType(
+                parameterConst.Element,
+                argumentType is TypeRef.Const argumentConst ? argumentConst.Element : argumentType,
+                typeParameters,
+                bindings);
+        }
+
         if (parameterType is TypeRef.Named { Arguments.Count: 0 } parameterNamed
             && typeParameters.Contains(parameterNamed.Name, StringComparer.Ordinal))
         {
@@ -424,7 +433,7 @@ internal sealed class ExpressionTypeResolver(
 
         if (parameterType is TypeRef.FixedArray parameterArray
             && argumentType is TypeRef.FixedArray argumentArray
-            && string.Equals(parameterArray.Length, argumentArray.Length, StringComparison.Ordinal))
+            && parameterArray.Length == argumentArray.Length)
         {
             return TryBindType(parameterArray.Element, argumentArray.Element, typeParameters, bindings);
         }

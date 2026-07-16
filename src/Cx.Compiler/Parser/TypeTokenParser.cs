@@ -95,7 +95,9 @@ internal static class TypeTokenParser
                         return null;
                     }
 
-                    type = new FixedArrayTypeSyntaxNode(type, TokenText.ToSourceText(lengthTokens));
+                    type = new FixedArrayTypeSyntaxNode(
+                        type,
+                        ArrayLengthNode.Parse(TokenText.ToSourceText(lengthTokens)));
                     continue;
                 }
 
@@ -155,6 +157,7 @@ internal static class TypeTokenParser
         private TypeSyntaxNode? ParsePrimaryType()
         {
             var nameTokens = new List<Token>();
+            var isConst = false;
 
             if (Current.Type is TokenType.Struct or TokenType.Enum or TokenType.Union)
             {
@@ -170,7 +173,8 @@ internal static class TypeTokenParser
             {
                 if (Current.Type == TokenType.Const)
                 {
-                    nameTokens.Add(Advance());
+                    Advance();
+                    isConst = true;
                 }
 
                 if (Current.Type != TokenType.Identifier)
@@ -212,7 +216,7 @@ internal static class TypeTokenParser
                 type = new GenericTypeSyntaxNode(type, arguments);
             }
 
-            return type;
+            return isConst ? new ConstTypeSyntaxNode(type) : type;
         }
 
         private IReadOnlyList<Token> ReadUntilBalanced(TokenType terminator)

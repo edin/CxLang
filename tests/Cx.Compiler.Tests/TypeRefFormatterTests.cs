@@ -32,6 +32,19 @@ public sealed class TypeRefFormatterTests
     }
 
     [Fact]
+    public void TypeRefParser_RepresentsConstPointeeStructurally()
+    {
+        var parser = new TypeRefParser(new ProgramNode(Location.Synthetic("<test>"), []));
+
+        var type = parser.Parse("const Vec<int>*");
+
+        var pointer = Assert.IsType<TypeRef.Pointer>(type);
+        var constType = Assert.IsType<TypeRef.Const>(pointer.Element);
+        Assert.Equal("Vec", Assert.IsType<TypeRef.Named>(constType.Element).Name);
+        Assert.Equal("const Vec<int>*", TypeRefFormatter.ToCxString(type));
+    }
+
+    [Fact]
     public void ToCxString_FormatsFunctionTypes()
     {
         var type = new TypeRef.Function(
@@ -48,7 +61,7 @@ public sealed class TypeRefFormatterTests
     public void ToCxString_FormatsVariadicFunctionTypes()
     {
         var type = new TypeRef.Function(
-            [new TypeRef.Named("const char", [])],
+            [new TypeRef.Const(TypeRef.Char)],
             new TypeRef.Named("int", []),
             IsVariadic: true);
 
@@ -58,7 +71,9 @@ public sealed class TypeRefFormatterTests
     [Fact]
     public void ToCxString_FormatsFixedArrayTypes()
     {
-        var type = new TypeRef.FixedArray(new TypeRef.Named("u8", []), "32");
+        var type = new TypeRef.FixedArray(
+            new TypeRef.Named("u8", []),
+            new ArrayLengthNode.Integer(32));
 
         Assert.Equal("u8[32]", TypeRefFormatter.ToCxString(type));
     }

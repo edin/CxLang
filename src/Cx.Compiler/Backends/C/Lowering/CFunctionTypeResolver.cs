@@ -113,6 +113,7 @@ internal static class CFunctionTypeResolver
             TypeRef.Named { Name: "Self" } => true,
             TypeRef.Named named => named.Arguments.Any(ReferencesSelf),
             TypeRef.Pointer pointer => ReferencesSelf(pointer.Element),
+            TypeRef.Const constType => ReferencesSelf(constType.Element),
             TypeRef.FixedArray fixedArray => ReferencesSelf(fixedArray.Element),
             TypeRef.Function function => function.Parameters.Any(ReferencesSelf)
                 || ReferencesSelf(function.ReturnType),

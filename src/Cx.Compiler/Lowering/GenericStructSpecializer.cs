@@ -307,6 +307,9 @@ internal static class GenericStructSpecializer
             case TypeRef.Pointer pointer:
                 CollectGenericStructUses(pointer.Element, genericDefinitions, pending);
                 break;
+            case TypeRef.Const constType:
+                CollectGenericStructUses(constType.Element, genericDefinitions, pending);
+                break;
             case TypeRef.FixedArray fixedArray:
                 CollectGenericStructUses(fixedArray.Element, genericDefinitions, pending);
                 break;
@@ -343,6 +346,7 @@ internal static class GenericStructSpecializer
             TypeRef.Named named => openTypeParameterNames.Contains(named.Name)
                 || named.Arguments.Any(argument => ContainsOpenTypeParameter(argument, openTypeParameterNames)),
             TypeRef.Pointer pointer => ContainsOpenTypeParameter(pointer.Element, openTypeParameterNames),
+            TypeRef.Const constType => ContainsOpenTypeParameter(constType.Element, openTypeParameterNames),
             TypeRef.FixedArray fixedArray => ContainsOpenTypeParameter(fixedArray.Element, openTypeParameterNames),
             TypeRef.Function function => function.Parameters.Any(parameter => ContainsOpenTypeParameter(parameter, openTypeParameterNames))
                 || ContainsOpenTypeParameter(function.ReturnType, openTypeParameterNames),

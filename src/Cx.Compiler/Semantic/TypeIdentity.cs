@@ -41,8 +41,10 @@ internal static class TypeIdentity
                 && ReferencesMatch(leftNamed.Arguments, rightNamed.Arguments),
             (TypeRef.Pointer leftPointer, TypeRef.Pointer rightPointer) =>
                 ReferenceShapeMatches(leftPointer.Element, rightPointer.Element),
+            (TypeRef.Const leftConst, TypeRef.Const rightConst) =>
+                ReferenceShapeMatches(leftConst.Element, rightConst.Element),
             (TypeRef.FixedArray leftArray, TypeRef.FixedArray rightArray) =>
-                string.Equals(leftArray.Length, rightArray.Length, StringComparison.Ordinal)
+                leftArray.Length == rightArray.Length
                 && ReferenceShapeMatches(leftArray.Element, rightArray.Element),
             (TypeRef.Function leftFunction, TypeRef.Function rightFunction) =>
                 leftFunction.IsVariadic == rightFunction.IsVariadic

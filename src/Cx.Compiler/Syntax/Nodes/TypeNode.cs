@@ -35,9 +35,51 @@ public sealed record GenericTypeSyntaxNode(
 
 public sealed record PointerTypeSyntaxNode(TypeSyntaxNode Element) : TypeSyntaxNode;
 
+public sealed record ConstTypeSyntaxNode(TypeSyntaxNode Element) : TypeSyntaxNode;
+
+public abstract record ArrayLengthNode
+{
+    public sealed record Integer(ulong Value) : ArrayLengthNode;
+
+    public sealed record Symbol(string Name) : ArrayLengthNode;
+
+    public sealed record Invalid : ArrayLengthNode;
+
+    public static ArrayLengthNode Parse(string? text)
+    {
+        text = text?.Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            return new Invalid();
+        }
+
+        var digits = text.Replace("_", string.Empty, StringComparison.Ordinal);
+        if (ulong.TryParse(digits, out var value))
+        {
+            return new Integer(value);
+        }
+
+        return IsSymbol(text) ? new Symbol(text) : new Invalid();
+    }
+
+    private static bool IsSymbol(string text) =>
+        (char.IsLetter(text[0]) || text[0] == '_')
+        && text.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_');
+}
+
+public static class ArrayLengthFormatter
+{
+    public static string ToCxString(ArrayLengthNode length) => length switch
+    {
+        ArrayLengthNode.Integer integer => integer.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        ArrayLengthNode.Symbol symbol => symbol.Name,
+        _ => "<invalid-array-length>",
+    };
+}
+
 public sealed record FixedArrayTypeSyntaxNode(
     TypeSyntaxNode Element,
-    string Length) : TypeSyntaxNode;
+    ArrayLengthNode Length) : TypeSyntaxNode;
 
 public sealed record FunctionTypeSyntaxNode(
     IReadOnlyList<TypeSyntaxNode> Parameters,
@@ -67,6 +109,13 @@ public static class TypeSyntaxParser
         if (type.EndsWith("*", StringComparison.Ordinal))
         {
             return new PointerTypeSyntaxNode(Parse(type[..^1]) ?? new NamedTypeSyntaxNode(string.Empty));
+        }
+
+        const string constPrefix = "const ";
+        if (type.StartsWith(constPrefix, StringComparison.Ordinal))
+        {
+            return new ConstTypeSyntaxNode(
+                Parse(type[constPrefix.Length..]) ?? new NamedTypeSyntaxNode(string.Empty));
         }
 
         if (TryParseGeneric(type, out var genericType))
@@ -132,7 +181,7 @@ public static class TypeSyntaxParser
             return false;
         }
 
-        var length = type[(open + 1)..^1].Trim();
+        var length = ArrayLengthNode.Parse(type[(open + 1)..^1]);
         arrayType = new FixedArrayTypeSyntaxNode(
             Parse(type[..open]) ?? new NamedTypeSyntaxNode(string.Empty),
             length);
@@ -299,7 +348,8 @@ public static class TypeSyntaxFormatter
             NamedTypeSyntaxNode named => named.Name,
             GenericTypeSyntaxNode generic => $"{ToCxString(generic.Target)}<{string.Join(",", generic.Arguments.Select(ToCxString))}>",
             PointerTypeSyntaxNode pointer => ToCxString(pointer.Element) + "*",
-            FixedArrayTypeSyntaxNode array => $"{ToCxString(array.Element)}[{array.Length}]",
+            ConstTypeSyntaxNode constType => "const " + ToCxString(constType.Element),
+            FixedArrayTypeSyntaxNode array => $"{ToCxString(array.Element)}[{ArrayLengthFormatter.ToCxString(array.Length)}]",
             FunctionTypeSyntaxNode function => $"fn({FormatFunctionParameters(function)})->{ToCxString(function.ReturnType)}",
             _ => syntax.ToString() ?? string.Empty,
         };

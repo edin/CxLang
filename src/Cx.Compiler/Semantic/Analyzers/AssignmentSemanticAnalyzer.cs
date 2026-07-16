@@ -188,13 +188,14 @@ internal sealed class AssignmentSemanticAnalyzer(
     private bool IsNumericLikeType(TypeRef type)
     {
         var unwrapped = TypeRefFacts.UnwrapAlias(type);
+        unwrapped = TypeRefFacts.UnwrapConst(unwrapped);
         return unwrapped is TypeRef.Named named
             && IsNumericLikeType(named.Name);
     }
 
     private bool IsNumericLikeType(string type)
     {
-        type = StripConst(type.Trim());
+        type = type.Trim();
         return BuiltinTypes.IsNumeric(type)
             || string.Equals(BuiltinTypes.Normalize(type), "bool", StringComparison.Ordinal);
     }
@@ -220,8 +221,4 @@ internal sealed class AssignmentSemanticAnalyzer(
     private static bool SameType(TypeRef? left, TypeRef? right) =>
         TypeIdentity.ResolvedEquals(left, right);
 
-    private static string StripConst(string type) =>
-        type.StartsWith("const ", StringComparison.Ordinal)
-            ? type["const ".Length..].TrimStart()
-            : type;
 }

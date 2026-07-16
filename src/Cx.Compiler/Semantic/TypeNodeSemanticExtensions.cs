@@ -17,6 +17,7 @@ internal static class TypeNodeSemanticExtensions
                 TypeSyntaxFormatter.ToCxString(generic.Target),
                 generic.Arguments.Select(ToUnresolvedTypeRef).ToList()),
             PointerTypeSyntaxNode pointer => new TypeRef.Pointer(ToUnresolvedTypeRef(pointer.Element)),
+            ConstTypeSyntaxNode constType => new TypeRef.Const(ToUnresolvedTypeRef(constType.Element)),
             FixedArrayTypeSyntaxNode array => new TypeRef.FixedArray(
                 ToUnresolvedTypeRef(array.Element),
                 array.Length),
@@ -45,6 +46,7 @@ internal static class TypeNodeSemanticExtensions
                 new NamedTypeSyntaxNode(named.Name),
                 named.Arguments.Select(ToTypeSyntax).ToList()),
             TypeRef.Pointer pointer => new PointerTypeSyntaxNode(ToTypeSyntax(pointer.Element)),
+            TypeRef.Const constType => new ConstTypeSyntaxNode(ToTypeSyntax(constType.Element)),
             TypeRef.FixedArray array => new FixedArrayTypeSyntaxNode(ToTypeSyntax(array.Element), array.Length),
             TypeRef.Function function => new FunctionTypeSyntaxNode(
                 function.Parameters.Select(ToTypeSyntax).ToList(),

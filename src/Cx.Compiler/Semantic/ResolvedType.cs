@@ -262,6 +262,7 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         type switch
         {
             TypeRef.Alias alias => GetOwnerName(alias.Target),
+            TypeRef.Const constType => GetOwnerName(constType.Element),
             TypeRef.Named named => named.Name,
             _ => null,
         };
@@ -289,6 +290,7 @@ internal sealed class TypeResolver(
             TypeRef.Alias alias => ResolveAlias(alias),
             TypeRef.Named named => ResolveNamed(named),
             TypeRef.Pointer pointer => ResolveContainer(pointer),
+            TypeRef.Const constType => ResolveContainer(constType),
             TypeRef.FixedArray fixedArray => ResolveContainer(fixedArray),
             TypeRef.Function function => ResolveContainer(function),
             TypeRef.Null or TypeRef.Unknown => new ResolvedType(type, Symbol: null, Substitutions: EmptySubstitutions()),

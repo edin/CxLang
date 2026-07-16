@@ -12,6 +12,16 @@ namespace Cx.Compiler.Tests;
 public sealed class TypeNodeParsingTests
 {
     [Fact]
+    public void ParseType_RepresentsSymbolicArrayLengthStructurally()
+    {
+        var type = TypeNode.CreateFromText(Location.Synthetic("<array-type>"), "u8[Capacity]");
+
+        var array = Assert.IsType<FixedArrayTypeSyntaxNode>(type.Syntax);
+        Assert.Equal("Capacity", Assert.IsType<ArrayLengthNode.Symbol>(array.Length).Name);
+        Assert.Equal("u8[Capacity]", type.ToSourceText());
+    }
+
+    [Fact]
     public void ParseType_AllRealTypeNodesHaveSyntax()
     {
         var program = CompilerTestHelpers.Parse(
@@ -145,7 +155,7 @@ public sealed class TypeNodeParsingTests
 
         var field = Assert.Single(Assert.Single(program.Structs).Fields);
         var arraySyntax = Assert.IsType<FixedArrayTypeSyntaxNode>(field.TypeNode?.Syntax);
-        Assert.Equal("4", arraySyntax.Length);
+        Assert.Equal((ulong)4, Assert.IsType<ArrayLengthNode.Integer>(arraySyntax.Length).Value);
         var pointerSyntax = Assert.IsType<PointerTypeSyntaxNode>(arraySyntax.Element);
         Assert.Equal("T", Assert.IsType<NamedTypeSyntaxNode>(pointerSyntax.Element).Name);
 
@@ -203,7 +213,7 @@ public sealed class TypeNodeParsingTests
 
         var fieldType = Assert.Single(program.Structs.Single(node => node.Name == "Holder").Fields).TypeNode;
         var array = Assert.IsType<FixedArrayTypeSyntaxNode>(fieldType?.Syntax);
-        Assert.Equal("4", array.Length);
+        Assert.Equal((ulong)4, Assert.IsType<ArrayLengthNode.Integer>(array.Length).Value);
         var generic = Assert.IsType<GenericTypeSyntaxNode>(array.Element);
         var boxedPointer = Assert.IsType<PointerTypeSyntaxNode>(Assert.Single(generic.Arguments));
         var boxedGeneric = Assert.IsType<GenericTypeSyntaxNode>(boxedPointer.Element);
@@ -257,7 +267,7 @@ public sealed class TypeNodeParsingTests
         var parameterPointer = Assert.IsType<TypeRef.Pointer>(parameter);
         Assert.Equal("IntVec", Assert.IsType<TypeRef.Alias>(parameterPointer.Element).Name);
         var returnArray = Assert.IsType<TypeRef.FixedArray>(function.ReturnType);
-        Assert.Equal("4", returnArray.Length);
+        Assert.Equal((ulong)4, Assert.IsType<ArrayLengthNode.Integer>(returnArray.Length).Value);
         Assert.Equal("IntVec", Assert.IsType<TypeRef.Alias>(returnArray.Element).Name);
     }
 
@@ -267,7 +277,9 @@ public sealed class TypeNodeParsingTests
         var location = Location.Synthetic("<generated-type>");
         var type = new TypeRef.Function(
             [new TypeRef.Pointer(new TypeRef.Named("Vec", [new TypeRef.Named("int", [])]))],
-            new TypeRef.FixedArray(new TypeRef.Alias("Byte", new TypeRef.Named("u8", [])), "4"),
+            new TypeRef.FixedArray(
+                new TypeRef.Alias("Byte", new TypeRef.Named("u8", [])),
+                new ArrayLengthNode.Integer(4)),
             IsVariadic: true);
 
         var node = type.ToTypeNode(location);

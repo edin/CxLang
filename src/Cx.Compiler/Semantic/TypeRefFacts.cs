@@ -13,7 +13,7 @@ internal static class TypeRefFacts
     }
 
     public static TypeRef StripPointersAndAliases(TypeRef type) =>
-        UnwrapAlias(StripPointer(UnwrapAlias(type)));
+        UnwrapConst(UnwrapAlias(StripPointer(UnwrapAlias(type))));
 
     public static bool TryGetNamed(TypeRef? type, out TypeRef.Named named)
     {
@@ -89,4 +89,7 @@ internal static class TypeRefFacts
 
         return type;
     }
+
+    public static TypeRef UnwrapConst(TypeRef type) =>
+        type is TypeRef.Const constType ? constType.Element : type;
 }

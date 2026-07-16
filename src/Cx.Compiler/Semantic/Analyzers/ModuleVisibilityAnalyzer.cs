@@ -477,6 +477,9 @@ internal sealed class ModuleVisibilityAnalyzer(
             case PointerTypeSyntaxNode pointer:
                 CollectTypeNames(pointer.Element, names);
                 break;
+            case ConstTypeSyntaxNode constType:
+                CollectTypeNames(constType.Element, names);
+                break;
             case FixedArrayTypeSyntaxNode fixedArray:
                 CollectTypeNames(fixedArray.Element, names);
                 break;
