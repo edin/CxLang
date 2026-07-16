@@ -1,5 +1,6 @@
 using Cx.Compiler.C;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
@@ -90,7 +91,7 @@ internal static class CDeclarationUsageAnalyzer
                 continue;
             }
 
-            foreach (var expression in CExpressionTraversal.EnumerateExpressionNodes(global.Initializer))
+            foreach (var expression in AstExpressionTraversal.Enumerate(global.Initializer))
             {
                 yield return expression;
             }
@@ -98,7 +99,7 @@ internal static class CDeclarationUsageAnalyzer
 
         foreach (var function in program.Functions)
         {
-            foreach (var expression in CExpressionTraversal.EnumerateExpressionNodes(function.Body))
+            foreach (var expression in AstExpressionTraversal.Enumerate(function.Body))
             {
                 yield return expression;
             }
@@ -252,7 +253,7 @@ internal static class CDeclarationUsageAnalyzer
             yield break;
         }
 
-        foreach (var node in CExpressionTraversal.EnumerateExpressionNodes(expression))
+        foreach (var node in AstExpressionTraversal.Enumerate(expression))
         {
             switch (node)
             {

@@ -1,6 +1,6 @@
 using Cx.Compiler.Syntax.Nodes;
 
-namespace Cx.Compiler.Lowering;
+namespace Cx.Compiler.Syntax;
 
 internal static class AstExpressionTraversal
 {
