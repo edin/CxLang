@@ -351,9 +351,7 @@ internal static class GenericStructSpecializer
         };
 
     private static string LowerGenericTypeName(string name, IReadOnlyList<TypeRef> arguments) =>
-        GenericTypeRewriter.LowerGenericTypeName(
-            name,
-            arguments.Select(TypeRefFormatter.ToCxString).ToList());
+        GenericTypeRewriter.LowerGenericTypeName(new TypeRef.Named(name, arguments));
 
     private static T CopySemantic<T>(SyntaxNode source, T target)
         where T : SyntaxNode

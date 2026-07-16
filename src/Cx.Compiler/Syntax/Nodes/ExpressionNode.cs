@@ -132,21 +132,7 @@ public sealed record GenericCallExpressionNode(
     Location Location,
     ExpressionNode Callee,
     IReadOnlyList<ExpressionNode> Arguments,
-    IReadOnlyList<TypeNode> TypeArgumentNodes) : ExpressionNode(Location)
-{
-    public GenericCallExpressionNode(
-        Location Location,
-        ExpressionNode Callee,
-        IReadOnlyList<string> TypeArguments,
-        IReadOnlyList<ExpressionNode> Arguments)
-        : this(
-            Location,
-            Callee,
-            Arguments,
-            TypeArguments.Select(type => TypeNode.CreateFromText(Location, type)).ToList())
-    {
-    }
-}
+    IReadOnlyList<TypeNode> TypeArgumentNodes) : ExpressionNode(Location);
 
 public sealed record MemberExpressionNode(
     Location Location,

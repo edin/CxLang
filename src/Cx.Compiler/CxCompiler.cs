@@ -192,18 +192,18 @@ public sealed class CxCompiler
                         return new FunctionNode(
                             test.Location,
                             IsStatic: false,
-                            OwnerType: null,
                             Name: functionName,
                             TypeParameters: [],
-                            TypeArguments: [],
                             GenericConstraints: [],
                             Parameters:
                             [
-                                new ParameterNode(test.Location, "runner", [], TypeNode: RewriteTypeNode(null, "TestRunner*"))
+                                new ParameterNode(test.Location, "runner", [], TypeNode: CreateResolvedTypeNode(test.Location, new TypeRef.Pointer(new TypeRef.Named("TestRunner", []))))
                             ],
                             Body: RewriteTestStatements(test.Body),
                             Attributes: [],
-                            ReturnTypeNode: RewriteTypeNode(null, "void"));
+                            ReturnTypeNode: CreateResolvedTypeNode(test.Location, TypeRef.Void),
+                            OwnerTypeNode: null,
+                            TypeArgumentNodes: []);
                     })
                     .ToList();
 
@@ -230,15 +230,15 @@ public sealed class CxCompiler
         rootDeclarations.Add(new FunctionNode(
             rootLocation,
             IsStatic: false,
-            OwnerType: null,
             Name: "main",
             TypeParameters: [],
-            TypeArguments: [],
             GenericConstraints: [],
             Parameters: [],
             Body: BuildTestMainBody(testCases, generatedNames),
             Attributes: [],
-            ReturnTypeNode: RewriteTypeNode(null, "int")));
+            ReturnTypeNode: CreateResolvedTypeNode(rootLocation, TypeRef.Int),
+            OwnerTypeNode: null,
+            TypeArgumentNodes: []));
 
         rewrittenPrograms.Add(new ProgramNode(rootLocation, rootDeclarations));
         return rewrittenPrograms;
@@ -263,7 +263,7 @@ public sealed class CxCompiler
                 IsConst: false,
                 Name: "runner",
                 Initializer: StaticCall(location, "TestRunner", "create", []),
-                TypeNode: RewriteTypeNode(null, "TestRunner")),
+                TypeNode: CreateResolvedTypeNode(location, new TypeRef.Named("TestRunner", []))),
         };
 
         foreach (var (_, test) in testCases)
@@ -891,17 +891,23 @@ public sealed class CxCompiler
                 BaseTypeNode = QualifyTypeNode(adapter.BaseTypeNode, alias, typeNames),
                 Methods = adapter.Methods.Select(method => method with
                 {
-                    OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, TypeTextOrDefault(method.OwnerTypeNode, adapter.Name))),
+                    OwnerTypeNode = QualifyTypeNode(
+                        method.OwnerTypeNode ?? TypeNode.Named(method.Location, adapter.Name),
+                        alias,
+                        typeNames),
                     ReturnTypeNode = QualifyTypeNode(method.ReturnTypeNode, alias, typeNames),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
             }).ToList(),
             Extensions = program.Extensions.Select(extension => extension with
             {
-                TargetTypeNode = RewriteTypeNode(extension.TargetTypeNode, QualifyName(alias, TypeText(extension.TargetTypeNode))),
+                TargetTypeNode = QualifyTypeNode(extension.TargetTypeNode, alias, typeNames),
                 Methods = extension.Methods.Select(method => method with
                 {
-                    OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, QualifyName(alias, TypeTextOrDefault(method.OwnerTypeNode, TypeText(extension.TargetTypeNode)))),
+                    OwnerTypeNode = QualifyTypeNode(
+                        method.OwnerTypeNode ?? extension.TargetTypeNode,
+                        alias,
+                        typeNames),
                     ReturnTypeNode = QualifyTypeNode(method.ReturnTypeNode, alias, typeNames),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
@@ -973,7 +979,7 @@ public sealed class CxCompiler
                     BaseTypeNode = ProjectSymbolImportTypeNode(adapter.BaseTypeNode, symbols, typeNames),
                     Methods = adapter.Methods.Select(method => method with
                     {
-                        OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, symbols[adapter.Name]),
+                        OwnerTypeNode = RenameTypeNode(method.OwnerTypeNode, symbols[adapter.Name]),
                         ReturnTypeNode = ProjectSymbolImportTypeNode(method.ReturnTypeNode, symbols, typeNames),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
                     }).ToList(),
@@ -983,10 +989,10 @@ public sealed class CxCompiler
                 .Where(extension => symbols.ContainsKey(TypeText(extension.TargetTypeNode)))
                 .Select(extension => extension with
                 {
-                    TargetTypeNode = RewriteTypeNode(extension.TargetTypeNode, symbols[TypeText(extension.TargetTypeNode)]),
+                    TargetTypeNode = RenameTypeNode(extension.TargetTypeNode, symbols[TypeText(extension.TargetTypeNode)]),
                     Methods = extension.Methods.Select(method => method with
                     {
-                        OwnerTypeNode = RewriteTypeNode(method.OwnerTypeNode, symbols[TypeText(extension.TargetTypeNode)]),
+                        OwnerTypeNode = RenameTypeNode(method.OwnerTypeNode, symbols[TypeText(extension.TargetTypeNode)]),
                         ReturnTypeNode = ProjectSymbolImportTypeNode(method.ReturnTypeNode, symbols, typeNames),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
                     }).ToList(),
@@ -1191,16 +1197,13 @@ public sealed class CxCompiler
         name.Contains('.', StringComparison.Ordinal) ? name : alias + "." + name;
 
     private static TypeNode QualifyTypeNode(TypeNode? typeNode, string alias, IReadOnlySet<string> typeNames) =>
-        RewriteTypeNode(typeNode, QualifyType(TypeText(typeNode), alias, typeNames));
+        RewriteTypeSyntax(typeNode, name => QualifyNamedType(name, alias, typeNames));
 
     private static TypeNode ProjectSymbolImportTypeNode(
         TypeNode? typeNode,
         IReadOnlyDictionary<string, string> symbols,
         IReadOnlySet<string> typeNames) =>
-        RewriteTypeNode(typeNode, ProjectSymbolImportType(TypeText(typeNode), symbols, typeNames));
-
-    private static string TypeTextOrDefault(TypeNode? typeNode, string fallback) =>
-        typeNode is null ? fallback : TypeText(typeNode);
+        RewriteTypeSyntax(typeNode, name => ProjectSymbolImportNamedType(name, symbols, typeNames));
 
     private static string TypeText(TypeNode? typeNode) =>
         typeNode?.ToSourceText() ?? string.Empty;
@@ -1218,50 +1221,83 @@ public sealed class CxCompiler
             .Concat(program.CDeclarations.SelectMany(declaration => declaration.Unions.Select(union => union.Name)))
             .ToHashSet(StringComparer.Ordinal);
 
-    private static string QualifyType(
-        string type,
+    private static string QualifyNamedType(
+        string name,
         string alias,
         IReadOnlySet<string> typeNames)
     {
-        foreach (var typeName in typeNames.OrderByDescending(name => name.Length))
+        foreach (var typeName in typeNames.OrderByDescending(candidate => candidate.Length))
         {
-            type = System.Text.RegularExpressions.Regex.Replace(
-                type,
+            name = System.Text.RegularExpressions.Regex.Replace(
+                name,
                 $@"(?<![A-Za-z0-9_\.]){System.Text.RegularExpressions.Regex.Escape(typeName)}(?![A-Za-z0-9_])",
                 QualifyName(alias, typeName));
         }
 
-        return type;
+        return name;
     }
 
-    private static string ProjectSymbolImportType(
-        string type,
+    private static string ProjectSymbolImportNamedType(
+        string name,
         IReadOnlyDictionary<string, string> symbols,
         IReadOnlySet<string> typeNames)
     {
-        foreach (var typeName in typeNames.OrderByDescending(name => name.Length))
+        foreach (var typeName in typeNames.OrderByDescending(candidate => candidate.Length))
         {
             if (!symbols.TryGetValue(typeName, out var visibleName))
             {
                 continue;
             }
 
-            type = System.Text.RegularExpressions.Regex.Replace(
-                type,
+            name = System.Text.RegularExpressions.Regex.Replace(
+                name,
                 $@"(?<![A-Za-z0-9_\.]){System.Text.RegularExpressions.Regex.Escape(typeName)}(?![A-Za-z0-9_])",
                 visibleName);
         }
 
-        return type;
+        return name;
     }
 
-    private static TypeNode RewriteTypeNode(TypeNode? typeNode, string typeName)
+    private static TypeNode RewriteTypeSyntax(TypeNode? typeNode, Func<string, string> rewriteName)
     {
-        var rewritten = TypeNode.CreateFromText(
-            typeNode?.Location ?? Location.Synthetic("<type-rewrite>"),
-            typeName);
+        var location = typeNode?.Location ?? Location.Synthetic("<type-rewrite>");
+        var syntax = typeNode?.Syntax ?? new NamedTypeSyntaxNode(string.Empty);
+        var rewritten = TypeNode.Create(location, RewriteTypeSyntax(syntax, rewriteName));
         rewritten.Semantic.Type = TypeRefFromSyntax(rewritten.Syntax);
         return rewritten;
+    }
+
+    private static TypeSyntaxNode RewriteTypeSyntax(TypeSyntaxNode syntax, Func<string, string> rewriteName) =>
+        syntax switch
+        {
+            NamedTypeSyntaxNode named => named with { Name = rewriteName(named.Name) },
+            GenericTypeSyntaxNode generic => generic with
+            {
+                Target = RewriteTypeSyntax(generic.Target, rewriteName),
+                Arguments = generic.Arguments.Select(argument => RewriteTypeSyntax(argument, rewriteName)).ToList(),
+            },
+            PointerTypeSyntaxNode pointer => pointer with { Element = RewriteTypeSyntax(pointer.Element, rewriteName) },
+            FixedArrayTypeSyntaxNode array => array with { Element = RewriteTypeSyntax(array.Element, rewriteName) },
+            FunctionTypeSyntaxNode function => function with
+            {
+                Parameters = function.Parameters.Select(parameter => RewriteTypeSyntax(parameter, rewriteName)).ToList(),
+                ReturnType = RewriteTypeSyntax(function.ReturnType, rewriteName),
+            },
+            _ => syntax,
+        };
+
+    private static TypeNode RenameTypeNode(TypeNode? typeNode, string name)
+    {
+        var rewritten = TypeNode.Named(typeNode?.Location ?? Location.Synthetic("<type-rename>"), name);
+        rewritten.Semantic.Type = TypeRefFromSyntax(rewritten.Syntax);
+        return rewritten;
+    }
+
+    private static TypeNode CreateResolvedTypeNode(Location location, TypeRef type)
+    {
+        var typeNode = type.ToTypeNode(location);
+        typeNode.Semantic.Type = type;
+        return typeNode;
     }
 
     private static TypeRef TypeRefFromSyntax(TypeSyntaxNode? syntax) =>

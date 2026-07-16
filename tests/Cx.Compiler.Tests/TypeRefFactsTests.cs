@@ -53,14 +53,14 @@ public sealed class TypeRefFactsTests
     }
 
     [Fact]
-    public void SpecializationKey_FollowsCurrentCAbiIdentity()
+    public void SpecializationKey_PreservesAliasAndModuleIdentity()
     {
         TypeRef alias = new TypeRef.Alias("Size", new TypeRef.Named("unsigned long", []));
         TypeRef stdType = new TypeRef.Named("Item", [], "std.core");
         TypeRef appType = new TypeRef.Named("Item", [], "app.main");
 
         Assert.Equal("Size", TypeIdentity.SpecializationKey(alias));
-        Assert.Equal(
+        Assert.NotEqual(
             TypeIdentity.SpecializationKey(stdType),
             TypeIdentity.SpecializationKey(appType));
     }

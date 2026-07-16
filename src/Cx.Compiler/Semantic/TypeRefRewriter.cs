@@ -23,7 +23,7 @@ internal static class TypeRefRewriter
 
     public static TypeRef RewriteConcreteGenericNames(
         TypeRef type,
-        Func<string, IReadOnlyList<string>, string> lowerGenericName,
+        Func<TypeRef.Named, string> lowerGenericName,
         IReadOnlySet<string> concreteTypeNames) =>
         Rewrite(type, named =>
         {
@@ -32,9 +32,7 @@ internal static class TypeRefRewriter
                 return null;
             }
 
-            var concreteName = lowerGenericName(
-                named.Name,
-                named.Arguments.Select(TypeRefFormatter.ToCxString).ToList());
+            var concreteName = lowerGenericName(named);
             return concreteTypeNames.Contains(concreteName)
                 ? new TypeRef.Named(concreteName, [])
                 : null;

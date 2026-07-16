@@ -4,6 +4,8 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.C;
 
+using System.Text.RegularExpressions;
+
 internal sealed class CAbiNameService(IReadOnlyList<TypeAdapterNode> typeAdapters)
 {
     private readonly CTypeRefLowerer _typeRefLowerer = new(typeAdapters);
@@ -20,12 +22,16 @@ internal sealed class CAbiNameService(IReadOnlyList<TypeAdapterNode> typeAdapter
     public string SanitizeTypeName(string type) =>
         CTypeLowerer.SanitizeTypeName(type);
 
-    public string TypeIdName(string typeName)
+    public string SpecializationTypeName(TypeRef type)
     {
-        var syntax = TypeSyntaxParser.Parse(typeName)
-            ?? throw new InvalidOperationException($"Cannot create a C type ID for empty type syntax '{typeName}'.");
-        return "CX_TYPE_" + SanitizeTypeName(LowerType(syntax));
+        var identity = TypeRefFormatter.ToIdentityString(type)
+            .Replace("::", "_", StringComparison.Ordinal)
+            .Replace(".", "_", StringComparison.Ordinal);
+        return Regex.Replace(SanitizeTypeName(identity), "[^A-Za-z0-9_]", "_");
     }
+
+    public string TypeIdName(TypeRef type) =>
+        "CX_TYPE_" + SanitizeTypeName(LowerType(type));
 
     public string InterfaceVTableName(string interfaceName) =>
         $"{interfaceName}VTable";

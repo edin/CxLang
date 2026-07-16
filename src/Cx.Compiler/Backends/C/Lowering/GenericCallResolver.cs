@@ -219,8 +219,6 @@ internal sealed class GenericCallResolver(
         var ownerName = TypeRefFacts.GetBaseName(call.OwnerTypeRef);
         return ownerName is null
             ? null
-            : GenericTypeRewriter.LowerGenericTypeName(
-                ownerName,
-                call.TypeArgumentRefs.Select(TypeRefFormatter.ToCxString).ToList());
+            : GenericTypeRewriter.LowerGenericTypeName(new TypeRef.Named(ownerName, call.TypeArgumentRefs));
     }
 }

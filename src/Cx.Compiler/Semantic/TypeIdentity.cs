@@ -19,7 +19,7 @@ internal static class TypeIdentity
         && string.Equals(SpecializationKey(left), SpecializationKey(right), StringComparison.Ordinal);
 
     public static string SpecializationKey(TypeRef type) =>
-        TypeRefFormatter.ToCxString(type);
+        TypeRefFormatter.ToIdentityString(type);
 
     private static bool ReferenceShapeMatches(TypeRef? left, TypeRef? right)
     {

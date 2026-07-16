@@ -146,8 +146,8 @@ internal static class GenericTypeRewriter
         return CopySemantic(function, rewritten);
     }
 
-    public static string LowerGenericTypeName(string name, IReadOnlyList<string> arguments) =>
-        SanitizeTypeName($"{name}_{string.Join("_", arguments.Select(LowerTypeName))}");
+    public static string LowerGenericTypeName(TypeRef.Named type) =>
+        SanitizeTypeName($"{type.Name}_{string.Join("_", type.Arguments.Select(LowerTypeName))}");
 
     private static IReadOnlyList<ParameterNode> RewriteParameters(
         IReadOnlyList<ParameterNode> parameters,
@@ -455,17 +455,22 @@ internal static class GenericTypeRewriter
         return CopySemantic(expression, rewritten);
     }
 
-    private static string LowerTypeName(string type)
-    {
-        var syntax = TypeSyntaxParser.Parse(type);
-        type = syntax is null
-            ? type.Trim()
-            : TypeSyntaxFormatter.ToCxString(LowerGenericTypeSyntax(syntax));
+    private static string LowerTypeName(TypeRef type) =>
+        type switch
+        {
+            TypeRef.Alias alias => SanitizeTypeName(alias.Name),
+            TypeRef.Named named => LowerNamedTypeName(named),
+            TypeRef.Pointer pointer => LowerTypeName(pointer.Element) + "_ptr",
+            TypeRef.FixedArray array => $"{LowerTypeName(array.Element)}_{SanitizeTypeName(array.Length)}",
+            _ => SanitizeTypeName(TypeRefFormatter.ToIdentityString(type)),
+        };
 
-        return SanitizeTypeName(type
-            .Replace("const ", "const_", StringComparison.Ordinal)
-            .Replace("*", "_ptr", StringComparison.Ordinal)
-            .Replace(" ", "_", StringComparison.Ordinal));
+    private static string LowerNamedTypeName(TypeRef.Named named)
+    {
+        var name = SanitizeTypeName(named.Name.Replace("const ", "const_", StringComparison.Ordinal));
+        return named.Arguments.Count == 0
+            ? name
+            : $"{name}_{string.Join("_", named.Arguments.Select(LowerTypeName))}";
     }
 
     private static TypeNode? RewriteTypeNode(
@@ -477,18 +482,22 @@ internal static class GenericTypeRewriter
             return null;
         }
 
+        if (typeNode.Semantic.Type is { } semanticType)
+        {
+            var rewrittenType = TypeRefRewriter.RewriteConcreteGenericNames(
+                semanticType,
+                LowerGenericTypeName,
+                concreteStructNames);
+            var semanticRewrite = rewrittenType.ToTypeNode(typeNode.Location);
+            SyntaxNode.CloneSemantic(typeNode, semanticRewrite);
+            semanticRewrite.Semantic.Type = rewrittenType;
+            return semanticRewrite;
+        }
+
         var rewritten = TypeNode.Create(
             typeNode.Location,
             RewriteTypeSyntax(typeNode.Syntax, concreteStructNames));
         SyntaxNode.CloneSemantic(typeNode, rewritten);
-        if (typeNode.Semantic.Type is not null)
-        {
-            rewritten.Semantic.Type = TypeRefRewriter.RewriteConcreteGenericNames(
-                typeNode.Semantic.Type,
-                LowerGenericTypeName,
-                concreteStructNames);
-        }
-
         return rewritten;
     }
 
@@ -531,9 +540,7 @@ internal static class GenericTypeRewriter
     {
         var target = LowerGenericTypeSyntax(generic.Target);
         var arguments = generic.Arguments.Select(LowerGenericTypeSyntax).ToList();
-        return new NamedTypeSyntaxNode(LowerGenericTypeName(
-            TypeSyntaxFormatter.ToCxString(target),
-            arguments.Select(TypeSyntaxFormatter.ToCxString).ToList()));
+        return new NamedTypeSyntaxNode(LowerGenericTypeName(target, arguments));
     }
 
     private static TypeSyntaxNode RewriteGenericTypeSyntax(
@@ -544,9 +551,7 @@ internal static class GenericTypeRewriter
         var arguments = generic.Arguments
             .Select(argument => RewriteTypeSyntax(argument, concreteStructNames))
             .ToList();
-        var concreteName = LowerGenericTypeName(
-            TypeSyntaxFormatter.ToCxString(target),
-            arguments.Select(TypeSyntaxFormatter.ToCxString).ToList());
+        var concreteName = LowerGenericTypeName(target, arguments);
 
         return concreteStructNames.Contains(concreteName)
             ? new NamedTypeSyntaxNode(concreteName)
@@ -555,6 +560,22 @@ internal static class GenericTypeRewriter
 
     private static string SanitizeTypeName(string type) =>
         Regex.Replace(type, "[^A-Za-z0-9_]", "_");
+
+    private static string LowerGenericTypeName(
+        TypeSyntaxNode target,
+        IReadOnlyList<TypeSyntaxNode> arguments) =>
+        SanitizeTypeName($"{LowerTypeName(target)}_{string.Join("_", arguments.Select(LowerTypeName))}");
+
+    private static string LowerTypeName(TypeSyntaxNode type) =>
+        type switch
+        {
+            NamedTypeSyntaxNode named => SanitizeTypeName(named.Name.Replace("const ", "const_", StringComparison.Ordinal)),
+            GenericTypeSyntaxNode generic => LowerGenericTypeName(generic.Target, generic.Arguments),
+            PointerTypeSyntaxNode pointer => LowerTypeName(pointer.Element) + "_ptr",
+            FixedArrayTypeSyntaxNode array => $"{LowerTypeName(array.Element)}_{SanitizeTypeName(array.Length)}",
+            FunctionTypeSyntaxNode function => SanitizeTypeName(TypeSyntaxFormatter.ToCxString(function)),
+            _ => SanitizeTypeName(TypeSyntaxFormatter.ToCxString(type)),
+        };
 
     private static T CopySemantic<T>(SyntaxNode source, T target)
         where T : SyntaxNode

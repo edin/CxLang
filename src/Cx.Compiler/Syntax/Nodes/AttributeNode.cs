@@ -11,16 +11,7 @@ public sealed record AttributeDeclarationNode(
 public sealed record AttributeFieldNode(
     Location Location,
     string Name,
-    TypeNode? TypeNode = null) : SyntaxNode(Location)
-{
-    public AttributeFieldNode(
-        Location Location,
-        string Name,
-        string Type)
-        : this(Location, Name, TypeNode.CreateFromText(Location, Type))
-    {
-    }
-}
+    TypeNode? TypeNode = null) : SyntaxNode(Location);
 
 public sealed record AttributeApplicationNode(
     Location Location,

@@ -6,7 +6,7 @@ namespace Cx.Compiler.C;
 internal sealed record CNameManglerOptions(bool UseModulePrefixes = false);
 
 internal sealed class CNameMangler(
-    Func<TypeSyntaxNode, string> lowerTypeSyntax,
+    Func<TypeRef, string> lowerSpecializationType,
     Func<string, string> sanitizeTypeName,
     CNameManglerOptions? options = null)
 {
@@ -27,10 +27,10 @@ internal sealed class CNameMangler(
     private string TypeArgumentSuffix(IReadOnlyList<TypeNode> arguments) =>
         arguments.Count == 0
             ? string.Empty
-            : "_" + string.Join("_", arguments.Select(TypeArgumentSyntax).Select(lowerTypeSyntax).Select(sanitizeTypeName));
+            : "_" + string.Join("_", arguments.Select(LowerTypeArgument));
 
-    private static TypeSyntaxNode TypeArgumentSyntax(TypeNode typeNode) =>
-        typeNode.Syntax;
+    private string LowerTypeArgument(TypeNode typeNode) =>
+        lowerSpecializationType(typeNode.Semantic.Type ?? typeNode.Syntax.ToUnresolvedTypeRef());
 
     private static string TypeText(TypeNode typeNode) =>
         typeNode.Semantic.Type is { } type

@@ -818,17 +818,17 @@ public sealed partial class Parser
             openMessage: "Expected '{' before function body.",
             closeMessage: "Expected '}' after function body.");
         return new FunctionNode(
-            fnLocation,
-            isStatic,
-            ownerType,
-            functionName,
-            typeParameters,
-            [],
-            genericConstraints,
-            parameters,
-            body,
-            attributes ?? [],
-            returnTypeNode);
+            Location: fnLocation,
+            IsStatic: isStatic,
+            Name: functionName,
+            TypeParameters: typeParameters,
+            GenericConstraints: genericConstraints,
+            Parameters: parameters,
+            Body: body,
+            Attributes: attributes ?? [],
+            ReturnTypeNode: returnTypeNode,
+            OwnerTypeNode: ownerType is null ? null : TypeNode.Named(fnLocation, ownerType),
+            TypeArgumentNodes: []);
     }
 
     private static bool HasExplicitReceiverParameter(string ownerType, ParameterNode? parameter)

@@ -115,5 +115,5 @@ internal static class CInterfaceDeclarationBuilder
         backend.AbiNames.InterfaceVTableInstanceName(structName, interfaceName);
 
     private static string GetTypeIdName(CBackendContext backend, string typeName) =>
-        backend.AbiNames.TypeIdName(typeName);
+        backend.AbiNames.TypeIdName(new TypeRef.Named(typeName, []));
 }

@@ -29,15 +29,15 @@ internal static class LambdaLowerer
             context.InjectTopLevelDeclaration(new FunctionNode(
                 node.Location,
                 IsStatic: false,
-                OwnerType: null,
                 Name: functionName,
                 TypeParameters: [],
-                TypeArguments: [],
                 GenericConstraints: [],
                 Parameters: node.Parameters,
                 Body: body,
                 Attributes: [],
-                ReturnTypeNode: returnTypeNode));
+                ReturnTypeNode: returnTypeNode,
+                OwnerTypeNode: null,
+                TypeArgumentNodes: []));
 
             return AstTransformResult.ReplaceExpression(new NameExpressionNode(node.Location, functionName));
         }

@@ -162,6 +162,43 @@ public sealed class CompilerSmokeTests
     }
 
     [Fact]
+    public void CompileToC_QualifiedImportRewritesNestedTypeSyntax()
+    {
+        var result = CompilerTestHelpers.Compile(
+        [
+            CompilerTestHelpers.Source(
+                """
+                module app.main;
+
+                import lib.types as types;
+
+                fn main() -> int {
+                    return 0;
+                }
+                """),
+            CompilerTestHelpers.Source(
+                """
+                module lib.types;
+
+                struct Item {
+                    value: int;
+                }
+
+                struct Box<T> {
+                    value: T;
+                }
+
+                fn transform(callback: fn(Item*) -> Box<Item>*) -> fn(Item*) -> Box<Item>* {
+                    return callback;
+                }
+                """,
+                "lib-types.cx"),
+        ]);
+
+        CompilerTestHelpers.AssertSuccess(result);
+    }
+
+    [Fact]
     public void CompileToC_LowersDirectFunctionReferences()
     {
         var result = CompilerTestHelpers.Compile(

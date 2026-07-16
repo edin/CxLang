@@ -100,7 +100,7 @@ internal static class MatchLoweringPass
 
                 cases.Add(new SwitchCaseNode(
                     arm.Location,
-                    Name(arm.Location, abiNames.TypeIdName(arm.Pattern)),
+                    Name(arm.Location, abiNames.TypeIdName(new TypeRef.Named(arm.Pattern, []))),
                     body));
             }
 
