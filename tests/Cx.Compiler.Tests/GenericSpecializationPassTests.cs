@@ -109,5 +109,5 @@ public sealed class GenericSpecializationPassTests
     }
 
     private static IReadOnlyList<string> FunctionTypeArguments(FunctionNode function) =>
-        (function.TypeArgumentNodes ?? []).Select(node => node.ToSourceText()).ToList();
+        function.TypeArgumentNodes.Select(node => node.ToSourceText()).ToList();
 }

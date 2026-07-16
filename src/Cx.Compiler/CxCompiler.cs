@@ -199,11 +199,10 @@ public sealed class CxCompiler
                             [
                                 new ParameterNode(test.Location, "runner", [], TypeNode: CreateResolvedTypeNode(test.Location, new TypeRef.Pointer(new TypeRef.Named("TestRunner", []))))
                             ],
-                            Body: RewriteTestStatements(test.Body),
+                            Body: new TestAssertionRewriter().RewriteBody(test.Body),
                             Attributes: [],
                             ReturnTypeNode: CreateResolvedTypeNode(test.Location, TypeRef.Void),
-                            OwnerTypeNode: null,
-                            TypeArgumentNodes: []);
+                            OwnerTypeNode: null);
                     })
                     .ToList();
 
@@ -237,8 +236,7 @@ public sealed class CxCompiler
             Body: BuildTestMainBody(testCases, generatedNames),
             Attributes: [],
             ReturnTypeNode: CreateResolvedTypeNode(rootLocation, TypeRef.Int),
-            OwnerTypeNode: null,
-            TypeArgumentNodes: []));
+            OwnerTypeNode: null));
 
         rewrittenPrograms.Add(new ProgramNode(rootLocation, rootDeclarations));
         return rewrittenPrograms;
@@ -319,231 +317,56 @@ public sealed class CxCompiler
             UnaryOperator.AddressOf,
             new NameExpressionNode(location, name));
 
-    private static IReadOnlyList<StatementNode> RewriteTestStatements(IReadOnlyList<StatementNode> statements) =>
-        statements.Select(RewriteTestStatement).ToList();
-
-    private static StatementNode RewriteTestStatement(StatementNode statement) => statement switch
+    private sealed class TestAssertionRewriter : AstRewriter
     {
-        LetStatement let => let with
-        {
-            Initializer = let.Initializer is null ? null : RewriteTestExpression(let.Initializer),
-        },
-        ReturnStatement ret => ret with { Expression = ret.Expression is null ? null : RewriteTestExpression(ret.Expression) },
-        CStatement c => c with { Expression = RewriteTestExpression(c.Expression) },
-        IfStatement ifStatement => ifStatement with
-        {
-            Condition = RewriteTestExpression(ifStatement.Condition),
-            ThenBody = RewriteTestStatements(ifStatement.ThenBody),
-            ElseBranch = ifStatement.ElseBranch is null ? null : RewriteTestStatement(ifStatement.ElseBranch),
-        },
-        ElseBlockStatement elseBlock => elseBlock with { Body = RewriteTestStatements(elseBlock.Body) },
-        WhileStatement whileStatement => whileStatement with
-        {
-            Condition = RewriteTestExpression(whileStatement.Condition),
-            Body = RewriteTestStatements(whileStatement.Body),
-        },
-        ForStatement forStatement => forStatement with
-        {
-            CachedRangeEndInitializer = RewriteTestForDeclarationInitializer(forStatement.CachedRangeEndInitializer),
-            CounterInitializer = RewriteTestForDeclarationInitializer(forStatement.CounterInitializer),
-            Initializer = RewriteTestForInitializer(forStatement.Initializer),
-            Condition = RewriteTestExpression(forStatement.Condition),
-            Increment = RewriteTestExpression(forStatement.Increment),
-            CounterIncrement = forStatement.CounterIncrement is null ? null : RewriteTestExpression(forStatement.CounterIncrement),
-            Body = RewriteTestStatements(forStatement.Body),
-        },
-        ForeachStatement foreachStatement => foreachStatement with
-        {
-            IterableExpression = RewriteTestExpression(foreachStatement.IterableExpression),
-            Body = RewriteTestStatements(foreachStatement.Body),
-        },
-        SwitchStatement switchStatement => switchStatement with
-        {
-            Expression = RewriteTestExpression(switchStatement.Expression),
-            Cases = switchStatement.Cases.Select(switchCase => switchCase with
+        private static readonly IReadOnlyDictionary<string, TestHelper> Helpers =
+            new Dictionary<string, TestHelper>(StringComparer.Ordinal)
             {
-                Pattern = RewriteTestExpression(switchCase.Pattern),
-                Body = RewriteTestStatements(switchCase.Body),
-            }).ToList(),
-            DefaultBody = RewriteTestStatements(switchStatement.DefaultBody),
-        },
-        MatchStatement matchStatement => matchStatement with
-        {
-            Expression = RewriteTestExpression(matchStatement.Expression),
-            Arms = matchStatement.Arms.Select(arm => arm with { Body = RewriteTestStatements(arm.Body) }).ToList(),
-        },
-        _ => statement,
-    };
-
-    private static ForInitializerNode RewriteTestForInitializer(ForInitializerNode initializer) => initializer switch
-    {
-        ForDeclarationInitializerNode declaration => declaration with
-        {
-            Initializer = declaration.Initializer is null ? null : RewriteTestExpression(declaration.Initializer),
-        },
-        ForExpressionInitializerNode expression => expression with
-        {
-            Expression = RewriteTestExpression(expression.Expression),
-        },
-        _ => initializer,
-    };
-
-    private static ForDeclarationInitializerNode? RewriteTestForDeclarationInitializer(ForDeclarationInitializerNode? initializer) =>
-        initializer is null
-            ? null
-            : initializer with
-            {
-                Initializer = initializer.Initializer is null ? null : RewriteTestExpression(initializer.Initializer),
+                ["expect"] = new("expect", 1, "expect failed"),
+                ["expect_true"] = new("expect_true", 1, "expect_true failed"),
+                ["expect_false"] = new("expect_false", 1, "expect_false failed"),
+                ["expect_eq_bool"] = new("expect_bool", 2, "expect_eq_bool failed"),
+                ["expect_eq_int"] = new("expect_int", 2, "expect_eq_int failed"),
+                ["expect_eq_u64"] = new("expect_u64", 2, "expect_eq_u64 failed"),
+                ["expect_eq_usize"] = new("expect_usize", 2, "expect_eq_usize failed"),
+                ["expect_eq_double"] = new("expect_double", 2, "expect_eq_double failed"),
+                ["expect_near_double"] = new("expect_near_double", 3, "expect_near_double failed"),
+                ["expect_eq_string"] = new("expect_string", 2, "expect_eq_string failed"),
+                ["expect_eq_string_view"] = new("expect_string_view", 2, "expect_eq_string_view failed"),
+                ["expect_null"] = new("expect_null", 1, "expect_null failed"),
+                ["expect_not_null"] = new("expect_not_null", 1, "expect_not_null failed"),
             };
 
-    private static ExpressionNode RewriteTestExpression(ExpressionNode expression) => expression switch
-    {
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect" },
-            Arguments.Count: 1,
-        } call => call with
-        {
-            Callee = new MemberExpressionNode(call.Callee.Location, new NameExpressionNode(call.Callee.Location, "runner"), "expect"),
-            Arguments = call.Arguments
-                .Select(RewriteTestExpression)
-                .Append(new LiteralExpressionNode(call.Location, "\"expect failed\""))
-                .ToList(),
-        },
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_true" },
-            Arguments.Count: 1,
-        } call => RewriteTestHelperCall(call, "expect_true", "expect_true failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_false" },
-            Arguments.Count: 1,
-        } call => RewriteTestHelperCall(call, "expect_false", "expect_false failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_eq_bool" },
-            Arguments.Count: 2,
-        } call => RewriteTestHelperCall(call, "expect_bool", "expect_eq_bool failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_eq_int" },
-            Arguments.Count: 2,
-        } call => RewriteTestHelperCall(call, "expect_int", "expect_eq_int failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_eq_u64" },
-            Arguments.Count: 2,
-        } call => RewriteTestHelperCall(call, "expect_u64", "expect_eq_u64 failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_eq_usize" },
-            Arguments.Count: 2,
-        } call => RewriteTestHelperCall(call, "expect_usize", "expect_eq_usize failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_eq_double" },
-            Arguments.Count: 2,
-        } call => RewriteTestHelperCall(call, "expect_double", "expect_eq_double failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_near_double" },
-            Arguments.Count: 3,
-        } call => RewriteTestHelperCall(call, "expect_near_double", "expect_near_double failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_eq_string" },
-            Arguments.Count: 2,
-        } call => RewriteTestHelperCall(call, "expect_string", "expect_eq_string failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_eq_string_view" },
-            Arguments.Count: 2,
-        } call => RewriteTestHelperCall(call, "expect_string_view", "expect_eq_string_view failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_null" },
-            Arguments.Count: 1,
-        } call => RewriteTestHelperCall(call, "expect_null", "expect_null failed"),
-        CallExpressionNode
-        {
-            Callee: NameExpressionNode { Name: "expect_not_null" },
-            Arguments.Count: 1,
-        } call => RewriteTestHelperCall(call, "expect_not_null", "expect_not_null failed"),
-        ParenthesizedExpressionNode parenthesized => parenthesized with { Expression = RewriteTestExpression(parenthesized.Expression) },
-        CastExpressionNode cast => cast with { Expression = RewriteTestExpression(cast.Expression) },
-        UnaryExpressionNode unary => unary with { Operand = RewriteTestExpression(unary.Operand) },
-        PostfixExpressionNode postfix => postfix with { Operand = RewriteTestExpression(postfix.Operand) },
-        SizeOfExpressionNode sizeOf => sizeOf with
-        {
-            Operand = sizeOf.Operand is SizeOfExpressionOperandNode operand
-                ? operand with { Expression = RewriteTestExpression(operand.Expression) }
-                : sizeOf.Operand,
-        },
-        BinaryExpressionNode binary => binary with
-        {
-            Left = RewriteTestExpression(binary.Left),
-            Right = RewriteTestExpression(binary.Right),
-        },
-        ConditionalExpressionNode conditional => conditional with
-        {
-            Condition = RewriteTestExpression(conditional.Condition),
-            WhenTrue = RewriteTestExpression(conditional.WhenTrue),
-            WhenFalse = RewriteTestExpression(conditional.WhenFalse),
-        },
-        ScalarRangeExpressionNode range => range with
-        {
-            Start = RewriteTestExpression(range.Start),
-            End = RewriteTestExpression(range.End),
-        },
-        InitializerExpressionNode initializer => initializer with
-        {
-            Fields = initializer.Fields.Select(field => field with { Value = RewriteTestExpression(field.Value) }).ToList(),
-            Values = initializer.Values.Select(RewriteTestExpression).ToList(),
-        },
-        FunctionExpressionNode functionExpression => functionExpression with
-        {
-            ExpressionBody = functionExpression.ExpressionBody is null ? null : RewriteTestExpression(functionExpression.ExpressionBody),
-            BlockBody = functionExpression.BlockBody is null ? null : RewriteTestStatements(functionExpression.BlockBody),
-        },
-        AssignmentExpressionNode assignment => assignment with
-        {
-            Target = RewriteTestExpression(assignment.Target),
-            Value = RewriteTestExpression(assignment.Value),
-        },
-        CallExpressionNode call => call with
-        {
-            Callee = RewriteTestExpression(call.Callee),
-            Arguments = call.Arguments.Select(RewriteTestExpression).ToList(),
-        },
-        GenericCallExpressionNode call => call with
-        {
-            Callee = RewriteTestExpression(call.Callee),
-            Arguments = call.Arguments.Select(RewriteTestExpression).ToList(),
-        },
-        MemberExpressionNode member => member with { Target = RewriteTestExpression(member.Target) },
-        IndexExpressionNode index => index with
-        {
-            Target = RewriteTestExpression(index.Target),
-            Index = RewriteTestExpression(index.Index),
-        },
-        _ => expression,
-    };
+        public IReadOnlyList<StatementNode> RewriteBody(IReadOnlyList<StatementNode> body) =>
+            RewriteStatements(body);
 
-    private static CallExpressionNode RewriteTestHelperCall(
-        CallExpressionNode call,
-        string methodName,
-        string message) => call with
+        protected override ExpressionNode RewriteCallExpression(CallExpressionNode call)
         {
-            Callee = new MemberExpressionNode(
-                call.Callee.Location,
-                new NameExpressionNode(call.Callee.Location, "runner"),
-                methodName),
-            Arguments = call.Arguments
-                .Select(RewriteTestExpression)
-                .Append(new LiteralExpressionNode(call.Location, $"\"{message}\""))
-                .ToList(),
-        };
+            var rewritten = (CallExpressionNode)base.RewriteCallExpression(call);
+            if (rewritten.Callee is not NameExpressionNode name
+                || !Helpers.TryGetValue(name.Name, out var helper)
+                || rewritten.Arguments.Count != helper.ArgumentCount)
+            {
+                return rewritten;
+            }
+
+            return rewritten with
+            {
+                Callee = new MemberExpressionNode(
+                    name.Location,
+                    new NameExpressionNode(name.Location, "runner"),
+                    helper.MethodName),
+                Arguments = rewritten.Arguments
+                    .Append(new LiteralExpressionNode(rewritten.Location, $"\"{helper.FailureMessage}\""))
+                    .ToList(),
+            };
+        }
+
+        private sealed record TestHelper(
+            string MethodName,
+            int ArgumentCount,
+            string FailureMessage);
+    }
 
     private static string EscapeStringLiteral(string value) =>
         value
@@ -1265,7 +1088,7 @@ public sealed class CxCompiler
         var location = typeNode?.Location ?? Location.Synthetic("<type-rewrite>");
         var syntax = typeNode?.Syntax ?? new NamedTypeSyntaxNode(string.Empty);
         var rewritten = TypeNode.Create(location, RewriteTypeSyntax(syntax, rewriteName));
-        rewritten.Semantic.Type = TypeRefFromSyntax(rewritten.Syntax);
+        rewritten.Semantic.Type = rewritten.Syntax.ToUnresolvedTypeRef();
         return rewritten;
     }
 
@@ -1291,7 +1114,7 @@ public sealed class CxCompiler
     private static TypeNode RenameTypeNode(TypeNode? typeNode, string name)
     {
         var rewritten = TypeNode.Named(typeNode?.Location ?? Location.Synthetic("<type-rename>"), name);
-        rewritten.Semantic.Type = TypeRefFromSyntax(rewritten.Syntax);
+        rewritten.Semantic.Type = rewritten.Syntax.ToUnresolvedTypeRef();
         return rewritten;
     }
 
@@ -1302,21 +1125,4 @@ public sealed class CxCompiler
         return typeNode;
     }
 
-    private static TypeRef TypeRefFromSyntax(TypeSyntaxNode? syntax) =>
-        syntax switch
-        {
-            null => new TypeRef.Unknown(),
-            NamedTypeSyntaxNode { Name: "null" } => new TypeRef.Null(),
-            NamedTypeSyntaxNode named => new TypeRef.Named(named.Name, []),
-            GenericTypeSyntaxNode generic => new TypeRef.Named(
-                TypeSyntaxFormatter.ToCxString(generic.Target),
-                generic.Arguments.Select(TypeRefFromSyntax).ToList()),
-            PointerTypeSyntaxNode pointer => new TypeRef.Pointer(TypeRefFromSyntax(pointer.Element)),
-            FixedArrayTypeSyntaxNode fixedArray => new TypeRef.FixedArray(TypeRefFromSyntax(fixedArray.Element), fixedArray.Length),
-            FunctionTypeSyntaxNode function => new TypeRef.Function(
-                function.Parameters.Select(TypeRefFromSyntax).ToList(),
-                TypeRefFromSyntax(function.ReturnType),
-                function.IsVariadic),
-            _ => new TypeRef.Unknown(),
-        };
 }

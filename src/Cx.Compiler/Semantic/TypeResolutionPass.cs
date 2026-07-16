@@ -122,7 +122,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             ResolveType(function.OwnerTypeNode, function.OwnerTypeNode);
         }
 
-        ResolveTypeArgumentNodes(function.TypeArgumentNodes ?? []);
+        ResolveTypeArgumentNodes(function.TypeArgumentNodes);
         ResolveFunctionSignature(function, function.ReturnTypeNode, function.Parameters);
         ResolveStatements(function.Body);
     }

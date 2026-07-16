@@ -291,7 +291,7 @@ internal sealed record ResolvedProgramModel(
             IsStatic: function.IsStatic,
             IsExtern: false,
             IsMacro: false,
-            IsGeneric: function.TypeParameters.Count > 0 || (function.TypeArgumentNodes?.Count ?? 0) > 0);
+            IsGeneric: function.TypeParameters.Count > 0 || function.TypeArgumentNodes.Count > 0);
     }
 
     private static ResolvedFunctionEntity ResolveExternFunction(

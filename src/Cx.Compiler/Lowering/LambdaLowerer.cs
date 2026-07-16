@@ -36,8 +36,7 @@ internal static class LambdaLowerer
                 Body: body,
                 Attributes: [],
                 ReturnTypeNode: returnTypeNode,
-                OwnerTypeNode: null,
-                TypeArgumentNodes: []));
+                OwnerTypeNode: null));
 
             return AstTransformResult.ReplaceExpression(new NameExpressionNode(node.Location, functionName));
         }

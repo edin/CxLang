@@ -60,7 +60,7 @@ internal abstract class AstRewriter
             Body = RewriteStatements(function.Body),
             ReturnTypeNode = RewriteType(function.ReturnTypeNode),
             OwnerTypeNode = RewriteType(function.OwnerTypeNode),
-            TypeArgumentNodes = RewriteTypes(function.TypeArgumentNodes ?? []),
+            TypeArgumentNodes = RewriteTypes(function.TypeArgumentNodes),
         };
 
     protected virtual ExternFunctionNode RewriteExternFunction(ExternFunctionNode function) =>

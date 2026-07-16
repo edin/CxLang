@@ -827,8 +827,7 @@ public sealed partial class Parser
             Body: body,
             Attributes: attributes ?? [],
             ReturnTypeNode: returnTypeNode,
-            OwnerTypeNode: ownerType is null ? null : TypeNode.Named(fnLocation, ownerType),
-            TypeArgumentNodes: []);
+            OwnerTypeNode: ownerType is null ? null : TypeNode.Named(fnLocation, ownerType));
     }
 
     private static bool HasExplicitReceiverParameter(string ownerType, ParameterNode? parameter)

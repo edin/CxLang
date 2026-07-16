@@ -17,7 +17,7 @@ internal sealed class CNameMangler(
     public string FunctionName(FunctionNode function) =>
         ModulePrefix(function) +
         (TypeTextOrNull(function.OwnerTypeNode) is { } ownerType ? $"{ownerType}_{function.Name}" : function.Name) +
-        TypeArgumentSuffix(function.TypeArgumentNodes ?? []);
+        TypeArgumentSuffix(function.TypeArgumentNodes);
 
     public string SymbolName(Symbol symbol) =>
         symbol.Node is FunctionNode function

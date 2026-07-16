@@ -99,7 +99,7 @@ internal static class CFunctionTypeResolver
                 ?? throw CEmissionGuards.UnresolvedTypeExpression(function.OwnerTypeNode);
 
     private static IReadOnlyList<TypeRef> FunctionTypeArguments(FunctionNode function) =>
-        (function.TypeArgumentNodes ?? [])
+        function.TypeArgumentNodes
             .Select(typeArgument => typeArgument.Semantic.Type
                 ?? throw CEmissionGuards.UnresolvedTypeExpression(typeArgument))
             .ToList();

@@ -133,7 +133,7 @@ internal static class GenericTypeRewriter
         var rewritten = function with
         {
             OwnerTypeNode = RewriteTypeNode(function.OwnerTypeNode, concreteStructNames),
-            TypeArgumentNodes = function.TypeArgumentNodes?
+            TypeArgumentNodes = function.TypeArgumentNodes
                 .Select(typeNode => RewriteTypeNode(typeNode, concreteStructNames)!)
                 .ToList(),
             GenericConstraints = RewriteGenericConstraints(function.GenericConstraints, concreteStructNames),

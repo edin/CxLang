@@ -221,14 +221,14 @@ internal sealed record CLoweringContext(
                 .Select(name => name + ".")
                 .ToList(),
             program.Functions
-                .Where(function => function.OwnerTypeNode is not null && (function.TypeArgumentNodes ?? []).Count == 0)
+                .Where(function => function.OwnerTypeNode is not null && function.TypeArgumentNodes.Count == 0)
                 .ToDictionary(
                     function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
                     function => backend.NameMangler.FunctionName(function),
                     StringComparer.Ordinal),
             program.Functions
                 .Where(function => function.OwnerTypeNode is not null)
-                .Where(function => (function.TypeArgumentNodes ?? []).Count == 0)
+                .Where(function => function.TypeArgumentNodes.Count == 0)
                 .ToDictionary(
                     function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
                     function => TypeRefFacts.StripPointer(SubstituteSelf(
@@ -237,17 +237,17 @@ internal sealed record CLoweringContext(
                     StringComparer.Ordinal),
             program.Functions
                 .Where(function => function.OwnerTypeNode is not null)
-                .Where(function => (function.TypeArgumentNodes ?? []).Count == 0)
+                .Where(function => function.TypeArgumentNodes.Count == 0)
                 .ToDictionary(
                     function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
                     function => IsPointer(function.Parameters.FirstOrDefault()?.TypeNode, typeRefParser),
                     StringComparer.Ordinal),
             program.Functions
-                .Where(function => (function.TypeArgumentNodes ?? []).Count > 0)
+                .Where(function => function.TypeArgumentNodes.Count > 0)
                 .Select(function => new GenericCallInfo(
                     TypeRefOrNull(function.OwnerTypeNode, typeRefParser),
                     function.Name,
-                    TypeRefs(function.TypeArgumentNodes ?? [], typeRefParser),
+                    TypeRefs(function.TypeArgumentNodes, typeRefParser),
                     function.Parameters.Where(parameter => !parameter.IsVariadic).Select(parameter => parameter.TypeNode.ToTypeRef(typeRefParser)).ToList(),
                     backend.NameMangler.FunctionName(function),
                     IsPointer(function.Parameters.FirstOrDefault()?.TypeNode, typeRefParser),
@@ -308,7 +308,7 @@ internal sealed record CLoweringContext(
         }
 
         var ownerType = function.OwnerTypeNode.ToTypeRef(typeRefParser);
-        var typeArguments = TypeRefs(function.TypeArgumentNodes ?? [], typeRefParser);
+        var typeArguments = TypeRefs(function.TypeArgumentNodes, typeRefParser);
         if (typeArguments.Count > 0)
         {
             return CTypeLowerer.ResolveAdapterStorageType(

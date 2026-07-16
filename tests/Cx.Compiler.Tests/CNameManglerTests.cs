@@ -39,7 +39,7 @@ public sealed class CNameManglerTests
     {
         var mangler = CreateMangler();
         var function = Function(ownerType: null, name: "none", typeArguments: ["u64"]);
-        function.TypeArgumentNodes![0].Semantic.Type = new TypeRef.Named("usize", []);
+        function.TypeArgumentNodes[0].Semantic.Type = new TypeRef.Named("usize", []);
 
         Assert.Equal("none_usize", mangler.FunctionName(function));
     }
@@ -50,8 +50,8 @@ public sealed class CNameManglerTests
         var mangler = CreateMangler();
         var stdFunction = Function(ownerType: null, name: "identity", typeArguments: ["Item"]);
         var appFunction = Function(ownerType: null, name: "identity", typeArguments: ["Item"]);
-        stdFunction.TypeArgumentNodes![0].Semantic.Type = new TypeRef.Named("Item", [], "std.core");
-        appFunction.TypeArgumentNodes![0].Semantic.Type = new TypeRef.Named("Item", [], "app.main");
+        stdFunction.TypeArgumentNodes[0].Semantic.Type = new TypeRef.Named("Item", [], "std.core");
+        appFunction.TypeArgumentNodes[0].Semantic.Type = new TypeRef.Named("Item", [], "app.main");
 
         Assert.Equal("identity_std_core_Item", mangler.FunctionName(stdFunction));
         Assert.Equal("identity_app_main_Item", mangler.FunctionName(appFunction));
@@ -116,8 +116,12 @@ public sealed class CNameManglerTests
             Body: [],
             Attributes: [],
             ReturnTypeNode: TypeNode.CreateFromText(Location(), "int"),
-            OwnerTypeNode: ownerType is null ? null : TypeNode.CreateFromText(Location(), ownerType),
-            TypeArgumentNodes: (typeArguments ?? []).Select(type => TypeNode.CreateFromText(Location(), type)).ToList());
+            OwnerTypeNode: ownerType is null ? null : TypeNode.CreateFromText(Location(), ownerType))
+        {
+            TypeArgumentNodes = (typeArguments ?? [])
+                .Select(type => TypeNode.CreateFromText(Location(), type))
+                .ToList(),
+        };
 
     private static Location Location() => new(new SourceFile("test.cx", string.Empty), 0, 1, 1);
 }
