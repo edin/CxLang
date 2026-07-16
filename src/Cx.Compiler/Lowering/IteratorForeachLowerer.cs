@@ -44,7 +44,7 @@ internal static class IteratorForeachLowerer
                     indexBinding.Location,
                     IsConst: false,
                     indexCounterName,
-                    new LiteralExpressionNode(indexBinding.Location, "0"),
+                    LiteralExpressionNode.Integer(indexBinding.Location, "0"),
                     indexBinding.TypeNode ?? CreateTypeNode(indexBinding.Location, TypeRef.Usize));
                 body.Add(new LetStatement(
                     indexBinding.Location,
@@ -187,7 +187,7 @@ internal static class IteratorForeachLowerer
                     location,
                     Name(location, name, TypeRef.Usize),
                     BinaryOperator.Add,
-                    new LiteralExpressionNode(location, "1")));
+                    LiteralExpressionNode.Integer(location, "1")));
 
         private static TypeNode CreateTypeNode(Location location, TypeRef type)
             => type.ToTypeNode(location);

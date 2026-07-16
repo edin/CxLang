@@ -1,3 +1,4 @@
+using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lexer;
 using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
@@ -36,13 +37,7 @@ public sealed partial class Parser
         }
 
         var text = tokens.ToSourceText();
-        _diagnostics.Report(tokens.Location, $"Could not parse expression '{TrimForDiagnostic(text)}'.");
+        _diagnostics.Report(tokens.Location, $"Could not parse expression '{DiagnosticText.Summarize(text)}'.");
         return new ErrorExpressionNode(tokens.Location);
-    }
-
-    private static string TrimForDiagnostic(string text)
-    {
-        text = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return text.Length <= 120 ? text : text[..117] + "...";
     }
 }

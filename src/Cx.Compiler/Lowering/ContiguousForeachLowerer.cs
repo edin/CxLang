@@ -78,7 +78,7 @@ internal static class ContiguousForeachLowerer
                     node.Location,
                     IsConst: false,
                     indexName,
-                    new LiteralExpressionNode(node.Location, "0"),
+                    LiteralExpressionNode.Integer(node.Location, "0"),
                     CreateTypeNode(node.Location, TypeRef.Usize)),
                 new BinaryExpressionNode(
                     node.Location,
@@ -225,7 +225,7 @@ internal static class ContiguousForeachLowerer
                     location,
                     new NameExpressionNode(location, name),
                     BinaryOperator.Add,
-                    new LiteralExpressionNode(location, "1")));
+                    LiteralExpressionNode.Integer(location, "1")));
 
         private readonly record struct ContiguousIterable(
             TypeRef SourceType,

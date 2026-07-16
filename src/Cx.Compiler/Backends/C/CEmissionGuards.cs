@@ -1,3 +1,4 @@
+using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Syntax.Nodes;
 using Cx.Compiler.Semantic;
 
@@ -21,39 +22,33 @@ internal static class CEmissionGuards
         new($"Parser error expression reached C emission after lowering at {error.Location}.");
 
     public static InvalidOperationException UnsupportedSimpleExpressionLowering(ExpressionNode expression) =>
-        new($"Internal C emission error: expression is not supported by simple C lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
+        new($"Internal C emission error: expression is not supported by simple C lowering: '{DiagnosticText.Summarize(expression.ToSourceText())}'.");
 
     public static InvalidOperationException UnsupportedCExpressionLowering(ExpressionNode expression) =>
-        new($"Internal C emission error: expression requires unsupported C expression lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
+        new($"Internal C emission error: expression requires unsupported C expression lowering: '{DiagnosticText.Summarize(expression.ToSourceText())}'.");
 
     public static InvalidOperationException UnresolvedTypeExpression(TypeNode? typeNode) =>
         new(
             "Internal C emission error: type expression reached C lowering without a resolved TypeRef"
-            + (typeNode is null ? "." : $": '{TrimForDiagnostic(TypeText(typeNode))}' at {typeNode.Location}."));
+            + (typeNode is null ? "." : $": '{DiagnosticText.Summarize(TypeText(typeNode))}' at {typeNode.Location}."));
 
     public static InvalidOperationException UnresolvedDeclarationType(TypeNode? typeNode, string fallbackType, string name) =>
         new(
             "Internal C emission error: declaration reached C lowering without a resolved TypeRef: "
-            + $"'{TrimForDiagnostic(name)}: {TrimForDiagnostic(TypeTextOrFallback(typeNode, fallbackType))}'.");
+            + $"'{DiagnosticText.Summarize(name)}: {DiagnosticText.Summarize(TypeTextOrFallback(typeNode, fallbackType))}'.");
 
     public static InvalidOperationException UnresolvedTypeAlias(TypeAliasNode typeAlias) =>
         new(
             "Internal C emission error: type alias reached C lowering without a resolved TypeRef: "
-            + $"'{TrimForDiagnostic(typeAlias.Name)} = {TrimForDiagnostic(TypeTextOrFallback(typeAlias.TargetTypeNode, "<missing>"))}'.");
+            + $"'{DiagnosticText.Summarize(typeAlias.Name)} = {DiagnosticText.Summarize(TypeTextOrFallback(typeAlias.TargetTypeNode, "<missing>"))}'.");
 
     public static InvalidOperationException UnresolvedExpressionType(ExpressionNode expression) =>
         new(
             "Internal C emission error: expression reached C lowering without Semantic.Type: "
-            + $"'{TrimForDiagnostic(expression.ToSourceText())}' at {expression.Location}.");
+            + $"'{DiagnosticText.Summarize(expression.ToSourceText())}' at {expression.Location}.");
 
     public static InvalidOperationException UnsupportedCTypeRef(TypeRef type) =>
         new($"Internal C emission error: unsupported TypeRef '{type.GetType().Name}' reached C type lowering.");
-
-    private static string TrimForDiagnostic(string text)
-    {
-        text = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return text.Length <= 120 ? text : text[..117] + "...";
-    }
 
     private static string TypeTextOrFallback(TypeNode? typeNode, string fallback) =>
         typeNode is null ? fallback : TypeText(typeNode);

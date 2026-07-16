@@ -56,7 +56,7 @@ internal static class RangeForeachLowerer
                     indexBinding.Location,
                     IsConst: false,
                     hiddenIndexName,
-                    new LiteralExpressionNode(indexBinding.Location, "0"),
+                    LiteralExpressionNode.Integer(indexBinding.Location, "0"),
                     indexBinding.TypeNode ?? TypeRef.Usize.ToTypeNode(indexBinding.Location));
                 counterIncrement = IncrementExpression(indexBinding.Location, hiddenIndexName);
                 body.Add(new LetStatement(
@@ -90,6 +90,6 @@ internal static class RangeForeachLowerer
                     location,
                     new NameExpressionNode(location, name),
                     BinaryOperator.Add,
-                    new LiteralExpressionNode(location, "1")));
+                    LiteralExpressionNode.Integer(location, "1")));
     }
 }

@@ -268,7 +268,7 @@ public sealed class CxCompiler
         {
             body.Add(new CStatement(
                 test.Location,
-                RunnerCall(test.Location, "begin", [new LiteralExpressionNode(test.Location, $"\"{EscapeStringLiteral(test.Name)}\"")])));
+                RunnerCall(test.Location, "begin", [LiteralExpressionNode.String(test.Location, $"\"{EscapeStringLiteral(test.Name)}\"")])));
             body.Add(new CStatement(
                 test.Location,
                 new CallExpressionNode(
@@ -357,7 +357,7 @@ public sealed class CxCompiler
                     new NameExpressionNode(name.Location, "runner"),
                     helper.MethodName),
                 Arguments = rewritten.Arguments
-                    .Append(new LiteralExpressionNode(rewritten.Location, $"\"{helper.FailureMessage}\""))
+                    .Append(LiteralExpressionNode.String(rewritten.Location, $"\"{helper.FailureMessage}\""))
                     .ToList(),
             };
         }
@@ -1049,38 +1049,34 @@ public sealed class CxCompiler
     private static string QualifyNamedType(
         string name,
         string alias,
-        IReadOnlySet<string> typeNames)
-    {
-        foreach (var typeName in typeNames.OrderByDescending(candidate => candidate.Length))
-        {
-            name = System.Text.RegularExpressions.Regex.Replace(
-                name,
-                $@"(?<![A-Za-z0-9_\.]){System.Text.RegularExpressions.Regex.Escape(typeName)}(?![A-Za-z0-9_])",
-                QualifyName(alias, typeName));
-        }
-
-        return name;
-    }
+        IReadOnlySet<string> typeNames) =>
+        RewriteDeclaredTypeName(
+            name,
+            typeName => typeNames.Contains(typeName) ? QualifyName(alias, typeName) : null);
 
     private static string ProjectSymbolImportNamedType(
         string name,
         IReadOnlyDictionary<string, string> symbols,
-        IReadOnlySet<string> typeNames)
-    {
-        foreach (var typeName in typeNames.OrderByDescending(candidate => candidate.Length))
-        {
-            if (!symbols.TryGetValue(typeName, out var visibleName))
-            {
-                continue;
-            }
+        IReadOnlySet<string> typeNames) =>
+        RewriteDeclaredTypeName(
+            name,
+            typeName => typeNames.Contains(typeName) && symbols.TryGetValue(typeName, out var visibleName)
+                ? visibleName
+                : null);
 
-            name = System.Text.RegularExpressions.Regex.Replace(
-                name,
-                $@"(?<![A-Za-z0-9_\.]){System.Text.RegularExpressions.Regex.Escape(typeName)}(?![A-Za-z0-9_])",
-                visibleName);
+    private static string RewriteDeclaredTypeName(
+        string name,
+        Func<string, string?> rewrite)
+    {
+        const string constPrefix = "const ";
+        var isConst = name.StartsWith(constPrefix, StringComparison.Ordinal);
+        var declaredName = isConst ? name[constPrefix.Length..] : name;
+        if (rewrite(declaredName) is not { } rewritten)
+        {
+            return name;
         }
 
-        return name;
+        return isConst ? constPrefix + rewritten : rewritten;
     }
 
     private static TypeNode RewriteTypeSyntax(TypeNode? typeNode, Func<string, string> rewriteName)

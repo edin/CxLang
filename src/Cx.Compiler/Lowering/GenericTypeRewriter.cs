@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
@@ -578,7 +577,7 @@ internal static class GenericTypeRewriter
     }
 
     private static string SanitizeTypeName(string type) =>
-        Regex.Replace(type, "[^A-Za-z0-9_]", "_");
+        GeneratedIdentifier.Sanitize(type);
 
     private static string LowerGenericTypeName(
         TypeSyntaxNode target,

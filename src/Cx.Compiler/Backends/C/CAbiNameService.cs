@@ -4,8 +4,6 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.C;
 
-using System.Text.RegularExpressions;
-
 internal sealed class CAbiNameService(IReadOnlyList<TypeAdapterNode> typeAdapters)
 {
     private readonly CTypeRefLowerer _typeRefLowerer = new(typeAdapters);
@@ -27,7 +25,7 @@ internal sealed class CAbiNameService(IReadOnlyList<TypeAdapterNode> typeAdapter
         var identity = TypeRefFormatter.ToIdentityString(type)
             .Replace("::", "_", StringComparison.Ordinal)
             .Replace(".", "_", StringComparison.Ordinal);
-        return Regex.Replace(SanitizeTypeName(identity), "[^A-Za-z0-9_]", "_");
+        return GeneratedIdentifier.Sanitize(SanitizeTypeName(identity));
     }
 
     public string TypeIdName(TypeRef type) =>

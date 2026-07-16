@@ -5,7 +5,7 @@ namespace Cx.Compiler.Semantic;
 internal static class SemanticFacts
 {
     public static bool IsBareNull(ExpressionNode expression) =>
-        expression is LiteralExpressionNode { LiteralText: "null" }
+        expression is LiteralExpressionNode { Kind: LiteralKind.Null }
         || expression is ParenthesizedExpressionNode parenthesized && IsBareNull(parenthesized.Expression);
 
     public static bool IsNullableType(TypeRef? type) =>

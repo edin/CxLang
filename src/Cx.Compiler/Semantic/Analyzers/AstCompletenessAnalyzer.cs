@@ -214,9 +214,4 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
         }
     }
 
-    private static string TrimForDiagnostic(string text)
-    {
-        text = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return text.Length <= 120 ? text : text[..117] + "...";
-    }
 }

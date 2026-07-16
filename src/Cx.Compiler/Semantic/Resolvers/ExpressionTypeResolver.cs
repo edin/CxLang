@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Resolvers;
@@ -43,7 +42,7 @@ internal sealed class ExpressionTypeResolver(
 
         return expression switch
         {
-            LiteralExpressionNode literal => ResolveLiteralTypeRef(literal.LiteralText),
+            LiteralExpressionNode literal => ResolveLiteralTypeRef(literal),
             NameExpressionNode name => ResolveNameTypeRef(name.Name, variables),
             ParenthesizedExpressionNode parenthesized => ResolveTypeRef(parenthesized.Expression, variables),
             CastExpressionNode cast => ResolveTypeNode(cast.TargetTypeNode),
@@ -65,41 +64,16 @@ internal sealed class ExpressionTypeResolver(
         };
     }
 
-    private TypeRef? ResolveLiteralTypeRef(string text)
+    private TypeRef? ResolveLiteralTypeRef(LiteralExpressionNode literal) => literal.Kind switch
     {
-        text = text.Trim();
-        if (text is "true" or "false")
-        {
-            return ResolveKnownType(TypeRef.Bool);
-        }
-
-        if (text == "null")
-        {
-            return new TypeRef.Null();
-        }
-
-        if (text.StartsWith("\"", StringComparison.Ordinal))
-        {
-            return new TypeRef.Pointer(ResolveKnownType(TypeRef.Char));
-        }
-
-        if (text.StartsWith("'", StringComparison.Ordinal))
-        {
-            return ResolveKnownType(TypeRef.Char);
-        }
-
-        if (Regex.IsMatch(text, @"^-?\d+$"))
-        {
-            return ResolveKnownType(TypeRef.Int);
-        }
-
-        if (Regex.IsMatch(text, @"^-?(\d+\.\d*|\d*\.\d+)([eE][+-]?\d+)?$"))
-        {
-            return ResolveKnownType(TypeRef.Double);
-        }
-
-        return null;
-    }
+        LiteralKind.Boolean => ResolveKnownType(TypeRef.Bool),
+        LiteralKind.Null => new TypeRef.Null(),
+        LiteralKind.String => new TypeRef.Pointer(ResolveKnownType(TypeRef.Char)),
+        LiteralKind.Character => ResolveKnownType(TypeRef.Char),
+        LiteralKind.Integer => ResolveKnownType(TypeRef.Int),
+        LiteralKind.FloatingPoint => ResolveKnownType(TypeRef.Double),
+        _ => null,
+    };
 
     private TypeRef? ResolveNameTypeRef(string name, TypeEnvironment variables)
     {
@@ -202,8 +176,7 @@ internal sealed class ExpressionTypeResolver(
     }
 
     private static bool IsIntegerLiteral(ExpressionNode expression) =>
-        expression is LiteralExpressionNode literal
-        && Regex.IsMatch(literal.LiteralText.Trim(), @"^-?\d+$");
+        expression is LiteralExpressionNode { Kind: LiteralKind.Integer };
 
     private TypeRef? ResolveInitializerTypeRef(InitializerExpressionNode initializer, TypeEnvironment variables)
     {

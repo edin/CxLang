@@ -387,7 +387,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             return declaredType;
         }
 
-        if (initializer is LiteralExpressionNode { LiteralText: "null" })
+        if (initializer is LiteralExpressionNode { Kind: LiteralKind.Null })
         {
             diagnostics.Report(location, $"Cannot infer type for {subject} '{name}' from null; write an explicit pointer type.");
             return declaredType;

@@ -753,7 +753,7 @@ public sealed class SemanticAnalyzer(
         };
 
     private static bool IsNullLiteral(ExpressionNode expression) =>
-        expression is LiteralExpressionNode { LiteralText: "null" }
+        expression is LiteralExpressionNode { Kind: LiteralKind.Null }
         || expression is ParenthesizedExpressionNode parenthesized && IsNullLiteral(parenthesized.Expression);
 
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>

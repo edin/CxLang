@@ -52,7 +52,7 @@ internal static class LambdaLowerer
             }
 
             var expressionBody = node.ExpressionBody is null
-                ? new LiteralExpressionNode(node.Location, "0")
+                ? LiteralExpressionNode.Integer(node.Location, "0")
                 : context.RewriteExpression(node.ExpressionBody, returnTypeNode);
 
             return [new ReturnStatement(node.Location, expressionBody)];

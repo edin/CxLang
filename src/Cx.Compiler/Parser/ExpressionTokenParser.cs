@@ -448,7 +448,16 @@ internal sealed class ExpressionTokenParser
 
         if (Match(TokenType.Number, TokenType.String, TokenType.Character, TokenType.True, TokenType.False, TokenType.Null) is { } literal)
         {
-            return new LiteralExpressionNode(literal.Location, literal.Value);
+            var kind = literal.Type switch
+            {
+                TokenType.Number => LiteralKindFacts.Number(literal.Value),
+                TokenType.String => LiteralKind.String,
+                TokenType.Character => LiteralKind.Character,
+                TokenType.True or TokenType.False => LiteralKind.Boolean,
+                TokenType.Null => LiteralKind.Null,
+                _ => LiteralKind.Unknown,
+            };
+            return new LiteralExpressionNode(literal.Location, literal.Value, kind);
         }
 
         if (ExpectIdentifierLike(matchOnly: true) is { } name)
@@ -1288,83 +1297,6 @@ internal sealed class ExpressionTokenParser
     private int Save() => _position;
 
     private void Restore(int position) => _position = Math.Clamp(position, 0, _tokens.Count);
-
-    private string SourceFrom(ExpressionNode expression, Token last)
-    {
-        var start = FindTokenIndex(expression.Location);
-        var end = IndexOf(last);
-        return SourceRange(start, end);
-    }
-
-    private string SourceBetween(Token first, Token last) =>
-        SourceRange(IndexOf(first), IndexOf(last));
-
-    private Token FirstTokenOf(ExpressionNode expression) =>
-        TokenAtLocation(expression.Location);
-
-    private Token LastTokenOf(ExpressionNode expression)
-    {
-        var sourceText = expression.ToSourceText();
-        for (var i = _tokens.Count - 1; i >= 0; i--)
-        {
-            var candidate = SourceRange(IndexOf(FirstTokenOf(expression)), i);
-            if (string.Equals(candidate, sourceText, StringComparison.Ordinal))
-            {
-                return _tokens[i];
-            }
-        }
-
-        return FirstTokenOf(expression);
-    }
-
-    private Token TokenAtLocation(Location location)
-    {
-        foreach (var token in _tokens)
-        {
-            if (token.Location.Equals(location))
-            {
-                return token;
-            }
-        }
-
-        return _tokens[0];
-    }
-
-    private string SourceRange(int start, int end)
-    {
-        if (start < 0 || end < start)
-        {
-            return string.Empty;
-        }
-
-        return TokenText.ToSourceText(_tokens.Skip(start).Take(end - start + 1));
-    }
-
-    private int FindTokenIndex(Location location)
-    {
-        for (var i = 0; i < _tokens.Count; i++)
-        {
-            if (_tokens[i].Location.Equals(location))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private int IndexOf(Token token)
-    {
-        for (var i = 0; i < _tokens.Count; i++)
-        {
-            if (ReferenceEquals(_tokens[i], token) || _tokens[i].Equals(token))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
 
     private Token PreviousOr(Token fallback) =>
         _position > 0 ? _tokens[_position - 1] : fallback;

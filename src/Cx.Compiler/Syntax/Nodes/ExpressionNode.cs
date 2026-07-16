@@ -6,9 +6,58 @@ public abstract record ExpressionNode(Location Location) : SyntaxNode(Location);
 
 public sealed record ErrorExpressionNode(Location Location) : ExpressionNode(Location);
 
+public enum LiteralKind
+{
+    Unknown,
+    Integer,
+    FloatingPoint,
+    String,
+    Character,
+    Boolean,
+    Null,
+}
+
 public sealed record LiteralExpressionNode(
     Location Location,
-    string LiteralText) : ExpressionNode(Location);
+    string LiteralText,
+    LiteralKind Kind) : ExpressionNode(Location)
+{
+    public LiteralExpressionNode(Location location, string literalText)
+        : this(location, literalText, LiteralKindFacts.Infer(literalText))
+    {
+    }
+
+    public static LiteralExpressionNode Integer(Location location, string text) =>
+        new(location, text, LiteralKind.Integer);
+
+    public static LiteralExpressionNode String(Location location, string text) =>
+        new(location, text, LiteralKind.String);
+}
+
+internal static class LiteralKindFacts
+{
+    public static LiteralKind Infer(string text)
+    {
+        text = text.Trim();
+        return text switch
+        {
+            "true" or "false" => LiteralKind.Boolean,
+            "null" => LiteralKind.Null,
+            _ when text.StartsWith('"') => LiteralKind.String,
+            _ when text.StartsWith('\'') => LiteralKind.Character,
+            _ when IsNumber(text) => Number(text),
+            _ => LiteralKind.Unknown,
+        };
+    }
+
+    public static LiteralKind Number(string text) =>
+        text.IndexOfAny(['.', 'e', 'E']) >= 0
+            ? LiteralKind.FloatingPoint
+            : LiteralKind.Integer;
+
+    private static bool IsNumber(string text) =>
+        text.Length > 0 && (char.IsDigit(text[0]) || text[0] is '+' or '-');
+}
 
 public sealed record NameExpressionNode(
     Location Location,

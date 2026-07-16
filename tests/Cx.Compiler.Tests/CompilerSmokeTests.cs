@@ -188,6 +188,10 @@ public sealed class CompilerSmokeTests
                     value: T;
                 }
 
+                struct Holder {
+                    item: const Item*;
+                }
+
                 fn transform(callback: fn(Item*) -> Box<Item>*) -> fn(Item*) -> Box<Item>* {
                     return callback;
                 }
