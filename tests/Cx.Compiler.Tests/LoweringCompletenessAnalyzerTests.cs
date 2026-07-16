@@ -119,7 +119,7 @@ public sealed class LoweringCompletenessAnalyzerTests
                     [
                         new Cx.Compiler.Syntax.Nodes.CStatement(
                             location,
-                            new Cx.Compiler.Syntax.Nodes.ErrorExpressionNode(location, "unparsed_call()"))
+                            new Cx.Compiler.Syntax.Nodes.ErrorExpressionNode(location))
                     ],
                     Attributes: [],
                     ReturnTypeNode: Cx.Compiler.Syntax.Nodes.TypeNode.CreateFromText(location, "void")),

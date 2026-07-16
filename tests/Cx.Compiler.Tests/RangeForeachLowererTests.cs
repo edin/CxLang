@@ -32,7 +32,7 @@ public sealed class RangeForeachLowererTests
         Assert.Equal("10", Assert.IsType<LiteralExpressionNode>(cachedEnd.Initializer).LiteralText);
 
         var condition = Assert.IsType<BinaryExpressionNode>(loop.Condition);
-        Assert.Equal("<", condition.Operator);
+        Assert.Equal(BinaryOperator.LessThan, condition.Operator);
         Assert.Equal("i", Assert.IsType<NameExpressionNode>(condition.Left).Name);
         Assert.Equal(cachedEnd.Name, Assert.IsType<NameExpressionNode>(condition.Right).Name);
 
@@ -52,7 +52,7 @@ public sealed class RangeForeachLowererTests
             """);
 
         var forStatement = Assert.IsType<ForStatement>(Assert.Single(lowered));
-        Assert.Equal("<=", Assert.IsType<BinaryExpressionNode>(forStatement.Condition).Operator);
+        Assert.Equal(BinaryOperator.LessThanOrEqual, Assert.IsType<BinaryExpressionNode>(forStatement.Condition).Operator);
     }
 
     [Fact]

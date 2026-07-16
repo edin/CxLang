@@ -16,7 +16,7 @@ public sealed class ExpressionTypeResolverTypeRefTests
         var resolver = new ExpressionTypeResolver(CompilerTestHelpers.Parse("fn main() -> int { return 0; }"));
 
         var resolved = resolver.ResolveTypeRef(
-            new ErrorExpressionNode(location, "value"),
+            new ErrorExpressionNode(location),
             TypeEnvironment(null, ("value", "int")));
 
         Assert.Null(resolved);

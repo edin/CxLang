@@ -262,8 +262,8 @@ internal static class CDeclarationUsageAnalyzer
                 case InitializerExpressionNode { TypeNameNode: not null } initializer:
                     yield return ResolveTypeExpression(initializer.TypeNameNode);
                     break;
-                case SizeOfExpressionNode { TypeOperandNode: not null } sizeOf:
-                    yield return ResolveTypeExpression(sizeOf.TypeOperandNode);
+                case SizeOfExpressionNode { Operand: SizeOfTypeOperandNode operand }:
+                    yield return ResolveTypeExpression(operand.TypeNode);
                     break;
             }
         }

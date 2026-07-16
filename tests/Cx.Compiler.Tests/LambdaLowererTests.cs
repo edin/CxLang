@@ -30,7 +30,7 @@ public sealed class LambdaLowererTests
         var generated = lowered.Functions[1];
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(generated.Body));
         var body = Assert.IsType<BinaryExpressionNode>(ret.Expression);
-        Assert.Equal("<=>", body.Operator);
+        Assert.Equal(BinaryOperator.Compare, body.Operator);
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public sealed class LambdaLowererTests
                     [
                         new CStatement(
                             location,
-                            new ErrorExpressionNode(location, "fn(value: int) => value"))
+                            new ErrorExpressionNode(location))
                     ],
                     Attributes: [],
                     ReturnTypeNode: TypeNode.CreateFromText(location, "void")),
@@ -61,7 +61,7 @@ public sealed class LambdaLowererTests
 
         var main = Assert.Single(lowered.Functions);
         var statement = Assert.IsType<CStatement>(Assert.Single(main.Body));
-        Assert.Equal("fn(value: int) => value", Assert.IsType<ErrorExpressionNode>(statement.Expression).Text);
+        Assert.IsType<ErrorExpressionNode>(statement.Expression);
     }
 
     [Fact]

@@ -288,8 +288,8 @@ internal sealed class DefiniteAssignmentAnalyzer(
             case PostfixExpressionNode postfix:
                 AnalyzeExpression(postfix.Operand, variables, assigned);
                 break;
-            case SizeOfExpressionNode sizeOf:
-                AnalyzeExpression(sizeOf.ExpressionOperand, variables, assigned);
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                AnalyzeExpression(operand.Expression, variables, assigned);
                 break;
             case BinaryExpressionNode binary:
                 AnalyzeExpression(binary.Left, variables, assigned);
@@ -354,7 +354,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
         TypeEnvironment variables,
         HashSet<string> assigned)
     {
-        if (argument is UnaryExpressionNode { Operator: "&" } addressOf
+        if (argument is UnaryExpressionNode { Operator: UnaryOperator.AddressOf } addressOf
             && TryGetAssignmentRootName(addressOf.Operand, out var rootName))
         {
             assigned.Add(rootName);
@@ -426,7 +426,7 @@ internal sealed class DefiniteAssignmentAnalyzer(
                 AnalyzeExpression(index.Index, variables, assigned);
                 break;
 
-            case UnaryExpressionNode { Operator: "*" } unary:
+            case UnaryExpressionNode { Operator: UnaryOperator.Dereference } unary:
                 AnalyzeExpression(unary.Operand, variables, assigned);
                 break;
 

@@ -44,15 +44,15 @@ internal sealed class ExpressionSemanticAnalyzer(
                 Analyze(unary.Operand, location, typeEnvironment, mutability);
                 break;
             case PostfixExpressionNode postfix:
-                if (postfix.Operator is "++" or "--")
+                if (postfix.Operator is PostfixOperator.Increment or PostfixOperator.Decrement)
                 {
                     assignmentAnalyzer?.AnalyzeMutationTarget(postfix.Operand, postfix.Location, mutability);
                 }
 
                 Analyze(postfix.Operand, location, typeEnvironment, mutability);
                 break;
-            case SizeOfExpressionNode sizeOf:
-                Analyze(sizeOf.ExpressionOperand, location, typeEnvironment, mutability);
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                Analyze(operand.Expression, location, typeEnvironment, mutability);
                 break;
             case BinaryExpressionNode binary:
                 Analyze(binary.Left, location, typeEnvironment, mutability);

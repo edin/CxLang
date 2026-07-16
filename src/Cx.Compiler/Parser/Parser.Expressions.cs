@@ -26,7 +26,7 @@ public sealed partial class Parser
         if (tokens.IsEmpty)
         {
             _diagnostics.Report(tokens.Location, "Expected expression.");
-            return new ErrorExpressionNode(tokens.Location, string.Empty);
+            return new ErrorExpressionNode(tokens.Location);
         }
 
         var expression = ExpressionTokenParser.TryParse(tokens);
@@ -37,7 +37,7 @@ public sealed partial class Parser
 
         var text = tokens.ToSourceText();
         _diagnostics.Report(tokens.Location, $"Could not parse expression '{TrimForDiagnostic(text)}'.");
-        return new ErrorExpressionNode(tokens.Location, text);
+        return new ErrorExpressionNode(tokens.Location);
     }
 
     private static string TrimForDiagnostic(string text)

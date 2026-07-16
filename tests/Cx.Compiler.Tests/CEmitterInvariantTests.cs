@@ -24,7 +24,7 @@ public sealed class CEmitterInvariantTests
                     [
                         new CStatement(
                             location,
-                            new ErrorExpressionNode(location, "unparsed_call()"))
+                            new ErrorExpressionNode(location))
                     ],
                     Attributes: [],
                     ReturnTypeNode: ResolvedTypeNode(location, "void")),

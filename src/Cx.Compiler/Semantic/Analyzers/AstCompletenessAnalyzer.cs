@@ -134,7 +134,7 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
         switch (expression)
         {
             case ErrorExpressionNode error:
-                diagnostics.Report(error.Location, $"Parser error expression remains in AST: '{TrimForDiagnostic(error.Text)}'.");
+                diagnostics.Report(error.Location, "Parser error expression remains in AST.");
                 break;
             case ParenthesizedExpressionNode parenthesized:
                 AnalyzeExpression(parenthesized.Expression);
@@ -148,8 +148,8 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
             case PostfixExpressionNode postfix:
                 AnalyzeExpression(postfix.Operand);
                 break;
-            case SizeOfExpressionNode sizeOf:
-                AnalyzeExpression(sizeOf.ExpressionOperand);
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                AnalyzeExpression(operand.Expression);
                 break;
             case BinaryExpressionNode binary:
                 AnalyzeExpression(binary.Left);

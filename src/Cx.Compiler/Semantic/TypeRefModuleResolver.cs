@@ -386,9 +386,11 @@ internal sealed class TypeRefModuleResolver
             case PostfixExpressionNode postfix:
                 ResolveExpression(postfix.Operand, typeParameters);
                 break;
-            case SizeOfExpressionNode sizeOf:
-                ResolveType(sizeOf, sizeOf.TypeOperandNode, typeParameters);
-                ResolveExpression(sizeOf.ExpressionOperand, typeParameters);
+            case SizeOfExpressionNode { Operand: SizeOfTypeOperandNode operand } sizeOf:
+                ResolveType(sizeOf, operand.TypeNode, typeParameters);
+                break;
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                ResolveExpression(operand.Expression, typeParameters);
                 break;
             case BinaryExpressionNode binary:
                 ResolveExpression(binary.Left, typeParameters);

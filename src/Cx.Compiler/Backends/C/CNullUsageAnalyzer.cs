@@ -48,7 +48,7 @@ internal static class CNullUsageAnalyzer
         CastExpressionNode cast => ContainsNull(cast.Expression),
         UnaryExpressionNode unary => ContainsNull(unary.Operand),
         PostfixExpressionNode postfix => ContainsNull(postfix.Operand),
-        SizeOfExpressionNode sizeOf => ContainsNull(sizeOf.ExpressionOperand),
+        SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand } => ContainsNull(operand.Expression),
         BinaryExpressionNode binary => ContainsNull(binary.Left) || ContainsNull(binary.Right),
         ConditionalExpressionNode conditional =>
             ContainsNull(conditional.Condition)

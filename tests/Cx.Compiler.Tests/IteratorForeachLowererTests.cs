@@ -67,7 +67,7 @@ public sealed class IteratorForeachLowererTests
         Assert.Equal("item", item.Name);
         Assert.Equal("int", item.TypeNode?.ToSourceText());
         var dereference = Assert.IsType<UnaryExpressionNode>(item.Initializer);
-        Assert.Equal("*", dereference.Operator);
+        Assert.Equal(UnaryOperator.Dereference, dereference.Operator);
         Assert.Equal("value", Assert.IsType<MemberExpressionNode>(Assert.IsType<CallExpressionNode>(dereference.Operand).Callee).MemberName);
     }
 

@@ -214,13 +214,14 @@ internal sealed class ModuleVisibilityAnalyzer(
             case PostfixExpressionNode postfix:
                 AnalyzeExpression(postfix.Operand, visibility, locals);
                 break;
-            case SizeOfExpressionNode sizeOf:
-                if (sizeOf.TypeOperandNode is not null)
-                {
-                    AnalyzeType(sizeOf.TypeOperandNode, sizeOf.Location, visibility);
-                }
-
-                AnalyzeExpression(sizeOf.ExpressionOperand, visibility, locals);
+            case SizeOfExpressionNode { Operand: SizeOfTypeOperandNode operand } sizeOf:
+                AnalyzeType(operand.TypeNode, sizeOf.Location, visibility);
+                break;
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                AnalyzeExpression(operand.Expression, visibility, locals);
+                break;
+            case SizeOfExpressionNode { Operand: SizeOfUnresolvedOperandNode { ExpressionCandidate: not null } operand }:
+                AnalyzeExpression(operand.ExpressionCandidate, visibility, locals);
                 break;
             case BinaryExpressionNode binary:
                 AnalyzeExpression(binary.Left, visibility, locals);

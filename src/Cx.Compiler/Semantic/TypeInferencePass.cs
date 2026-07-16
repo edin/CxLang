@@ -571,7 +571,9 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             },
             SizeOfExpressionNode sizeOf => sizeOf with
             {
-                ExpressionOperand = InferExpression(sizeOf.ExpressionOperand, typeEnvironment),
+                Operand = sizeOf.Operand is SizeOfExpressionOperandNode operand
+                    ? operand with { Expression = InferExpression(operand.Expression, typeEnvironment)! }
+                    : sizeOf.Operand,
             },
             BinaryExpressionNode binary => binary with
             {

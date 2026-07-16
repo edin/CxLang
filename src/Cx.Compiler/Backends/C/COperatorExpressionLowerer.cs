@@ -7,18 +7,17 @@ internal sealed class COperatorExpressionLowerer(ICExpressionLoweringContext con
     public CExpression LowerUnary(UnaryExpressionNode unary) =>
         unary.Operator switch
         {
-            "&" => context.LowerAddressOfExpression(unary.Operand),
-            "*" => new CUnaryExpression(unary.Operator, context.LowerExpression(unary.Operand)),
-            _ => new CUnaryExpression(unary.Operator, context.LowerExpression(unary.Operand)),
+            UnaryOperator.AddressOf => context.LowerAddressOfExpression(unary.Operand),
+            _ => new CUnaryExpression(unary.Operator.ToSourceText(), context.LowerExpression(unary.Operand)),
         };
 
     public CExpression LowerPostfix(PostfixExpressionNode postfix) =>
-        new CPostfixExpression(context.LowerExpression(postfix.Operand), postfix.Operator);
+        new CPostfixExpression(context.LowerExpression(postfix.Operand), postfix.Operator.ToSourceText());
 
     public CExpression LowerBinary(BinaryExpressionNode binary) =>
-        binary.Operator == "<=>"
+        binary.Operator == BinaryOperator.Compare
             ? new CCallExpression(new CFunctionName("compare"), [context.LowerExpression(binary.Left), context.LowerExpression(binary.Right)])
-            : new CBinaryExpression(context.LowerExpression(binary.Left), binary.Operator, context.LowerExpression(binary.Right));
+            : new CBinaryExpression(context.LowerExpression(binary.Left), binary.Operator.ToSourceText(), context.LowerExpression(binary.Right));
 
     public CExpression LowerConditional(ConditionalExpressionNode conditional) =>
         new CConditionalExpression(
@@ -33,7 +32,7 @@ internal sealed class COperatorExpressionLowerer(ICExpressionLoweringContext con
 
         var target = context.LowerExpression(assignment.Target);
 
-        return new CAssignmentExpression(target, assignment.Operator, value);
+        return new CAssignmentExpression(target, assignment.Operator.ToSourceText(), value);
     }
 
     public CExpression LowerIndex(IndexExpressionNode index) =>

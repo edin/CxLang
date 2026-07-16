@@ -42,7 +42,7 @@ internal static class RangeForeachLowerer
             var condition = new BinaryExpressionNode(
                 range.Location,
                 new NameExpressionNode(node.ValueBinding.Location, node.ValueBinding.Name),
-                range.IsInclusive ? "<=" : "<",
+                range.IsInclusive ? BinaryOperator.LessThanOrEqual : BinaryOperator.LessThan,
                 new NameExpressionNode(range.End.Location, endName));
 
             var body = new List<StatementNode>();
@@ -85,11 +85,11 @@ internal static class RangeForeachLowerer
             new(
                 location,
                 new NameExpressionNode(location, name),
-                "=",
+                AssignmentOperator.Assign,
                 new BinaryExpressionNode(
                     location,
                     new NameExpressionNode(location, name),
-                    "+",
+                    BinaryOperator.Add,
                     new LiteralExpressionNode(location, "1")));
     }
 }

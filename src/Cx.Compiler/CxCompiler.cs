@@ -316,7 +316,7 @@ public sealed class CxCompiler
     private static UnaryExpressionNode AddressOf(Location location, string name) =>
         new(
             location,
-            "&",
+            UnaryOperator.AddressOf,
             new NameExpressionNode(location, name));
 
     private static IReadOnlyList<StatementNode> RewriteTestStatements(IReadOnlyList<StatementNode> statements) =>
@@ -476,7 +476,9 @@ public sealed class CxCompiler
         PostfixExpressionNode postfix => postfix with { Operand = RewriteTestExpression(postfix.Operand) },
         SizeOfExpressionNode sizeOf => sizeOf with
         {
-            ExpressionOperand = sizeOf.ExpressionOperand is null ? null : RewriteTestExpression(sizeOf.ExpressionOperand),
+            Operand = sizeOf.Operand is SizeOfExpressionOperandNode operand
+                ? operand with { Expression = RewriteTestExpression(operand.Expression) }
+                : sizeOf.Operand,
         },
         BinaryExpressionNode binary => binary with
         {

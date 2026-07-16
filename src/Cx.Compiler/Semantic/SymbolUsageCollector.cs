@@ -240,12 +240,11 @@ internal sealed class SymbolUsageCollector
             case PostfixExpressionNode postfix:
                 CollectExpression(postfix.Operand, builder);
                 break;
-            case SizeOfExpressionNode sizeOf:
-                builder.AddType(sizeOf.TypeOperandNode);
-                if (sizeOf.ExpressionOperand is not null)
-                {
-                    CollectExpression(sizeOf.ExpressionOperand, builder);
-                }
+            case SizeOfExpressionNode { Operand: SizeOfTypeOperandNode operand }:
+                builder.AddType(operand.TypeNode);
+                break;
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                CollectExpression(operand.Expression, builder);
 
                 break;
             case BinaryExpressionNode binary:

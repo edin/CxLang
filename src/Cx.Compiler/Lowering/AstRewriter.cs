@@ -271,9 +271,7 @@ internal abstract class AstRewriter
     protected virtual ExpressionNode RewriteSizeOfExpression(SizeOfExpressionNode sizeOf) =>
         sizeOf with
         {
-            ExpressionOperand = RewriteExpression(sizeOf.ExpressionOperand),
-            TypeOperandNode = RewriteType(sizeOf.TypeOperandNode),
-            OperandNode = RewriteSizeOfOperand(sizeOf.OperandNode),
+            Operand = RewriteSizeOfOperand(sizeOf.Operand),
         };
 
     protected virtual ExpressionNode RewriteBinaryExpression(BinaryExpressionNode binary) =>

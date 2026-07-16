@@ -171,8 +171,8 @@ internal static class GenericCallRetargeter
             case PostfixExpressionNode postfix:
                 foreach (var child in EnumerateExpressions(postfix.Operand)) yield return child;
                 break;
-            case SizeOfExpressionNode { ExpressionOperand: not null } sizeOf:
-                foreach (var child in EnumerateExpressions(sizeOf.ExpressionOperand)) yield return child;
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                foreach (var child in EnumerateExpressions(operand.Expression)) yield return child;
                 break;
             case BinaryExpressionNode binary:
                 foreach (var child in EnumerateExpressions(binary.Left)) yield return child;

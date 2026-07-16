@@ -18,7 +18,7 @@ internal static class CEmissionGuards
         new($"Internal C emission error: unsupported else branch '{elseBranch.GetType().Name}' at {elseBranch.Location} reached C statement lowering.");
 
     public static InvalidOperationException ErrorExpressionAfterLowering(ErrorExpressionNode error) =>
-        new($"Parser error expression reached C emission after lowering: '{TrimForDiagnostic(error.Text)}'.");
+        new($"Parser error expression reached C emission after lowering at {error.Location}.");
 
     public static InvalidOperationException UnsupportedSimpleExpressionLowering(ExpressionNode expression) =>
         new($"Internal C emission error: expression is not supported by simple C lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");

@@ -26,7 +26,7 @@ internal sealed class AssignmentSemanticAnalyzer(
             return;
         }
 
-        if (assignment.Operator == "=")
+        if (assignment.Operator == AssignmentOperator.Assign)
         {
             if (SemanticFacts.IsBareNull(assignment.Value) && !SemanticFacts.IsNullableType(targetTypeRef))
             {
@@ -120,7 +120,7 @@ internal sealed class AssignmentSemanticAnalyzer(
     private void CheckCompoundAssignmentCompatibility(
         Location location,
         TypeRef targetType,
-        string assignmentOperator,
+        AssignmentOperator assignmentOperator,
         ExpressionNode value,
         TypeEnvironment typeEnvironment)
     {
@@ -131,7 +131,7 @@ internal sealed class AssignmentSemanticAnalyzer(
         }
 
         if (IsPointerType(targetType)
-            && assignmentOperator is "+=" or "-="
+            && assignmentOperator is AssignmentOperator.Add or AssignmentOperator.Subtract
             && IsNumericLikeType(valueType))
         {
             return;
@@ -143,7 +143,7 @@ internal sealed class AssignmentSemanticAnalyzer(
             return;
         }
 
-        if (assignmentOperator == "+="
+        if (assignmentOperator == AssignmentOperator.Add
             && typeCompatibility.CanAssign(targetType, valueType, out _))
         {
             return;
@@ -151,7 +151,7 @@ internal sealed class AssignmentSemanticAnalyzer(
 
         diagnostics.Report(
             location,
-            $"Type mismatch for compound assignment: cannot apply '{assignmentOperator}' to '{SemanticFacts.FormatTypeRef(targetType)}' and '{SemanticFacts.FormatTypeRef(valueType)}'.");
+            $"Type mismatch for compound assignment: cannot apply '{assignmentOperator.ToSourceText()}' to '{SemanticFacts.FormatTypeRef(targetType)}' and '{SemanticFacts.FormatTypeRef(valueType)}'.");
     }
 
     private bool IsInterfaceBindingAssignment(TypeRef targetType, TypeRef? sourceType)
@@ -205,7 +205,7 @@ internal sealed class AssignmentSemanticAnalyzer(
         ParenthesizedExpressionNode parenthesized => GetAssignmentRootName(parenthesized.Expression),
         MemberExpressionNode member => GetAssignmentRootName(member.Target),
         IndexExpressionNode index => GetAssignmentRootName(index.Target),
-        UnaryExpressionNode { Operator: "*" } unary => GetAssignmentRootName(unary.Operand),
+        UnaryExpressionNode { Operator: UnaryOperator.Dereference } unary => GetAssignmentRootName(unary.Operand),
         _ => null,
     };
 

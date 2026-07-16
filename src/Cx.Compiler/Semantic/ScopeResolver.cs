@@ -277,8 +277,11 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             case PostfixExpressionNode postfix:
                 ResolveExpression(postfix.Operand, scope);
                 break;
-            case SizeOfExpressionNode sizeOf:
-                ResolveExpression(sizeOf.ExpressionOperand, scope);
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                ResolveExpression(operand.Expression, scope);
+                break;
+            case SizeOfExpressionNode { Operand: SizeOfUnresolvedOperandNode { ExpressionCandidate: not null } operand }:
+                ResolveExpression(operand.ExpressionCandidate, scope);
                 break;
             case BinaryExpressionNode binary:
                 ResolveExpression(binary.Left, scope);

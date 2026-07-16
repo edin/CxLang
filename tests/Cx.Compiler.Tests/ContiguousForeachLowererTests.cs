@@ -103,7 +103,7 @@ public sealed class ContiguousForeachLowererTests
 
         Assert.Equal("start", Assert.IsType<MemberExpressionNode>(data.Initializer).MemberName);
         var lengthExpression = Assert.IsType<BinaryExpressionNode>(length.Initializer);
-        Assert.Equal("-", lengthExpression.Operator);
+        Assert.Equal(BinaryOperator.Subtract, lengthExpression.Operator);
         Assert.Equal("end", Assert.IsType<MemberExpressionNode>(lengthExpression.Left).MemberName);
         Assert.Equal("start", Assert.IsType<MemberExpressionNode>(lengthExpression.Right).MemberName);
 

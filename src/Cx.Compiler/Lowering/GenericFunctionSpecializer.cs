@@ -195,9 +195,7 @@ internal static class GenericFunctionSpecializer
             },
             SizeOfExpressionNode sizeOf => sizeOf with
             {
-                TypeOperandNode = SubstituteTypeNode(sizeOf.TypeOperandNode, typeSubstitutions),
-                ExpressionOperand = SubstituteOptionalExpression(sizeOf.ExpressionOperand, typeSubstitutions),
-                OperandNode = SubstituteSizeOfOperand(sizeOf.OperandNode, typeSubstitutions),
+                Operand = SubstituteSizeOfOperand(sizeOf.Operand, typeSubstitutions),
             },
             BinaryExpressionNode binary => binary with
             {

@@ -212,9 +212,7 @@ internal sealed class AstTransformPipeline
         protected override ExpressionNode RewriteSizeOfExpression(SizeOfExpressionNode sizeOf) =>
             sizeOf with
             {
-                ExpressionOperand = RewriteExpressionWithExpectedType(sizeOf.ExpressionOperand, null),
-                TypeOperandNode = RewriteType(sizeOf.TypeOperandNode),
-                OperandNode = RewriteSizeOfOperand(sizeOf.OperandNode),
+                Operand = RewriteSizeOfOperand(sizeOf.Operand),
             };
 
         protected override ExpressionNode RewriteBinaryExpression(BinaryExpressionNode binary) =>

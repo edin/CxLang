@@ -299,7 +299,7 @@ public sealed class GenericLoweringServicesTests
         var functionExpression = Assert.IsType<FunctionExpressionNode>(Assert.IsType<LetStatement>(body[4]).Initializer);
 
         Assert.Equal("Box_int*", cast.TargetTypeNode?.ToSourceText());
-        Assert.Equal("Box_int", sizeOf.TypeOperandNode?.ToSourceText());
+        Assert.Equal("Box_int", Assert.IsType<SizeOfTypeOperandNode>(sizeOf.Operand).TypeNode.ToSourceText());
         Assert.Equal("Box_int", initializer.TypeNameNode?.ToSourceText());
         Assert.Equal(["Box_int"], genericCall.TypeArgumentNodes.Select(node => node.ToSourceText()).ToList());
         Assert.Equal("Box_int", functionExpression.ReturnTypeNode?.ToSourceText());

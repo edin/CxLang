@@ -16,7 +16,7 @@ public sealed class AstRewriterTests
                 new BinaryExpressionNode(
                     location,
                     new NameExpressionNode(location, "a"),
-                    "+",
+                    BinaryOperator.Add,
                     new NameExpressionNode(location, "b"))),
         ]);
 

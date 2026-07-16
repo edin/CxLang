@@ -683,7 +683,7 @@ public sealed class SemanticAnalyzer(
             diagnostics.Report(location, "Cannot use null in arithmetic expressions.");
         }
 
-        if (expression is not BinaryExpressionNode { Operator: "<=>" } binary
+        if (expression is not BinaryExpressionNode { Operator: BinaryOperator.Compare } binary
             || _expressionTypeResolver is null)
         {
             return;
@@ -715,14 +715,23 @@ public sealed class SemanticAnalyzer(
     private static bool ContainsNullArithmetic(ExpressionNode? expression) =>
         expression switch
         {
-            BinaryExpressionNode { Operator: "+" or "-" or "*" or "/" or "%", Left: var left, Right: var right }
+            BinaryExpressionNode
+            {
+                Operator: BinaryOperator.Add
+                    or BinaryOperator.Subtract
+                    or BinaryOperator.Multiply
+                    or BinaryOperator.Divide
+                    or BinaryOperator.Modulo,
+                Left: var left,
+                Right: var right,
+            }
                 when IsNullLiteral(left) || IsNullLiteral(right) => true,
             BinaryExpressionNode binary => ContainsNullArithmetic(binary.Left) || ContainsNullArithmetic(binary.Right),
             ParenthesizedExpressionNode parenthesized => ContainsNullArithmetic(parenthesized.Expression),
             CastExpressionNode cast => ContainsNullArithmetic(cast.Expression),
             UnaryExpressionNode unary => ContainsNullArithmetic(unary.Operand),
             PostfixExpressionNode postfix => ContainsNullArithmetic(postfix.Operand),
-            SizeOfExpressionNode sizeOf => ContainsNullArithmetic(sizeOf.ExpressionOperand),
+            SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand } => ContainsNullArithmetic(operand.Expression),
             ScalarRangeExpressionNode range => ContainsNullArithmetic(range.Start) || ContainsNullArithmetic(range.End),
             ConditionalExpressionNode conditional =>
                 ContainsNullArithmetic(conditional.Condition)

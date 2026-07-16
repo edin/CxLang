@@ -19,7 +19,7 @@ public sealed class ExpressionSourceTextTests
                 new BinaryExpressionNode(
                     location,
                     new LiteralExpressionNode(location, "1"),
-                    "+",
+                    BinaryOperator.Add,
                     new LiteralExpressionNode(location, "2"))
             ]);
 

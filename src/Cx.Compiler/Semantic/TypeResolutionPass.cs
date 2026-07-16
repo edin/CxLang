@@ -369,23 +369,30 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
 
     private void ResolveSizeOfExpression(SizeOfExpressionNode sizeOf)
     {
-        if (sizeOf.OperandNode is SizeOfUnresolvedOperandNode unresolved
+        if (sizeOf.Operand is SizeOfUnresolvedOperandNode unresolved
             && unresolved.ExpressionCandidate is NameExpressionNode name
             && name.Semantic.Symbol is null or { Kind: SymbolKind.Type })
         {
-            var typeNode = TypeNode.CreateFromText(unresolved.Location, name.Name);
-            sizeOf.TypeOperandNode = typeNode;
-            sizeOf.ExpressionOperand = null;
-            sizeOf.OperandNode = new SizeOfTypeOperandNode(typeNode.Location, typeNode);
+            var typeNode = TypeNode.Named(unresolved.Location, name.Name);
+            sizeOf.Operand = new SizeOfTypeOperandNode(typeNode.Location, typeNode);
+        }
+        else if (sizeOf.Operand is SizeOfUnresolvedOperandNode { ExpressionCandidate: not null } expressionCandidate)
+        {
+            sizeOf.Operand = new SizeOfExpressionOperandNode(
+                expressionCandidate.ExpressionCandidate.Location,
+                expressionCandidate.ExpressionCandidate);
         }
 
-        if (sizeOf.TypeOperandNode is not null)
+        if (sizeOf.Operand is SizeOfTypeOperandNode typeOperand)
         {
-            ResolveType(sizeOf, sizeOf.TypeOperandNode);
+            ResolveType(sizeOf, typeOperand.TypeNode);
             return;
         }
 
-        ResolveExpression(sizeOf.ExpressionOperand);
+        if (sizeOf.Operand is SizeOfExpressionOperandNode expressionOperand)
+        {
+            ResolveExpression(expressionOperand.Expression);
+        }
     }
 
     private void ResolveType(SyntaxNode node, TypeNode? typeNode)

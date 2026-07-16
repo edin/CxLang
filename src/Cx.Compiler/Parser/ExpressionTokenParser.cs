@@ -102,7 +102,7 @@ internal sealed class ExpressionTokenParser
 
             return new UnaryExpressionNode(
                 operatorToken.Location,
-                operatorToken.Value,
+                ToUnaryOperator(operatorToken.Type),
                 operand);
         }
 
@@ -121,7 +121,7 @@ internal sealed class ExpressionTokenParser
                 or TokenType.PercentEquals => new AssignmentExpressionNode(
                     left.Location,
                     left,
-                    operatorToken.Value,
+                    ToAssignmentOperator(operatorToken.Type),
                     right),
 
             TokenType.DotDot => new ScalarRangeExpressionNode(
@@ -139,7 +139,7 @@ internal sealed class ExpressionTokenParser
             _ => new BinaryExpressionNode(
                 left.Location,
                 left,
-                operatorToken.Value,
+                ToBinaryOperator(operatorToken.Type),
                 right)
         };
     }
@@ -216,7 +216,7 @@ internal sealed class ExpressionTokenParser
                 expression = new PostfixExpressionNode(
                     expression.Location,
                     expression,
-                    operatorToken.Value);
+                    ToPostfixOperator(operatorToken.Type));
                 continue;
             }
 
@@ -1134,11 +1134,8 @@ internal sealed class ExpressionTokenParser
         {
             expression = new SizeOfExpressionNode(
                 sizeOfToken.Location,
-                expressionCandidate,
-                TypeOperandNode: null,
-                OperandNode: new SizeOfUnresolvedOperandNode(
+                new SizeOfUnresolvedOperandNode(
                     operandTokens[0].Location,
-                    TokenText.ToSourceText(operandTokens),
                     expressionCandidate));
             return true;
         }
@@ -1147,8 +1144,9 @@ internal sealed class ExpressionTokenParser
         {
             expression = new SizeOfExpressionNode(
                 sizeOfToken.Location,
-                ExpressionOperand: null,
-                TypeOperandNode: TypeTokenParser.Parse(operandTokens));
+                new SizeOfTypeOperandNode(
+                    operandTokens[0].Location,
+                    TypeTokenParser.Parse(operandTokens)));
             return true;
         }
 
@@ -1161,7 +1159,7 @@ internal sealed class ExpressionTokenParser
 
         expression = new SizeOfExpressionNode(
             sizeOfToken.Location,
-            operandExpression);
+            new SizeOfExpressionOperandNode(operandExpression.Location, operandExpression));
         return true;
     }
 
@@ -1370,6 +1368,61 @@ internal sealed class ExpressionTokenParser
 
     private Token PreviousOr(Token fallback) =>
         _position > 0 ? _tokens[_position - 1] : fallback;
+
+    private static UnaryOperator ToUnaryOperator(TokenType type) => type switch
+    {
+        TokenType.Plus => UnaryOperator.Plus,
+        TokenType.Minus => UnaryOperator.Negate,
+        TokenType.Bang => UnaryOperator.LogicalNot,
+        TokenType.Tilde => UnaryOperator.BitwiseNot,
+        TokenType.Star => UnaryOperator.Dereference,
+        TokenType.Ampersand => UnaryOperator.AddressOf,
+        TokenType.PlusPlus => UnaryOperator.Increment,
+        TokenType.MinusMinus => UnaryOperator.Decrement,
+        _ => throw new InvalidOperationException($"Token '{type}' is not a unary operator."),
+    };
+
+    private static PostfixOperator ToPostfixOperator(TokenType type) => type switch
+    {
+        TokenType.PlusPlus => PostfixOperator.Increment,
+        TokenType.MinusMinus => PostfixOperator.Decrement,
+        _ => throw new InvalidOperationException($"Token '{type}' is not a postfix operator."),
+    };
+
+    private static AssignmentOperator ToAssignmentOperator(TokenType type) => type switch
+    {
+        TokenType.Equals => AssignmentOperator.Assign,
+        TokenType.PlusEquals => AssignmentOperator.Add,
+        TokenType.MinusEquals => AssignmentOperator.Subtract,
+        TokenType.StarEquals => AssignmentOperator.Multiply,
+        TokenType.SlashEquals => AssignmentOperator.Divide,
+        TokenType.PercentEquals => AssignmentOperator.Modulo,
+        _ => throw new InvalidOperationException($"Token '{type}' is not an assignment operator."),
+    };
+
+    private static BinaryOperator ToBinaryOperator(TokenType type) => type switch
+    {
+        TokenType.Star => BinaryOperator.Multiply,
+        TokenType.Slash => BinaryOperator.Divide,
+        TokenType.Percent => BinaryOperator.Modulo,
+        TokenType.Plus => BinaryOperator.Add,
+        TokenType.Minus => BinaryOperator.Subtract,
+        TokenType.LessThanLessThan => BinaryOperator.ShiftLeft,
+        TokenType.GreaterThanGreaterThan => BinaryOperator.ShiftRight,
+        TokenType.LessThan => BinaryOperator.LessThan,
+        TokenType.LessThanOrEqual => BinaryOperator.LessThanOrEqual,
+        TokenType.GreaterThan => BinaryOperator.GreaterThan,
+        TokenType.GreaterThanOrEqual => BinaryOperator.GreaterThanOrEqual,
+        TokenType.Spaceship => BinaryOperator.Compare,
+        TokenType.EqualEqual => BinaryOperator.Equal,
+        TokenType.BangEqual => BinaryOperator.NotEqual,
+        TokenType.Ampersand => BinaryOperator.BitwiseAnd,
+        TokenType.Caret => BinaryOperator.BitwiseXor,
+        TokenType.Pipe => BinaryOperator.BitwiseOr,
+        TokenType.AmpersandAmpersand => BinaryOperator.LogicalAnd,
+        TokenType.PipePipe => BinaryOperator.LogicalOr,
+        _ => throw new InvalidOperationException($"Token '{type}' is not a binary operator."),
+    };
 
     private bool IsAtEnd => _position >= _tokens.Count;
 

@@ -14,7 +14,7 @@ public sealed class CExpressionLowererTests
         var expression = new BinaryExpressionNode(
             location,
             new NameExpressionNode(location, "a"),
-            "+",
+            BinaryOperator.Add,
             new LiteralExpressionNode(location, "1"));
 
         var lowered = new CExpressionLowerer(new TestContext()).LowerSimple(expression);
@@ -38,8 +38,7 @@ public sealed class CExpressionLowererTests
             TypeNode.CreateFromText(location, "Vec<int>*")));
         var sizeOf = lowerer.LowerSimple(new SizeOfExpressionNode(
             location,
-            ExpressionOperand: null,
-            TypeOperandNode: TypeNode.CreateFromText(location, "Vec<int>")));
+            new SizeOfTypeOperandNode(location, TypeNode.CreateFromText(location, "Vec<int>"))));
 
         Assert.Equal("lowered_Vec_int*", AssertPointerType(Assert.IsType<CCastExpression>(cast).TargetType));
         Assert.Equal("lowered_Vec_int", AssertNamedType(Assert.IsType<CSizeOfTypeExpression>(sizeOf).Type));
@@ -61,8 +60,7 @@ public sealed class CExpressionLowererTests
             typeNode));
         var sizeOf = lowerer.LowerSimple(new SizeOfExpressionNode(
             location,
-            ExpressionOperand: null,
-            TypeOperandNode: typeNode));
+            new SizeOfTypeOperandNode(location, typeNode)));
         var initializer = lowerer.LowerSimple(new InitializerExpressionNode(
             location,
             [],
@@ -88,7 +86,7 @@ public sealed class CExpressionLowererTests
         var assignment = lowerer.LowerSimple(new AssignmentExpressionNode(
             location,
             new NameExpressionNode(location, "value"),
-            "=",
+            AssignmentOperator.Assign,
             new LiteralExpressionNode(location, "1")));
 
         Assert.Equal("Point", AssertNamedType(Assert.IsType<CInitializerExpression>(initializer).Type));

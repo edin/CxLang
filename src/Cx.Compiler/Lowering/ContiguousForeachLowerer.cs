@@ -83,7 +83,7 @@ internal static class ContiguousForeachLowerer
                 new BinaryExpressionNode(
                     node.Location,
                     new NameExpressionNode(node.Location, indexName),
-                    "<",
+                    BinaryOperator.LessThan,
                     new NameExpressionNode(node.Location, lengthName)),
                 IncrementExpression(node.Location, indexName),
                 body);
@@ -195,7 +195,7 @@ internal static class ContiguousForeachLowerer
             return new BinaryExpressionNode(
                 source.Location,
                 end,
-                "-",
+                BinaryOperator.Subtract,
                 start);
         }
 
@@ -213,18 +213,18 @@ internal static class ContiguousForeachLowerer
         private static UnaryExpressionNode AddressOf(ExpressionNode expression) =>
             new(
                 expression.Location,
-                "&",
+                UnaryOperator.AddressOf,
                 expression);
 
         private static AssignmentExpressionNode IncrementExpression(Location location, string name) =>
             new(
                 location,
                 new NameExpressionNode(location, name),
-                "=",
+                AssignmentOperator.Assign,
                 new BinaryExpressionNode(
                     location,
                     new NameExpressionNode(location, name),
-                    "+",
+                    BinaryOperator.Add,
                     new LiteralExpressionNode(location, "1")));
 
         private readonly record struct ContiguousIterable(

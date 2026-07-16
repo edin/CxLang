@@ -138,7 +138,7 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
             case ErrorExpressionNode error:
                 diagnostics.Report(
                     error.Location,
-                    $"Internal lowering error: parser error expression remains after post-semantic lowering: '{TrimForDiagnostic(error.Text)}'.");
+                    "Internal lowering error: parser error expression remains after post-semantic lowering.");
                 break;
             case ParenthesizedExpressionNode parenthesized:
                 AnalyzeExpression(parenthesized.Expression);
@@ -152,8 +152,8 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
             case PostfixExpressionNode postfix:
                 AnalyzeExpression(postfix.Operand);
                 break;
-            case SizeOfExpressionNode sizeOf:
-                AnalyzeExpression(sizeOf.ExpressionOperand);
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                AnalyzeExpression(operand.Expression);
                 break;
             case BinaryExpressionNode binary:
                 AnalyzeExpression(binary.Left);

@@ -164,8 +164,8 @@ internal static class CExpressionTraversal
             case PostfixExpressionNode postfix:
                 foreach (var child in EnumerateExpressionNodes(postfix.Operand)) yield return child;
                 break;
-            case SizeOfExpressionNode { ExpressionOperand: not null } sizeOf:
-                foreach (var child in EnumerateExpressionNodes(sizeOf.ExpressionOperand)) yield return child;
+            case SizeOfExpressionNode { Operand: SizeOfExpressionOperandNode operand }:
+                foreach (var child in EnumerateExpressionNodes(operand.Expression)) yield return child;
                 break;
             case BinaryExpressionNode binary:
                 foreach (var child in EnumerateExpressionNodes(binary.Left)) yield return child;

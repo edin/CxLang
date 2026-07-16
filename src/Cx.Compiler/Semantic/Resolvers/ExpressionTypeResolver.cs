@@ -140,23 +140,29 @@ internal sealed class ExpressionTypeResolver(
 
         return unary.Operator switch
         {
-            "&" => new TypeRef.Pointer(operandType),
-            "*" => UnwrapPointer(operandType),
-            "!" => ResolveKnownType(TypeRef.Bool),
-            "+" => operandType,
-            "-" => operandType,
+            UnaryOperator.AddressOf => new TypeRef.Pointer(operandType),
+            UnaryOperator.Dereference => UnwrapPointer(operandType),
+            UnaryOperator.LogicalNot => ResolveKnownType(TypeRef.Bool),
+            UnaryOperator.Plus or UnaryOperator.Negate => operandType,
             _ => null,
         };
     }
 
     private TypeRef? ResolveBinaryTypeRef(BinaryExpressionNode binary, TypeEnvironment variables)
     {
-        if (binary.Operator is "==" or "!=" or "<" or "<=" or ">" or ">=" or "&&" or "||")
+        if (binary.Operator is BinaryOperator.Equal
+            or BinaryOperator.NotEqual
+            or BinaryOperator.LessThan
+            or BinaryOperator.LessThanOrEqual
+            or BinaryOperator.GreaterThan
+            or BinaryOperator.GreaterThanOrEqual
+            or BinaryOperator.LogicalAnd
+            or BinaryOperator.LogicalOr)
         {
             return ResolveKnownType(TypeRef.Bool);
         }
 
-        if (binary.Operator == "<=>")
+        if (binary.Operator == BinaryOperator.Compare)
         {
             return ResolveKnownType(TypeRef.Int);
         }

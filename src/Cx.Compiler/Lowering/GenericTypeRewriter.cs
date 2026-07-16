@@ -352,6 +352,26 @@ internal static class GenericTypeRewriter
         IReadOnlySet<string> concreteStructNames) =>
         expression is null ? null : RewriteExpression(expression, concreteStructNames);
 
+    private static SizeOfOperandNode RewriteSizeOfOperand(
+        SizeOfOperandNode operand,
+        IReadOnlySet<string> concreteStructNames) =>
+        operand switch
+        {
+            SizeOfTypeOperandNode typeOperand => typeOperand with
+            {
+                TypeNode = RewriteTypeNode(typeOperand.TypeNode, concreteStructNames)!,
+            },
+            SizeOfExpressionOperandNode expressionOperand => expressionOperand with
+            {
+                Expression = RewriteExpression(expressionOperand.Expression, concreteStructNames),
+            },
+            SizeOfUnresolvedOperandNode { ExpressionCandidate: not null } unresolved => unresolved with
+            {
+                ExpressionCandidate = RewriteExpression(unresolved.ExpressionCandidate, concreteStructNames),
+            },
+            _ => operand,
+        };
+
     private static ExpressionNode RewriteExpression(
         ExpressionNode expression,
         IReadOnlySet<string> concreteStructNames)
@@ -377,8 +397,7 @@ internal static class GenericTypeRewriter
             },
             SizeOfExpressionNode sizeOf => sizeOf with
             {
-                TypeOperandNode = RewriteTypeNode(sizeOf.TypeOperandNode, concreteStructNames),
-                ExpressionOperand = RewriteOptionalExpression(sizeOf.ExpressionOperand, concreteStructNames),
+                Operand = RewriteSizeOfOperand(sizeOf.Operand, concreteStructNames),
             },
             BinaryExpressionNode binary => binary with
             {

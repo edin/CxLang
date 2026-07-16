@@ -12,11 +12,11 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("left + right * 2");
 
         var add = Assert.IsType<BinaryExpressionNode>(expression);
-        Assert.Equal("+", add.Operator);
+        Assert.Equal(BinaryOperator.Add, add.Operator);
         Assert.IsType<NameExpressionNode>(add.Left);
 
         var multiply = Assert.IsType<BinaryExpressionNode>(add.Right);
-        Assert.Equal("*", multiply.Operator);
+        Assert.Equal(BinaryOperator.Multiply, multiply.Operator);
         Assert.IsType<NameExpressionNode>(multiply.Left);
         Assert.IsType<LiteralExpressionNode>(multiply.Right);
     }
@@ -27,11 +27,11 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("a = b = c");
 
         var outer = Assert.IsType<AssignmentExpressionNode>(expression);
-        Assert.Equal("=", outer.Operator);
+        Assert.Equal(AssignmentOperator.Assign, outer.Operator);
         Assert.IsType<NameExpressionNode>(outer.Target);
 
         var inner = Assert.IsType<AssignmentExpressionNode>(outer.Value);
-        Assert.Equal("=", inner.Operator);
+        Assert.Equal(AssignmentOperator.Assign, inner.Operator);
     }
 
     [Fact]
@@ -156,9 +156,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("sizeof(int)");
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
-        Assert.IsType<SizeOfUnresolvedOperandNode>(sizeOf.OperandNode);
-        Assert.IsType<NameExpressionNode>(sizeOf.ExpressionOperand);
-        Assert.Null(sizeOf.TypeOperandNode);
+        Assert.IsType<NameExpressionNode>(Assert.IsType<SizeOfUnresolvedOperandNode>(sizeOf.Operand).ExpressionCandidate);
     }
 
     [Fact]
@@ -167,8 +165,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("sizeof(Box<int>)");
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
-        Assert.Null(sizeOf.ExpressionOperand);
-        Assert.Equal("Box<int>", sizeOf.TypeOperandNode?.ToSourceText());
+        Assert.Equal("Box<int>", Assert.IsType<SizeOfTypeOperandNode>(sizeOf.Operand).TypeNode.ToSourceText());
     }
 
     [Fact]
@@ -177,9 +174,9 @@ public sealed class ExpressionTokenParserTests
         var expression = CompilerTestHelpers.ParseTokenExpression("sizeof(Vec<Box<int>>*)");
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
-        Assert.Null(sizeOf.ExpressionOperand);
-        Assert.Equal("Vec<Box<int>>*", sizeOf.TypeOperandNode?.ToSourceText());
-        Assert.IsType<PointerTypeSyntaxNode>(sizeOf.TypeOperandNode?.Syntax);
+        var operand = Assert.IsType<SizeOfTypeOperandNode>(sizeOf.Operand);
+        Assert.Equal("Vec<Box<int>>*", operand.TypeNode.ToSourceText());
+        Assert.IsType<PointerTypeSyntaxNode>(operand.TypeNode.Syntax);
     }
 
     [Fact]
@@ -188,8 +185,7 @@ public sealed class ExpressionTokenParserTests
         var expression = CompilerTestHelpers.ParseTokenExpression("sizeof(fn(int, char*) -> bool)");
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
-        Assert.Null(sizeOf.ExpressionOperand);
-        var functionType = Assert.IsType<FunctionTypeSyntaxNode>(sizeOf.TypeOperandNode?.Syntax);
+        var functionType = Assert.IsType<FunctionTypeSyntaxNode>(Assert.IsType<SizeOfTypeOperandNode>(sizeOf.Operand).TypeNode.Syntax);
         Assert.Equal(2, functionType.Parameters.Count);
     }
 
@@ -199,8 +195,7 @@ public sealed class ExpressionTokenParserTests
         var expression = CompilerTestHelpers.ParseTokenExpression("sizeof(value + 1)");
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
-        Assert.Null(sizeOf.TypeOperandNode);
-        Assert.IsType<BinaryExpressionNode>(sizeOf.ExpressionOperand);
+        Assert.IsType<BinaryExpressionNode>(Assert.IsType<SizeOfExpressionOperandNode>(sizeOf.Operand).Expression);
     }
 
     [Fact]
@@ -209,8 +204,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("sizeof(flags)");
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
-        Assert.Null(sizeOf.TypeOperandNode);
-        Assert.IsType<NameExpressionNode>(sizeOf.ExpressionOperand);
+        Assert.IsType<NameExpressionNode>(Assert.IsType<SizeOfUnresolvedOperandNode>(sizeOf.Operand).ExpressionCandidate);
     }
 
     [Fact]
@@ -219,9 +213,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("sizeof(Point)");
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
-        Assert.IsType<SizeOfUnresolvedOperandNode>(sizeOf.OperandNode);
-        Assert.Null(sizeOf.TypeOperandNode);
-        Assert.IsType<NameExpressionNode>(sizeOf.ExpressionOperand);
+        Assert.IsType<NameExpressionNode>(Assert.IsType<SizeOfUnresolvedOperandNode>(sizeOf.Operand).ExpressionCandidate);
     }
 
     [Fact]
@@ -245,9 +237,7 @@ public sealed class ExpressionTokenParserTests
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(
             Assert.IsType<ReturnStatement>(Assert.Single(program.Functions.Single().Body)).Expression);
-        Assert.IsType<SizeOfTypeOperandNode>(sizeOf.OperandNode);
-        Assert.Null(sizeOf.ExpressionOperand);
-        Assert.Equal("Point", sizeOf.TypeOperandNode?.ToSourceText());
+        Assert.Equal("Point", Assert.IsType<SizeOfTypeOperandNode>(sizeOf.Operand).TypeNode.ToSourceText());
     }
 
     [Fact]
@@ -267,9 +257,7 @@ public sealed class ExpressionTokenParserTests
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(
             Assert.IsType<ReturnStatement>(Assert.Single(program.Functions.Single().Body)).Expression);
-        Assert.IsType<SizeOfTypeOperandNode>(sizeOf.OperandNode);
-        Assert.Null(sizeOf.ExpressionOperand);
-        Assert.Equal("int", sizeOf.TypeOperandNode?.ToSourceText());
+        Assert.Equal("int", Assert.IsType<SizeOfTypeOperandNode>(sizeOf.Operand).TypeNode.ToSourceText());
     }
 
     [Fact]
@@ -289,9 +277,7 @@ public sealed class ExpressionTokenParserTests
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(
             Assert.IsType<ReturnStatement>(Assert.Single(program.Functions.Single().Body)).Expression);
-        Assert.IsType<SizeOfUnresolvedOperandNode>(sizeOf.OperandNode);
-        Assert.Null(sizeOf.TypeOperandNode);
-        Assert.IsType<NameExpressionNode>(sizeOf.ExpressionOperand);
+        Assert.IsType<NameExpressionNode>(Assert.IsType<SizeOfExpressionOperandNode>(sizeOf.Operand).Expression);
     }
 
     [Fact]
@@ -426,7 +412,7 @@ public sealed class ExpressionTokenParserTests
 
         var parenthesized = Assert.IsType<ParenthesizedExpressionNode>(expression);
         var binary = Assert.IsType<BinaryExpressionNode>(parenthesized.Expression);
-        Assert.Equal("+", binary.Operator);
+        Assert.Equal(BinaryOperator.Add, binary.Operator);
     }
 
     [Fact]
@@ -436,7 +422,7 @@ public sealed class ExpressionTokenParserTests
 
         var parenthesized = Assert.IsType<ParenthesizedExpressionNode>(expression);
         var binary = Assert.IsType<BinaryExpressionNode>(parenthesized.Expression);
-        Assert.Equal("*", binary.Operator);
+        Assert.Equal(BinaryOperator.Multiply, binary.Operator);
     }
 
     [Fact]

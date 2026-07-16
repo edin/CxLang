@@ -167,7 +167,7 @@ internal static class IteratorForeachLowerer
         private static UnaryExpressionNode Dereference(ExpressionNode expression) =>
             new(
                 expression.Location,
-                "*",
+                UnaryOperator.Dereference,
                 expression);
 
         private static CallExpressionNode MemberCall(ExpressionNode target, string memberName)
@@ -182,11 +182,11 @@ internal static class IteratorForeachLowerer
             new(
                 location,
                 Name(location, name, TypeRef.Usize),
-                "=",
+                AssignmentOperator.Assign,
                 new BinaryExpressionNode(
                     location,
                     Name(location, name, TypeRef.Usize),
-                    "+",
+                    BinaryOperator.Add,
                     new LiteralExpressionNode(location, "1")));
 
         private static TypeNode CreateTypeNode(Location location, TypeRef type)

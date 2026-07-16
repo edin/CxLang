@@ -266,7 +266,7 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
         AssignmentExpressionNode assignment,
         CExpression value)
     {
-        return assignment.Operator == "="
+        return assignment.Operator == AssignmentOperator.Assign
             && assignment.Target is NameExpressionNode targetName
             && _scope.TryGetVariableTypeRef(targetName.Name, out var targetTypeRef)
             ? TryWrapTaggedUnionValueExpression(targetTypeRef, assignment.Value, value)

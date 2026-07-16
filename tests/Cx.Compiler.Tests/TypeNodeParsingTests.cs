@@ -483,7 +483,7 @@ public sealed class TypeNodeParsingTests
         var functionExpression = Assert.IsType<FunctionExpressionNode>(Assert.IsType<LetStatement>(body[4]).Initializer);
 
         Assert.Equal("Box<int>*", cast.TargetTypeNode?.ToSourceText());
-        Assert.Equal("Box<int>", sizeOf.TypeOperandNode?.ToSourceText());
+        Assert.Equal("Box<int>", Assert.IsType<SizeOfTypeOperandNode>(sizeOf.Operand).TypeNode.ToSourceText());
         Assert.Equal("Box<int>", initializer.TypeNameNode?.ToSourceText());
         Assert.Equal(["Box<int>"], genericCall.TypeArgumentNodes.Select(node => node.ToSourceText()).ToList());
         Assert.Equal("Box<int>", functionExpression.ReturnTypeNode?.ToSourceText());
@@ -525,7 +525,7 @@ public sealed class TypeNodeParsingTests
         var functionExpression = Assert.IsType<FunctionExpressionNode>(Assert.IsType<LetStatement>(body[4]).Initializer);
 
         Assert.Equal(cast.Semantic.Type, cast.TargetTypeNode?.Semantic.Type);
-        Assert.Equal(sizeOf.Semantic.Type, sizeOf.TypeOperandNode?.Semantic.Type);
+        Assert.Equal(sizeOf.Semantic.Type, Assert.IsType<SizeOfTypeOperandNode>(sizeOf.Operand).TypeNode.Semantic.Type);
         Assert.Equal(initializer.Semantic.Type, initializer.TypeNameNode?.Semantic.Type);
         Assert.IsType<TypeRef.Named>(Assert.Single(genericCall.TypeArgumentNodes).Semantic.Type);
         Assert.Equal(functionExpression.Semantic.Type, functionExpression.ReturnTypeNode?.Semantic.Type);
