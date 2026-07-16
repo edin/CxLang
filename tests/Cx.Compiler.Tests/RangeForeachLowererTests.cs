@@ -23,7 +23,7 @@ public sealed class RangeForeachLowererTests
         var loop = Assert.IsType<ForStatement>(forStatement);
         var loopValue = Assert.IsType<ForDeclarationInitializerNode>(loop.Initializer);
         Assert.Equal("i", loopValue.Name);
-        Assert.Equal("int", loopValue.TypeNode?.TypeName);
+        Assert.Equal("int", loopValue.TypeNode?.ToSourceText());
         Assert.Equal("0", Assert.IsType<LiteralExpressionNode>(loopValue.Initializer).LiteralText);
 
         Assert.NotNull(loop.CachedRangeEndInitializer);

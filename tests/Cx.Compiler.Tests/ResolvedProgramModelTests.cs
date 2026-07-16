@@ -110,7 +110,7 @@ public sealed class ResolvedProgramModelTests
 
         Assert.Equal("std.core", Assert.IsType<TypeRef.Named>(stdVec.Type).ModuleName);
         Assert.Equal("app.collections", Assert.IsType<TypeRef.Named>(appVec.Type).ModuleName);
-        Assert.NotEqual(TypeRefFacts.IdentityKey(stdVec.Type), TypeRefFacts.IdentityKey(appVec.Type));
+        Assert.NotEqual(TypeIdentity.ResolvedKey(stdVec.Type), TypeIdentity.ResolvedKey(appVec.Type));
     }
 
     private static TypeRef VecOfInt() =>

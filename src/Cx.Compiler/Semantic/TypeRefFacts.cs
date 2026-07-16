@@ -80,66 +80,6 @@ internal static class TypeRefFacts
         return true;
     }
 
-    public static bool SameType(TypeRef? left, TypeRef? right) =>
-        left is not null
-        && right is not null
-        && string.Equals(
-            IdentityKey(left),
-            IdentityKey(right),
-            StringComparison.Ordinal);
-
-    public static bool SameTypeIgnoringModule(TypeRef? left, TypeRef? right)
-    {
-        if (left is null || right is null)
-        {
-            return false;
-        }
-
-        if (left is TypeRef.Alias || right is TypeRef.Alias)
-        {
-            return SameAliasReference(left, right);
-        }
-
-        return (left, right) switch
-        {
-            (TypeRef.Named leftNamed, TypeRef.Named rightNamed) =>
-                string.Equals(leftNamed.Name, rightNamed.Name, StringComparison.Ordinal)
-                && SameTypesIgnoringModule(leftNamed.Arguments, rightNamed.Arguments),
-            (TypeRef.Pointer leftPointer, TypeRef.Pointer rightPointer) =>
-                SameTypeIgnoringModule(leftPointer.Element, rightPointer.Element),
-            (TypeRef.FixedArray leftArray, TypeRef.FixedArray rightArray) =>
-                string.Equals(leftArray.Length, rightArray.Length, StringComparison.Ordinal)
-                && SameTypeIgnoringModule(leftArray.Element, rightArray.Element),
-            (TypeRef.Function leftFunction, TypeRef.Function rightFunction) =>
-                leftFunction.IsVariadic == rightFunction.IsVariadic
-                && SameTypesIgnoringModule(leftFunction.Parameters, rightFunction.Parameters)
-                && SameTypeIgnoringModule(leftFunction.ReturnType, rightFunction.ReturnType),
-            (TypeRef.Null, TypeRef.Null) or (TypeRef.Unknown, TypeRef.Unknown) => true,
-            _ => false,
-        };
-    }
-
-    private static bool SameAliasReference(TypeRef left, TypeRef right) =>
-        (left, right) switch
-        {
-            (TypeRef.Alias leftAlias, TypeRef.Alias rightAlias) =>
-                string.Equals(leftAlias.Name, rightAlias.Name, StringComparison.Ordinal),
-            (TypeRef.Alias alias, TypeRef.Named { Arguments.Count: 0 } named) =>
-                string.Equals(alias.Name, named.Name, StringComparison.Ordinal),
-            (TypeRef.Named { Arguments.Count: 0 } named, TypeRef.Alias alias) =>
-                string.Equals(named.Name, alias.Name, StringComparison.Ordinal),
-            _ => false,
-        };
-
-    private static bool SameTypesIgnoringModule(
-        IReadOnlyList<TypeRef> left,
-        IReadOnlyList<TypeRef> right) =>
-        left.Count == right.Count
-        && left.Zip(right).All(pair => SameTypeIgnoringModule(pair.First, pair.Second));
-
-    public static string IdentityKey(TypeRef type) =>
-        TypeRefFormatter.ToIdentityString(UnwrapAlias(type));
-
     public static TypeRef UnwrapAlias(TypeRef type)
     {
         while (type is TypeRef.Alias alias)

@@ -360,7 +360,7 @@ internal sealed record ResolvedProgramModel(
     }
 
     private static string TypeKey(TypeRef type) =>
-        TypeRefFacts.IdentityKey(type);
+        TypeIdentity.ResolvedKey(type);
 
     private static string TypeShapeKey(TypeRef type) =>
         TypeRefFacts.UnwrapAlias(type) is TypeRef.Named named

@@ -60,7 +60,7 @@ internal sealed class ExpressionTypeResolver(
             CallExpressionNode call => ResolveCallTypeRef(call, variables),
             GenericCallExpressionNode call => ResolveGenericCallTypeRef(call, variables),
             IndexExpressionNode index => ResolveIndexTypeRef(index, variables),
-            RawExpressionNode raw => ResolveRawTypeRef(raw.RawText, variables),
+            ErrorExpressionNode => null,
             _ => null,
         };
     }
@@ -127,7 +127,7 @@ internal sealed class ExpressionTypeResolver(
 
     private TypeRef? ResolveTypeNode(TypeNode? typeNode) =>
         typeNode?.Semantic.Type
-        ?? (typeNode?.Syntax is null ? null : _typeSyntaxConverter.Convert(typeNode))
+        ?? (typeNode is null ? null : _typeSyntaxConverter.Convert(typeNode))
         ?? new TypeRef.Unknown();
 
     private TypeRef? ResolveUnaryTypeRef(UnaryExpressionNode unary, TypeEnvironment variables)
@@ -477,14 +477,7 @@ internal sealed class ExpressionTypeResolver(
             return true;
         }
 
-        return TypeRefFacts.SameType(existing, typeArgument);
-    }
-    private TypeRef? ResolveRawTypeRef(string text, TypeEnvironment variables)
-    {
-        text = text.Trim();
-        return variables.TryGet(text, out var type)
-            ? type
-            : ResolveLiteralTypeRef(text);
+        return TypeIdentity.ResolvedEquals(existing, typeArgument);
     }
 
     private StructNode? ResolveStruct(TypeRef type)
@@ -548,7 +541,7 @@ internal sealed class ExpressionTypeResolver(
         TypeRefFacts.TryGetPointerElement(type, out var element) ? element : null;
 
     private static bool SameType(TypeRef? left, TypeRef? right) =>
-        TypeRefFacts.SameType(left, right);
+        TypeIdentity.ResolvedEquals(left, right);
 
     private TypeRef ResolveKnownType(TypeRef.Named type) =>
         _typeSyntaxConverter.Convert(new NamedTypeSyntaxNode(type.Name));

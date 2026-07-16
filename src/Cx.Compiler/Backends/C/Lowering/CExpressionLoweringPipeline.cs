@@ -28,7 +28,7 @@ internal sealed class CExpressionLoweringPipeline(
         FunctionExpressionNode functionExpression => throw CEmissionGuards.UnsupportedCExpressionLowering(functionExpression),
         CallExpressionNode call => callExpressionLowerer.TryLower(call) ?? throw CEmissionGuards.UnsupportedCExpressionLowering(call),
         GenericCallExpressionNode call => callExpressionLowerer.TryLower(call) ?? throw CEmissionGuards.UnsupportedCExpressionLowering(call),
-        RawExpressionNode raw => throw CEmissionGuards.RawExpressionAfterLowering(raw),
+        ErrorExpressionNode error => throw CEmissionGuards.ErrorExpressionAfterLowering(error),
         _ => throw CEmissionGuards.UnsupportedCExpressionLowering(expression),
     };
 

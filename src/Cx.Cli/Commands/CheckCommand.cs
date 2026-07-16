@@ -15,11 +15,11 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
         public string? ConfigPath { get; init; }
 
         [CommandOption("--ast-audit")]
-        [Description("Fail if the parser falls back to raw expression nodes.")]
+        [Description("Fail if parser error expressions remain in the AST.")]
         public bool AstAudit { get; init; }
 
         [CommandOption("--generic-raw-audit")]
-        [Description("Report generic specializations still discovered through text fallback.")]
+        [Description("Verify generic specialization discovery has no text fallback.")]
         public bool GenericRawAudit { get; init; }
 
         [CommandOption("--include-std")]

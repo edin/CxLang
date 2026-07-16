@@ -72,7 +72,7 @@ internal sealed class GenericCallResolver(
         IReadOnlyList<TypeRef> typeArgumentRefs)
     {
         return calls.FirstOrDefault(candidate =>
-            TypeRefFacts.SameType(candidate.OwnerTypeRef, ownerTypeRef)
+            TypeIdentity.ResolvedEquals(candidate.OwnerTypeRef, ownerTypeRef)
             && candidate.Name == name
             && SameTypeArguments(candidate, typeArgumentRefs));
     }
@@ -190,15 +190,15 @@ internal sealed class GenericCallResolver(
         IReadOnlyList<TypeRef> right) =>
         left.Count == right.Count
         && left.Zip(right).All(pair =>
-            TypeRefFacts.SameTypeIgnoringModule(pair.First, pair.Second));
+            TypeIdentity.SpecializationEquals(pair.First, pair.Second));
 
     private static bool MatchesOwner(GenericCallInfo call, TypeRef? ownerType) =>
-        TypeRefFacts.SameType(call.OwnerTypeRef, ownerType)
-        || TypeRefFacts.SameTypeIgnoringModule(call.OwnerTypeRef, ownerType);
+        TypeIdentity.ResolvedEquals(call.OwnerTypeRef, ownerType)
+        || TypeIdentity.SourceReferenceMatches(call.OwnerTypeRef, ownerType);
 
     private static bool SameOptionalType(TypeRef? left, TypeRef? right) =>
         left is null && right is null
-        || TypeRefFacts.SameType(left, right);
+        || TypeIdentity.ResolvedEquals(left, right);
 
     private bool MatchesGenericOwner(
         GenericCallInfo call,

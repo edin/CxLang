@@ -55,7 +55,7 @@ public sealed class IteratorForeachLowererTests
         Assert.Equal(2, lowered.Count);
         var iterator = Assert.IsType<LetStatement>(lowered[0]);
         Assert.StartsWith("__cx_iterator_", iterator.Name, StringComparison.Ordinal);
-        Assert.Equal("BagIterator", iterator.TypeNode?.TypeName);
+        Assert.Equal("BagIterator", iterator.TypeNode?.ToSourceText());
 
         var iteratorCall = Assert.IsType<CallExpressionNode>(iterator.Initializer);
         Assert.Equal("iterator", Assert.IsType<MemberExpressionNode>(iteratorCall.Callee).MemberName);
@@ -65,7 +65,7 @@ public sealed class IteratorForeachLowererTests
 
         var item = Assert.IsType<LetStatement>(whileStatement.Body[0]);
         Assert.Equal("item", item.Name);
-        Assert.Equal("int", item.TypeNode?.TypeName);
+        Assert.Equal("int", item.TypeNode?.ToSourceText());
         var dereference = Assert.IsType<UnaryExpressionNode>(item.Initializer);
         Assert.Equal("*", dereference.Operator);
         Assert.Equal("value", Assert.IsType<MemberExpressionNode>(Assert.IsType<CallExpressionNode>(dereference.Operand).Callee).MemberName);
@@ -190,13 +190,13 @@ public sealed class IteratorForeachLowererTests
         var value = Assert.IsType<LetStatement>(whileStatement.Body[1]);
 
         Assert.Equal("key", key.Name);
-        Assert.Equal("int", key.TypeNode?.TypeName);
+        Assert.Equal("int", key.TypeNode?.ToSourceText());
         Assert.Equal("key", Assert.IsType<MemberExpressionNode>(
             Assert.IsType<CallExpressionNode>(
                 Assert.IsType<UnaryExpressionNode>(key.Initializer).Operand).Callee).MemberName);
 
         Assert.Equal("value", value.Name);
-        Assert.Equal("double", value.TypeNode?.TypeName);
+        Assert.Equal("double", value.TypeNode?.ToSourceText());
         Assert.Equal("value", Assert.IsType<MemberExpressionNode>(
             Assert.IsType<CallExpressionNode>(
                 Assert.IsType<UnaryExpressionNode>(value.Initializer).Operand).Callee).MemberName);

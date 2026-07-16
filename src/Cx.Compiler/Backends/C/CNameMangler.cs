@@ -30,15 +30,12 @@ internal sealed class CNameMangler(
             : "_" + string.Join("_", arguments.Select(TypeArgumentSyntax).Select(lowerTypeSyntax).Select(sanitizeTypeName));
 
     private static TypeSyntaxNode TypeArgumentSyntax(TypeNode typeNode) =>
-        typeNode.Syntax
-        ?? throw new InvalidOperationException($"C name mangler expected parsed syntax for type argument '{typeNode.TypeName}'.");
+        typeNode.Syntax;
 
     private static string TypeText(TypeNode typeNode) =>
         typeNode.Semantic.Type is { } type
             ? TypeRefFormatter.ToCxString(type)
-            : typeNode.Syntax is { } syntax
-                ? TypeSyntaxFormatter.ToCxString(syntax)
-                : throw new InvalidOperationException("C name mangler expected resolved type metadata or parsed type syntax.");
+            : TypeSyntaxFormatter.ToCxString(typeNode.Syntax);
 
     private static string? TypeTextOrNull(TypeNode? typeNode) =>
         typeNode is null ? null : TypeText(typeNode);

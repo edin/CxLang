@@ -208,7 +208,7 @@ public sealed partial class Parser
         }
 
         var type = ParseTypeNode();
-        if (string.IsNullOrWhiteSpace(type.TypeName))
+        if (string.IsNullOrWhiteSpace(type.ToSourceText()))
         {
             _diagnostics.Report(location, $"Expected type after ':' in {subject} declaration.");
         }

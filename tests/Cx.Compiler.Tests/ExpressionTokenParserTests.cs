@@ -64,7 +64,7 @@ public sealed class ExpressionTokenParserTests
         var call = Assert.IsType<GenericCallExpressionNode>(expression);
         Assert.IsType<NameExpressionNode>(call.Callee);
         Assert.Single(call.TypeArgumentNodes);
-        Assert.Equal("int", call.TypeArgumentNodes[0].TypeName);
+        Assert.Equal("int", call.TypeArgumentNodes[0].ToSourceText());
         Assert.Single(call.Arguments);
     }
 
@@ -78,7 +78,7 @@ public sealed class ExpressionTokenParserTests
         Assert.IsType<NameExpressionNode>(member.Target);
         Assert.Equal("create", member.MemberName);
         Assert.Single(call.TypeArgumentNodes);
-        Assert.Equal("int", call.TypeArgumentNodes[0].TypeName);
+        Assert.Equal("int", call.TypeArgumentNodes[0].ToSourceText());
         Assert.Empty(call.Arguments);
     }
 
@@ -89,7 +89,7 @@ public sealed class ExpressionTokenParserTests
 
         var call = Assert.IsType<GenericCallExpressionNode>(expression);
         Assert.Single(call.TypeArgumentNodes);
-        Assert.Equal("Box<int>", call.TypeArgumentNodes[0].TypeName);
+        Assert.Equal("Box<int>", call.TypeArgumentNodes[0].ToSourceText());
         Assert.Single(call.Arguments);
     }
 
@@ -100,7 +100,7 @@ public sealed class ExpressionTokenParserTests
 
         var call = Assert.IsType<GenericCallExpressionNode>(expression);
         Assert.Single(call.TypeArgumentNodes);
-        Assert.Equal("Vec<Box<int>>", call.TypeArgumentNodes[0].TypeName);
+        Assert.Equal("Vec<Box<int>>", call.TypeArgumentNodes[0].ToSourceText());
         Assert.Single(call.Arguments);
     }
 
@@ -112,7 +112,7 @@ public sealed class ExpressionTokenParserTests
         var call = Assert.IsType<GenericCallExpressionNode>(expression);
         var member = Assert.IsType<MemberExpressionNode>(call.Callee);
         Assert.Equal("create", member.MemberName);
-        Assert.Equal(["StringView", "Vec<int>"], call.TypeArgumentNodes.Select(node => node.TypeName).ToList());
+        Assert.Equal(["StringView", "Vec<int>"], call.TypeArgumentNodes.Select(node => node.ToSourceText()).ToList());
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public sealed class ExpressionTokenParserTests
         var expression = CompilerTestHelpers.ParseTokenExpression("make_pair<int, Vec<Box<int>>>(left, right)");
 
         var call = Assert.IsType<GenericCallExpressionNode>(expression);
-        Assert.Equal(["int", "Vec<Box<int>>"], call.TypeArgumentNodes.Select(node => node.TypeName).ToList());
+        Assert.Equal(["int", "Vec<Box<int>>"], call.TypeArgumentNodes.Select(node => node.ToSourceText()).ToList());
         Assert.Equal(2, call.Arguments.Count);
     }
 
@@ -168,7 +168,7 @@ public sealed class ExpressionTokenParserTests
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
         Assert.Null(sizeOf.ExpressionOperand);
-        Assert.Equal("Box<int>", sizeOf.TypeOperandNode?.TypeName);
+        Assert.Equal("Box<int>", sizeOf.TypeOperandNode?.ToSourceText());
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public sealed class ExpressionTokenParserTests
 
         var sizeOf = Assert.IsType<SizeOfExpressionNode>(expression);
         Assert.Null(sizeOf.ExpressionOperand);
-        Assert.Equal("Vec<Box<int>>*", sizeOf.TypeOperandNode?.TypeName);
+        Assert.Equal("Vec<Box<int>>*", sizeOf.TypeOperandNode?.ToSourceText());
         Assert.IsType<PointerTypeSyntaxNode>(sizeOf.TypeOperandNode?.Syntax);
     }
 
@@ -247,7 +247,7 @@ public sealed class ExpressionTokenParserTests
             Assert.IsType<ReturnStatement>(Assert.Single(program.Functions.Single().Body)).Expression);
         Assert.IsType<SizeOfTypeOperandNode>(sizeOf.OperandNode);
         Assert.Null(sizeOf.ExpressionOperand);
-        Assert.Equal("Point", sizeOf.TypeOperandNode?.TypeName);
+        Assert.Equal("Point", sizeOf.TypeOperandNode?.ToSourceText());
     }
 
     [Fact]
@@ -269,7 +269,7 @@ public sealed class ExpressionTokenParserTests
             Assert.IsType<ReturnStatement>(Assert.Single(program.Functions.Single().Body)).Expression);
         Assert.IsType<SizeOfTypeOperandNode>(sizeOf.OperandNode);
         Assert.Null(sizeOf.ExpressionOperand);
-        Assert.Equal("int", sizeOf.TypeOperandNode?.TypeName);
+        Assert.Equal("int", sizeOf.TypeOperandNode?.ToSourceText());
     }
 
     [Fact]
@@ -300,7 +300,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("Point { x: 10, y: 20 }");
 
         var initializer = Assert.IsType<InitializerExpressionNode>(expression);
-        Assert.Equal("Point", initializer.TypeNameNode?.TypeName);
+        Assert.Equal("Point", initializer.TypeNameNode?.ToSourceText());
         Assert.Equal(["x", "y"], initializer.Fields.Select(field => field.Name).ToList());
         Assert.Empty(initializer.Values);
     }
@@ -311,7 +311,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("Box<int> { value: 10 }");
 
         var initializer = Assert.IsType<InitializerExpressionNode>(expression);
-        Assert.Equal("Box<int>", initializer.TypeNameNode?.TypeName);
+        Assert.Equal("Box<int>", initializer.TypeNameNode?.ToSourceText());
         var field = Assert.Single(initializer.Fields);
         Assert.Equal("value", field.Name);
         Assert.IsType<LiteralExpressionNode>(field.Value);
@@ -334,13 +334,13 @@ public sealed class ExpressionTokenParserTests
         var expression = CompilerTestHelpers.ParseTokenExpression("Box<Vec<int>> { value: Vec<int> { data: null, length: 0 } }");
 
         var initializer = Assert.IsType<InitializerExpressionNode>(expression);
-        Assert.Equal("Box<Vec<int>>", initializer.TypeNameNode?.TypeName);
+        Assert.Equal("Box<Vec<int>>", initializer.TypeNameNode?.ToSourceText());
 
         var field = Assert.Single(initializer.Fields);
         Assert.Equal("value", field.Name);
 
         var nested = Assert.IsType<InitializerExpressionNode>(field.Value);
-        Assert.Equal("Vec<int>", nested.TypeNameNode?.TypeName);
+        Assert.Equal("Vec<int>", nested.TypeNameNode?.ToSourceText());
         Assert.Equal(["data", "length"], nested.Fields.Select(item => item.Name).ToList());
     }
 
@@ -361,7 +361,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("(int)value");
 
         var cast = Assert.IsType<CastExpressionNode>(expression);
-        Assert.Equal("int", cast.TargetTypeNode?.TypeName);
+        Assert.Equal("int", cast.TargetTypeNode?.ToSourceText());
         Assert.IsType<NameExpressionNode>(cast.Expression);
     }
 
@@ -371,7 +371,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("(Box<int>*)value");
 
         var cast = Assert.IsType<CastExpressionNode>(expression);
-        Assert.Equal("Box<int>*", cast.TargetTypeNode?.TypeName);
+        Assert.Equal("Box<int>*", cast.TargetTypeNode?.ToSourceText());
         Assert.IsType<NameExpressionNode>(cast.Expression);
     }
 
@@ -381,7 +381,7 @@ public sealed class ExpressionTokenParserTests
         var expression = CompilerTestHelpers.ParseTokenExpression("(const char*)value");
 
         var cast = Assert.IsType<CastExpressionNode>(expression);
-        Assert.Equal("const char*", cast.TargetTypeNode?.TypeName);
+        Assert.Equal("const char*", cast.TargetTypeNode?.ToSourceText());
         Assert.IsType<NameExpressionNode>(cast.Expression);
     }
 
@@ -391,7 +391,7 @@ public sealed class ExpressionTokenParserTests
         var expression = CompilerTestHelpers.ParseTokenExpression("(Vec<Box<int>>*)value");
 
         var cast = Assert.IsType<CastExpressionNode>(expression);
-        Assert.Equal("Vec<Box<int>>*", cast.TargetTypeNode?.TypeName);
+        Assert.Equal("Vec<Box<int>>*", cast.TargetTypeNode?.ToSourceText());
         Assert.IsType<PointerTypeSyntaxNode>(cast.TargetTypeNode?.Syntax);
     }
 
@@ -401,7 +401,7 @@ public sealed class ExpressionTokenParserTests
         var expression = CompilerTestHelpers.ParseTokenExpression("(int*)*value");
 
         var cast = Assert.IsType<CastExpressionNode>(expression);
-        Assert.Equal("int*", cast.TargetTypeNode?.TypeName);
+        Assert.Equal("int*", cast.TargetTypeNode?.ToSourceText());
         Assert.IsType<UnaryExpressionNode>(cast.Expression);
     }
 
@@ -447,7 +447,7 @@ public sealed class ExpressionTokenParserTests
         var function = Assert.IsType<FunctionExpressionNode>(expression);
         var parameter = Assert.Single(function.Parameters);
         Assert.Equal("value", parameter.Name);
-        Assert.Equal("int", parameter.TypeNode?.TypeName);
+        Assert.Equal("int", parameter.TypeNode?.ToSourceText());
         Assert.Null(function.ReturnTypeNode);
         Assert.IsType<BinaryExpressionNode>(function.ExpressionBody);
         Assert.Null(function.BlockBody);
@@ -459,7 +459,7 @@ public sealed class ExpressionTokenParserTests
         var expression = ParseReturnedExpression("fn(value: int) -> int => value + 1");
 
         var function = Assert.IsType<FunctionExpressionNode>(expression);
-        Assert.Equal("int", function.ReturnTypeNode?.TypeName);
+        Assert.Equal("int", function.ReturnTypeNode?.ToSourceText());
         Assert.IsType<BinaryExpressionNode>(function.ExpressionBody);
         Assert.Null(function.BlockBody);
     }

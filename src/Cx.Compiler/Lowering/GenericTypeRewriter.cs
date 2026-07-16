@@ -477,11 +477,6 @@ internal static class GenericTypeRewriter
             return null;
         }
 
-        if (typeNode.Syntax is null)
-        {
-            throw new InvalidOperationException($"TypeNode '{typeNode.TypeName}' has no parsed type syntax.");
-        }
-
         var rewritten = TypeNode.Create(
             typeNode.Location,
             RewriteTypeSyntax(typeNode.Syntax, concreteStructNames));

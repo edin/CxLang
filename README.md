@@ -162,7 +162,17 @@ scripts/install-cx.ps1    local CLI install script
 
 ## Development
 
-Build and test:
+Run the complete repository verification gate:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
+```
+
+This builds the release solution, runs compiler and standard-library tests,
+checks the configured raytracer project, audits AST and generic specialization
+completeness, and checks the working diff for whitespace errors.
+
+Run individual build and test commands when iterating:
 
 ```powershell
 dotnet build Cx.sln

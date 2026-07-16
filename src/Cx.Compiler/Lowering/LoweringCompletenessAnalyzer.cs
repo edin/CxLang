@@ -135,10 +135,10 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
 
         switch (expression)
         {
-            case RawExpressionNode raw:
+            case ErrorExpressionNode error:
                 diagnostics.Report(
-                    raw.Location,
-                    $"Internal lowering error: raw expression remains after post-semantic lowering: '{TrimForDiagnostic(raw.RawText)}'.");
+                    error.Location,
+                    $"Internal lowering error: parser error expression remains after post-semantic lowering: '{TrimForDiagnostic(error.Text)}'.");
                 break;
             case ParenthesizedExpressionNode parenthesized:
                 AnalyzeExpression(parenthesized.Expression);

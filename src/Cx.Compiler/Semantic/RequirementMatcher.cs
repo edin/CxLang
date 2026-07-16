@@ -63,7 +63,7 @@ public sealed class RequirementMatcher
         var bindings = new TypeBindings();
         bindings.Set("Self", NormalizeSelfTypeRef(concreteTypeRef));
         var selfType = GetBinding(bindings, "Self");
-        var matchKey = $"{TypeRefFormatter.ToIdentityString(selfType)}:{requirementName}{FormatTypeArgumentIdentities(requirementArguments ?? [])}";
+        var matchKey = $"{TypeIdentity.ResolvedKey(selfType)}:{requirementName}{FormatTypeArgumentIdentities(requirementArguments ?? [])}";
         if (!activeMatches.Add(matchKey))
         {
             return RequirementMatch.Succeeded(concreteTypeRef, requirementName, bindings);
@@ -240,7 +240,7 @@ public sealed class RequirementMatcher
     private static string FormatTypeArgumentIdentities(IReadOnlyList<TypeRef> arguments) =>
         arguments.Count == 0
             ? string.Empty
-            : "<" + string.Join(",", arguments.Select(TypeRefFormatter.ToIdentityString)) + ">";
+            : "<" + string.Join(",", arguments.Select(TypeIdentity.ResolvedKey)) + ">";
 
     private TypeRef ResolveAlias(TypeRef type, HashSet<string> seen) =>
         type switch

@@ -218,7 +218,7 @@ internal sealed class AssignmentSemanticAnalyzer(
         TypeRefFacts.IsPointer(type);
 
     private static bool SameType(TypeRef? left, TypeRef? right) =>
-        TypeRefFacts.SameType(left, right);
+        TypeIdentity.ResolvedEquals(left, right);
 
     private static string StripConst(string type) =>
         type.StartsWith("const ", StringComparison.Ordinal)

@@ -797,8 +797,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
     private TypeRef TypeArgumentRef(TypeNode typeNode) =>
         typeNode.Semantic.Type
-        ?? (typeNode.Syntax is { } syntax ? _typeSyntaxConverter.Convert(syntax) : null)
-        ?? typeNode.ToTypeRef(_typeRefParser);
+        ?? _typeSyntaxConverter.Convert(typeNode.Syntax);
 
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>
         typeNode.ToTypeRef(_typeRefParser);
@@ -842,7 +841,7 @@ internal readonly record struct GenericFunctionUseKey(string FunctionName, strin
         TypeRefParser? typeRefParser = null) =>
         new(
             FormatFunctionName(function, typeRefParser),
-            string.Join(",", typeArguments.Select(TypeRefFormatter.ToCxString)));
+            string.Join(",", typeArguments.Select(TypeIdentity.SpecializationKey)));
 
     private static string FormatFunctionName(FunctionNode function, TypeRefParser? typeRefParser)
     {
@@ -859,6 +858,6 @@ internal readonly record struct GenericFunctionUseKey(string FunctionName, strin
         return ownerType is TypeRef.Unknown
             ? throw new InvalidOperationException(
                 $"Generic use collector could not resolve owner type for '{function.Name}'.")
-            : $"{TypeRefFormatter.ToCxString(ownerType)}.{function.Name}";
+            : $"{TypeIdentity.SpecializationKey(ownerType)}.{function.Name}";
     }
 }

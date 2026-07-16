@@ -232,7 +232,7 @@ public sealed class GenericLoweringServicesTests
 
         Assert.Equal("int", specialized.ReturnTypeNode.ToSourceText());
         Assert.Equal("int", parameter.TypeNode.ToSourceText());
-        Assert.Equal("int", local.TypeNode?.TypeName);
+        Assert.Equal("int", local.TypeNode?.ToSourceText());
     }
 
     [Fact]
@@ -260,7 +260,7 @@ public sealed class GenericLoweringServicesTests
 
         Assert.Equal("Box<int>*", parameter.TypeNode.ToSourceText());
         Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(parameter.TypeNode!.Semantic.Type!));
-        Assert.Equal("Box<int>*", local.TypeNode?.TypeName);
+        Assert.Equal("Box<int>*", local.TypeNode?.ToSourceText());
         Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(local.TypeNode!.Semantic.Type!));
     }
 
@@ -298,11 +298,11 @@ public sealed class GenericLoweringServicesTests
         var genericCall = Assert.IsType<GenericCallExpressionNode>(Assert.IsType<LetStatement>(body[3]).Initializer);
         var functionExpression = Assert.IsType<FunctionExpressionNode>(Assert.IsType<LetStatement>(body[4]).Initializer);
 
-        Assert.Equal("Box_int*", cast.TargetTypeNode?.TypeName);
-        Assert.Equal("Box_int", sizeOf.TypeOperandNode?.TypeName);
-        Assert.Equal("Box_int", initializer.TypeNameNode?.TypeName);
-        Assert.Equal(["Box_int"], genericCall.TypeArgumentNodes.Select(node => node.TypeName).ToList());
-        Assert.Equal("Box_int", functionExpression.ReturnTypeNode?.TypeName);
+        Assert.Equal("Box_int*", cast.TargetTypeNode?.ToSourceText());
+        Assert.Equal("Box_int", sizeOf.TypeOperandNode?.ToSourceText());
+        Assert.Equal("Box_int", initializer.TypeNameNode?.ToSourceText());
+        Assert.Equal(["Box_int"], genericCall.TypeArgumentNodes.Select(node => node.ToSourceText()).ToList());
+        Assert.Equal("Box_int", functionExpression.ReturnTypeNode?.ToSourceText());
         Assert.Equal("Box_int", Assert.Single(functionExpression.Parameters).TypeNode.ToSourceText());
     }
 
@@ -385,7 +385,7 @@ public sealed class GenericLoweringServicesTests
         var box = Assert.Single(structs);
         var field = Assert.Single(box.Fields);
         Assert.Equal("Box_int", box.Name);
-        Assert.Equal("int", field.TypeNode?.TypeName);
+        Assert.Equal("int", field.TypeNode?.ToSourceText());
     }
 
     [Fact]
@@ -411,9 +411,9 @@ public sealed class GenericLoweringServicesTests
         var value = box.Fields.Single(field => field.Name == "value");
         var next = box.Fields.Single(field => field.Name == "next");
 
-        Assert.Equal("int", value.TypeNode?.TypeName);
+        Assert.Equal("int", value.TypeNode?.ToSourceText());
         Assert.Equal("int", TypeRefFormatter.ToCxString(value.TypeNode!.Semantic.Type!));
-        Assert.Equal("Box<int>*", next.TypeNode?.TypeName);
+        Assert.Equal("Box<int>*", next.TypeNode?.ToSourceText());
         Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(next.TypeNode!.Semantic.Type!));
     }
 

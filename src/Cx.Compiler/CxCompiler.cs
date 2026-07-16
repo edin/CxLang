@@ -525,8 +525,6 @@ public sealed class CxCompiler
             Target = RewriteTestExpression(index.Target),
             Index = RewriteTestExpression(index.Index),
         },
-        RawExpressionNode raw when raw.RawText.TrimStart().StartsWith("expect(", StringComparison.Ordinal) =>
-            raw with { RawText = "runner.expect(" + raw.RawText.Trim()[7..^1] + ", \"expect failed\")" },
         _ => expression,
     };
 
@@ -1205,9 +1203,7 @@ public sealed class CxCompiler
         typeNode is null ? fallback : TypeText(typeNode);
 
     private static string TypeText(TypeNode? typeNode) =>
-        typeNode?.Syntax is { } syntax
-            ? TypeSyntaxFormatter.ToCxString(syntax)
-            : string.Empty;
+        typeNode?.ToSourceText() ?? string.Empty;
 
     private static IReadOnlySet<string> GetDeclaredTypeNames(ProgramNode program) =>
         program.TypeAliases.Select(typeAlias => typeAlias.Name)

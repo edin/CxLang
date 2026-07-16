@@ -352,7 +352,7 @@ internal sealed class SymbolUsageCollector
     }
 
     private static string GetFunctionKey(FunctionNode function) =>
-        function.OwnerTypeNode is null ? function.Name : $"{function.OwnerTypeNode.TypeName}.{function.Name}";
+        function.OwnerTypeNode is null ? function.Name : $"{function.OwnerTypeNode.ToSourceText()}.{function.Name}";
 }
 
 internal sealed record SymbolUsageReport(
@@ -377,7 +377,7 @@ internal sealed class SymbolUsageReportBuilder
     public void AddSymbol(Symbol symbol) =>
         Add(_symbols, $"{symbol.Kind}:{symbol.Name}");
 
-    public void AddType(TypeNode? type) => Add(_typeReferences, type?.TypeName);
+    public void AddType(TypeNode? type) => Add(_typeReferences, type?.ToSourceText());
 
     public void AddType(string? type) => Add(_typeReferences, type);
 

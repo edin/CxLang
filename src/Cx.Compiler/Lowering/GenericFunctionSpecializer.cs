@@ -171,7 +171,7 @@ internal static class GenericFunctionSpecializer
     {
         return expression switch
         {
-            RawExpressionNode raw => raw,
+            ErrorExpressionNode error => error,
             LiteralExpressionNode literal => literal,
             NameExpressionNode name => typeSubstitutions.TryGetValue(name.Name, out var substitutedType)
                 ? name with { Name = TypeRefFormatter.ToCxString(substitutedType) }

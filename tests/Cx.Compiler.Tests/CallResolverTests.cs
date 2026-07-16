@@ -153,7 +153,7 @@ public sealed class CallResolverTests
     }
 
     [Fact]
-    public void Resolve_PrefersResolvedTypeNodeForFunctionSignature()
+    public void Resolve_UsesResolvedTypeNodeForFunctionSignature()
     {
         var program = CompilerTestHelpers.Parse(
             """
@@ -169,11 +169,11 @@ public sealed class CallResolverTests
         var function = program.Functions.Single(function => function.Name == "id");
         var parameter = Assert.Single(function.Parameters) with
         {
-            TypeNode = new TypeNode(location, "StaleParameterType", new NamedTypeSyntaxNode("int")),
+            TypeNode = TypeNode.Named(location, "int"),
         };
         var rewrittenFunction = function with
         {
-            ReturnTypeNode = new TypeNode(location, "StaleReturnType", new NamedTypeSyntaxNode("int")),
+            ReturnTypeNode = TypeNode.Named(location, "int"),
             Parameters = [parameter],
         };
         var rewrittenProgram = program with

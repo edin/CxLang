@@ -100,8 +100,8 @@ internal static class GenericSpecializationPass
     private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments, TypeRefParser typeRefParser)
     {
         var ownerType = OwnerType(function, typeRefParser);
-        var ownerTypeText = ownerType is null ? string.Empty : TypeRefFormatter.ToCxString(ownerType);
-        var argumentText = arguments.Select(TypeRefFormatter.ToCxString);
+        var ownerTypeText = ownerType is null ? string.Empty : TypeIdentity.SpecializationKey(ownerType);
+        var argumentText = arguments.Select(TypeIdentity.SpecializationKey);
         return $"{(string.IsNullOrWhiteSpace(ownerTypeText) ? function.Name : $"{ownerTypeText}.{function.Name}")}<{string.Join(",", argumentText)}>";
     }
 

@@ -2,32 +2,19 @@ using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Syntax.Nodes;
 
-public abstract record ExpressionNode(Location Location) : SyntaxNode(Location)
-{
-    [Cx.Compiler.LegacyStringType("Compatibility text rebuilt from expression nodes. Prefer node-specific properties or ToSourceText().")]
-    public virtual string SourceText => this.ToSourceText();
-}
+public abstract record ExpressionNode(Location Location) : SyntaxNode(Location);
 
-public sealed record RawExpressionNode(
+public sealed record ErrorExpressionNode(
     Location Location,
-    string RawText) : ExpressionNode(Location)
-{
-    public override string SourceText => RawText;
-}
+    string Text) : ExpressionNode(Location);
 
 public sealed record LiteralExpressionNode(
     Location Location,
-    string LiteralText) : ExpressionNode(Location)
-{
-    public override string SourceText => LiteralText;
-}
+    string LiteralText) : ExpressionNode(Location);
 
 public sealed record NameExpressionNode(
     Location Location,
-    string Name) : ExpressionNode(Location)
-{
-    public override string SourceText => Name;
-}
+    string Name) : ExpressionNode(Location);
 
 public sealed record ParenthesizedExpressionNode(
     Location Location,
@@ -175,7 +162,7 @@ public static class ExpressionNodeExtensions
 {
     public static string ToSourceText(this ExpressionNode expression) => expression switch
     {
-        RawExpressionNode raw => raw.RawText,
+        ErrorExpressionNode error => error.Text,
         LiteralExpressionNode literal => literal.LiteralText,
         NameExpressionNode name => name.Name,
         ParenthesizedExpressionNode parenthesized => $"({parenthesized.Expression.ToSourceText()})",
@@ -196,7 +183,8 @@ public static class ExpressionNodeExtensions
         CallExpressionNode call => FormatCall(call),
         MemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.MemberName}",
         IndexExpressionNode index => $"{index.Target.ToSourceText()}[{index.Index.ToSourceText()}]",
-        _ => expression.SourceText,
+        _ => throw new InvalidOperationException(
+            $"No source formatter is registered for expression node '{expression.GetType().Name}'."),
     };
 
     public static string ToSourceText(this SizeOfOperandNode operand) => operand switch

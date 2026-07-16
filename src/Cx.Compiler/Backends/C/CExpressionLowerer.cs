@@ -44,7 +44,7 @@ internal sealed class CExpressionLowerer(ICExpressionLoweringContext context)
         AssignmentExpressionNode assignment => _operatorExpressionLowerer.LowerAssignment(assignment),
         MemberExpressionNode member => _memberExpressionLowerer.LowerMember(member),
         IndexExpressionNode index => _operatorExpressionLowerer.LowerIndex(index),
-        _ => throw CEmissionGuards.UnsupportedRawExpressionLowering(expression),
+        _ => throw CEmissionGuards.UnsupportedSimpleExpressionLowering(expression),
     };
 
     public CExpression LowerInitializer(InitializerExpressionNode initializer) =>

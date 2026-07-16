@@ -8,8 +8,6 @@ internal sealed class TypeSyntaxTypeRefConverter(ProgramNode program)
         .GroupBy(alias => alias.Name, StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.First().TargetTypeNode, StringComparer.Ordinal);
 
-    private readonly TypeRefParser _fallbackParser = new(program);
-
     public TypeRef Convert(TypeSyntaxNode? syntax)
     {
         if (syntax is null)
@@ -21,7 +19,7 @@ internal sealed class TypeSyntaxTypeRefConverter(ProgramNode program)
     }
 
     public TypeRef Convert(TypeNode? typeNode) =>
-        _fallbackParser.Parse(typeNode);
+        typeNode is null ? new TypeRef.Unknown() : Convert(typeNode.Syntax);
 
     private TypeRef Convert(TypeSyntaxNode syntax, HashSet<string> resolvingAliases) =>
         syntax switch
@@ -60,7 +58,7 @@ internal sealed class TypeSyntaxTypeRefConverter(ProgramNode program)
         }
 
         var target = targetType?.Semantic.Type
-            ?? (targetType?.Syntax is null ? _fallbackParser.Parse(targetType) : Convert(targetType.Syntax, resolvingAliases));
+            ?? (targetType is null ? new TypeRef.Unknown() : Convert(targetType.Syntax, resolvingAliases));
         resolvingAliases.Remove(named.Name);
         return new TypeRef.Alias(named.Name, target);
     }

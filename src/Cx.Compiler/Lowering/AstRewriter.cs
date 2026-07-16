@@ -225,7 +225,7 @@ internal abstract class AstRewriter
         expression switch
         {
             null => null,
-            RawExpressionNode raw => RewriteRawExpression(raw),
+            ErrorExpressionNode error => RewriteErrorExpression(error),
             LiteralExpressionNode literal => RewriteLiteralExpression(literal),
             NameExpressionNode name => RewriteNameExpression(name),
             ParenthesizedExpressionNode parenthesized => RewriteParenthesizedExpression(parenthesized),
@@ -246,7 +246,7 @@ internal abstract class AstRewriter
             _ => expression,
         };
 
-    protected virtual ExpressionNode RewriteRawExpression(RawExpressionNode raw) => raw;
+    protected virtual ExpressionNode RewriteErrorExpression(ErrorExpressionNode error) => error;
 
     protected virtual ExpressionNode RewriteLiteralExpression(LiteralExpressionNode literal) => literal;
 

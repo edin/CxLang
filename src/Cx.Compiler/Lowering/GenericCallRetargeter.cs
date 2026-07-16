@@ -238,11 +238,11 @@ internal static class GenericCallRetargeter
     private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments)
     {
         var ownerType = OwnerType(function);
-        var ownerTypeText = ownerType is null ? string.Empty : TypeRefFormatter.ToCxString(ownerType);
+        var ownerTypeText = ownerType is null ? string.Empty : TypeIdentity.SpecializationKey(ownerType);
         var functionName = string.IsNullOrWhiteSpace(ownerTypeText)
             ? function.Name
             : $"{ownerTypeText}.{function.Name}";
-        var argumentText = arguments.Select(TypeRefFormatter.ToCxString);
+        var argumentText = arguments.Select(TypeIdentity.SpecializationKey);
 
         return $"{functionName}<{string.Join(",", argumentText)}>";
     }

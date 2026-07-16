@@ -37,7 +37,7 @@ public sealed class MatchLoweringPassTests
         var okCase = Assert.Single(switchStatement.Cases, switchCase => switchCase.Pattern.ToSourceText() == "Result_Tag_Ok");
         var binding = Assert.IsType<LetStatement>(okCase.Body[0]);
         Assert.Equal("value", binding.Name);
-        Assert.Equal("int", binding.TypeNode?.TypeName);
+        Assert.Equal("int", binding.TypeNode?.ToSourceText());
         Assert.IsType<BreakStatement>(okCase.Body[^1]);
 
         var errorCase = Assert.Single(switchStatement.Cases, switchCase => switchCase.Pattern.ToSourceText() == "Result_Tag_Error");

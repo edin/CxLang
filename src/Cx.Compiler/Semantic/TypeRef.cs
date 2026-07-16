@@ -66,14 +66,9 @@ internal sealed class TypeRefParser(ProgramNode program)
             return semanticType;
         }
 
-        if (string.IsNullOrWhiteSpace(typeNode.TypeName))
+        if (string.IsNullOrWhiteSpace(typeNode.ToSourceText()))
         {
             return new TypeRef.Unknown();
-        }
-
-        if (typeNode.Syntax is null)
-        {
-            throw new InvalidOperationException($"TypeNode '{typeNode.TypeName}' has no parsed type syntax.");
         }
 
         return Parse(typeNode.Syntax, []);
@@ -138,7 +133,7 @@ internal sealed class TypeRefParser(ProgramNode program)
         TypeNode? targetType,
         HashSet<string> resolvingAliases)
     {
-        if (targetType is null || string.IsNullOrWhiteSpace(targetType.TypeName))
+        if (targetType is null || string.IsNullOrWhiteSpace(targetType.ToSourceText()))
         {
             return new TypeRef.Unknown();
         }
@@ -146,11 +141,6 @@ internal sealed class TypeRefParser(ProgramNode program)
         if (targetType.Semantic.Type is { } semanticType)
         {
             return semanticType;
-        }
-
-        if (targetType.Syntax is null)
-        {
-            throw new InvalidOperationException($"Type alias '{aliasName}' target type '{targetType.TypeName}' has no parsed type syntax.");
         }
 
         return Parse(targetType.Syntax, resolvingAliases);

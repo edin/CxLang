@@ -18,7 +18,7 @@ public sealed class TypeTokenParserTests
     {
         var typeNode = Parse(source);
 
-        Assert.Equal(expected, typeNode.TypeName);
+        Assert.Equal(expected, typeNode.ToSourceText());
         Assert.NotNull(typeNode.Syntax);
     }
 

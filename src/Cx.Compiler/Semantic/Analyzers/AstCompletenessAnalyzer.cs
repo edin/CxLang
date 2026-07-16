@@ -133,8 +133,8 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
 
         switch (expression)
         {
-            case RawExpressionNode raw:
-                diagnostics.Report(raw.Location, $"AST fallback raw expression remains: '{TrimForDiagnostic(raw.RawText)}'.");
+            case ErrorExpressionNode error:
+                diagnostics.Report(error.Location, $"Parser error expression remains in AST: '{TrimForDiagnostic(error.Text)}'.");
                 break;
             case ParenthesizedExpressionNode parenthesized:
                 AnalyzeExpression(parenthesized.Expression);

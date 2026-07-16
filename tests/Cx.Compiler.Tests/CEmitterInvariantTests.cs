@@ -7,7 +7,7 @@ namespace Cx.Compiler.Tests;
 public sealed class CEmitterInvariantTests
 {
     [Fact]
-    public void Emit_ThrowsWhenRawExpressionReachesCEmission()
+    public void Emit_ThrowsWhenErrorExpressionReachesCEmission()
     {
         var location = Location.Synthetic("<c-emitter-invariant-test>");
         var program = new ProgramNode(
@@ -24,14 +24,14 @@ public sealed class CEmitterInvariantTests
                     [
                         new CStatement(
                             location,
-                            new RawExpressionNode(location, "legacy_text_call()"))
+                            new ErrorExpressionNode(location, "unparsed_call()"))
                     ],
                     Attributes: [],
                     ReturnTypeNode: ResolvedTypeNode(location, "void")),
             ]);
 
         var exception = Assert.Throws<InvalidOperationException>(() => new CEmitter().Emit(program));
-        Assert.Contains("Raw expression reached C emission after lowering", exception.Message);
+        Assert.Contains("Parser error expression reached C emission after lowering", exception.Message);
     }
 
     [Fact]

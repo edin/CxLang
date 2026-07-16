@@ -38,8 +38,8 @@ public sealed class AstTransformPipelineTests
 
         var body = Assert.Single(rewritten.Functions).Body;
         Assert.Equal(2, body.Count);
-        Assert.Equal("before_value()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[0]).Expression).RawText);
-        Assert.Equal("after_value()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[1]).Expression).RawText);
+        Assert.Equal("before_value()", Assert.IsType<CallExpressionNode>(Assert.IsType<CStatement>(body[0]).Expression).ToSourceText());
+        Assert.Equal("after_value()", Assert.IsType<CallExpressionNode>(Assert.IsType<CStatement>(body[1]).Expression).ToSourceText());
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class AstTransformPipelineTests
             .Run(program);
 
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(rewritten.Functions).Body.Single());
-        Assert.Equal("wrapped(after)", Assert.IsType<RawExpressionNode>(ret.Expression).RawText);
+        Assert.Equal("wrapped(after)", Assert.IsType<CallExpressionNode>(ret.Expression).ToSourceText());
     }
 
     private static ProgramNode ProgramWithBody(IReadOnlyList<StatementNode> body)
@@ -108,8 +108,8 @@ public sealed class AstTransformPipelineTests
     {
         public AstTransformResult Transform(LetStatement node, AstTransformContext context) =>
             AstTransformResult.ReplaceStatements([
-                new CStatement(node.Location, new RawExpressionNode(node.Location, $"before_{node.Name}()")),
-                new CStatement(node.Location, new RawExpressionNode(node.Location, $"after_{node.Name}()")),
+                new CStatement(node.Location, Call(node.Location, $"before_{node.Name}")),
+                new CStatement(node.Location, Call(node.Location, $"after_{node.Name}")),
             ]);
     }
 
@@ -129,8 +129,12 @@ public sealed class AstTransformPipelineTests
     private sealed class WrapParenthesizedTransform : IAstNodeTransform<ParenthesizedExpressionNode>
     {
         public AstTransformResult Transform(ParenthesizedExpressionNode node, AstTransformContext context) =>
-            AstTransformResult.ReplaceExpression(new RawExpressionNode(
+            AstTransformResult.ReplaceExpression(new CallExpressionNode(
                 node.Location,
-                $"wrapped({node.Expression.ToSourceText()})"));
+                new NameExpressionNode(node.Location, "wrapped"),
+                [node.Expression]));
     }
+
+    private static CallExpressionNode Call(Location location, string name) =>
+        new(location, new NameExpressionNode(location, name), []);
 }

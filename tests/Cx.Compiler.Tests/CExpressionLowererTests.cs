@@ -50,7 +50,7 @@ public sealed class CExpressionLowererTests
     {
         var location = TestLocation();
         var semanticType = new TypeRef.Named("Vec", [new TypeRef.Named("int", [])]);
-        var typeNode = new TypeNode(location, "StaleText");
+        var typeNode = TypeNode.Named(location, "SourceType");
         typeNode.Semantic.Type = semanticType;
         var context = new TestContext(typeRefPrefix: "typed_");
         var lowerer = new CExpressionLowerer(context);

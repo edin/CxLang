@@ -69,12 +69,9 @@ public sealed class TypeNodeParsingTests
             }
             """);
 
-        var missingSyntax = CollectTypeNodes(program)
-            .Where(typeNode => !string.IsNullOrWhiteSpace(typeNode.TypeName) && typeNode.Syntax is null)
-            .Select(typeNode => typeNode.TypeName)
-            .ToList();
-
-        Assert.Empty(missingSyntax);
+        Assert.All(
+            CollectTypeNodes(program),
+            typeNode => Assert.False(string.IsNullOrWhiteSpace(typeNode.ToSourceText())));
     }
 
     [Fact]
@@ -117,10 +114,10 @@ public sealed class TypeNodeParsingTests
         var parameter = Assert.Single(function.Parameters);
         var local = Assert.IsType<LetStatement>(function.Body[0]);
 
-        Assert.Equal("T", field.TypeNode?.TypeName);
-        Assert.Equal("Box<int>", parameter.TypeNode?.TypeName);
-        Assert.Equal("Box<int>", function.ReturnTypeNode?.TypeName);
-        Assert.Equal("Box<int>", local.TypeNode?.TypeName);
+        Assert.Equal("T", field.TypeNode?.ToSourceText());
+        Assert.Equal("Box<int>", parameter.TypeNode?.ToSourceText());
+        Assert.Equal("Box<int>", function.ReturnTypeNode?.ToSourceText());
+        Assert.Equal("Box<int>", local.TypeNode?.ToSourceText());
     }
 
     [Fact]
@@ -284,10 +281,10 @@ public sealed class TypeNodeParsingTests
     }
 
     [Fact]
-    public void ResolveType_PrefersTypeSyntaxOverCompatibilityText()
+    public void ResolveType_UsesTypeSyntax()
     {
         var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
-        var typeNode = new TypeNode(location, "NotARealType", new NamedTypeSyntaxNode("int"));
+        var typeNode = TypeNode.Named(location, "int");
         var global = new GlobalVariableNode(
             location,
             IsConst: false,
@@ -324,15 +321,14 @@ public sealed class TypeNodeParsingTests
     }
 
     [Fact]
-    public void ToTypeRef_ThrowsWhenTypeNodeHasNoSyntax()
+    public void CreateFromText_AlwaysCreatesTypeSyntax()
     {
         var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
-        var typeNode = new TypeNode(location, "MissingSyntax");
+        var typeNode = TypeNode.CreateFromText(location, string.Empty);
         var parser = new TypeRefParser(new ProgramNode(location, []));
 
-        var exception = Assert.Throws<InvalidOperationException>(() => typeNode.ToTypeRef(parser));
-
-        Assert.Contains("has no parsed type syntax", exception.Message);
+        Assert.IsType<NamedTypeSyntaxNode>(typeNode.Syntax);
+        Assert.IsType<TypeRef.Unknown>(typeNode.ToTypeRef(parser));
     }
 
     [Fact]
@@ -408,11 +404,11 @@ public sealed class TypeNodeParsingTests
         var structRequirement = Assert.Single(Assert.Single(program.Structs).Requirements);
         var unionVariant = program.TaggedUnions.Single().Variants[1];
 
-        Assert.Equal("T*", field.TypeNode?.TypeName);
-        Assert.Equal("usize", requirementFunction.ReturnTypeNode?.TypeName);
-        Assert.Equal("void*", interfaceMethod.ReturnTypeNode?.TypeName);
-        Assert.Equal(["T"], structRequirement.TypeArgumentNodes.Select(node => node.TypeName).ToList());
-        Assert.Equal("Vec<int>", unionVariant.TypeNode?.TypeName);
+        Assert.Equal("T*", field.TypeNode?.ToSourceText());
+        Assert.Equal("usize", requirementFunction.ReturnTypeNode?.ToSourceText());
+        Assert.Equal("void*", interfaceMethod.ReturnTypeNode?.ToSourceText());
+        Assert.Equal(["T"], structRequirement.TypeArgumentNodes.Select(node => node.ToSourceText()).ToList());
+        Assert.Equal("Vec<int>", unionVariant.TypeNode?.ToSourceText());
     }
 
     [Fact]
@@ -486,12 +482,12 @@ public sealed class TypeNodeParsingTests
         var genericCall = Assert.IsType<GenericCallExpressionNode>(Assert.IsType<LetStatement>(body[3]).Initializer);
         var functionExpression = Assert.IsType<FunctionExpressionNode>(Assert.IsType<LetStatement>(body[4]).Initializer);
 
-        Assert.Equal("Box<int>*", cast.TargetTypeNode?.TypeName);
-        Assert.Equal("Box<int>", sizeOf.TypeOperandNode?.TypeName);
-        Assert.Equal("Box<int>", initializer.TypeNameNode?.TypeName);
-        Assert.Equal(["Box<int>"], genericCall.TypeArgumentNodes.Select(node => node.TypeName).ToList());
-        Assert.Equal("Box<int>", functionExpression.ReturnTypeNode?.TypeName);
-        Assert.Equal("Box<int>", Assert.Single(functionExpression.Parameters).TypeNode?.TypeName);
+        Assert.Equal("Box<int>*", cast.TargetTypeNode?.ToSourceText());
+        Assert.Equal("Box<int>", sizeOf.TypeOperandNode?.ToSourceText());
+        Assert.Equal("Box<int>", initializer.TypeNameNode?.ToSourceText());
+        Assert.Equal(["Box<int>"], genericCall.TypeArgumentNodes.Select(node => node.ToSourceText()).ToList());
+        Assert.Equal("Box<int>", functionExpression.ReturnTypeNode?.ToSourceText());
+        Assert.Equal("Box<int>", Assert.Single(functionExpression.Parameters).TypeNode?.ToSourceText());
     }
 
     [Fact]

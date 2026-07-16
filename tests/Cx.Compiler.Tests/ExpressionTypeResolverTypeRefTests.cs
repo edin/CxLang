@@ -10,6 +10,19 @@ namespace Cx.Compiler.Tests;
 public sealed class ExpressionTypeResolverTypeRefTests
 {
     [Fact]
+    public void ResolveTypeRef_DoesNotInterpretParserErrorText()
+    {
+        var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
+        var resolver = new ExpressionTypeResolver(CompilerTestHelpers.Parse("fn main() -> int { return 0; }"));
+
+        var resolved = resolver.ResolveTypeRef(
+            new ErrorExpressionNode(location, "value"),
+            TypeEnvironment(null, ("value", "int")));
+
+        Assert.Null(resolved);
+    }
+
+    [Fact]
     public void ResolveTypeRef_ResolvesKnownLiteralAliasesWithoutStringParsing()
     {
         var program = CompilerTestHelpers.Parse(
@@ -107,7 +120,7 @@ public sealed class ExpressionTypeResolverTypeRefTests
     public void ResolveTypeRef_PrefersTypeSyntaxWhenSemanticTypeIsMissing()
     {
         var location = new Location(new SourceFile("test.cx", string.Empty), Position: 0, Line: 1, Column: 1);
-        var typeNode = new TypeNode(location, "StaleTypeText", new PointerTypeSyntaxNode(new NamedTypeSyntaxNode("int")));
+        var typeNode = TypeNode.Pointer(location, new NamedTypeSyntaxNode("int"));
         var cast = new CastExpressionNode(
             location,
             new NameExpressionNode(location, "value"),

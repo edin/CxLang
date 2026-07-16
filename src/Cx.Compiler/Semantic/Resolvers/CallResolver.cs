@@ -511,7 +511,7 @@ internal sealed class CallResolver(
 
     private TypeRef ResolveType(TypeNode? typeNode) =>
         typeNode?.Semantic.Type
-        ?? (typeNode?.Syntax is null ? null : _typeSyntaxConverter.Convert(typeNode))
+        ?? (typeNode is null ? null : _typeSyntaxConverter.Convert(typeNode))
         ?? new TypeRef.Unknown();
 
     private static IReadOnlyDictionary<string, TypeRef> BuildTypeSubstitutionsFromRefs(
@@ -621,7 +621,7 @@ internal sealed class CallResolver(
             return true;
         }
 
-        return TypeRefFacts.SameType(existing, typeArgument);
+        return TypeIdentity.ResolvedEquals(existing, typeArgument);
     }
 
     private string? OwnerType(FunctionNode function) =>

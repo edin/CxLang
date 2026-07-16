@@ -238,9 +238,9 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
             or IndexExpressionNode
             or CallExpressionNode
             or GenericCallExpressionNode => _expressionEmitter.Emit(LowerExpression(expression)),
-        FunctionExpressionNode functionExpression => throw CEmissionGuards.UnsupportedExpressionTextLowering(functionExpression),
-        RawExpressionNode raw => throw CEmissionGuards.RawExpressionAfterLowering(raw),
-        _ => throw CEmissionGuards.UnsupportedExpressionTextLowering(expression),
+        FunctionExpressionNode functionExpression => throw CEmissionGuards.UnsupportedCExpressionLowering(functionExpression),
+        ErrorExpressionNode error => throw CEmissionGuards.ErrorExpressionAfterLowering(error),
+        _ => throw CEmissionGuards.UnsupportedCExpressionLowering(expression),
     };
 
     CExpression ICExpressionLoweringContext.LowerNameExpression(NameExpressionNode name) =>

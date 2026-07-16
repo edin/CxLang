@@ -17,17 +17,14 @@ internal static class CEmissionGuards
     public static InvalidOperationException UnsupportedElseBranch(StatementNode elseBranch) =>
         new($"Internal C emission error: unsupported else branch '{elseBranch.GetType().Name}' at {elseBranch.Location} reached C statement lowering.");
 
-    public static InvalidOperationException RawExpressionAfterLowering(RawExpressionNode raw) =>
-        new($"Raw expression reached C emission after lowering: '{TrimForDiagnostic(raw.RawText)}'.");
+    public static InvalidOperationException ErrorExpressionAfterLowering(ErrorExpressionNode error) =>
+        new($"Parser error expression reached C emission after lowering: '{TrimForDiagnostic(error.Text)}'.");
 
-    public static InvalidOperationException UnsupportedRawExpressionLowering(ExpressionNode expression) =>
-        new($"Internal C emission error: expression requires unsupported raw C lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
+    public static InvalidOperationException UnsupportedSimpleExpressionLowering(ExpressionNode expression) =>
+        new($"Internal C emission error: expression is not supported by simple C lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
 
     public static InvalidOperationException UnsupportedCExpressionLowering(ExpressionNode expression) =>
         new($"Internal C emission error: expression requires unsupported C expression lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
-
-    public static InvalidOperationException UnsupportedExpressionTextLowering(ExpressionNode expression) =>
-        new($"Internal C emission error: expression requires unsupported legacy text lowering: '{TrimForDiagnostic(expression.ToSourceText())}'.");
 
     public static InvalidOperationException UnresolvedTypeExpression(TypeNode? typeNode) =>
         new(
@@ -62,7 +59,5 @@ internal static class CEmissionGuards
         typeNode is null ? fallback : TypeText(typeNode);
 
     private static string TypeText(TypeNode typeNode) =>
-        typeNode.Syntax is { } syntax
-            ? TypeSyntaxFormatter.ToCxString(syntax)
-            : typeNode.TypeName;
+        TypeSyntaxFormatter.ToCxString(typeNode.Syntax);
 }

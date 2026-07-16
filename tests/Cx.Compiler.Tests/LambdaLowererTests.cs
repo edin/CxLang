@@ -34,7 +34,7 @@ public sealed class LambdaLowererTests
     }
 
     [Fact]
-    public void Lower_DoesNotParseFunctionExpressionOutOfRawText()
+    public void Lower_LeavesParserErrorExpressionUntouched()
     {
         var location = Location.Synthetic("<lambda-lowerer-test>");
         var program = new ProgramNode(
@@ -51,7 +51,7 @@ public sealed class LambdaLowererTests
                     [
                         new CStatement(
                             location,
-                            new RawExpressionNode(location, "fn(value: int) => value"))
+                            new ErrorExpressionNode(location, "fn(value: int) => value"))
                     ],
                     Attributes: [],
                     ReturnTypeNode: TypeNode.CreateFromText(location, "void")),
@@ -61,7 +61,7 @@ public sealed class LambdaLowererTests
 
         var main = Assert.Single(lowered.Functions);
         var statement = Assert.IsType<CStatement>(Assert.Single(main.Body));
-        Assert.Equal("fn(value: int) => value", Assert.IsType<RawExpressionNode>(statement.Expression).RawText);
+        Assert.Equal("fn(value: int) => value", Assert.IsType<ErrorExpressionNode>(statement.Expression).Text);
     }
 
     [Fact]
@@ -82,12 +82,12 @@ public sealed class LambdaLowererTests
 
         var createBeforeLowering = program.Functions.Single(function => function.Name == "create");
         var lambda = Assert.IsType<FunctionExpressionNode>(Assert.IsType<ReturnStatement>(Assert.Single(createBeforeLowering.Body)).Expression);
-        Assert.Equal("bool", lambda.ReturnTypeNode?.TypeName);
+        Assert.Equal("bool", lambda.ReturnTypeNode?.ToSourceText());
 
         var lowered = LambdaLowerer.Lower(program, diagnostics);
 
         var generated = lowered.Functions.Single(function => function.Name == "__cx_lambda_0");
-        Assert.Equal("bool", generated.ReturnTypeNode?.TypeName);
+        Assert.Equal("bool", generated.ReturnTypeNode?.ToSourceText());
 
         var create = lowered.Functions.Single(function => function.Name == "create");
         var ret = Assert.IsType<ReturnStatement>(Assert.Single(create.Body));

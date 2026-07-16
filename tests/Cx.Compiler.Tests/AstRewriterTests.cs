@@ -40,8 +40,8 @@ public sealed class AstRewriterTests
         var body = Assert.Single(rewritten.Functions).Body;
 
         Assert.Equal(2, body.Count);
-        Assert.Equal("before_items()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[0]).Expression).RawText);
-        Assert.Equal("after_items()", Assert.IsType<RawExpressionNode>(Assert.IsType<CStatement>(body[1]).Expression).RawText);
+        Assert.Equal("before_items()", Assert.IsType<CallExpressionNode>(Assert.IsType<CStatement>(body[0]).Expression).ToSourceText());
+        Assert.Equal("after_items()", Assert.IsType<CallExpressionNode>(Assert.IsType<CStatement>(body[1]).Expression).ToSourceText());
     }
 
     [Fact]
@@ -116,10 +116,13 @@ public sealed class AstRewriterTests
     {
         protected override IReadOnlyList<StatementNode> RewriteLetStatement(LetStatement let) =>
             [
-                new CStatement(let.Location, new RawExpressionNode(let.Location, $"before_{let.Name}()")),
-                new CStatement(let.Location, new RawExpressionNode(let.Location, $"after_{let.Name}()")),
+                new CStatement(let.Location, Call(let.Location, $"before_{let.Name}")),
+                new CStatement(let.Location, Call(let.Location, $"after_{let.Name}")),
             ];
     }
+
+    private static CallExpressionNode Call(Location location, string name) =>
+        new(location, new NameExpressionNode(location, name), []);
 
     private sealed class InjectHelperFunctionRewriter : AstRewriter
     {

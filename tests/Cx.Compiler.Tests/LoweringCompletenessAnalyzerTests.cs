@@ -102,7 +102,7 @@ public sealed class LoweringCompletenessAnalyzerTests
     }
 
     [Fact]
-    public void Analyze_ReportsRawExpressionThatRemainsAfterLowering()
+    public void Analyze_ReportsErrorExpressionThatRemainsAfterLowering()
     {
         var location = Location.Synthetic("<lowering-completeness-test>");
         var program = new Cx.Compiler.Syntax.Nodes.ProgramNode(
@@ -119,7 +119,7 @@ public sealed class LoweringCompletenessAnalyzerTests
                     [
                         new Cx.Compiler.Syntax.Nodes.CStatement(
                             location,
-                            new Cx.Compiler.Syntax.Nodes.RawExpressionNode(location, "legacy_text_call()"))
+                            new Cx.Compiler.Syntax.Nodes.ErrorExpressionNode(location, "unparsed_call()"))
                     ],
                     Attributes: [],
                     ReturnTypeNode: Cx.Compiler.Syntax.Nodes.TypeNode.CreateFromText(location, "void")),
@@ -129,6 +129,6 @@ public sealed class LoweringCompletenessAnalyzerTests
         new LoweringCompletenessAnalyzer(diagnostics).Analyze(program);
 
         Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("raw expression remains after post-semantic lowering", StringComparison.Ordinal));
+            diagnostic.Message.Contains("parser error expression remains after post-semantic lowering", StringComparison.Ordinal));
     }
 }

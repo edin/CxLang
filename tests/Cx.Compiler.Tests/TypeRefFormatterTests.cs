@@ -20,7 +20,7 @@ public sealed class TypeRefFormatterTests
         var type = new TypeRef.Named("Vec", [new TypeRef.Named("int", [])], ModuleName: "std.core");
 
         Assert.Equal("std.core::Vec<int>", TypeRefFormatter.ToIdentityString(type));
-        Assert.Equal("std.core::Vec<int>", TypeRefFacts.IdentityKey(type));
+        Assert.Equal("std.core::Vec<int>", TypeIdentity.ResolvedKey(type));
     }
 
     [Fact]

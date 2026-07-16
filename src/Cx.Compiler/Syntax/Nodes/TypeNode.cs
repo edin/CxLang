@@ -4,15 +4,13 @@ namespace Cx.Compiler.Syntax.Nodes;
 
 public sealed record TypeNode(
     Location Location,
-    [property: Cx.Compiler.LegacyStringType("Compatibility text for parsed type syntax. Prefer Syntax or Semantic.Type.")]
-    string TypeName,
-    TypeSyntaxNode? Syntax = null) : SyntaxNode(Location)
+    TypeSyntaxNode Syntax) : SyntaxNode(Location)
 {
     public static TypeNode CreateFromText(Location location, string typeName) =>
-        new(location, typeName, TypeSyntaxParser.Parse(typeName));
+        new(location, TypeSyntaxParser.Parse(typeName) ?? new NamedTypeSyntaxNode(typeName.Trim()));
 
     public static TypeNode Create(Location location, TypeSyntaxNode syntax) =>
-        new(location, TypeSyntaxFormatter.ToCxString(syntax), syntax);
+        new(location, syntax);
 
     public static TypeNode Named(Location location, string name) =>
         Create(location, new NamedTypeSyntaxNode(name));
@@ -24,20 +22,7 @@ public sealed record TypeNode(
 public static class TypeNodeExtensions
 {
     public static string ToSourceText(this TypeNode? typeNode) =>
-        typeNode?.Syntax is { } syntax
-            ? TypeSyntaxFormatter.ToCxString(syntax)
-            : typeNode?.TypeName ?? string.Empty;
-
-    [Obsolete("Use TypeNode.Syntax, Semantic.Type, or ToSourceText() for compatibility-only source reconstruction.")]
-    public static string ToTypeName(this TypeNode? typeNode) =>
-        typeNode.ToSourceText();
-
-    [Obsolete("Use TypeNode.Syntax, Semantic.Type, or ToSourceText() for compatibility-only source reconstruction.")]
-    public static string? ToTypeNameOrNull(this TypeNode? typeNode)
-    {
-        var typeName = typeNode.ToSourceText();
-        return string.IsNullOrWhiteSpace(typeName) ? null : typeName;
-    }
+        typeNode is null ? string.Empty : TypeSyntaxFormatter.ToCxString(typeNode.Syntax);
 }
 
 public abstract record TypeSyntaxNode;

@@ -102,12 +102,12 @@ public sealed class GenericSpecializationPassTests
         var initializer = Assert.IsType<InitializerExpressionNode>(let.Initializer);
 
         Assert.Equal("value", field.Name);
-        Assert.Equal("int", field.TypeNode?.TypeName);
-        Assert.Equal("Box_int", let.TypeNode?.TypeName);
-        Assert.Equal("Box_int", initializer.TypeNameNode?.TypeName);
+        Assert.Equal("int", field.TypeNode?.ToSourceText());
+        Assert.Equal("Box_int", let.TypeNode?.ToSourceText());
+        Assert.Equal("Box_int", initializer.TypeNameNode?.ToSourceText());
         Assert.DoesNotContain(lowered.Structs, structNode => structNode.Name == "Unused_int");
     }
 
     private static IReadOnlyList<string> FunctionTypeArguments(FunctionNode function) =>
-        (function.TypeArgumentNodes ?? []).Select(node => node.TypeName).ToList();
+        (function.TypeArgumentNodes ?? []).Select(node => node.ToSourceText()).ToList();
 }
