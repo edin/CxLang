@@ -35,9 +35,7 @@ internal static class CompilerTestHelpers
         var source = Source(expression, path);
         var tokens = new Cx.Compiler.Lexer.Lexer(source, diagnostics)
             .Tokenize()
-            .Where(token => token.Type is not Cx.Compiler.Lexer.TokenType.Eof
-                and not Cx.Compiler.Lexer.TokenType.Comment
-                and not Cx.Compiler.Lexer.TokenType.MultilineComment)
+            .Where(token => token.Type is not Cx.Compiler.Lexer.TokenType.Eof)
             .ToList();
 
         AssertNoErrors(diagnostics);

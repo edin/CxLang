@@ -53,7 +53,6 @@ public sealed class LexerTests
 
         Assert.Equal(
             [
-                TokenType.Comment,
                 TokenType.Slash,
                 TokenType.String,
                 TokenType.Character,

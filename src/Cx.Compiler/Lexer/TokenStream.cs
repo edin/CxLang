@@ -31,6 +31,8 @@ internal sealed class TokenStream
 
     public Token Current => At(_position);
 
+    public Token Previous => At(_position - 1);
+
     public bool IsAtEnd => Current.Type == TokenType.Eof;
 
     public Token Peek(int offset = 1) => At(_position + offset);

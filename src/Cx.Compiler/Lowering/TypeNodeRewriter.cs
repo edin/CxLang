@@ -24,7 +24,7 @@ internal static class TypeNodeRewriter
         }
 
         var rewritten = rewrittenType.ToTypeNode(typeNode.Location);
-        SyntaxNode.CloneSemantic(typeNode, rewritten);
+        SyntaxNode.CloneMetadata(typeNode, rewritten);
         rewritten.Semantic.Type = rewrittenType;
         return rewritten;
     }

@@ -33,11 +33,12 @@ public sealed partial class Parser
         var expression = ExpressionTokenParser.TryParse(tokens);
         if (expression is not null)
         {
+            expression.Span = tokens.Span;
             return expression;
         }
 
         var text = tokens.ToSourceText();
         _diagnostics.Report(tokens.Location, $"Could not parse expression '{DiagnosticText.Summarize(text)}'.");
-        return new ErrorExpressionNode(tokens.Location);
+        return new ErrorExpressionNode(tokens.Location) { Span = tokens.Span };
     }
 }

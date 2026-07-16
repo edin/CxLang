@@ -21,10 +21,7 @@ public sealed partial class Parser
 
     public ProgramNode Parse(SourceFile sourceFile)
     {
-        _tokens = new TokenStream(new Lexer.Lexer(sourceFile, _diagnostics)
-            .Tokenize()
-            .Where(token => token.Type is not TokenType.Comment and not TokenType.MultilineComment)
-            .ToList());
+        _tokens = new TokenStream(new Lexer.Lexer(sourceFile, _diagnostics).Tokenize());
         _pendingTypeCloseAngles = 0;
 
         var declarations = new List<TopLevelNode>();
@@ -32,6 +29,7 @@ public sealed partial class Parser
 
         while (!IsAtEnd)
         {
+            var declarationStart = Current;
             var attributes = ParseAttributeApplications();
 
             if (Check(TokenType.Module))
@@ -39,7 +37,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "module declarations");
                 if (ParseModuleDeclaration() is { } module)
                 {
-                    declarations.Add(module);
+                    AddSpannedNode(declarations, module, declarationStart);
                 }
 
                 continue;
@@ -50,7 +48,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "imports");
                 if (ParseImport() is { } import)
                 {
-                    declarations.Add(import);
+                    AddSpannedNode(declarations, import, declarationStart);
                 }
 
                 continue;
@@ -61,7 +59,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "imports");
                 if (ParseSymbolImport() is { } symbolImport)
                 {
-                    declarations.Add(symbolImport);
+                    AddSpannedNode(declarations, symbolImport, declarationStart);
                 }
 
                 continue;
@@ -72,7 +70,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "includes");
                 if (ParseInclude() is { } include)
                 {
-                    declarations.Add(include);
+                    AddSpannedNode(declarations, include, declarationStart);
                 }
 
                 continue;
@@ -83,7 +81,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "C declarations");
                 if (ParseCDeclare() is { } cDeclare)
                 {
-                    declarations.Add(cDeclare);
+                    AddSpannedNode(declarations, cDeclare, declarationStart);
                 }
 
                 continue;
@@ -93,7 +91,7 @@ public sealed partial class Parser
             {
                 if (ParseExternFunction(attributes) is { } externFunction)
                 {
-                    declarations.Add(externFunction);
+                    AddSpannedNode(declarations, externFunction, declarationStart);
                 }
 
                 continue;
@@ -103,7 +101,7 @@ public sealed partial class Parser
             {
                 if (ParseTypeDeclaration(attributes) is { } typeDeclaration)
                 {
-                    declarations.Add(typeDeclaration);
+                    AddSpannedNode(declarations, typeDeclaration, declarationStart);
                 }
 
                 continue;
@@ -113,7 +111,7 @@ public sealed partial class Parser
             {
                 if (ParseFunction(attributes) is { } function)
                 {
-                    declarations.Add(function);
+                    AddSpannedNode(declarations, function, declarationStart);
                 }
 
                 continue;
@@ -123,7 +121,7 @@ public sealed partial class Parser
             {
                 if (ParseGlobalVariable(letToken, isConst: false, attributes) is { } global)
                 {
-                    declarations.Add(global);
+                    AddSpannedNode(declarations, global, declarationStart);
                 }
 
                 continue;
@@ -133,7 +131,7 @@ public sealed partial class Parser
             {
                 if (ParseGlobalVariable(constToken, isConst: true, attributes) is { } global)
                 {
-                    declarations.Add(global);
+                    AddSpannedNode(declarations, global, declarationStart);
                 }
 
                 continue;
@@ -143,7 +141,7 @@ public sealed partial class Parser
             {
                 if (ParseStaticFunction(attributes) is { } function)
                 {
-                    declarations.Add(function);
+                    AddSpannedNode(declarations, function, declarationStart);
                 }
 
                 continue;
@@ -154,7 +152,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "requirements");
                 if (ParseRequirement() is { } requirement)
                 {
-                    declarations.Add(requirement);
+                    AddSpannedNode(declarations, requirement, declarationStart);
                 }
 
                 continue;
@@ -164,7 +162,7 @@ public sealed partial class Parser
             {
                 if (ParseStruct(attributes) is { } structNode)
                 {
-                    declarations.Add(structNode);
+                    AddSpannedNode(declarations, structNode, declarationStart);
                 }
 
                 continue;
@@ -174,7 +172,7 @@ public sealed partial class Parser
             {
                 if (ParseExtension(attributes) is { } extension)
                 {
-                    declarations.Add(extension);
+                    AddSpannedNode(declarations, extension, declarationStart);
                 }
 
                 continue;
@@ -184,7 +182,7 @@ public sealed partial class Parser
             {
                 if (ParseInterface(attributes) is { } interfaceNode)
                 {
-                    declarations.Add(interfaceNode);
+                    AddSpannedNode(declarations, interfaceNode, declarationStart);
                 }
 
                 continue;
@@ -194,7 +192,7 @@ public sealed partial class Parser
             {
                 if (ParseEnum(attributes) is { } enumNode)
                 {
-                    declarations.Add(enumNode);
+                    AddSpannedNode(declarations, enumNode, declarationStart);
                 }
 
                 continue;
@@ -205,7 +203,7 @@ public sealed partial class Parser
                 var rawToken = Expect(TokenType.Raw, "Expected 'raw'.");
                 if (ParseTaggedUnion(attributes, isRaw: true, rawLocation: rawToken?.Location) is { } rawUnion)
                 {
-                    declarations.Add(rawUnion);
+                    AddSpannedNode(declarations, rawUnion, declarationStart);
                 }
 
                 continue;
@@ -215,7 +213,7 @@ public sealed partial class Parser
             {
                 if (ParseTaggedUnion(attributes, isRaw: false) is { } taggedUnion)
                 {
-                    declarations.Add(taggedUnion);
+                    AddSpannedNode(declarations, taggedUnion, declarationStart);
                 }
 
                 continue;
@@ -226,7 +224,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "attribute declarations");
                 if (ParseAttributeDeclaration() is { } attributeDeclaration)
                 {
-                    declarations.Add(attributeDeclaration);
+                    AddSpannedNode(declarations, attributeDeclaration, declarationStart);
                 }
 
                 continue;
@@ -236,7 +234,7 @@ public sealed partial class Parser
             {
                 if (ParseTest(attributes) is { } test)
                 {
-                    declarations.Add(test);
+                    AddSpannedNode(declarations, test, declarationStart);
                 }
 
                 continue;
@@ -246,7 +244,15 @@ public sealed partial class Parser
             SynchronizeTopLevel();
         }
 
-        return new ProgramNode(location, declarations);
+        var program = new ProgramNode(location, declarations);
+        if (declarations.Count > 0
+            && declarations[0].Span is { } firstSpan
+            && declarations[^1].Span is { } lastSpan)
+        {
+            program.Span = SourceSpan.FromBounds(firstSpan, lastSpan);
+        }
+
+        return program;
     }
 
     private TestNode? ParseTest(IReadOnlyList<AttributeApplicationNode> attributes)

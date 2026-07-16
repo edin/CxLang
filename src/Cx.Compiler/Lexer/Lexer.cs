@@ -127,7 +127,6 @@ public sealed class Lexer
                     if (TokenMetadataProvider.ByType[match.Type].Class == TokenGroup.Trivia)
                     {
                         leadingTrivia.Add(ToTrivia(match));
-                        tokens.Add(match);
                     }
                     else
                     {

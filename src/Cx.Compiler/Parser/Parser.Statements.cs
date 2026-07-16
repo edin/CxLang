@@ -6,7 +6,9 @@ namespace Cx.Compiler.Parser;
 
 public sealed partial class Parser
 {
-    private StatementNode? ParseStatement()
+    private StatementNode? ParseStatement() => ParseSpannedNode(ParseStatementCore);
+
+    private StatementNode? ParseStatementCore()
     {
         if (Match(TokenType.Let) is { } letToken)
         {

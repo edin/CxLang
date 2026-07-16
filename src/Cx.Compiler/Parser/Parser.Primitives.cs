@@ -1,4 +1,6 @@
 using Cx.Compiler.Lexer;
+using Cx.Compiler.Source;
+using Cx.Compiler.Syntax;
 
 namespace Cx.Compiler.Parser;
 
@@ -38,6 +40,27 @@ public sealed partial class Parser
         && string.Equals(Current.Value, value, StringComparison.Ordinal);
 
     private Token Advance() => Tokens.Advance();
+
+    private T? ParseSpannedNode<T>(Func<T?> parser)
+        where T : SyntaxNode
+    {
+        var startPosition = Tokens.Position;
+        var first = Current;
+        var node = parser();
+        if (node is not null && Tokens.Position > startPosition)
+        {
+            node.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
+        }
+
+        return node;
+    }
+
+    private void AddSpannedNode<T>(ICollection<T> nodes, T node, Token first)
+        where T : SyntaxNode
+    {
+        node.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
+        nodes.Add(node);
+    }
 
     private bool IsAtEnd => Tokens.IsAtEnd;
 

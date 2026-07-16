@@ -359,7 +359,7 @@ internal static class GenericStructSpecializer
 
     private static T CopySemantic<T>(SyntaxNode source, T target)
         where T : SyntaxNode
-        => SyntaxNode.CloneSemantic(source, target);
+        => SyntaxNode.CloneMetadata(source, target);
 
     private sealed record GenericStructUseRef(string Name, IReadOnlyList<TypeRef> Arguments);
 }

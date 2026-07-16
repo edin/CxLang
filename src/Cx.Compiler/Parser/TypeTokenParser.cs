@@ -1,5 +1,6 @@
 using Cx.Compiler.Lexer;
 using Cx.Compiler.Source;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Parser;
@@ -16,11 +17,17 @@ internal static class TypeTokenParser
         var syntax = TryParseSyntax(tokens);
         if (syntax is not null)
         {
-            return TypeNode.Create(tokens[0].Location, syntax);
+            return SyntaxNode.WithSpan(
+                TypeNode.Create(tokens[0].Location, syntax),
+                tokens[0].Span,
+                tokens[^1].Span);
         }
 
         var typeName = ToTypeSourceText(tokens);
-        return TypeNode.Create(tokens[0].Location, new NamedTypeSyntaxNode(typeName));
+        return SyntaxNode.WithSpan(
+            TypeNode.Create(tokens[0].Location, new NamedTypeSyntaxNode(typeName)),
+            tokens[0].Span,
+            tokens[^1].Span);
     }
 
     public static string ToTypeSourceText(IReadOnlyList<Token> tokens) =>

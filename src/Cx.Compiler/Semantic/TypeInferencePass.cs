@@ -270,7 +270,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     private static TypeNode? PreserveTypeNode(TypeNode? typeNode) =>
         typeNode is null
             ? null
-            : SyntaxNode.CloneSemantic(typeNode, typeNode with { });
+            : SyntaxNode.CloneMetadata(typeNode, typeNode with { });
 
     private ForeachStatement InferForeachStatement(
         ForeachStatement foreachStatement,

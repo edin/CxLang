@@ -508,7 +508,7 @@ internal static class GenericTypeRewriter
                 LowerGenericTypeName,
                 concreteStructNames);
             var semanticRewrite = rewrittenType.ToTypeNode(typeNode.Location);
-            SyntaxNode.CloneSemantic(typeNode, semanticRewrite);
+            SyntaxNode.CloneMetadata(typeNode, semanticRewrite);
             semanticRewrite.Semantic.Type = rewrittenType;
             return semanticRewrite;
         }
@@ -516,7 +516,7 @@ internal static class GenericTypeRewriter
         var rewritten = TypeNode.Create(
             typeNode.Location,
             RewriteTypeSyntax(typeNode.Syntax, concreteStructNames));
-        SyntaxNode.CloneSemantic(typeNode, rewritten);
+        SyntaxNode.CloneMetadata(typeNode, rewritten);
         return rewritten;
     }
 
@@ -602,5 +602,5 @@ internal static class GenericTypeRewriter
 
     private static T CopySemantic<T>(SyntaxNode source, T target)
         where T : SyntaxNode
-        => SyntaxNode.CloneSemantic(source, target);
+        => SyntaxNode.CloneMetadata(source, target);
 }

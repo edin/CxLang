@@ -7,5 +7,9 @@ internal readonly record struct TokenSlice(Location Location, IReadOnlyList<Toke
 {
     public bool IsEmpty => Tokens.Count == 0;
 
+    public SourceSpan? Span => IsEmpty
+        ? null
+        : SourceSpan.FromBounds(Tokens[0].Span, Tokens[^1].Span);
+
     public string ToSourceText() => TokenText.ToSourceText(Tokens);
 }

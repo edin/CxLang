@@ -26,7 +26,13 @@ internal sealed class ExpressionTokenParser
 
         var parser = new ExpressionTokenParser(slice);
         var expression = parser.ParseExpression();
-        return expression is not null && parser.IsAtEnd ? expression : null;
+        if (expression is null || !parser.IsAtEnd)
+        {
+            return null;
+        }
+
+        expression.Span = slice.Span;
+        return expression;
     }
 
     private ExpressionNode? ParseExpression(int minimumPrecedence = 0)
