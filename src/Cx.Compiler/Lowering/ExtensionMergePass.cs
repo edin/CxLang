@@ -107,6 +107,7 @@ internal static class ExtensionMergePass
             NamedTypeSyntaxNode named => named.Name,
             GenericTypeSyntaxNode generic => TargetTypeName(generic.Target),
             PointerTypeSyntaxNode pointer => TargetTypeName(pointer.Element),
+            ConstTypeSyntaxNode constType => TargetTypeName(constType.Element),
             _ => string.Empty,
         };
     }
@@ -117,6 +118,7 @@ internal static class ExtensionMergePass
             NamedTypeSyntaxNode named => named.Name,
             GenericTypeSyntaxNode generic => TargetTypeName(generic.Target),
             PointerTypeSyntaxNode pointer => TargetTypeName(pointer.Element),
+            ConstTypeSyntaxNode constType => TargetTypeName(constType.Element),
             _ => string.Empty,
         };
 

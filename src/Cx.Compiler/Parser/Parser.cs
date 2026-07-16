@@ -856,6 +856,7 @@ public sealed partial class Parser
                 || string.Equals(named.Name, ownerType, StringComparison.Ordinal),
             GenericTypeSyntaxNode { Target: NamedTypeSyntaxNode named } =>
                 string.Equals(named.Name, ownerType, StringComparison.Ordinal),
+            ConstTypeSyntaxNode constType => IsReceiverTargetType(constType.Element, ownerType),
             _ => false,
         };
 
