@@ -149,6 +149,10 @@ internal sealed class ModuleVisibilityAnalyzer(
                     AnalyzeType(let.TypeNode, let.Location, visibility);
                     AnalyzeExpression(let.Initializer, visibility, locals);
                     break;
+                case UsingStatement usingStatement:
+                    AnalyzeType(usingStatement.TypeNode, usingStatement.Location, visibility);
+                    AnalyzeExpression(usingStatement.Initializer, visibility, locals);
+                    break;
                 case ReturnStatement { Expression: not null } returnStatement:
                     AnalyzeExpression(returnStatement.Expression, visibility, locals);
                     break;
@@ -449,6 +453,9 @@ internal sealed class ModuleVisibilityAnalyzer(
             {
                 case LetStatement let:
                     yield return let.Name;
+                    break;
+                case UsingStatement usingStatement:
+                    yield return usingStatement.Name;
                     break;
                 case ForStatement { Initializer: ForDeclarationInitializerNode declaration }:
                     yield return declaration.Name;

@@ -153,6 +153,12 @@ internal sealed class ExpressionSemanticAnalyzer(
             return;
         }
 
+        if (call.Semantic.IsScopeCleanup)
+        {
+            ReportInvalidScopeCleanup(call, location, typeEnvironment);
+            return;
+        }
+
         ReportUnknownCall(call.Callee, location, typeEnvironment);
     }
 
@@ -268,6 +274,21 @@ internal sealed class ExpressionSemanticAnalyzer(
                     ? $"Unknown function '{name}'."
                     : $"Unknown function '{name}'. Did you mean to import {suggestion}?");
         }
+    }
+
+    private void ReportInvalidScopeCleanup(
+        CallExpressionNode call,
+        Location location,
+        TypeEnvironment typeEnvironment)
+    {
+        var type = call.Callee is MemberExpressionNode member
+            ? ResolveExpressionTypeRef(member.Target, typeEnvironment)
+            : null;
+        diagnostics.Report(
+            location,
+            type is null or TypeRef.Unknown
+                ? "A using resource must provide 'free(self: Self*) -> void'."
+                : $"Type '{SemanticFacts.FormatTypeRef(type)}' used by 'using' must provide 'free(self: Self*) -> void'.");
     }
 
     private TypeRef? ResolveExpressionTypeRef(

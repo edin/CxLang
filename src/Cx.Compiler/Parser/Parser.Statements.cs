@@ -20,6 +20,11 @@ public sealed partial class Parser
             return ParseVariableStatement(constToken, isConst: true);
         }
 
+        if (Match(TokenType.Using) is { } usingToken)
+        {
+            return ParseUsingStatement(usingToken);
+        }
+
         if (Match(TokenType.Return) is { } returnToken)
         {
             var returnExpression = Check(TokenType.Semicolon)
@@ -92,6 +97,27 @@ public sealed partial class Parser
 
         Expect(TokenType.Semicolon, "Expected ';' after variable declaration.");
         return new LetStatement(keywordToken.Location, isConst, declaration.Name, declaration.Initializer, declaration.TypeNode);
+    }
+
+    private StatementNode ParseUsingStatement(Token usingToken)
+    {
+        var declaration = ParseVariableDeclarationParts(
+            usingToken.Location,
+            nameMessage: "Expected resource name.",
+            typeSubject: "resource",
+            missingTypeOrInitializerMessage: "Using declarations require an initializer.");
+
+        if (declaration.Initializer is null && declaration.TypeNode is not null)
+        {
+            _diagnostics.Report(usingToken.Location, "Using declarations require an initializer.");
+        }
+
+        Expect(TokenType.Semicolon, "Expected ';' after using declaration.");
+        return new UsingStatement(
+            usingToken.Location,
+            declaration.Name,
+            declaration.Initializer ?? new ErrorExpressionNode(usingToken.Location),
+            declaration.TypeNode);
     }
 
     private IfStatement? ParseIfStatement()
