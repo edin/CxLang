@@ -26,6 +26,7 @@ internal sealed class CBackendContext
     public TypeRefParser? TypeRefParser { get; }
 
     public static CBackendContext Create(
+        ProgramNode program,
         IReadOnlyList<TypeAdapterNode> typeAdapters,
         CNameManglerOptions? nameManglerOptions,
         TypeRefParser? typeRefParser)
@@ -34,7 +35,10 @@ internal sealed class CBackendContext
         var nameMangler = new CNameMangler(
             abiNames.SpecializationTypeName,
             abiNames.SanitizeTypeName,
-            nameManglerOptions);
+            nameManglerOptions,
+            nameManglerOptions is null
+                ? CNameMangler.FindModuleCollisionKeys(program.Functions)
+                : null);
         return new CBackendContext(typeAdapters, abiNames, nameMangler, typeRefParser);
     }
 

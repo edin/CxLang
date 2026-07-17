@@ -17,9 +17,16 @@ internal static class CompilerTestHelpers
         new CxCompiler().CompileToC([Source(source, path)]);
 
     public static CompilationResult Compile(
+        string source,
+        CEmissionOptions emissionOptions,
+        string path = "main.cx") =>
+        new CxCompiler().CompileToC([Source(source, path)], emissionOptions);
+
+    public static CompilationResult Compile(
         IEnumerable<SourceFile> sources,
-        CNameManglerOptions? nameManglerOptions = null) =>
-        new CxCompiler().CompileToC(sources, nameManglerOptions);
+        CNameManglerOptions? nameManglerOptions = null,
+        CEmissionOptions? emissionOptions = null) =>
+        new CxCompiler().CompileToC(sources, nameManglerOptions, emissionOptions);
 
     public static ProgramNode Parse(string source, string path = "main.cx")
     {

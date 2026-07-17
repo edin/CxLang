@@ -35,7 +35,10 @@ internal sealed record ResolvedProgramModel(
         var nameMangler = new CNameMangler(
             abiNames.SpecializationTypeName,
             CTypeLowerer.SanitizeTypeName,
-            nameManglerOptions);
+            nameManglerOptions,
+            nameManglerOptions is null
+                ? CNameMangler.FindModuleCollisionKeys(program.Functions)
+                : null);
 
         var types = BuildTypes(program, parser).ToList();
         var typeMethods = new Dictionary<string, List<ResolvedFunctionEntity>>(StringComparer.Ordinal);

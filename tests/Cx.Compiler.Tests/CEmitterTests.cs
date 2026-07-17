@@ -12,7 +12,8 @@ public sealed class CEmitterTests
             fn main() -> int {
                 return 0;
             }
-            """);
+            """,
+            new CEmissionOptions(StripUnused: false));
 
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("typedef double (*Callback)(int, char*, ...);", result.Output);

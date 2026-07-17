@@ -5,6 +5,49 @@ namespace Cx.Compiler.Tests;
 public sealed class CompilerSmokeTests
 {
     [Fact]
+    public void CompileToC_StripsUnreachableDeclarationsFromExecutableOutput()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn unused() -> int {
+                return 99;
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int main()", result.Output);
+        Assert.DoesNotContain("int unused()", result.Output);
+        Assert.DoesNotContain("TestRunner", result.Output);
+        Assert.DoesNotContain("Vec_", result.Output);
+        var lineCount = result.Output!.Split('\n').Length;
+        Assert.True(lineCount < 50, $"Expected compact hello-world output, but emitted {lineCount} lines.");
+    }
+
+    [Fact]
+    public void CompileToC_CanDisableUnusedDeclarationStripping()
+    {
+        var result = CompilerTestHelpers.Compile(
+            [CompilerTestHelpers.Source(
+                """
+                fn unused() -> int {
+                    return 99;
+                }
+
+                fn main() -> int {
+                    return 0;
+                }
+                """)],
+            emissionOptions: new CEmissionOptions(StripUnused: false));
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int unused()", result.Output);
+    }
+
+    [Fact]
     public void CompileToC_AcceptsCxSourceFile()
     {
         var result = CompilerTestHelpers.Compile(
@@ -68,7 +111,8 @@ public sealed class CompilerSmokeTests
             fn main() -> int {
                 return 0;
             }
-            """);
+            """,
+            new CEmissionOptions(StripUnused: false));
 
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("int x;", result.Output);
@@ -119,7 +163,7 @@ public sealed class CompilerSmokeTests
     }
 
     [Fact]
-    public void CompileToC_WithModulePrefixesCanDisambiguateModuleFunctions()
+    public void CompileToC_DefaultManglingDisambiguatesModuleFunctionCollisions()
     {
         var result = CompilerTestHelpers.Compile(
         [
@@ -152,8 +196,7 @@ public sealed class CompilerSmokeTests
                 }
                 """,
                 "lib-b.cx"),
-        ],
-        new CNameManglerOptions(UseModulePrefixes: true));
+        ]);
 
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("int lib_a_helper()", result.Output);

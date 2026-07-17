@@ -21,12 +21,18 @@ public sealed class CxCompiler
 
     public CompilationResult CompileToC(IEnumerable<SourceFile> sources)
     {
-        return CompileToC(sources, nameManglerOptions: null);
+        return CompileToC(sources, nameManglerOptions: null, emissionOptions: null);
     }
+
+    public CompilationResult CompileToC(
+        IEnumerable<SourceFile> sources,
+        CEmissionOptions emissionOptions) =>
+        CompileToC(sources, nameManglerOptions: null, emissionOptions);
 
     internal CompilationResult CompileToC(
         IEnumerable<SourceFile> sources,
-        CNameManglerOptions? nameManglerOptions)
+        CNameManglerOptions? nameManglerOptions,
+        CEmissionOptions? emissionOptions = null)
     {
         var (program, diagnostics) = CompileProgram(sources, BuildTests: false);
         if (program is null)
@@ -34,7 +40,7 @@ public sealed class CxCompiler
             return CompilationResult.Failed(diagnostics.Diagnostics);
         }
 
-        var cUnit = new CxToCTranslationUnitLowerer(nameManglerOptions).Lower(program);
+        var cUnit = new CxToCTranslationUnitLowerer(nameManglerOptions, emissionOptions).Lower(program);
         var c = new CTranslationUnitEmitter().Emit(cUnit);
         return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));
     }
