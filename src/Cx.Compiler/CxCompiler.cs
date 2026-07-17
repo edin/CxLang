@@ -208,7 +208,10 @@ public sealed class CxCompiler
                             Body: new TestAssertionRewriter().RewriteBody(test.Body),
                             Attributes: [],
                             ReturnTypeNode: CreateResolvedTypeNode(test.Location, TypeRef.Void),
-                            OwnerTypeNode: null);
+                            OwnerTypeNode: null)
+                        {
+                            Visibility = DeclarationVisibility.Public,
+                        };
                     })
                     .ToList();
 

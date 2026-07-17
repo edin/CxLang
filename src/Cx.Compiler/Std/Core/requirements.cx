@@ -1,18 +1,18 @@
 module std.core;
 
-requires Equal<T> {
+public requires Equal<T> {
     static fn equals(left: T, right: T) -> bool;
 }
 
-requires Hash<T> {
+public requires Hash<T> {
     static fn hash(value: T) -> u64;
 }
 
-requires Compare<T> {
+public requires Compare<T> {
     static fn compare(left: T, right: T) -> int;
 }
 
-requires Disposable<T> {
+public requires Disposable<T> {
     fn free(self: Self*) -> void;
 }
 
@@ -36,15 +36,15 @@ static fn int.compare(left: int, right: int) -> int {
     return 0;
 }
 
-fn equals(left: int, right: int) -> bool {
+public fn equals(left: int, right: int) -> bool {
     return int.equals(left, right);
 }
 
-fn hash(value: int) -> u64 {
+public fn hash(value: int) -> u64 {
     return int.hash(value);
 }
 
-fn compare(left: int, right: int) -> int {
+public fn compare(left: int, right: int) -> int {
     return int.compare(left, right);
 }
 

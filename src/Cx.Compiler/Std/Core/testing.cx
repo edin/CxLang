@@ -2,7 +2,7 @@ module std.core;
 
 import c.stdio;
 
-struct TestRunner {
+public struct TestRunner {
     passed: int;
     failed: int;
     current_failed: bool;

@@ -2,7 +2,7 @@ module std.core;
 
 import c.stdlib;
 
-interface Allocator {
+public interface Allocator {
     fn allocate(size: usize, align: usize) -> void*;
     fn resize(ptr: void*, old_size: usize, new_size: usize, align: usize) -> void*;
     fn free(ptr: void*, size: usize, align: usize) -> void;
@@ -21,12 +21,12 @@ fn allocator_default_align() -> usize {
     return 8;
 }
 
-struct CAllocator: Allocator {
+public struct CAllocator: Allocator {
     unused: int;
 }
 
 let std_heap_allocator_storage: CAllocator = CAllocator { unused: 0 };
-let std_heap_allocator: Allocator = std_heap_allocator_storage;
+public let std_heap_allocator: Allocator = std_heap_allocator_storage;
 
 static fn Allocator.default() -> Allocator* {
     return &std_heap_allocator;
@@ -64,7 +64,7 @@ extension CAllocator {
     }
 }
 
-struct FixedBufferAllocator: Allocator {
+public struct FixedBufferAllocator: Allocator {
     data: u8*;
     capacity: usize;
     offset: usize;
@@ -125,7 +125,7 @@ extension FixedBufferAllocator {
     }
 }
 
-struct ArenaAllocator: Allocator {
+public struct ArenaAllocator: Allocator {
     data: u8*;
     capacity: usize;
     offset: usize;

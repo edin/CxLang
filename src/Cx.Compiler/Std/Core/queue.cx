@@ -1,6 +1,6 @@
 module std.core;
 
-struct Queue<T> {
+public struct Queue<T> {
     data: T*;
     length: usize;
     capacity: usize;

@@ -2,7 +2,18 @@ using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Syntax.Nodes;
 
-public abstract record TopLevelNode(Location Location) : SyntaxNode(Location);
+public enum DeclarationVisibility
+{
+    Module,
+    Public,
+}
+
+public abstract record TopLevelNode(Location Location) : SyntaxNode(Location)
+{
+    public DeclarationVisibility Visibility { get; internal set; }
+
+    public bool IsPublic => Visibility == DeclarationVisibility.Public;
+}
 
 public sealed record ProgramNode(
     Location Location,

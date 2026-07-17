@@ -25,14 +25,14 @@ struct BitmapFileHeader {
     pixel_data_offset: u32;
 }
 
-struct Color32 {
+public struct Color32 {
     b: u8;
     g: u8;
     r: u8;
     a: u8;
 }
 
-struct Bitmap {
+public struct Bitmap {
     data: u8*;
     width: int;
     height: int;

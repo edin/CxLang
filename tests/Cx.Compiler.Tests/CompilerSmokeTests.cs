@@ -182,7 +182,7 @@ public sealed class CompilerSmokeTests
                 """
                 module lib.a;
 
-                fn helper() -> int {
+                public fn helper() -> int {
                     return 1;
                 }
                 """,
@@ -191,7 +191,7 @@ public sealed class CompilerSmokeTests
                 """
                 module lib.b;
 
-                fn helper() -> int {
+                public fn helper() -> int {
                     return 2;
                 }
                 """,

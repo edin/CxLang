@@ -2,7 +2,7 @@ module std.core;
 
 import c.stdlib;
 
-struct Vec<T>: Contiguous<T> {
+public struct Vec<T>: Contiguous<T> {
     data: T*;
     length: usize;
     capacity: usize;

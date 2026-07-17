@@ -1,6 +1,7 @@
 using Cx.Compiler.Lexer;
 using Cx.Compiler.Source;
 using Cx.Compiler.Syntax;
+using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Parser;
 
@@ -55,12 +56,49 @@ public sealed partial class Parser
         return node;
     }
 
-    private void AddSpannedNode<T>(ICollection<T> nodes, T node, Token first)
-        where T : SyntaxNode
+    private void AddSpannedNode<T>(
+        ICollection<T> nodes,
+        T node,
+        Token first,
+        DeclarationVisibility visibility = DeclarationVisibility.Module)
+        where T : TopLevelNode
     {
         node.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
+        if (visibility == DeclarationVisibility.Public && !SupportsPublicVisibility(node))
+        {
+            _diagnostics.Report(first.Location, $"'{DeclarationKind(node)}' cannot be declared public.");
+        }
+        else
+        {
+            node.Visibility = visibility;
+        }
+
         nodes.Add(node);
     }
+
+    private static bool SupportsPublicVisibility(TopLevelNode node) => node is
+        ExternFunctionNode
+        or AttributeDeclarationNode
+        or TypeAliasNode
+        or RequirementNode
+        or EnumNode
+        or InterfaceNode
+        or StructNode
+        or TypeAdapterNode
+        or TaggedUnionNode
+        or GlobalVariableNode
+        or FunctionNode;
+
+    private static string DeclarationKind(TopLevelNode node) => node switch
+    {
+        ModuleDeclarationNode => "module declaration",
+        ImportNode or SymbolImportNode => "import",
+        IncludeNode => "include",
+        CDeclareNode => "C declaration block",
+        ExtensionNode => "extension",
+        TestNode => "test",
+        _ => "declaration",
+    };
 
     private bool IsAtEnd => Tokens.IsAtEnd;
 

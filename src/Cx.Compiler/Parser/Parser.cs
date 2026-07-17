@@ -31,13 +31,16 @@ public sealed partial class Parser
         {
             var declarationStart = Current;
             var attributes = ParseAttributeApplications();
+            var visibility = Match(TokenType.Public) is null
+                ? DeclarationVisibility.Module
+                : DeclarationVisibility.Public;
 
             if (Check(TokenType.Module))
             {
                 ReportUnexpectedAttributes(attributes, "module declarations");
                 if (ParseModuleDeclaration() is { } module)
                 {
-                    AddSpannedNode(declarations, module, declarationStart);
+                    AddSpannedNode(declarations, module, declarationStart, visibility);
                 }
 
                 continue;
@@ -48,7 +51,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "imports");
                 if (ParseImport() is { } import)
                 {
-                    AddSpannedNode(declarations, import, declarationStart);
+                    AddSpannedNode(declarations, import, declarationStart, visibility);
                 }
 
                 continue;
@@ -59,7 +62,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "imports");
                 if (ParseSymbolImport() is { } symbolImport)
                 {
-                    AddSpannedNode(declarations, symbolImport, declarationStart);
+                    AddSpannedNode(declarations, symbolImport, declarationStart, visibility);
                 }
 
                 continue;
@@ -70,7 +73,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "includes");
                 if (ParseInclude() is { } include)
                 {
-                    AddSpannedNode(declarations, include, declarationStart);
+                    AddSpannedNode(declarations, include, declarationStart, visibility);
                 }
 
                 continue;
@@ -81,7 +84,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "C declarations");
                 if (ParseCDeclare() is { } cDeclare)
                 {
-                    AddSpannedNode(declarations, cDeclare, declarationStart);
+                    AddSpannedNode(declarations, cDeclare, declarationStart, visibility);
                 }
 
                 continue;
@@ -91,7 +94,7 @@ public sealed partial class Parser
             {
                 if (ParseExternFunction(attributes) is { } externFunction)
                 {
-                    AddSpannedNode(declarations, externFunction, declarationStart);
+                    AddSpannedNode(declarations, externFunction, declarationStart, visibility);
                 }
 
                 continue;
@@ -101,7 +104,7 @@ public sealed partial class Parser
             {
                 if (ParseTypeDeclaration(attributes) is { } typeDeclaration)
                 {
-                    AddSpannedNode(declarations, typeDeclaration, declarationStart);
+                    AddSpannedNode(declarations, typeDeclaration, declarationStart, visibility);
                 }
 
                 continue;
@@ -111,7 +114,7 @@ public sealed partial class Parser
             {
                 if (ParseFunction(attributes) is { } function)
                 {
-                    AddSpannedNode(declarations, function, declarationStart);
+                    AddSpannedNode(declarations, function, declarationStart, visibility);
                 }
 
                 continue;
@@ -121,7 +124,7 @@ public sealed partial class Parser
             {
                 if (ParseGlobalVariable(letToken, isConst: false, attributes) is { } global)
                 {
-                    AddSpannedNode(declarations, global, declarationStart);
+                    AddSpannedNode(declarations, global, declarationStart, visibility);
                 }
 
                 continue;
@@ -131,7 +134,7 @@ public sealed partial class Parser
             {
                 if (ParseGlobalVariable(constToken, isConst: true, attributes) is { } global)
                 {
-                    AddSpannedNode(declarations, global, declarationStart);
+                    AddSpannedNode(declarations, global, declarationStart, visibility);
                 }
 
                 continue;
@@ -141,7 +144,7 @@ public sealed partial class Parser
             {
                 if (ParseStaticFunction(attributes) is { } function)
                 {
-                    AddSpannedNode(declarations, function, declarationStart);
+                    AddSpannedNode(declarations, function, declarationStart, visibility);
                 }
 
                 continue;
@@ -152,7 +155,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "requirements");
                 if (ParseRequirement() is { } requirement)
                 {
-                    AddSpannedNode(declarations, requirement, declarationStart);
+                    AddSpannedNode(declarations, requirement, declarationStart, visibility);
                 }
 
                 continue;
@@ -162,7 +165,7 @@ public sealed partial class Parser
             {
                 if (ParseStruct(attributes) is { } structNode)
                 {
-                    AddSpannedNode(declarations, structNode, declarationStart);
+                    AddSpannedNode(declarations, structNode, declarationStart, visibility);
                 }
 
                 continue;
@@ -172,7 +175,7 @@ public sealed partial class Parser
             {
                 if (ParseExtension(attributes) is { } extension)
                 {
-                    AddSpannedNode(declarations, extension, declarationStart);
+                    AddSpannedNode(declarations, extension, declarationStart, visibility);
                 }
 
                 continue;
@@ -182,7 +185,7 @@ public sealed partial class Parser
             {
                 if (ParseInterface(attributes) is { } interfaceNode)
                 {
-                    AddSpannedNode(declarations, interfaceNode, declarationStart);
+                    AddSpannedNode(declarations, interfaceNode, declarationStart, visibility);
                 }
 
                 continue;
@@ -192,7 +195,7 @@ public sealed partial class Parser
             {
                 if (ParseEnum(attributes) is { } enumNode)
                 {
-                    AddSpannedNode(declarations, enumNode, declarationStart);
+                    AddSpannedNode(declarations, enumNode, declarationStart, visibility);
                 }
 
                 continue;
@@ -203,7 +206,7 @@ public sealed partial class Parser
                 var rawToken = Expect(TokenType.Raw, "Expected 'raw'.");
                 if (ParseTaggedUnion(attributes, isRaw: true, rawLocation: rawToken?.Location) is { } rawUnion)
                 {
-                    AddSpannedNode(declarations, rawUnion, declarationStart);
+                    AddSpannedNode(declarations, rawUnion, declarationStart, visibility);
                 }
 
                 continue;
@@ -213,7 +216,7 @@ public sealed partial class Parser
             {
                 if (ParseTaggedUnion(attributes, isRaw: false) is { } taggedUnion)
                 {
-                    AddSpannedNode(declarations, taggedUnion, declarationStart);
+                    AddSpannedNode(declarations, taggedUnion, declarationStart, visibility);
                 }
 
                 continue;
@@ -224,7 +227,7 @@ public sealed partial class Parser
                 ReportUnexpectedAttributes(attributes, "attribute declarations");
                 if (ParseAttributeDeclaration() is { } attributeDeclaration)
                 {
-                    AddSpannedNode(declarations, attributeDeclaration, declarationStart);
+                    AddSpannedNode(declarations, attributeDeclaration, declarationStart, visibility);
                 }
 
                 continue;
@@ -234,7 +237,7 @@ public sealed partial class Parser
             {
                 if (ParseTest(attributes) is { } test)
                 {
-                    AddSpannedNode(declarations, test, declarationStart);
+                    AddSpannedNode(declarations, test, declarationStart, visibility);
                 }
 
                 continue;

@@ -12,7 +12,7 @@ internal sealed class CxClassifier : IClassifier
         "as", "break", "case", "const", "continue", "declare", "default", "else", "enum",
         "extension", "extern", "false", "fn", "for", "foreach", "from", "if", "import",
         "in", "include", "interface", "let", "link", "local", "macro", "match", "module",
-        "null", "opaque", "raw", "requires", "return", "static", "struct", "switch",
+        "null", "opaque", "public", "raw", "requires", "return", "static", "struct", "switch",
         "test", "true", "type", "union", "using", "while", "where",
     };
 

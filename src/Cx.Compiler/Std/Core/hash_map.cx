@@ -1,6 +1,6 @@
 module std.core;
 
-struct HashMap<K, V> where K: Hash<K> + Equal<K> {
+public struct HashMap<K, V> where K: Hash<K> + Equal<K> {
     keys: K*;
     values: V*;
     hashes: u64*;
@@ -10,7 +10,7 @@ struct HashMap<K, V> where K: Hash<K> + Equal<K> {
     allocator: Allocator*;
 }
 
-struct HashMapIterator<K, V>: KeyValueIterator<K, V> {
+public struct HashMapIterator<K, V>: KeyValueIterator<K, V> {
     map: HashMap<K, V>*;
     index: usize;
 }

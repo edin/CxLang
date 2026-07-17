@@ -1,6 +1,6 @@
 module std.core;
 
-struct Option<T> {
+public struct Option<T> {
     has_value: bool;
     value: T;
 }

@@ -1,6 +1,6 @@
 module std.core;
 
-type ByteBuffer using Vec<u8> {
+public type ByteBuffer using Vec<u8> {
     expose static create -> Self;
     expose static with_capacity -> Self;
     expose static with_allocator -> Self;

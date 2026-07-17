@@ -1,6 +1,6 @@
 module std.core;
 
-struct HashSet<T> where T: Hash<T> + Equal<T> {
+public struct HashSet<T> where T: Hash<T> + Equal<T> {
     values: T*;
     hashes: u64*;
     states: u8*;
@@ -9,7 +9,7 @@ struct HashSet<T> where T: Hash<T> + Equal<T> {
     allocator: Allocator*;
 }
 
-struct HashSetIterator<T>: Iterator<T> {
+public struct HashSetIterator<T>: Iterator<T> {
     set: HashSet<T>*;
     index: usize;
 }

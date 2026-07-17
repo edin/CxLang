@@ -3,22 +3,22 @@ module std.core;
 import c.stdio;
 import c.string;
 
-struct StringSplit {
+public struct StringSplit {
     left: StringView;
     right: StringView;
 }
 
-struct StringLines: Iterable<StringView, StringLineIterator> {
+public struct StringLines: Iterable<StringView, StringLineIterator> {
     text: StringView;
 }
 
-struct StringLineIterator: Iterator<StringView> {
+public struct StringLineIterator: Iterator<StringView> {
     text: StringView;
     position: usize;
     current: StringView;
 }
 
-struct StringView {
+public struct StringView {
     data: const char*;
     length: usize;
 

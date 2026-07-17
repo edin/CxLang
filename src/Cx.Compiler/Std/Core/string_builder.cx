@@ -2,7 +2,7 @@ module std.core;
 
 import c.stdio;
 
-type StringBuilder using ByteBuffer {
+public type StringBuilder using ByteBuffer {
     expose static create -> Self;
     expose static with_capacity -> Self;
     expose static with_allocator -> Self;

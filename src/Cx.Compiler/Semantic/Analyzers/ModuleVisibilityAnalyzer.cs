@@ -33,20 +33,24 @@ internal sealed class ModuleVisibilityAnalyzer(
         foreach (var typeAlias in program.TypeAliases)
         {
             AnalyzeType(typeAlias.TargetTypeNode, typeAlias.Location, visibility);
+            AnalyzePublicType(typeAlias.TargetTypeNode, typeAlias.Location, visibility, typeAlias.IsPublic);
         }
 
         foreach (var externFunction in program.ExternFunctions)
         {
             AnalyzeType(externFunction.ReturnTypeNode, externFunction.Location, visibility);
+            AnalyzePublicType(externFunction.ReturnTypeNode, externFunction.Location, visibility, externFunction.IsPublic);
             foreach (var parameter in externFunction.Parameters.Where(parameter => !parameter.IsVariadic))
             {
                 AnalyzeType(parameter.TypeNode, parameter.Location, visibility);
+                AnalyzePublicType(parameter.TypeNode, parameter.Location, visibility, externFunction.IsPublic);
             }
         }
 
         foreach (var global in program.GlobalVariables)
         {
             AnalyzeType(global.TypeNode, global.Location, visibility);
+            AnalyzePublicType(global.TypeNode, global.Location, visibility, global.IsPublic);
             AnalyzeExpression(global.Initializer, visibility);
         }
 
@@ -55,11 +59,17 @@ internal sealed class ModuleVisibilityAnalyzer(
             foreach (var field in structNode.Fields)
             {
                 AnalyzeType(field.TypeNode, field.Location, visibility, structNode.TypeParameters);
+                AnalyzePublicType(
+                    field.TypeNode,
+                    field.Location,
+                    visibility,
+                    structNode.IsPublic,
+                    structNode.TypeParameters);
             }
 
             foreach (var method in structNode.Methods)
             {
-                AnalyzeFunction(method, visibility);
+                AnalyzeFunction(method, visibility, structNode.IsPublic);
             }
         }
 
@@ -68,26 +78,53 @@ internal sealed class ModuleVisibilityAnalyzer(
             foreach (var variant in union.Variants)
             {
                 AnalyzeType(variant.TypeNode, variant.Location, visibility);
+                AnalyzePublicType(variant.TypeNode, variant.Location, visibility, union.IsPublic);
             }
 
             foreach (var method in union.Methods)
             {
-                AnalyzeFunction(method, visibility);
+                AnalyzeFunction(method, visibility, union.IsPublic);
+            }
+        }
+
+        foreach (var interfaceNode in program.Interfaces)
+        {
+            foreach (var method in interfaceNode.Methods)
+            {
+                AnalyzeType(method.ReturnTypeNode, method.Location, visibility);
+                AnalyzePublicType(method.ReturnTypeNode, method.Location, visibility, interfaceNode.IsPublic);
+                foreach (var parameter in method.Parameters.Where(parameter => !parameter.IsVariadic))
+                {
+                    AnalyzeType(parameter.TypeNode, parameter.Location, visibility);
+                    AnalyzePublicType(parameter.TypeNode, parameter.Location, visibility, interfaceNode.IsPublic);
+                }
             }
         }
 
         foreach (var function in program.Functions)
         {
-            AnalyzeFunction(function, visibility);
+            AnalyzeFunction(function, visibility, function.IsPublic);
         }
     }
 
-    private void AnalyzeFunction(FunctionNode function, ModuleVisibility visibility)
+    private void AnalyzeFunction(FunctionNode function, ModuleVisibility visibility, bool isPublicApi = false)
     {
         AnalyzeType(function.ReturnTypeNode, function.Location, visibility, function.TypeParameters);
+        AnalyzePublicType(
+            function.ReturnTypeNode,
+            function.Location,
+            visibility,
+            isPublicApi,
+            function.TypeParameters);
         foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
         {
             AnalyzeType(parameter.TypeNode, parameter.Location, visibility, function.TypeParameters);
+            AnalyzePublicType(
+                parameter.TypeNode,
+                parameter.Location,
+                visibility,
+                isPublicApi,
+                function.TypeParameters);
         }
 
         var locals = new HashSet<string>(function.Parameters.Select(parameter => parameter.Name), StringComparer.Ordinal);
@@ -292,10 +329,32 @@ internal sealed class ModuleVisibilityAnalyzer(
 
                 break;
             case MemberExpressionNode member:
-                if (ExpressionNameFacts.GetQualifiedName(member) is not { } qualifiedName
-                    || !visibility.IsVisibleFunction(qualifiedName)
-                    && !visibility.IsVisibleValue(qualifiedName)
-                    && !visibility.IsVisibleType(qualifiedName))
+                if (ExpressionNameFacts.GetQualifiedName(member) is not { } qualifiedName)
+                {
+                    AnalyzeExpression(member.Target, visibility, locals);
+                    break;
+                }
+
+                if (visibility.IsVisibleFunction(qualifiedName)
+                    || visibility.IsVisibleValue(qualifiedName)
+                    || visibility.IsVisibleType(qualifiedName))
+                {
+                    break;
+                }
+
+                if (visibility.SymbolExistsAsValue(qualifiedName))
+                {
+                    diagnostics.Report(member.Location, visibility.BuildValueDiagnostic(qualifiedName));
+                }
+                else if (visibility.SymbolExistsAsFunction(qualifiedName))
+                {
+                    diagnostics.Report(member.Location, visibility.BuildFunctionDiagnostic(qualifiedName));
+                }
+                else if (visibility.SymbolExistsAsType(qualifiedName))
+                {
+                    diagnostics.Report(member.Location, visibility.BuildTypeDiagnostic(qualifiedName));
+                }
+                else
                 {
                     AnalyzeExpression(member.Target, visibility, locals);
                 }
@@ -359,6 +418,26 @@ internal sealed class ModuleVisibilityAnalyzer(
             }
 
             diagnostics.Report(location, visibility.BuildTypeDiagnostic(typeName));
+        }
+    }
+
+    private void AnalyzePublicType(
+        TypeNode? typeNode,
+        Location location,
+        ModuleVisibility visibility,
+        bool isPublicApi,
+        IReadOnlyList<string>? typeParameters = null)
+    {
+        if (!isPublicApi)
+        {
+            return;
+        }
+
+        foreach (var typeName in FindTypeNames(typeNode)
+            .Where(typeName => typeParameters is null || !typeParameters.Contains(typeName, StringComparer.Ordinal))
+            .Where(visibility.IsPrivateTypeInCurrentModule))
+        {
+            diagnostics.Report(location, $"Public declaration exposes private type '{typeName}'.");
         }
     }
 
@@ -544,11 +623,26 @@ internal sealed class ModuleVisibilityAnalyzer(
 
         public bool SymbolExistsAsFunction(string name) => SymbolExists(name, symbols => symbols.Functions);
 
-        public bool IsVisibleType(string name) => IsVisible(name, symbols => symbols.Types);
+        public bool IsVisibleType(string name) => IsVisible(name, symbols => symbols.Types, symbols => symbols.PublicTypes);
 
-        public bool IsVisibleValue(string name) => IsVisible(name, symbols => symbols.Values);
+        public bool IsVisibleValue(string name) => IsVisible(name, symbols => symbols.Values, symbols => symbols.PublicValues);
 
-        public bool IsVisibleFunction(string name) => IsVisible(name, symbols => symbols.Functions);
+        public bool IsVisibleFunction(string name) => IsVisible(name, symbols => symbols.Functions, symbols => symbols.PublicFunctions);
+
+        public bool IsPrivateTypeInCurrentModule(string name)
+        {
+            if (TryResolveQualifiedName(name, out var qualifiedModule, out var symbol))
+            {
+                return string.Equals(qualifiedModule, ModuleName, StringComparison.Ordinal)
+                    && Modules.TryGetValue(ModuleName, out var qualifiedSymbols)
+                    && qualifiedSymbols.Types.Contains(symbol)
+                    && !qualifiedSymbols.PublicTypes.Contains(symbol);
+            }
+
+            return Modules.TryGetValue(ModuleName, out var module)
+                && module.Types.Contains(name)
+                && !module.PublicTypes.Contains(name);
+        }
 
         public string BuildTypeDiagnostic(string name) => BuildDiagnostic("type", name);
 
@@ -558,45 +652,64 @@ internal sealed class ModuleVisibilityAnalyzer(
 
         private bool SymbolExists(string name, Func<ModuleSymbols, IReadOnlySet<string>> selectSymbols)
         {
-            var (qualifier, symbol) = SplitQualifiedName(name);
-            return qualifier is not null
-                ? Aliases.TryGetValue(qualifier, out var moduleName)
-                    && Modules.TryGetValue(moduleName, out var moduleSymbols)
-                    && selectSymbols(moduleSymbols).Contains(symbol)
-                : Modules.Values.Any(module => selectSymbols(module).Contains(symbol));
-        }
-
-        private bool IsVisible(string name, Func<ModuleSymbols, IReadOnlySet<string>> selectSymbols)
-        {
-            var (qualifier, symbol) = SplitQualifiedName(name);
-            if (qualifier is not null)
+            if (TryResolveQualifiedName(name, out var moduleName, out var symbol))
             {
-                return Aliases.TryGetValue(qualifier, out var moduleName)
-                    && Modules.TryGetValue(moduleName, out var moduleSymbols)
+                return Modules.TryGetValue(moduleName, out var moduleSymbols)
                     && selectSymbols(moduleSymbols).Contains(symbol);
             }
 
+            return Modules.Values.Any(module => selectSymbols(module).Contains(name));
+        }
+
+        private bool IsVisible(
+            string name,
+            Func<ModuleSymbols, IReadOnlySet<string>> selectSymbols,
+            Func<ModuleSymbols, IReadOnlySet<string>> selectPublicSymbols)
+        {
+            if (TryResolveQualifiedName(name, out var moduleName, out var symbol))
+            {
+                return Modules.TryGetValue(moduleName, out var moduleSymbols)
+                    && SelectVisibleSymbols(moduleName, moduleSymbols, selectSymbols, selectPublicSymbols).Contains(symbol);
+            }
+
+            symbol = name;
+
             if (SymbolImports.TryGetValue(symbol, out var imported)
                 && Modules.TryGetValue(imported.ModuleName, out var importedModule)
-                && selectSymbols(importedModule).Contains(imported.SourceName))
+                && SelectVisibleSymbols(imported.ModuleName, importedModule, selectSymbols, selectPublicSymbols)
+                    .Contains(imported.SourceName))
             {
                 return true;
             }
 
             return BareModules.Any(moduleName =>
                 Modules.TryGetValue(moduleName, out var module)
-                && selectSymbols(module).Contains(symbol));
+                && SelectVisibleSymbols(moduleName, module, selectSymbols, selectPublicSymbols).Contains(symbol));
         }
+
+        private IReadOnlySet<string> SelectVisibleSymbols(
+            string moduleName,
+            ModuleSymbols symbols,
+            Func<ModuleSymbols, IReadOnlySet<string>> selectSymbols,
+            Func<ModuleSymbols, IReadOnlySet<string>> selectPublicSymbols) =>
+            string.Equals(moduleName, ModuleName, StringComparison.Ordinal)
+                ? selectSymbols(symbols)
+                : selectPublicSymbols(symbols);
 
         private string BuildDiagnostic(string kind, string name)
         {
-            var (qualifier, symbol) = SplitQualifiedName(name);
-            if (qualifier is null)
+            if (FindPrivateOwner(kind, name) is { } privateOwner)
             {
+                return $"The {kind} '{name}' is private to module '{privateOwner}'.";
+            }
+
+            if (!TryResolveQualifiedName(name, out _, out var symbol))
+            {
+                symbol = name;
                 foreach (var alias in Aliases)
                 {
                     if (Modules.TryGetValue(alias.Value, out var module)
-                        && ModuleContains(module, kind, symbol))
+                        && ModuleContainsPublic(module, kind, symbol))
                     {
                         return $"Unknown {kind} '{name}'. Did you mean '{alias.Key}.{symbol}'?";
                     }
@@ -617,11 +730,39 @@ internal sealed class ModuleVisibilityAnalyzer(
             return $"Unknown {kind} '{name}'.";
         }
 
+        private string? FindPrivateOwner(string kind, string name)
+        {
+            if (TryResolveQualifiedName(name, out var moduleName, out var symbol))
+            {
+                return IsPrivateExternalSymbol(moduleName, kind, symbol) ? moduleName : null;
+            }
+
+            symbol = name;
+
+            if (SymbolImports.TryGetValue(symbol, out var imported)
+                && IsPrivateExternalSymbol(imported.ModuleName, kind, imported.SourceName))
+            {
+                return imported.ModuleName;
+            }
+
+            return BareModules
+                .Where(moduleName => !string.Equals(moduleName, ModuleName, StringComparison.Ordinal))
+                .Where(moduleName => IsPrivateExternalSymbol(moduleName, kind, symbol))
+                .OrderBy(moduleName => moduleName, StringComparer.Ordinal)
+                .FirstOrDefault();
+        }
+
+        private bool IsPrivateExternalSymbol(string moduleName, string kind, string symbol) =>
+            !string.Equals(moduleName, ModuleName, StringComparison.Ordinal)
+            && Modules.TryGetValue(moduleName, out var module)
+            && ModuleContains(module, kind, symbol)
+            && !ModuleContainsPublic(module, kind, symbol);
+
         private string? FindModuleContaining(string kind, string symbol) =>
             Modules
                 .Where(item => item.Key.Length > 0)
                 .Where(item => !BareModules.Contains(item.Key))
-                .Where(item => ModuleContains(item.Value, kind, symbol))
+                .Where(item => ModuleContainsPublic(item.Value, kind, symbol))
                 .Select(item => item.Key)
                 .OrderBy(moduleName => moduleName, StringComparer.Ordinal)
                 .FirstOrDefault();
@@ -631,7 +772,7 @@ internal sealed class ModuleVisibilityAnalyzer(
                 .Select(import => import.ModuleName)
                 .Distinct(StringComparer.Ordinal)
                 .Where(moduleName => Modules.TryGetValue(moduleName, out var module)
-                    && ModuleContains(module, kind, symbol))
+                    && ModuleContainsPublic(module, kind, symbol))
                 .OrderBy(moduleName => moduleName, StringComparer.Ordinal)
                 .FirstOrDefault();
 
@@ -643,12 +784,33 @@ internal sealed class ModuleVisibilityAnalyzer(
             _ => false,
         };
 
-        private static (string? Qualifier, string Symbol) SplitQualifiedName(string name)
+        private static bool ModuleContainsPublic(ModuleSymbols module, string kind, string symbol) => kind switch
         {
-            var dot = name.IndexOf('.', StringComparison.Ordinal);
-            return dot < 0
-                ? (null, name)
-                : (name[..dot], name[(dot + 1)..]);
+            "type" => module.PublicTypes.Contains(symbol),
+            "symbol" => module.PublicValues.Contains(symbol),
+            "function" => module.PublicFunctions.Contains(symbol),
+            _ => false,
+        };
+
+        private bool TryResolveQualifiedName(string name, out string moduleName, out string symbol)
+        {
+            var match = Aliases
+                .Select(alias => (VisibleName: alias.Key, ModuleName: alias.Value))
+                .Concat(BareModules.Select(module => (VisibleName: module, ModuleName: module)))
+                .Where(candidate => name.StartsWith(candidate.VisibleName + ".", StringComparison.Ordinal))
+                .OrderByDescending(candidate => candidate.VisibleName.Length)
+                .FirstOrDefault();
+
+            if (match.VisibleName is not null)
+            {
+                moduleName = match.ModuleName;
+                symbol = name[(match.VisibleName.Length + 1)..];
+                return true;
+            }
+
+            moduleName = string.Empty;
+            symbol = name;
+            return false;
         }
     }
 
@@ -656,109 +818,146 @@ internal sealed class ModuleVisibilityAnalyzer(
 
     private sealed record ModuleSymbols(
         IReadOnlySet<string> Types,
+        IReadOnlySet<string> PublicTypes,
         IReadOnlySet<string> Values,
-        IReadOnlySet<string> Functions)
+        IReadOnlySet<string> PublicValues,
+        IReadOnlySet<string> Functions,
+        IReadOnlySet<string> PublicFunctions)
     {
         public static ModuleSymbols From(IEnumerable<ProgramNode> programs)
         {
             var typeNames = new HashSet<string>(StringComparer.Ordinal);
+            var publicTypeNames = new HashSet<string>(StringComparer.Ordinal);
             var valueNames = new HashSet<string>(StringComparer.Ordinal);
+            var publicValueNames = new HashSet<string>(StringComparer.Ordinal);
             var functionNames = new HashSet<string>(StringComparer.Ordinal);
-
+            var publicFunctionNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var program in programs)
             {
                 foreach (var typeAlias in program.TypeAliases)
                 {
-                    typeNames.Add(typeAlias.Name);
+                    Add(typeNames, publicTypeNames, typeAlias.Name, typeAlias.IsPublic);
+                }
+
+                foreach (var requirement in program.Requirements)
+                {
+                    Add(typeNames, publicTypeNames, requirement.Name, requirement.IsPublic);
                 }
 
                 foreach (var enumNode in program.Enums)
                 {
-                    typeNames.Add(enumNode.Name);
+                    var isPublic = enumNode.IsPublic;
+                    Add(typeNames, publicTypeNames, enumNode.Name, isPublic);
                     foreach (var member in enumNode.Members)
                     {
-                        valueNames.Add(member.Name);
+                        Add(valueNames, publicValueNames, member.Name, isPublic);
                     }
                 }
 
                 foreach (var interfaceNode in program.Interfaces)
                 {
-                    typeNames.Add(interfaceNode.Name);
+                    Add(typeNames, publicTypeNames, interfaceNode.Name, interfaceNode.IsPublic);
                 }
 
                 foreach (var structNode in program.Structs)
                 {
-                    typeNames.Add(structNode.Name);
+                    var isPublic = structNode.IsPublic;
+                    Add(typeNames, publicTypeNames, structNode.Name, isPublic);
                     foreach (var method in structNode.Methods.Where(method => method.IsStatic))
                     {
-                        functionNames.Add($"{structNode.Name}.{method.Name}");
+                        Add(functionNames, publicFunctionNames, $"{structNode.Name}.{method.Name}", isPublic);
                     }
+                }
+
+                foreach (var adapter in program.TypeAdapters)
+                {
+                    Add(typeNames, publicTypeNames, adapter.Name, adapter.IsPublic);
                 }
 
                 foreach (var union in program.TaggedUnions)
                 {
-                    typeNames.Add(union.Name);
+                    var isPublic = union.IsPublic;
+                    Add(typeNames, publicTypeNames, union.Name, isPublic);
                     foreach (var variant in union.Variants)
                     {
-                        valueNames.Add(variant.Name);
-                        functionNames.Add($"{union.Name}.{variant.Name}");
+                        Add(valueNames, publicValueNames, variant.Name, isPublic);
+                        Add(functionNames, publicFunctionNames, $"{union.Name}.{variant.Name}", isPublic);
                     }
                 }
 
                 foreach (var global in program.GlobalVariables)
                 {
-                    valueNames.Add(global.Name);
+                    Add(valueNames, publicValueNames, global.Name, global.IsPublic);
                 }
 
                 foreach (var function in program.Functions.Where(function => OwnerType(function) is null))
                 {
-                    functionNames.Add(function.Name);
+                    Add(functionNames, publicFunctionNames, function.Name, function.IsPublic);
                 }
 
                 foreach (var externFunction in program.ExternFunctions)
                 {
-                    functionNames.Add(externFunction.Name);
+                    Add(functionNames, publicFunctionNames, externFunction.Name, externFunction.IsPublic);
                 }
 
                 foreach (var declaration in program.CDeclarations)
                 {
                     foreach (var typeAlias in declaration.TypeAliases)
                     {
-                        typeNames.Add(typeAlias.Name);
+                        Add(typeNames, publicTypeNames, typeAlias.Name, isPublic: true);
                     }
 
                     foreach (var enumNode in declaration.Enums)
                     {
-                        typeNames.Add(enumNode.Name);
+                        Add(typeNames, publicTypeNames, enumNode.Name, isPublic: true);
                         foreach (var member in enumNode.Members)
                         {
-                            valueNames.Add(member.Name);
+                            Add(valueNames, publicValueNames, member.Name, isPublic: true);
                         }
                     }
 
                     foreach (var structNode in declaration.Structs)
                     {
-                        typeNames.Add(structNode.Name);
+                        Add(typeNames, publicTypeNames, structNode.Name, isPublic: true);
                     }
 
                     foreach (var union in declaration.Unions)
                     {
-                        typeNames.Add(union.Name);
+                        Add(typeNames, publicTypeNames, union.Name, isPublic: true);
                     }
 
                     foreach (var constant in declaration.Constants)
                     {
-                        valueNames.Add(constant.Name);
+                        Add(valueNames, publicValueNames, constant.Name, isPublic: true);
                     }
 
                     foreach (var function in declaration.Functions)
                     {
-                        functionNames.Add(function.Name);
+                        Add(functionNames, publicFunctionNames, function.Name, isPublic: true);
                     }
                 }
             }
 
-            return new ModuleSymbols(typeNames, valueNames, functionNames);
+            return new ModuleSymbols(
+                typeNames,
+                publicTypeNames,
+                valueNames,
+                publicValueNames,
+                functionNames,
+                publicFunctionNames);
+        }
+
+        private static void Add(
+            HashSet<string> symbols,
+            HashSet<string> publicSymbols,
+            string symbol,
+            bool isPublic)
+        {
+            symbols.Add(symbol);
+            if (isPublic)
+            {
+                publicSymbols.Add(symbol);
+            }
         }
     }
 }

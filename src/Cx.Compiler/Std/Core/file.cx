@@ -3,18 +3,18 @@ module std.core;
 import c.stdio;
 import c.string;
 
-enum FileError {
+public enum FileError {
     OpenFailed,
     SizeFailed,
     OutOfMemory,
     ReadFailed,
 }
 
-struct File {
+public struct File {
     handle: FILE*;
 }
 
-struct Path {
+public struct Path {
 }
 
 extension Path {

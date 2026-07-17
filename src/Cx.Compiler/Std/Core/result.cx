@@ -1,6 +1,6 @@
 module std.core;
 
-struct Result<T, E> {
+public struct Result<T, E> {
     has_value: bool;
     ok: bool;
     value: T;
