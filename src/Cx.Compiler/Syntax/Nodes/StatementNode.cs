@@ -4,12 +4,23 @@ namespace Cx.Compiler.Syntax.Nodes;
 
 public abstract record StatementNode(Location Location) : SyntaxNode(Location);
 
+public abstract record LocalBindingStatement(
+    Location Location,
+    string Name,
+    TypeNode? TypeNode) : StatementNode(Location);
+
 public sealed record LetStatement(
     Location Location,
     bool IsConst,
     string Name,
     ExpressionNode? Initializer,
-    TypeNode? TypeNode = null) : StatementNode(Location);
+    TypeNode? TypeNode = null) : LocalBindingStatement(Location, Name, TypeNode);
+
+public sealed record UsingStatement(
+    Location Location,
+    string Name,
+    ExpressionNode Initializer,
+    TypeNode? TypeNode = null) : LocalBindingStatement(Location, Name, TypeNode);
 
 public sealed record ReturnStatement(
     Location Location,

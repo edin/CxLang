@@ -161,6 +161,15 @@ internal sealed class AstTransformPipeline
                 TypeNode = RewriteType(let.TypeNode),
             }];
 
+        protected override IReadOnlyList<StatementNode> RewriteUsingStatement(UsingStatement usingStatement) =>
+            [usingStatement with
+            {
+                Initializer = RewriteRequiredExpressionWithExpectedType(
+                    usingStatement.Initializer,
+                    usingStatement.TypeNode),
+                TypeNode = RewriteType(usingStatement.TypeNode),
+            }];
+
         protected override IReadOnlyList<StatementNode> RewriteReturnStatement(ReturnStatement ret) =>
             [ret with
             {
@@ -390,8 +399,8 @@ internal sealed class AstTransformPipeline
         {
             switch (statement)
             {
-                case LetStatement let:
-                    RegisterLocal(let.Name, let.TypeNode);
+                case LocalBindingStatement binding:
+                    RegisterLocal(binding.Name, binding.TypeNode);
                     break;
                 case ForStatement forStatement:
                     RegisterForDeclaration(forStatement.CachedRangeEndInitializer);

@@ -32,6 +32,9 @@ internal static class AstExpressionTraversal
                 case LetStatement { Initializer: not null } let:
                     foreach (var expression in Enumerate(let.Initializer)) yield return expression;
                     break;
+                case UsingStatement usingStatement:
+                    foreach (var expression in Enumerate(usingStatement.Initializer)) yield return expression;
+                    break;
                 case ReturnStatement { Expression: not null } ret:
                     foreach (var expression in Enumerate(ret.Expression)) yield return expression;
                     break;

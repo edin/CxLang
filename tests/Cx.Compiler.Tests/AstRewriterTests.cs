@@ -66,6 +66,28 @@ public sealed class AstRewriterTests
     }
 
     [Fact]
+    public void RewriteProgram_PreservesAndRewritesUsingStatement()
+    {
+        var location = Location.Synthetic("<ast-rewriter-test>");
+        var program = ProgramWithBody([
+            new UsingStatement(
+                location,
+                "resource",
+                new NameExpressionNode(location, "create"),
+                TypeNode.CreateFromText(location, "Resource")),
+        ]);
+
+        var rewritten = new RenameExpressionRewriter("create", "create_resource").RewriteProgram(program);
+        var usingStatement = Assert.IsType<UsingStatement>(Assert.Single(rewritten.Functions).Body.Single());
+
+        Assert.IsAssignableFrom<LocalBindingStatement>(usingStatement);
+        Assert.Equal(
+            "create_resource",
+            Assert.IsType<NameExpressionNode>(usingStatement.Initializer).Name);
+        Assert.Equal("Resource", usingStatement.TypeNode?.ToSourceText());
+    }
+
+    [Fact]
     public void RewriteProgram_CanInjectTopLevelDeclaration()
     {
         var program = ProgramWithBody([]);

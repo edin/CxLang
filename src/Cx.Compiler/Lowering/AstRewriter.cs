@@ -143,6 +143,7 @@ internal abstract class AstRewriter
         statement switch
         {
             LetStatement let => RewriteLetStatement(let),
+            UsingStatement usingStatement => RewriteUsingStatement(usingStatement),
             ReturnStatement ret => RewriteReturnStatement(ret),
             BreakStatement breakStatement => [breakStatement],
             ContinueStatement continueStatement => [continueStatement],
@@ -159,6 +160,13 @@ internal abstract class AstRewriter
 
     protected virtual IReadOnlyList<StatementNode> RewriteLetStatement(LetStatement let) =>
         [let with { Initializer = RewriteExpression(let.Initializer), TypeNode = RewriteType(let.TypeNode) }];
+
+    protected virtual IReadOnlyList<StatementNode> RewriteUsingStatement(UsingStatement usingStatement) =>
+        [usingStatement with
+        {
+            Initializer = RewriteRequiredExpression(usingStatement.Initializer),
+            TypeNode = RewriteType(usingStatement.TypeNode),
+        }];
 
     protected virtual IReadOnlyList<StatementNode> RewriteReturnStatement(ReturnStatement ret) =>
         [ret with { Expression = RewriteExpression(ret.Expression) }];
