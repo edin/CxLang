@@ -42,6 +42,12 @@ internal static class CompileTimeObjectProperties
             return CompileTimePropertyResult.From(new CompileTimeValue.String(typeName));
         }
 
+        if (name == "display_name")
+        {
+            return CompileTimePropertyResult.From(
+                new CompileTimeValue.String(TypeRefFormatter.ToCxString(type.Value)));
+        }
+
         if (name == "kind")
         {
             return CompileTimePropertyResult.From(

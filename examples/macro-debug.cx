@@ -4,6 +4,24 @@ requires Debug {
     fn write_debug(self: Self*, output: StringBuilder*) -> bool;
 }
 
+extension int {
+    fn write_debug(output: StringBuilder*) -> bool {
+        return output.append_int(*self);
+    }
+}
+
+extension bool {
+    fn write_debug(output: StringBuilder*) -> bool {
+        return output.append_bool(*self);
+    }
+}
+
+extension double {
+    fn write_debug(output: StringBuilder*) -> bool {
+        return output.append_double(*self);
+    }
+}
+
 struct Address {
     number: int;
 
@@ -43,22 +61,17 @@ macro Debug(target: type) -> declarations
                         return false;
                     }
 
-                    @if(is_type(field.type, int)) {
-                        if (!output.append_int(self.@{field_name})) {
-                            return false;
-                        }
-                    }
-                    @if(is_type(field.type, bool)) {
-                        if (!output.append_bool(self.@{field_name})) {
-                            return false;
-                        }
-                    }
-                    @if(is_type(field.type, double)) {
-                        if (!output.append_double(self.@{field_name})) {
-                            return false;
-                        }
-                    }
                     @let debug_match = requirement_match(field.type, Debug);
+                    @if(!debug_match.success) {
+                        @let _ = compile_error(concat(
+                            "Debug cannot generate '",
+                            target.name,
+                            ".",
+                            field.name,
+                            "': unsupported field type '",
+                            field.type.display_name,
+                            "'."));
+                    }
                     @if(debug_match.success) {
                         if (!self.@{field_name}.write_debug(output)) {
                             return false;

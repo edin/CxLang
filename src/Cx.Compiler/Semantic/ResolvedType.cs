@@ -140,8 +140,13 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
             return [];
         }
 
-        return program.Functions
-            .Where(function => HasOwnerName(function.OwnerTypeNode, ownerName))
+        return program.Extensions
+            .Where(extension =>
+                HasOwnerName(extension.TargetTypeNode, ownerName)
+                && ExtensionConstraintsSatisfied(extension, type))
+            .SelectMany(extension => extension.Methods)
+            .Concat(program.Functions.Where(function =>
+                HasOwnerName(function.OwnerTypeNode, ownerName)))
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
             .ToList();
     }

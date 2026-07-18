@@ -469,3 +469,22 @@ internal sealed class DeclaresRequirementCompileTimeIntrinsic : ICompileTimeIntr
         return new CompileTimeValue.Boolean(declares);
     }
 }
+
+internal sealed class CompileErrorCompileTimeIntrinsic : ICompileTimeIntrinsic
+{
+    public string Name => "compile_error";
+
+    public CompileTimeValue? Invoke(CompileTimeIntrinsicContext context)
+    {
+        if (context.Arguments is not [CompileTimeValue.String message])
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                "Compile-time intrinsic 'compile_error' expects exactly one string argument.");
+            return null;
+        }
+
+        context.Diagnostics.Report(context.Location, message.Value);
+        return new CompileTimeValue.Boolean(false);
+    }
+}

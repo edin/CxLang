@@ -47,6 +47,7 @@ internal sealed class CompileTimeIntrinsicRegistry
         registry.Register(new RequirementMatchCompileTimeIntrinsic());
         registry.Register(new SatisfiesCompileTimeIntrinsic());
         registry.Register(new DeclaresRequirementCompileTimeIntrinsic());
+        registry.Register(new CompileErrorCompileTimeIntrinsic());
         return registry;
     }
 }

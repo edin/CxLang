@@ -305,7 +305,9 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
             return AllocatorPointerType;
         }
 
-        var targetType = TryResolveExpressionTypeRef(member.Target);
+        var targetType = member.Target is NameExpressionNode { Name: "self" } && SelfTypeRef is not null
+            ? new TypeRef.Pointer(SelfTypeRef)
+            : TryResolveExpressionTypeRef(member.Target);
         if (targetType is null)
         {
             return null;

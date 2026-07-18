@@ -31,7 +31,7 @@ internal static class ExtensionMergePass
         foreach (var extension in program.Extensions)
         {
             var targetType = TargetTypeName(extension.TargetTypeNode);
-            if (!knownTargets.Contains(targetType))
+            if (!knownTargets.Contains(targetType) && !BuiltinTypes.IsBuiltin(targetType))
             {
                 diagnostics.Report(extension.Location, $"Extension target type '{targetType}' was not found.");
             }

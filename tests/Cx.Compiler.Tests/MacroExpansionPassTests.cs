@@ -255,6 +255,24 @@ public sealed class MacroExpansionPassTests
                 fn write_debug(self: Self*, output: StringBuilder*) -> bool;
             }
 
+            extension int {
+                fn write_debug(output: StringBuilder*) -> bool {
+                    return output.append_int(*self);
+                }
+            }
+
+            extension bool {
+                fn write_debug(output: StringBuilder*) -> bool {
+                    return output.append_bool(*self);
+                }
+            }
+
+            extension double {
+                fn write_debug(output: StringBuilder*) -> bool {
+                    return output.append_double(*self);
+                }
+            }
+
             struct Address {
                 number: int;
 
@@ -290,22 +308,17 @@ public sealed class MacroExpansionPassTests
                                 return false;
                             }
 
-                            @if(is_type(field.type, int)) {
-                                if (!output.append_int(self.@{field_name})) {
-                                    return false;
-                                }
-                            }
-                            @if(is_type(field.type, bool)) {
-                                if (!output.append_bool(self.@{field_name})) {
-                                    return false;
-                                }
-                            }
-                            @if(is_type(field.type, double)) {
-                                if (!output.append_double(self.@{field_name})) {
-                                    return false;
-                                }
-                            }
                             @let debug_match = requirement_match(field.type, Debug);
+                            @if(!debug_match.success) {
+                                @let _ = compile_error(concat(
+                                    "Debug cannot generate '",
+                                    target.name,
+                                    ".",
+                                    field.name,
+                                    "': unsupported field type '",
+                                    field.type.display_name,
+                                    "'."));
+                            }
                             @if(debug_match.success) {
                                 if (!self.@{field_name}.write_debug(output)) {
                                     return false;
@@ -339,6 +352,53 @@ public sealed class MacroExpansionPassTests
         Assert.Contains("self->address", result.Output, StringComparison.Ordinal);
         Assert.Contains("self->number", result.Output, StringComparison.Ordinal);
         Assert.Contains("append_int", result.Output!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_DebugMacroRejectsUnsupportedFieldType()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            requires Debug {
+                fn write_debug(self: Self*) -> bool;
+            }
+
+            struct User {
+                count: usize;
+                use Debug(Self);
+            }
+
+            macro Debug(target: type) -> declarations
+                provides target: Debug {
+                extension @{target} {
+                    fn write_debug() -> bool {
+                        @foreach(field in target.fields) {
+                            @let debug_match = requirement_match(field.type, Debug);
+                            @if(!debug_match.success) {
+                                @let _ = compile_error(concat(
+                                    "Debug cannot generate '",
+                                    target.name,
+                                    ".",
+                                    field.name,
+                                    "': unsupported field type '",
+                                    field.type.display_name,
+                                    "'."));
+                            }
+                        }
+
+                        return true;
+                    }
+                }
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Debug cannot generate 'User.count': unsupported field type 'usize'.");
     }
 
     [Fact]

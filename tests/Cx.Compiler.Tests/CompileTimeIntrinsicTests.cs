@@ -43,6 +43,17 @@ public sealed class CompileTimeIntrinsicTests
     }
 
     [Fact]
+    public void CompileError_ReportsEvaluatedMessage()
+    {
+        var (value, diagnostics) = Evaluate(
+            "compile_error(concat(\"Unsupported type: \", \"Widget\"))");
+
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(value).Value);
+        var diagnostic = Assert.Single(diagnostics.Diagnostics);
+        Assert.Equal("Unsupported type: Widget", diagnostic.Message);
+    }
+
+    [Fact]
     public void AsName_RejectsInvalidIdentifier()
     {
         var (value, diagnostics) = Evaluate("as_name(\"not a name\")");
@@ -367,6 +378,7 @@ public sealed class CompileTimeIntrinsicTests
 
         var (name, nameDiagnostics) = Evaluate("field.name", context, reflection);
         var (typeName, typeNameDiagnostics) = Evaluate("field.type.name", context, reflection);
+        var (displayName, displayNameDiagnostics) = Evaluate("field.type.display_name", context, reflection);
         var (kind, kindDiagnostics) = Evaluate("field.type.kind", context, reflection);
         var (isStruct, isStructDiagnostics) = Evaluate("target.is_struct", context, reflection);
         var (fieldCount, fieldCountDiagnostics) = Evaluate("target.fields.count", context, reflection);
@@ -376,6 +388,7 @@ public sealed class CompileTimeIntrinsicTests
 
         Assert.Equal("name", Assert.IsType<CompileTimeValue.String>(name).Value);
         Assert.Equal("int", Assert.IsType<CompileTimeValue.String>(typeName).Value);
+        Assert.Equal("int", Assert.IsType<CompileTimeValue.String>(displayName).Value);
         Assert.Equal("named", Assert.IsType<CompileTimeValue.String>(kind).Value);
         Assert.True(Assert.IsType<CompileTimeValue.Boolean>(isStruct).Value);
         Assert.Equal(2, Assert.IsType<CompileTimeValue.Integer>(fieldCount).Value);
@@ -384,6 +397,7 @@ public sealed class CompileTimeIntrinsicTests
         Assert.Equal("displayName", Assert.IsType<CompileTimeValue.String>(argumentValue).Value);
         CompilerTestHelpers.AssertNoErrors(nameDiagnostics);
         CompilerTestHelpers.AssertNoErrors(typeNameDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(displayNameDiagnostics);
         CompilerTestHelpers.AssertNoErrors(kindDiagnostics);
         CompilerTestHelpers.AssertNoErrors(isStructDiagnostics);
         CompilerTestHelpers.AssertNoErrors(fieldCountDiagnostics);
