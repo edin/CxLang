@@ -169,6 +169,12 @@ public sealed record ProgramNode(
         init => Declarations = ReplaceAll(Declarations, value);
     }
 
+    public IReadOnlyList<MacroDeclarationNode> Macros
+    {
+        get => Declarations.OfType<MacroDeclarationNode>().ToList();
+        init => Declarations = ReplaceAll(Declarations, value);
+    }
+
     public static IReadOnlyList<TopLevelNode> BuildDeclarations(
         ModuleDeclarationNode? module,
         IReadOnlyList<ImportNode> imports,

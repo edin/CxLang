@@ -4,6 +4,11 @@ namespace Cx.Compiler.Syntax.Nodes;
 
 public abstract record StatementNode(Location Location) : SyntaxNode(Location);
 
+public sealed record MacroInvocationStatementNode(
+    Location Location,
+    string MacroName,
+    IReadOnlyList<ExpressionNode> Arguments) : StatementNode(Location);
+
 public abstract record LocalBindingStatement(
     Location Location,
     string Name,

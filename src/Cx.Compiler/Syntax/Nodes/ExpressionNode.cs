@@ -6,6 +6,10 @@ public abstract record ExpressionNode(Location Location) : SyntaxNode(Location);
 
 public sealed record ErrorExpressionNode(Location Location) : ExpressionNode(Location);
 
+public sealed record PlaceholderExpressionNode(
+    Location Location,
+    ExpressionNode Expression) : ExpressionNode(Location);
+
 public enum LiteralKind
 {
     Unknown,
@@ -166,6 +170,11 @@ public sealed record MemberExpressionNode(
     ExpressionNode Target,
     string MemberName) : ExpressionNode(Location);
 
+public sealed record ComputedMemberExpressionNode(
+    Location Location,
+    ExpressionNode Target,
+    PlaceholderExpressionNode MemberName) : ExpressionNode(Location);
+
 public sealed record IndexExpressionNode(
     Location Location,
     ExpressionNode Target,
@@ -176,6 +185,7 @@ public static class ExpressionNodeExtensions
     public static string ToSourceText(this ExpressionNode expression) => expression switch
     {
         ErrorExpressionNode => "<error>",
+        PlaceholderExpressionNode placeholder => $"@{{{placeholder.Expression.ToSourceText()}}}",
         LiteralExpressionNode literal => literal.LiteralText,
         NameExpressionNode name => name.Name,
         ParenthesizedExpressionNode parenthesized => $"({parenthesized.Expression.ToSourceText()})",
@@ -195,6 +205,7 @@ public static class ExpressionNodeExtensions
         GenericCallExpressionNode call => FormatGenericCall(call),
         CallExpressionNode call => FormatCall(call),
         MemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.MemberName}",
+        ComputedMemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.MemberName.ToSourceText()}",
         IndexExpressionNode index => $"{index.Target.ToSourceText()}[{index.Index.ToSourceText()}]",
         _ => throw new InvalidOperationException(
             $"No source formatter is registered for expression node '{expression.GetType().Name}'."),

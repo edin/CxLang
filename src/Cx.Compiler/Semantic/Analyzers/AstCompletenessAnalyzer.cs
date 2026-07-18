@@ -48,6 +48,15 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
         {
             switch (statement)
             {
+                case CompileTimeLetStatementNode compileTimeLet:
+                    AnalyzeExpression(compileTimeLet.Initializer);
+                    break;
+                case MacroInvocationStatementNode invocation:
+                    foreach (var argument in invocation.Arguments)
+                    {
+                        AnalyzeExpression(argument);
+                    }
+                    break;
                 case LetStatement let:
                     AnalyzeExpression(let.Initializer);
                     break;
@@ -136,6 +145,12 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
             case ErrorExpressionNode error:
                 diagnostics.Report(error.Location, "Parser error expression remains in AST.");
                 break;
+            case PlaceholderExpressionNode placeholder:
+                diagnostics.Report(
+                    placeholder.Location,
+                    "Unexpanded compile-time placeholder remains in AST.");
+                AnalyzeExpression(placeholder.Expression);
+                break;
             case ParenthesizedExpressionNode parenthesized:
                 AnalyzeExpression(parenthesized.Expression);
                 break;
@@ -206,6 +221,10 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
                 break;
             case MemberExpressionNode member:
                 AnalyzeExpression(member.Target);
+                break;
+            case ComputedMemberExpressionNode member:
+                AnalyzeExpression(member.Target);
+                AnalyzeExpression(member.MemberName);
                 break;
             case IndexExpressionNode index:
                 AnalyzeExpression(index.Target);

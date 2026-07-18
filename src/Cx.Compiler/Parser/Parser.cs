@@ -120,6 +120,28 @@ public sealed partial class Parser
                 continue;
             }
 
+            if (Check(TokenType.Macro))
+            {
+                ReportUnexpectedAttributes(attributes, "macro declarations");
+                if (ParseMacroDeclaration() is { } macro)
+                {
+                    AddSpannedNode(declarations, macro, declarationStart, visibility);
+                }
+
+                continue;
+            }
+
+            if (Match(TokenType.Use) is { } useToken)
+            {
+                ReportUnexpectedAttributes(attributes, "macro invocations");
+                AddSpannedNode(
+                    declarations,
+                    ParseMacroInvocationDeclaration(useToken),
+                    declarationStart,
+                    visibility);
+                continue;
+            }
+
             if (Match(TokenType.Let) is { } letToken)
             {
                 if (ParseGlobalVariable(letToken, isConst: false, attributes) is { } global)
@@ -258,6 +280,235 @@ public sealed partial class Parser
         return program;
     }
 
+    private MacroDeclarationNode? ParseMacroDeclaration()
+    {
+        var macroToken = Expect(TokenType.Macro, "Expected 'macro'.");
+        var nameToken = Expect(TokenType.Identifier, "Expected macro name.");
+        var parameters = ParseMacroParameterList();
+        Expect(TokenType.Arrow, "Expected '->' before macro expansion kind.");
+        var expansionKind = ParseMacroExpansionKind();
+        var providedRequirements = ParseMacroProvidedRequirements();
+        var template = ParseMacroTemplateBlock(expansionKind);
+
+        return macroToken is null
+            ? null
+            : new MacroDeclarationNode(
+                macroToken.Location,
+                nameToken?.Value ?? string.Empty,
+                parameters,
+                expansionKind,
+                template,
+                providedRequirements);
+    }
+
+    private IReadOnlyList<MacroProvidedRequirementNode> ParseMacroProvidedRequirements()
+    {
+        var providedRequirements = new List<MacroProvidedRequirementNode>();
+        while (IsContextualKeyword("provides"))
+        {
+            Advance();
+            do
+            {
+                var target = Expect(TokenType.Identifier, "Expected macro type parameter after 'provides'.");
+                Expect(TokenType.Colon, "Expected ':' after provided requirement target.");
+                var requirement = ParseRequirementReference();
+                if (target is not null && requirement is not null)
+                {
+                    providedRequirements.Add(new MacroProvidedRequirementNode(
+                        target.Location,
+                        target.Value,
+                        requirement));
+                }
+            }
+            while (ConsumeOptional(TokenType.Comma));
+        }
+
+        return providedRequirements;
+    }
+
+    private IReadOnlyList<MacroParameterNode> ParseMacroParameterList()
+    {
+        Expect(TokenType.LParen, "Expected '(' after macro name.");
+        var parameters = new List<MacroParameterNode>();
+
+        if (!Check(TokenType.RParen))
+        {
+            do
+            {
+                var nameToken = Expect(TokenType.Identifier, "Expected macro parameter name.");
+                Expect(TokenType.Colon, "Expected ':' after macro parameter name.");
+                var kindToken = ExpectIdentifierLike("Expected macro parameter kind.");
+                if (nameToken is null || kindToken is null)
+                {
+                    continue;
+                }
+
+                if (!TryParseMacroParameterKind(kindToken.Value, out var kind))
+                {
+                    _diagnostics.Report(
+                        kindToken.Location,
+                        $"Unknown macro parameter kind '{kindToken.Value}'. Expected 'expression', 'type', 'name', or 'declaration'.");
+                    kind = MacroParameterKind.Expression;
+                }
+
+                parameters.Add(SyntaxNode.WithSpan(
+                    new MacroParameterNode(nameToken.Location, nameToken.Value, kind),
+                    nameToken.Span,
+                    kindToken.Span));
+            }
+            while (ConsumeOptional(TokenType.Comma));
+        }
+
+        Expect(TokenType.RParen, "Expected ')' after macro parameters.");
+        return parameters;
+    }
+
+    private MacroExpansionKind ParseMacroExpansionKind()
+    {
+        var kindToken = Expect(TokenType.Identifier, "Expected macro expansion kind.");
+        if (kindToken is not null
+            && string.Equals(kindToken.Value, "statements", StringComparison.Ordinal))
+        {
+            return MacroExpansionKind.Statements;
+        }
+
+        if (kindToken is not null
+            && string.Equals(kindToken.Value, "declarations", StringComparison.Ordinal))
+        {
+            return MacroExpansionKind.Declarations;
+        }
+
+        if (kindToken is not null)
+        {
+            _diagnostics.Report(
+                kindToken.Location,
+                $"Unsupported macro expansion kind '{kindToken.Value}'. Expected 'statements' or 'declarations'.");
+        }
+
+        return MacroExpansionKind.Statements;
+    }
+
+    private MacroTemplateBlockNode ParseMacroTemplateBlock(MacroExpansionKind expansionKind)
+    {
+        var first = Current;
+        if (expansionKind == MacroExpansionKind.Declarations)
+        {
+            return ParseMacroDeclarationTemplateBlock(first);
+        }
+
+        var statements = ParseBlock(
+            "Expected '{' before macro template.",
+            "Expected '}' after macro template.");
+        var template = new MacroTemplateBlockNode(first.Location, statements);
+        template.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
+        return template;
+    }
+
+    private MacroTemplateBlockNode ParseMacroDeclarationTemplateBlock(Token first)
+    {
+        Expect(TokenType.LBrace, "Expected '{' before macro declaration template.");
+        var declarations = new List<TopLevelNode>();
+        while (!IsAtEnd && !Check(TokenType.RBrace))
+        {
+            var declarationStart = Current;
+            var attributes = ParseAttributeApplications();
+            var visibility = Match(TokenType.Public) is null
+                ? DeclarationVisibility.Module
+                : DeclarationVisibility.Public;
+            TopLevelNode? declaration = null;
+
+            if (Check(TokenType.Fn))
+            {
+                declaration = ParseFunction(attributes);
+            }
+            else if (Check(TokenType.Static))
+            {
+                declaration = ParseStaticFunction(attributes);
+            }
+            else if (Check(TokenType.Extern))
+            {
+                declaration = ParseExternFunction(attributes);
+            }
+            else if (Check(TokenType.Struct))
+            {
+                declaration = ParseStruct(attributes);
+            }
+            else if (Check(TokenType.Extension))
+            {
+                declaration = ParseExtension(attributes);
+            }
+            else if (Match(TokenType.Let) is { } letToken)
+            {
+                declaration = ParseGlobalVariable(letToken, isConst: false, attributes);
+            }
+            else if (Match(TokenType.Const) is { } constToken)
+            {
+                declaration = ParseGlobalVariable(constToken, isConst: true, attributes);
+            }
+            else if (Check(TokenType.Type))
+            {
+                declaration = ParseTypeDeclaration(attributes);
+            }
+            else
+            {
+                _diagnostics.Report(
+                    Current.Location,
+                    "Expected a function, struct, global, or type declaration in declaration macro template.");
+                SynchronizeTopLevel();
+            }
+
+            if (declaration is not null)
+            {
+                AddSpannedNode(declarations, declaration, declarationStart, visibility);
+            }
+        }
+
+        Expect(TokenType.RBrace, "Expected '}' after macro declaration template.");
+        var template = new MacroTemplateBlockNode(first.Location, [], declarations);
+        template.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
+        return template;
+    }
+
+    private MacroInvocationDeclarationNode ParseMacroInvocationDeclaration(Token useToken)
+    {
+        var (name, arguments) = ParseMacroInvocationParts();
+        return new MacroInvocationDeclarationNode(useToken.Location, name, arguments);
+    }
+
+    private (string Name, IReadOnlyList<ExpressionNode> Arguments) ParseMacroInvocationParts()
+    {
+        var name = Expect(TokenType.Identifier, "Expected macro name after 'use'.");
+        Expect(TokenType.LParen, "Expected '(' after macro name.");
+        var arguments = new List<ExpressionNode>();
+        if (!Check(TokenType.RParen))
+        {
+            do
+            {
+                arguments.Add(ParseExpression(
+                    ReadBalancedSliceUntilAny(Current.Location, TokenType.Comma, TokenType.RParen)));
+            }
+            while (ConsumeOptional(TokenType.Comma));
+        }
+
+        Expect(TokenType.RParen, "Expected ')' after macro arguments.");
+        Expect(TokenType.Semicolon, "Expected ';' after macro invocation.");
+        return (name?.Value ?? string.Empty, arguments);
+    }
+
+    private static bool TryParseMacroParameterKind(string value, out MacroParameterKind kind)
+    {
+        kind = value switch
+        {
+            "expression" => MacroParameterKind.Expression,
+            "type" => MacroParameterKind.Type,
+            "name" => MacroParameterKind.Name,
+            "declaration" => MacroParameterKind.Declaration,
+            _ => MacroParameterKind.Expression,
+        };
+
+        return value is "expression" or "type" or "name" or "declaration";
+    }
+
     private TestNode? ParseTest(IReadOnlyList<AttributeApplicationNode> attributes)
     {
         var testToken = Expect(TokenType.Identifier, "Expected 'test'.");
@@ -378,106 +629,39 @@ public sealed partial class Parser
             path = string.Empty;
         }
 
-        Expect(TokenType.LBrace, "Expected '{' before C declaration block.");
+        var members = ParseCDeclareMemberBlock(
+            "Expected '{' before C declaration block.",
+            "Expected '}' after C declaration block.");
+        ConsumeOptional(TokenType.Semicolon);
+
+        return declareToken is null
+            ? null
+            : new CDeclareNode(declareToken.Location, path, isSystem, members);
+    }
+
+    private IReadOnlyList<SyntaxNode> ParseCDeclareMemberBlock(string openMessage, string closeMessage)
+    {
+        Expect(TokenType.LBrace, openMessage);
         var members = new List<SyntaxNode>();
 
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
-            if (Check(TokenType.Link))
+            var startPosition = Tokens.Position;
+            var first = Current;
+            var member = ParseCDeclareMember();
+            if (member is not null)
             {
-                if (ParseCDeclareLink() is { } link)
+                if (Tokens.Position > startPosition)
                 {
-                    members.Add(link);
+                    member.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
                 }
 
+                members.Add(member);
                 continue;
             }
 
-            if (Check(TokenType.Type))
+            if (Tokens.Position > startPosition)
             {
-                if (ParseTypeDeclaration([], isHeaderDeclaration: true) is { } type)
-                {
-                    members.Add(type);
-                }
-
-                continue;
-            }
-
-            if (Match(TokenType.Const) is { } constToken)
-            {
-                if (ParseGlobalVariable(constToken, isConst: true, [], isHeaderDeclaration: true) is { } constant)
-                {
-                    members.Add(constant);
-                }
-
-                continue;
-            }
-
-            if (Check(TokenType.Macro))
-            {
-                var macroToken = Expect(TokenType.Macro, "Expected 'macro'.");
-                if (Match(TokenType.Const) is { } macroConstToken)
-                {
-                    if (ParseGlobalVariable(macroConstToken, isConst: true, [], isHeaderDeclaration: true, isMacro: true) is { } constant)
-                    {
-                        members.Add(constant);
-                    }
-
-                    continue;
-                }
-
-                if (Check(TokenType.Fn))
-                {
-                    if (ParseCDeclareFunction(isMacro: true) is { } function)
-                    {
-                        members.Add(function);
-                    }
-
-                    continue;
-                }
-
-                _diagnostics.Report(macroToken?.Location ?? Current.Location, "Expected 'const' or 'fn' after 'macro'.");
-                continue;
-            }
-
-            if (Check(TokenType.Struct))
-            {
-                if (ParseStruct([], isHeaderDeclaration: true) is { } structNode)
-                {
-                    members.Add(structNode);
-                }
-
-                continue;
-            }
-
-            if (Check(TokenType.Enum))
-            {
-                if (ParseEnum([], isHeaderDeclaration: true) is { } enumNode)
-                {
-                    members.Add(enumNode);
-                }
-
-                continue;
-            }
-
-            if (Check(TokenType.Raw) && PeekType() == TokenType.Union)
-            {
-                var rawToken = Expect(TokenType.Raw, "Expected 'raw'.");
-                if (ParseTaggedUnion([], isRaw: true, isHeaderDeclaration: true, rawLocation: rawToken?.Location) is { } rawUnion)
-                {
-                    members.Add(rawUnion);
-                }
-
-                continue;
-            }
-
-            if (Check(TokenType.Fn))
-            {
-                if (ParseCDeclareFunction(isMacro: false) is { } function)
-                {
-                    members.Add(function);
-                }
-
                 continue;
             }
 
@@ -485,12 +669,117 @@ public sealed partial class Parser
             Advance();
         }
 
-        Expect(TokenType.RBrace, "Expected '}' after C declaration block.");
-        ConsumeOptional(TokenType.Semicolon);
+        Expect(TokenType.RBrace, closeMessage);
+        return members;
+    }
 
-        return declareToken is null
+    private SyntaxNode? ParseCDeclareMember()
+    {
+        if (Check(TokenType.At) && PeekType() == TokenType.If)
+        {
+            return ParseCompileTimeIfDeclaration();
+        }
+
+        if (Check(TokenType.At) && PeekType() == TokenType.Foreach)
+        {
+            return ParseCompileTimeForeachDeclaration();
+        }
+
+        if (Check(TokenType.Link))
+        {
+            return ParseCDeclareLink();
+        }
+
+        if (Check(TokenType.Type))
+        {
+            return ParseTypeDeclaration([], isHeaderDeclaration: true);
+        }
+
+        if (Match(TokenType.Const) is { } constToken)
+        {
+            return ParseGlobalVariable(constToken, isConst: true, [], isHeaderDeclaration: true);
+        }
+
+        if (Check(TokenType.Macro))
+        {
+            var macroToken = Expect(TokenType.Macro, "Expected 'macro'.");
+            if (Match(TokenType.Const) is { } macroConstToken)
+            {
+                return ParseGlobalVariable(macroConstToken, isConst: true, [], isHeaderDeclaration: true, isMacro: true);
+            }
+
+            if (Check(TokenType.Fn))
+            {
+                return ParseCDeclareFunction(isMacro: true);
+            }
+
+            _diagnostics.Report(macroToken?.Location ?? Current.Location, "Expected 'const' or 'fn' after 'macro'.");
+            return null;
+        }
+
+        if (Check(TokenType.Struct))
+        {
+            return ParseStruct([], isHeaderDeclaration: true);
+        }
+
+        if (Check(TokenType.Enum))
+        {
+            return ParseEnum([], isHeaderDeclaration: true);
+        }
+
+        if (Check(TokenType.Raw) && PeekType() == TokenType.Union)
+        {
+            var rawToken = Expect(TokenType.Raw, "Expected 'raw'.");
+            return ParseTaggedUnion([], isRaw: true, isHeaderDeclaration: true, rawLocation: rawToken?.Location);
+        }
+
+        return Check(TokenType.Fn)
+            ? ParseCDeclareFunction(isMacro: false)
+            : null;
+    }
+
+    private CompileTimeIfDeclarationNode? ParseCompileTimeIfDeclaration()
+    {
+        var atToken = Expect(TokenType.At, "Expected '@'.");
+        Expect(TokenType.If, "Expected 'if' after '@'.");
+        var condition = ParseParenthesizedExpression("compile-time if condition");
+        var thenMembers = ParseCDeclareMemberBlock(
+            "Expected '{' before compile-time declaration branch.",
+            "Expected '}' after compile-time declaration branch.");
+        IReadOnlyList<SyntaxNode> elseMembers = [];
+
+        if (ConsumeOptional(TokenType.Else))
+        {
+            elseMembers = ParseCDeclareMemberBlock(
+                "Expected '{' before compile-time else branch.",
+                "Expected '}' after compile-time else branch.");
+        }
+
+        return atToken is null
             ? null
-            : new CDeclareNode(declareToken.Location, path, isSystem, members);
+            : new CompileTimeIfDeclarationNode(atToken.Location, condition, thenMembers, elseMembers);
+    }
+
+    private CompileTimeForeachDeclarationNode? ParseCompileTimeForeachDeclaration()
+    {
+        var atToken = Expect(TokenType.At, "Expected '@'.");
+        Expect(TokenType.Foreach, "Expected 'foreach' after '@'.");
+        Expect(TokenType.LParen, "Expected '(' after '@foreach'.");
+        var bindingToken = Expect(TokenType.Identifier, "Expected compile-time foreach binding name.");
+        Expect(TokenType.In, "Expected 'in' after compile-time foreach binding.");
+        var iterable = ReadExpressionUntil(atToken?.Location ?? Current.Location, TokenType.RParen);
+        Expect(TokenType.RParen, "Expected ')' after compile-time foreach expression.");
+        var members = ParseCDeclareMemberBlock(
+            "Expected '{' before compile-time foreach body.",
+            "Expected '}' after compile-time foreach body.");
+
+        return atToken is null
+            ? null
+            : new CompileTimeForeachDeclarationNode(
+                atToken.Location,
+                bindingToken?.Value ?? string.Empty,
+                iterable,
+                members);
     }
 
     private CLinkNode? ParseCDeclareLink()
@@ -610,8 +899,16 @@ public sealed partial class Parser
         {
             var fieldToken = Expect(TokenType.Identifier, "Expected attribute field name.");
             Expect(TokenType.Colon, "Expected ':' after attribute field name.");
-            var typeNode = ParseTypeNode();
-            Expect(TokenType.Semicolon, "Expected ';' after attribute field.");
+            var typeNode = ParseCompileTimeTypeNode();
+            if (Expect(TokenType.Semicolon, "Expected ';' after attribute field.") is null)
+            {
+                while (!IsAtEnd && !Check(TokenType.Semicolon) && !Check(TokenType.RBrace))
+                {
+                    Advance();
+                }
+
+                ConsumeOptional(TokenType.Semicolon);
+            }
 
             if (fieldToken is not null)
             {
@@ -625,6 +922,60 @@ public sealed partial class Parser
         return attributeToken is null
             ? null
             : new AttributeDeclarationNode(attributeToken.Location, nameToken?.Value ?? string.Empty, targets, fields);
+    }
+
+    private CompileTimeTypeNode ParseCompileTimeTypeNode()
+    {
+        var first = Current;
+        var nameToken = ExpectIdentifierLike("Expected compile-time metadata type.");
+        if (nameToken is null)
+        {
+            return new CompileTimeErrorTypeNode(first.Location);
+        }
+
+        CompileTimeTypeNode type;
+        if (string.Equals(nameToken.Value, "list", StringComparison.Ordinal))
+        {
+            Expect(TokenType.LessThan, "Expected '<' after metadata type 'list'.");
+            var elementType = ParseCompileTimeTypeNode();
+            if (!ConsumeTypeCloseAngle())
+            {
+                _diagnostics.Report(Current.Location, "Expected '>' after list element metadata type.");
+            }
+
+            type = new CompileTimeListTypeNode(nameToken.Location, elementType);
+        }
+        else if (TryParseCompileTimeScalarType(nameToken.Value, out var scalarType))
+        {
+            type = new CompileTimeScalarTypeNode(nameToken.Location, scalarType);
+        }
+        else
+        {
+            _diagnostics.Report(
+                nameToken.Location,
+                $"Unsupported attribute metadata type '{nameToken.Value}'. Expected 'bool', 'int', 'string', 'name', 'type', 'syntax', or 'list<T>'.");
+            type = new CompileTimeErrorTypeNode(nameToken.Location);
+        }
+
+        type.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
+        return type;
+    }
+
+    private static bool TryParseCompileTimeScalarType(
+        string value,
+        out CompileTimeScalarType type)
+    {
+        type = value switch
+        {
+            "bool" => CompileTimeScalarType.Boolean,
+            "int" => CompileTimeScalarType.Integer,
+            "string" => CompileTimeScalarType.String,
+            "name" => CompileTimeScalarType.Name,
+            "type" => CompileTimeScalarType.Type,
+            "syntax" => CompileTimeScalarType.Syntax,
+            _ => CompileTimeScalarType.Boolean,
+        };
+        return value is "bool" or "int" or "string" or "name" or "type" or "syntax";
     }
 
     private TopLevelNode? ParseTypeDeclaration(
@@ -882,9 +1233,19 @@ public sealed partial class Parser
 
         var fields = new List<StructFieldNode>();
         var methods = new List<FunctionNode>();
+        var macroInvocations = new List<MacroInvocationDeclarationNode>();
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
             var memberAttributes = ParseAttributeApplications();
+
+            if (Match(TokenType.Use) is { } useToken)
+            {
+                ReportUnexpectedAttributes(memberAttributes, "struct macro invocations");
+                var invocation = ParseMacroInvocationDeclaration(useToken);
+                invocation.Span = SourceSpan.FromBounds(useToken.Span, Tokens.Previous.Span);
+                macroInvocations.Add(invocation);
+                continue;
+            }
 
             if (TryParseOwnedFunction(nameToken?.Value ?? string.Empty, typeParameters, memberAttributes, out var method))
             {
@@ -921,15 +1282,26 @@ public sealed partial class Parser
                 fields,
                 methods,
                 attributes,
-                IsHeaderDeclaration: isHeaderDeclaration);
+                IsHeaderDeclaration: isHeaderDeclaration,
+                MacroInvocations: macroInvocations);
     }
 
     private ExtensionNode? ParseExtension(IReadOnlyList<AttributeApplicationNode> attributes)
     {
         var extensionToken = Expect(TokenType.Extension, "Expected 'extension'.");
-        var targetToken = Expect(TokenType.Identifier, "Expected extension target type.");
-        var targetType = targetToken?.Value ?? string.Empty;
-        var targetTypeNode = CreateTypeNode(targetToken?.Location ?? extensionToken?.Location ?? Current.Location, targetType);
+        TypeNode targetTypeNode;
+        string targetType;
+        if (Check(TokenType.At) && PeekType() == TokenType.LBrace)
+        {
+            targetTypeNode = ParseTypeNode();
+            targetType = "Self";
+        }
+        else
+        {
+            var targetToken = Expect(TokenType.Identifier, "Expected extension target type.");
+            targetType = targetToken?.Value ?? string.Empty;
+            targetTypeNode = CreateTypeNode(targetToken?.Location ?? extensionToken?.Location ?? Current.Location, targetType);
+        }
         var typeParameters = ParseOptionalTypeParameters();
         var genericConstraints = ParseOptionalGenericConstraints(typeParameters);
         Expect(TokenType.LBrace, "Expected '{' before extension body.");
@@ -1210,6 +1582,18 @@ public sealed partial class Parser
         var nameToken = Expect(TokenType.Identifier, "Expected requirement name.");
         var typeParameters = ParseOptionalTypeParameters();
         var genericConstraints = ParseOptionalGenericConstraints(typeParameters);
+        if (ConsumeOptional(TokenType.Semicolon))
+        {
+            return requiresToken is null
+                ? null
+                : new RequirementNode(
+                    requiresToken.Location,
+                    nameToken?.Value ?? string.Empty,
+                    typeParameters,
+                    genericConstraints,
+                    []);
+        }
+
         Expect(TokenType.LBrace, "Expected '{' before requirement body.");
 
         var members = new List<RequirementMemberNode>();
@@ -1473,10 +1857,24 @@ public sealed partial class Parser
                             valueTokens = namedValueTokens;
                         }
 
-                        var value = TokenText.ToSourceText(valueTokens).Trim();
-                        if (value.Length > 0)
+                        if (valueTokens.Count > 0)
                         {
-                            arguments.Add(new AttributeArgumentNode(argumentLocation, argumentName, value));
+                            var valueSlice = new TokenSlice(valueTokens[0].Location, valueTokens);
+                            var value = ExpressionTokenParser.TryParse(valueSlice);
+                            if (value is null)
+                            {
+                                _diagnostics.Report(
+                                    valueTokens[0].Location,
+                                    "Expected a valid expression for attribute argument value.");
+                                value = new ErrorExpressionNode(valueTokens[0].Location)
+                                {
+                                    Span = valueSlice.Span,
+                                };
+                            }
+
+                            var argument = new AttributeArgumentNode(argumentLocation, argumentName, value);
+                            argument.Span = new TokenSlice(argumentTokens[0].Location, argumentTokens).Span;
+                            arguments.Add(argument);
                         }
                     }
                     while (ConsumeOptional(TokenType.Comma));

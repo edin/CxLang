@@ -11,7 +11,11 @@ public sealed record StructNode(
     IReadOnlyList<StructFieldNode> Fields,
     IReadOnlyList<FunctionNode> Methods,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    bool IsHeaderDeclaration = false) : TopLevelNode(Location);
+    bool IsHeaderDeclaration = false,
+    IReadOnlyList<MacroInvocationDeclarationNode>? MacroInvocations = null) : TopLevelNode(Location)
+{
+    public IReadOnlyList<MacroInvocationDeclarationNode> MacroInvocationNodes => MacroInvocations ?? [];
+}
 
 public sealed record GenericConstraintNode(
     Location Location,

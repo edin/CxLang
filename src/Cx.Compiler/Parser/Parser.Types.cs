@@ -8,6 +8,11 @@ public sealed partial class Parser
 {
     private TypeNode ParseTypeNode()
     {
+        if (Check(TokenType.At) && PeekType() == TokenType.LBrace)
+        {
+            return ParseComputedTypeNode();
+        }
+
         var location = Current.Location;
         var tokens = ParseTypeTokens();
         if (tokens.Count == 0)
@@ -17,6 +22,30 @@ public sealed partial class Parser
         }
 
         return TypeTokenParser.Parse(tokens);
+    }
+
+    private TypeNode ParseComputedTypeNode()
+    {
+        var at = Advance();
+        Advance(); // '{'
+        var expressionTokens = Tokens.ReadBalancedUntil(TokenType.RBrace);
+        var close = Expect(TokenType.RBrace, "Expected '}' after computed type expression.");
+        var expression = expressionTokens.Count == 0
+            ? null
+            : ExpressionTokenParser.TryParse(new TokenSlice(expressionTokens[0].Location, expressionTokens));
+        if (expression is null)
+        {
+            _diagnostics.Report(at.Location, "Expected compile-time expression inside computed type placeholder.");
+            expression = new ErrorExpressionNode(at.Location);
+        }
+
+        var node = TypeNode.Create(at.Location, new ComputedTypeSyntaxNode(expression));
+        if (close is not null)
+        {
+            node.Span = SourceSpan.FromBounds(at.Span, close.Span);
+        }
+
+        return node;
     }
 
     private List<Token> ParseTypeTokens()

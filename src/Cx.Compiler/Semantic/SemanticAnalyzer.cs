@@ -52,9 +52,7 @@ public sealed class SemanticAnalyzer(
             diagnostics,
             program,
             _requirementMatcher);
-        new AttributeSemanticAnalyzer(diagnostics).Analyze(
-            program,
-            (typeNode, location, inScopeTypeParameters) => AnalyzeType(typeNode, location, program, inScopeTypeParameters));
+        new AttributeSemanticAnalyzer(diagnostics).Analyze(program);
 
         foreach (var structNode in program.Structs)
         {

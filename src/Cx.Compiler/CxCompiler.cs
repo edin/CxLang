@@ -2,6 +2,7 @@ namespace Cx.Compiler;
 
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.C;
+using Cx.Compiler.CompileTime;
 using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Std;
@@ -84,6 +85,9 @@ public sealed class CxCompiler
             .Select(parser.Parse)
             .ToList();
 
+        new CompileTimePlaceholderUsageAnalyzer(diagnostics)
+            .Analyze(corePrograms.Concat(userPrograms));
+
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -122,7 +126,27 @@ public sealed class CxCompiler
         var moduleNamesByPath = inputPrograms
             .GroupBy(program => program.Location.File.Path, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => GetModuleName(group.Last()), StringComparer.Ordinal);
-        var mergedProgram = preSemanticLowering.Lower(MergePrograms(inputPrograms, rootProgram));
+        var mergedInputProgram = MergePrograms(inputPrograms, rootProgram);
+        var macroExpansion = new MacroExpansionPass(
+            diagnostics,
+            mergedInputProgram,
+            new ProgramCompileTimeReflection(mergedInputProgram));
+        mergedInputProgram = macroExpansion.RewriteProgram(mergedInputProgram);
+        if (diagnostics.HasErrors)
+        {
+            return (null, diagnostics);
+        }
+
+        var compileTimeExpansion = new CompileTimeDirectiveExpansionPass(
+            diagnostics,
+            new ProgramCompileTimeReflection(mergedInputProgram));
+        mergedInputProgram = compileTimeExpansion.ExpandProgram(mergedInputProgram);
+        if (diagnostics.HasErrors)
+        {
+            return (null, diagnostics);
+        }
+
+        var mergedProgram = preSemanticLowering.Lower(mergedInputProgram);
         AnnotateModuleNames(mergedProgram, moduleNamesByPath);
         var semanticModel = new SemanticModel();
         new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram);
@@ -495,6 +519,7 @@ public sealed class CxCompiler
                     .Concat(program.Structs.SelectMany(structNode => structNode.Methods))
                     .Concat(program.TaggedUnions.SelectMany(taggedUnion => taggedUnion.Methods)))
                 .ToList(),
+            Macros = programList.SelectMany(program => program.Macros).ToList(),
         };
     }
 

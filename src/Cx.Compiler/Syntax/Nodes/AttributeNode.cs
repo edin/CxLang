@@ -11,7 +11,48 @@ public sealed record AttributeDeclarationNode(
 public sealed record AttributeFieldNode(
     Location Location,
     string Name,
-    TypeNode? TypeNode = null) : SyntaxNode(Location);
+    CompileTimeTypeNode TypeNode) : SyntaxNode(Location);
+
+public abstract record CompileTimeTypeNode(Location Location) : SyntaxNode(Location);
+
+public enum CompileTimeScalarType
+{
+    Boolean,
+    Integer,
+    String,
+    Name,
+    Type,
+    Syntax,
+}
+
+public sealed record CompileTimeScalarTypeNode(
+    Location Location,
+    CompileTimeScalarType Kind) : CompileTimeTypeNode(Location);
+
+public sealed record CompileTimeListTypeNode(
+    Location Location,
+    CompileTimeTypeNode ElementType) : CompileTimeTypeNode(Location);
+
+public sealed record CompileTimeErrorTypeNode(Location Location) : CompileTimeTypeNode(Location);
+
+public static class CompileTimeTypeNodeExtensions
+{
+    public static string ToSourceText(this CompileTimeTypeNode type) => type switch
+    {
+        CompileTimeScalarTypeNode scalar => scalar.Kind switch
+        {
+            CompileTimeScalarType.Boolean => "bool",
+            CompileTimeScalarType.Integer => "int",
+            CompileTimeScalarType.String => "string",
+            CompileTimeScalarType.Name => "name",
+            CompileTimeScalarType.Type => "type",
+            CompileTimeScalarType.Syntax => "syntax",
+            _ => "<unknown>",
+        },
+        CompileTimeListTypeNode list => $"list<{list.ElementType.ToSourceText()}>",
+        _ => "<error>",
+    };
+}
 
 public sealed record AttributeApplicationNode(
     Location Location,
@@ -21,4 +62,4 @@ public sealed record AttributeApplicationNode(
 public sealed record AttributeArgumentNode(
     Location Location,
     string? Name,
-    string Value) : SyntaxNode(Location);
+    ExpressionNode Value) : SyntaxNode(Location);

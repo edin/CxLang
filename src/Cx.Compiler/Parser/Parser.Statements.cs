@@ -10,6 +10,26 @@ public sealed partial class Parser
 
     private StatementNode? ParseStatementCore()
     {
+        if (Check(TokenType.At) && PeekType() == TokenType.Let)
+        {
+            return ParseCompileTimeLetStatement();
+        }
+
+        if (Check(TokenType.At) && PeekType() == TokenType.If)
+        {
+            return ParseCompileTimeIfStatement();
+        }
+
+        if (Check(TokenType.At) && PeekType() == TokenType.Foreach)
+        {
+            return ParseCompileTimeForeachStatement();
+        }
+
+        if (Match(TokenType.Use) is { } useToken)
+        {
+            return ParseMacroInvocationStatement(useToken);
+        }
+
         if (Match(TokenType.Let) is { } letToken)
         {
             return ParseVariableStatement(letToken, isConst: false);
@@ -80,6 +100,69 @@ public sealed partial class Parser
         var expression = ReadExpressionUntil(location, TokenType.Semicolon);
         Expect(TokenType.Semicolon, "Expected ';' after expression statement.");
         return new CStatement(location, expression);
+    }
+
+    private MacroInvocationStatementNode ParseMacroInvocationStatement(Token useToken)
+    {
+        var (name, arguments) = ParseMacroInvocationParts();
+        return new MacroInvocationStatementNode(
+            useToken.Location,
+            name,
+            arguments);
+    }
+
+    private CompileTimeLetStatementNode? ParseCompileTimeLetStatement()
+    {
+        var atToken = Expect(TokenType.At, "Expected '@'.");
+        Expect(TokenType.Let, "Expected 'let' after '@'.");
+        var nameToken = ExpectIdentifierLike("Expected compile-time binding name.");
+        Expect(TokenType.Equals, "Expected '=' after compile-time binding name.");
+        var initializer = ReadExpressionUntil(atToken?.Location ?? Current.Location, TokenType.Semicolon);
+        Expect(TokenType.Semicolon, "Expected ';' after compile-time binding.");
+        return atToken is null
+            ? null
+            : new CompileTimeLetStatementNode(
+                atToken.Location,
+                nameToken?.Value ?? string.Empty,
+                initializer);
+    }
+
+    private CompileTimeIfStatementNode? ParseCompileTimeIfStatement()
+    {
+        var atToken = Expect(TokenType.At, "Expected '@'.");
+        Expect(TokenType.If, "Expected 'if' after '@'.");
+        var condition = ParseParenthesizedExpression("compile-time if condition");
+        var thenBody = ParseBlock();
+        IReadOnlyList<StatementNode> elseBody = [];
+
+        if (ConsumeOptional(TokenType.Else))
+        {
+            elseBody = ParseBlock();
+        }
+
+        return atToken is null
+            ? null
+            : new CompileTimeIfStatementNode(atToken.Location, condition, thenBody, elseBody);
+    }
+
+    private CompileTimeForeachStatementNode? ParseCompileTimeForeachStatement()
+    {
+        var atToken = Expect(TokenType.At, "Expected '@'.");
+        Expect(TokenType.Foreach, "Expected 'foreach' after '@'.");
+        Expect(TokenType.LParen, "Expected '(' after '@foreach'.");
+        var bindingToken = Expect(TokenType.Identifier, "Expected compile-time foreach binding name.");
+        Expect(TokenType.In, "Expected 'in' after compile-time foreach binding.");
+        var iterable = ReadExpressionUntil(atToken?.Location ?? Current.Location, TokenType.RParen);
+        Expect(TokenType.RParen, "Expected ')' after compile-time foreach expression.");
+        var body = ParseBlock();
+
+        return atToken is null
+            ? null
+            : new CompileTimeForeachStatementNode(
+                atToken.Location,
+                bindingToken?.Value ?? string.Empty,
+                iterable,
+                body);
     }
 
     private StatementNode ParseVariableStatement(Token keywordToken, bool isConst)

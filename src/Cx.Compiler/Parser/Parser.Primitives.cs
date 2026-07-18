@@ -21,7 +21,7 @@ public sealed partial class Parser
 
     private Token? ExpectIdentifierLike(string message)
     {
-        if (Current.Type is TokenType.Identifier or TokenType.Type or TokenType.Default)
+        if (Current.Type is TokenType.Identifier or TokenType.Type or TokenType.Default or TokenType.Match)
         {
             return Advance();
         }
@@ -87,7 +87,8 @@ public sealed partial class Parser
         or TypeAdapterNode
         or TaggedUnionNode
         or GlobalVariableNode
-        or FunctionNode;
+        or FunctionNode
+        or MacroDeclarationNode;
 
     private static string DeclarationKind(TopLevelNode node) => node switch
     {
@@ -97,6 +98,7 @@ public sealed partial class Parser
         CDeclareNode => "C declaration block",
         ExtensionNode => "extension",
         TestNode => "test",
+        MacroDeclarationNode => "macro",
         _ => "declaration",
     };
 

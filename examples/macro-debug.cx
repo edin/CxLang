@@ -1,0 +1,87 @@
+attribute debug_skip on field;
+
+requires Debug {
+    fn write_debug(self: Self*, output: StringBuilder*) -> bool;
+}
+
+struct Address {
+    number: int;
+
+    use Debug(Self);
+}
+
+struct User {
+    id: int;
+    active: bool;
+    score: double;
+    address: Address;
+
+    @debug_skip
+    internal_code: int;
+
+    use Debug(Self);
+}
+
+macro Debug(target: type) -> declarations
+    provides target: Debug {
+    extension @{target} {
+        fn write_debug(output: StringBuilder*) -> bool {
+            if (!output.append_cstr(@{concat(target.name, " { ")})) {
+                return false;
+            }
+
+            let first: bool = true;
+            @foreach(field in target.fields) {
+                @if(!has_attribute(field, "debug_skip")) {
+                    @let field_name = field.name;
+                    if (!first && !output.append_cstr(", ")) {
+                        return false;
+                    }
+                    first = false;
+
+                    if (!output.append_cstr(@{concat(field.name, ": ")})) {
+                        return false;
+                    }
+
+                    @if(is_type(field.type, int)) {
+                        if (!output.append_int(self.@{field_name})) {
+                            return false;
+                        }
+                    }
+                    @if(is_type(field.type, bool)) {
+                        if (!output.append_bool(self.@{field_name})) {
+                            return false;
+                        }
+                    }
+                    @if(is_type(field.type, double)) {
+                        if (!output.append_double(self.@{field_name})) {
+                            return false;
+                        }
+                    }
+                    @let debug_match = requirement_match(field.type, Debug);
+                    @if(debug_match.success) {
+                        if (!self.@{field_name}.write_debug(output)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            return output.append_cstr(" }");
+        }
+    }
+}
+
+fn main() -> int {
+    let builder: StringBuilder = StringBuilder.with_capacity((usize)64);
+    let user: User = User {
+        id: 7,
+        active: true,
+        score: 3.5,
+        address: Address { number: 42 },
+        internal_code: 99,
+    };
+    let ok: bool = user.write_debug(&builder);
+    builder.free();
+    return ok ? 0 : 1;
+}

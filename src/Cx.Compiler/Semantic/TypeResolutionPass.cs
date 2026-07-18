@@ -29,14 +29,6 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             ResolveExpression(global.Initializer);
         }
 
-        foreach (var attribute in program.AttributeDeclarations)
-        {
-            foreach (var field in attribute.Fields)
-            {
-                ResolveType(field, field.TypeNode);
-            }
-        }
-
         foreach (var requirement in program.Requirements)
         {
             ResolveGenericConstraints(requirement.GenericConstraints);

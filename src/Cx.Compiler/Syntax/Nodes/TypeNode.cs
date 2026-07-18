@@ -27,6 +27,8 @@ public static class TypeNodeExtensions
 
 public abstract record TypeSyntaxNode;
 
+public sealed record ComputedTypeSyntaxNode(ExpressionNode Expression) : TypeSyntaxNode;
+
 public sealed record NamedTypeSyntaxNode(string Name) : TypeSyntaxNode;
 
 public sealed record GenericTypeSyntaxNode(
@@ -346,6 +348,7 @@ public static class TypeSyntaxFormatter
         syntax switch
         {
             NamedTypeSyntaxNode named => named.Name,
+            ComputedTypeSyntaxNode computed => $"@{{{computed.Expression.ToSourceText()}}}",
             GenericTypeSyntaxNode generic => $"{ToCxString(generic.Target)}<{string.Join(",", generic.Arguments.Select(ToCxString))}>",
             PointerTypeSyntaxNode pointer => ToCxString(pointer.Element) + "*",
             ConstTypeSyntaxNode constType => "const " + ToCxString(constType.Element),

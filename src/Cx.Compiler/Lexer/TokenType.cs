@@ -58,6 +58,8 @@ public enum TokenType
     Type,
     [Keyword("using")]
     Using,
+    [Keyword("use")]
+    Use,
     [Keyword("over")]
     Over,
     [Keyword("expose")]

@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Lowering;
@@ -7,6 +8,11 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
 {
     public void Analyze(ProgramNode program)
     {
+        foreach (var cDeclare in program.CDeclarations)
+        {
+            AnalyzeCDeclareMembers(cDeclare.Members);
+        }
+
         foreach (var global in program.GlobalVariables)
         {
             AnalyzeExpression(global.Initializer);
@@ -34,12 +40,52 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
         }
     }
 
+    private void AnalyzeCDeclareMembers(IEnumerable<SyntaxNode> members)
+    {
+        foreach (var member in members)
+        {
+            switch (member)
+            {
+                case CompileTimeIfDeclarationNode conditional:
+                    diagnostics.Report(
+                        conditional.Location,
+                        "Internal lowering error: compile-time @if declaration remains after lowering.");
+                    AnalyzeExpression(conditional.Condition);
+                    AnalyzeCDeclareMembers(conditional.ThenMembers);
+                    AnalyzeCDeclareMembers(conditional.ElseMembers);
+                    break;
+                case CompileTimeForeachDeclarationNode foreachNode:
+                    diagnostics.Report(
+                        foreachNode.Location,
+                        "Internal lowering error: compile-time @foreach declaration remains after lowering.");
+                    AnalyzeExpression(foreachNode.IterableExpression);
+                    AnalyzeCDeclareMembers(foreachNode.Members);
+                    break;
+            }
+        }
+    }
+
     private void AnalyzeStatements(IEnumerable<StatementNode> statements)
     {
         foreach (var statement in statements)
         {
             switch (statement)
             {
+                case CompileTimeLetStatementNode compileTimeLet:
+                    diagnostics.Report(
+                        compileTimeLet.Location,
+                        $"Internal lowering error: compile-time @let binding '{compileTimeLet.Name}' remains after lowering.");
+                    AnalyzeExpression(compileTimeLet.Initializer);
+                    break;
+                case MacroInvocationStatementNode invocation:
+                    diagnostics.Report(
+                        invocation.Location,
+                        $"Internal lowering error: macro invocation '{invocation.MacroName}' remains after lowering.");
+                    foreach (var argument in invocation.Arguments)
+                    {
+                        AnalyzeExpression(argument);
+                    }
+                    break;
                 case LetStatement let:
                     AnalyzeExpression(let.Initializer);
                     break;
@@ -48,6 +94,21 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                     break;
                 case BreakStatement:
                 case ContinueStatement:
+                    break;
+                case CompileTimeIfStatementNode conditional:
+                    diagnostics.Report(
+                        conditional.Location,
+                        "Internal lowering error: compile-time @if statement remains after lowering.");
+                    AnalyzeExpression(conditional.Condition);
+                    AnalyzeStatements(conditional.ThenBody);
+                    AnalyzeStatements(conditional.ElseBody);
+                    break;
+                case CompileTimeForeachStatementNode foreachNode:
+                    diagnostics.Report(
+                        foreachNode.Location,
+                        "Internal lowering error: compile-time @foreach statement remains after lowering.");
+                    AnalyzeExpression(foreachNode.IterableExpression);
+                    AnalyzeStatements(foreachNode.Body);
                     break;
                 case CStatement c:
                     AnalyzeExpression(c.Expression);
@@ -135,6 +196,12 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
 
         switch (expression)
         {
+            case PlaceholderExpressionNode placeholder:
+                diagnostics.Report(
+                    placeholder.Location,
+                    "Internal lowering error: compile-time placeholder remains after lowering.");
+                AnalyzeExpression(placeholder.Expression);
+                break;
             case ErrorExpressionNode error:
                 diagnostics.Report(
                     error.Location,
@@ -213,6 +280,13 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                 break;
             case MemberExpressionNode member:
                 AnalyzeExpression(member.Target);
+                break;
+            case ComputedMemberExpressionNode member:
+                diagnostics.Report(
+                    member.Location,
+                    "Internal lowering error: computed member expression remains after lowering.");
+                AnalyzeExpression(member.Target);
+                AnalyzeExpression(member.MemberName);
                 break;
             case IndexExpressionNode index:
                 AnalyzeExpression(index.Target);

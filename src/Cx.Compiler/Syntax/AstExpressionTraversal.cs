@@ -21,6 +21,24 @@ internal static class AstExpressionTraversal
                 yield return expression;
             }
         }
+
+        foreach (var function in program.Structs.SelectMany(node => node.Methods)
+            .Concat(program.Extensions.SelectMany(node => node.Methods))
+            .Concat(program.TaggedUnions.SelectMany(node => node.Methods)))
+        {
+            foreach (var expression in Enumerate(function.Body))
+            {
+                yield return expression;
+            }
+        }
+
+        foreach (var test in program.Tests)
+        {
+            foreach (var expression in Enumerate(test.Body))
+            {
+                yield return expression;
+            }
+        }
     }
 
     public static IEnumerable<ExpressionNode> Enumerate(IEnumerable<StatementNode> statements)
@@ -29,6 +47,15 @@ internal static class AstExpressionTraversal
         {
             switch (statement)
             {
+                case CompileTimeLetStatementNode compileTimeLet:
+                    foreach (var expression in Enumerate(compileTimeLet.Initializer)) yield return expression;
+                    break;
+                case MacroInvocationStatementNode invocation:
+                    foreach (var argument in invocation.Arguments)
+                    {
+                        foreach (var expression in Enumerate(argument)) yield return expression;
+                    }
+                    break;
                 case LetStatement { Initializer: not null } let:
                     foreach (var expression in Enumerate(let.Initializer)) yield return expression;
                     break;
@@ -98,6 +125,9 @@ internal static class AstExpressionTraversal
         yield return expression;
         switch (expression)
         {
+            case PlaceholderExpressionNode placeholder:
+                foreach (var child in Enumerate(placeholder.Expression)) yield return child;
+                break;
             case ParenthesizedExpressionNode parenthesized:
                 foreach (var child in Enumerate(parenthesized.Expression)) yield return child;
                 break;
@@ -166,6 +196,10 @@ internal static class AstExpressionTraversal
                 break;
             case MemberExpressionNode member:
                 foreach (var child in Enumerate(member.Target)) yield return child;
+                break;
+            case ComputedMemberExpressionNode member:
+                foreach (var child in Enumerate(member.Target)) yield return child;
+                foreach (var child in Enumerate(member.MemberName)) yield return child;
                 break;
             case IndexExpressionNode index:
                 foreach (var child in Enumerate(index.Target)) yield return child;

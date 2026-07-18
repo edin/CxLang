@@ -21,7 +21,11 @@ internal sealed class ReceiverExpressionBuilder(CLoweringScope scope)
     }
 
     public static CExpression Build(CExpression target, bool isPointer, bool takesPointerSelf) =>
-        takesPointerSelf || isPointer
-            ? target
-            : new CUnaryExpression("&", target);
+        takesPointerSelf
+            ? isPointer
+                ? target
+                : new CUnaryExpression("&", target)
+            : isPointer
+                ? new CUnaryExpression("*", target)
+                : target;
 }

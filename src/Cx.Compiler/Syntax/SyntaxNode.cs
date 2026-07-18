@@ -7,12 +7,15 @@ public abstract record SyntaxNode(Location Location)
 {
     public SourceSpan? Span { get; internal set; }
 
+    public GeneratedSyntaxOrigin? GeneratedFrom { get; internal set; }
+
     internal SemanticInfo Semantic { get; set; } = new();
 
     internal static T CloneMetadata<T>(SyntaxNode source, T target)
         where T : SyntaxNode
     {
         target.Span = source.Span;
+        target.GeneratedFrom = source.GeneratedFrom;
         target.Semantic = source.Semantic.Clone();
         return target;
     }
@@ -24,3 +27,8 @@ public abstract record SyntaxNode(Location Location)
         return node;
     }
 }
+
+public sealed record GeneratedSyntaxOrigin(
+    SourceSpan InvocationSpan,
+    SourceSpan? TemplateSpan,
+    GeneratedSyntaxOrigin? Parent = null);

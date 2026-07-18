@@ -162,6 +162,16 @@ internal sealed class ExpressionTokenParser
         {
             if (Match(TokenType.Dot) is { })
             {
+                if (TryParsePlaceholderExpression(out var computedMember)
+                    && computedMember is PlaceholderExpressionNode placeholder)
+                {
+                    expression = new ComputedMemberExpressionNode(
+                        expression.Location,
+                        expression,
+                        placeholder);
+                    continue;
+                }
+
                 var member = ExpectIdentifierLike();
                 if (member is null)
                 {
@@ -437,6 +447,11 @@ internal sealed class ExpressionTokenParser
 
     private ExpressionNode? ParsePrimary()
     {
+        if (TryParsePlaceholderExpression(out var placeholderExpression))
+        {
+            return placeholderExpression;
+        }
+
         if (TryParseFunctionExpression(out var functionExpression))
         {
             return functionExpression;
@@ -491,6 +506,68 @@ internal sealed class ExpressionTokenParser
         }
 
         return null;
+    }
+
+    private bool TryParsePlaceholderExpression(out ExpressionNode expression)
+    {
+        expression = null!;
+        if (!Check(TokenType.At))
+        {
+            return false;
+        }
+
+        var position = Save();
+        var atToken = Advance();
+        if (Match(TokenType.LBrace) is null)
+        {
+            Restore(position);
+            return false;
+        }
+
+        var innerTokens = new List<Token>();
+        var braceDepth = 0;
+        Token? closeBrace = null;
+        while (!IsAtEnd)
+        {
+            if (Current.Type == TokenType.RBrace && braceDepth == 0)
+            {
+                closeBrace = Advance();
+                break;
+            }
+
+            if (Current.Type == TokenType.LBrace)
+            {
+                braceDepth++;
+            }
+            else if (Current.Type == TokenType.RBrace)
+            {
+                braceDepth--;
+            }
+
+            innerTokens.Add(Advance());
+        }
+
+        if (closeBrace is null || innerTokens.Count == 0)
+        {
+            Restore(position);
+            return false;
+        }
+
+        var innerParser = new ExpressionTokenParser(new TokenSlice(innerTokens[0].Location, innerTokens));
+        var innerExpression = innerParser.ParseExpression();
+        if (innerExpression is null || !innerParser.IsAtEnd)
+        {
+            Restore(position);
+            return false;
+        }
+
+        innerExpression.Span = SourceSpan.FromBounds(innerTokens[0].Span, innerTokens[^1].Span);
+
+        expression = new PlaceholderExpressionNode(atToken.Location, innerExpression)
+        {
+            Span = SourceSpan.FromBounds(atToken.Span, closeBrace.Span),
+        };
+        return true;
     }
 
     private bool TryParseFunctionExpression(out ExpressionNode expression)
@@ -955,6 +1032,14 @@ internal sealed class ExpressionTokenParser
         {
             if (angleDepth == 0 && bracketDepth == 0 && Current.Type == TokenType.LBrace)
             {
+                // '@{' starts a compile-time placeholder. It must not be mistaken
+                // for the opening brace of an initializer expression.
+                if (tokens.Count > 0 && tokens[^1].Type == TokenType.At)
+                {
+                    Restore(position);
+                    return null;
+                }
+
                 return tokens.Count == 0 || IsLikelyInitializerTypePrefix(tokens)
                     ? tokens
                     : null;
@@ -1281,7 +1366,7 @@ internal sealed class ExpressionTokenParser
 
     private Token? ExpectIdentifierLike(bool matchOnly = false)
     {
-        if (!IsAtEnd && Current.Type is TokenType.Identifier or TokenType.Type or TokenType.Default)
+        if (!IsAtEnd && Current.Type is TokenType.Identifier or TokenType.Type or TokenType.Default or TokenType.Match)
         {
             return matchOnly ? Current : Advance();
         }

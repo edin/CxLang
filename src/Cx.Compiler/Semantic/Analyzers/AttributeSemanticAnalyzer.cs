@@ -1,13 +1,18 @@
+using Cx.Compiler.CompileTime;
 using Cx.Compiler.Diagnostics;
-using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Analyzers;
 
 internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
 {
-    public void Analyze(ProgramNode program, Action<TypeNode?, Location, IReadOnlyList<string>> analyzeType)
+    private CompileTimeExpressionEvaluator? _evaluator;
+
+    public void Analyze(ProgramNode program)
     {
+        _evaluator = new CompileTimeExpressionEvaluator(
+            diagnostics,
+            reflection: new ProgramCompileTimeReflection(program));
         var declarations = program.AttributeDeclarations
             .GroupBy(attribute => attribute.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
@@ -17,14 +22,6 @@ internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
             if (group.Count() > 1)
             {
                 diagnostics.Report(group.Last().Location, $"Attribute '{group.Key}' is declared more than once.");
-            }
-        }
-
-        foreach (var declaration in program.AttributeDeclarations)
-        {
-            foreach (var field in declaration.Fields)
-            {
-                analyzeType(field.TypeNode, field.Location, []);
             }
         }
 
@@ -116,33 +113,102 @@ internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
                 diagnostics.Report(application.Location, $"Attribute '{application.Name}' cannot be applied to {target}.");
             }
 
-            var namedArguments = application.Arguments.Where(argument => argument.Name is not null).ToList();
-            foreach (var argument in namedArguments)
+            if (application.Arguments.All(argument => argument.Name is null))
             {
-                if (!declaration.Fields.Any(field => field.Name == argument.Name))
+                if (application.Arguments.Count != declaration.Fields.Count)
                 {
-                    diagnostics.Report(argument.Location, $"Attribute '{application.Name}' has no field named '{argument.Name}'.");
+                    diagnostics.Report(application.Location, $"Attribute '{application.Name}' expects {declaration.Fields.Count} argument(s).");
                 }
-            }
 
-            if (namedArguments.Count > 0)
-            {
-                foreach (var field in declaration.Fields)
+                foreach (var pair in application.Arguments.Zip(declaration.Fields))
                 {
-                    if (!namedArguments.Any(argument => argument.Name == field.Name))
-                    {
-                        diagnostics.Report(application.Location, $"Attribute '{application.Name}' requires argument '{field.Name}'.");
-                    }
+                    ValidateArgumentValue(application, pair.First, pair.Second);
                 }
 
                 continue;
             }
 
-            if (application.Arguments.Count != declaration.Fields.Count)
-            {
-                diagnostics.Report(application.Location, $"Attribute '{application.Name}' expects {declaration.Fields.Count} argument(s).");
-            }
+            AnalyzeNamedAttributeArguments(application, declaration);
         }
     }
 
+    private void AnalyzeNamedAttributeArguments(
+        AttributeApplicationNode application,
+        AttributeDeclarationNode declaration)
+    {
+        var assignedFields = new HashSet<string>(StringComparer.Ordinal);
+        var positionalIndex = 0;
+
+        foreach (var argument in application.Arguments)
+        {
+            AttributeFieldNode? field;
+            if (argument.Name is null)
+            {
+                field = positionalIndex < declaration.Fields.Count
+                    ? declaration.Fields[positionalIndex++]
+                    : null;
+                if (field is null)
+                {
+                    diagnostics.Report(application.Location, $"Attribute '{application.Name}' has too many positional arguments.");
+                    continue;
+                }
+            }
+            else
+            {
+                field = declaration.Fields.FirstOrDefault(candidate => candidate.Name == argument.Name);
+                if (field is null)
+                {
+                    diagnostics.Report(argument.Location, $"Attribute '{application.Name}' has no field named '{argument.Name}'.");
+                    continue;
+                }
+            }
+
+            if (!assignedFields.Add(field.Name))
+            {
+                diagnostics.Report(argument.Location, $"Attribute '{application.Name}' field '{field.Name}' is specified more than once.");
+                continue;
+            }
+
+            ValidateArgumentValue(application, argument, field);
+        }
+
+        foreach (var field in declaration.Fields.Where(field => !assignedFields.Contains(field.Name)))
+        {
+            diagnostics.Report(application.Location, $"Attribute '{application.Name}' requires argument '{field.Name}'.");
+        }
+    }
+
+    private void ValidateArgumentValue(
+        AttributeApplicationNode application,
+        AttributeArgumentNode argument,
+        AttributeFieldNode field)
+    {
+        var evaluator = _evaluator ?? throw new InvalidOperationException("Attribute evaluator is not initialized.");
+        var value = evaluator.Evaluate(argument.Value, new CompileTimeEvaluationContext());
+        if (value is null || field.TypeNode is CompileTimeErrorTypeNode)
+        {
+            return;
+        }
+
+        if (!Matches(field.TypeNode, value))
+        {
+            diagnostics.Report(
+                argument.Location,
+                $"Attribute '{application.Name}' argument '{field.Name}' expects metadata type '{field.TypeNode.ToSourceText()}', but received {CompileTimeValueFacts.Describe(value)}.");
+        }
+    }
+
+    private static bool Matches(CompileTimeTypeNode type, CompileTimeValue value) =>
+        (type, value) switch
+        {
+            (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Boolean }, CompileTimeValue.Boolean) => true,
+            (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Integer }, CompileTimeValue.Integer) => true,
+            (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.String }, CompileTimeValue.String) => true,
+            (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Name }, CompileTimeValue.Name) => true,
+            (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Type }, CompileTimeValue.Type) => true,
+            (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Syntax }, CompileTimeValue.Syntax) => true,
+            (CompileTimeListTypeNode list, CompileTimeValue.List values) =>
+                values.Values.All(value => Matches(list.ElementType, value)),
+            _ => false,
+        };
 }
