@@ -14,6 +14,7 @@ internal sealed class MacroExpansionPass : AstRewriter
     private readonly ICompileTimeReflection _reflection;
     private readonly IReadOnlyDictionary<string, MacroDeclarationNode> _macros;
     private readonly IReadOnlyList<MacroProvidedRequirementClaim> _providedRequirementClaims;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<SyntaxNode>> _functionDeclarations;
     private int _expansionDepth;
 
     public MacroExpansionPass(
@@ -23,6 +24,7 @@ internal sealed class MacroExpansionPass : AstRewriter
     {
         _diagnostics = diagnostics;
         _macros = BuildMacroMap(program.Macros);
+        _functionDeclarations = BuildFunctionDeclarationMap(program);
         _providedRequirementClaims = MacroProvidedRequirementCollector.Collect(
             program,
             _macros,
@@ -207,7 +209,7 @@ internal sealed class MacroExpansionPass : AstRewriter
             MacroParameterKind.Expression => new CompileTimeValue.Syntax(argument),
             MacroParameterKind.Name => BindName(parameter, argument),
             MacroParameterKind.Type => BindType(parameter, argument),
-            MacroParameterKind.Declaration => UnsupportedDeclarationArgument(parameter),
+            MacroParameterKind.Declaration => BindDeclaration(parameter, argument),
             _ => null,
         };
 
@@ -240,12 +242,36 @@ internal sealed class MacroExpansionPass : AstRewriter
         return null;
     }
 
-    private CompileTimeValue? UnsupportedDeclarationArgument(MacroParameterNode parameter)
+    private CompileTimeValue? BindDeclaration(
+        MacroParameterNode parameter,
+        ExpressionNode argument)
     {
-        _diagnostics.Report(
-            parameter.Location,
-            $"Declaration arguments for macro parameter '{parameter.Name}' are not supported in statement macro invocations yet.");
-        return null;
+        var name = ExpressionNameFacts.GetQualifiedName(argument);
+        if (name is null)
+        {
+            _diagnostics.Report(
+                argument.Location,
+                $"Macro parameter '{parameter.Name}' expects a named function declaration argument.");
+            return null;
+        }
+
+        if (!_functionDeclarations.TryGetValue(name, out var declarations))
+        {
+            _diagnostics.Report(
+                argument.Location,
+                $"Macro parameter '{parameter.Name}' could not resolve function declaration '{name}'.");
+            return null;
+        }
+
+        if (declarations.Count != 1)
+        {
+            _diagnostics.Report(
+                argument.Location,
+                $"Macro parameter '{parameter.Name}' found {declarations.Count} function declarations named '{name}'; declaration arguments must be unambiguous.");
+            return null;
+        }
+
+        return new CompileTimeValue.Syntax(declarations[0]);
     }
 
     private IReadOnlyDictionary<string, MacroDeclarationNode> BuildMacroMap(
@@ -262,6 +288,24 @@ internal sealed class MacroExpansionPass : AstRewriter
 
         return result;
     }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<SyntaxNode>> BuildFunctionDeclarationMap(
+        ProgramNode program) =>
+        program.Functions
+            .Cast<SyntaxNode>()
+            .Concat(program.ExternFunctions)
+            .Select(declaration => (Name: declaration switch
+            {
+                FunctionNode function => function.Name,
+                ExternFunctionNode function => function.Name,
+                _ => string.Empty,
+            }, Declaration: declaration))
+            .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+            .GroupBy(item => item.Name, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<SyntaxNode>)group.Select(item => item.Declaration).ToList(),
+                StringComparer.Ordinal);
 
     private void ValidateProvidedRequirements(ProgramNode expanded)
     {

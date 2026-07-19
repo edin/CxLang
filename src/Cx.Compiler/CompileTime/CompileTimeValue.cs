@@ -26,7 +26,9 @@ internal abstract record CompileTimeValue
 
     public sealed record Syntax(SyntaxNode Value) : CompileTimeObjectValue
     {
-        public override string DisplayType => "syntax";
+        public override string DisplayType => Value is FunctionNode or ExternFunctionNode
+            ? "function declaration"
+            : "syntax";
 
         public override CompileTimePropertyResult GetProperty(
             string name,

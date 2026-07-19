@@ -116,6 +116,50 @@ public sealed class MacroBlockTests
     }
 
     [Fact]
+    public void Parse_RepresentsComputedFunctionNameAsStructuredPlaceholder()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro Wrap(function: declaration) -> declarations {
+                fn @{as_name(concat("wrap_", function.name))}() -> int {
+                    return 0;
+                }
+            }
+            """);
+
+        var function = Assert.IsType<FunctionNode>(
+            Assert.Single(Assert.Single(program.Macros).Template.DeclarationNodes));
+        var computedName = Assert.IsType<PlaceholderExpressionNode>(function.ComputedName);
+        Assert.Equal(
+            "as_name(concat(\"wrap_\", function.name))",
+            computedName.Expression.ToSourceText());
+        Assert.Equal(string.Empty, function.Name);
+    }
+
+    [Fact]
+    public void Parse_RepresentsComputedFunctionParametersAsStructuredPlaceholder()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro Wrap(function: declaration) -> declarations {
+                fn wrapper(@{function.parameters}) -> @{function.return_type} {
+                    return @{as_name(function.name)}(@{function.parameters});
+                }
+            }
+            """);
+
+        var function = Assert.IsType<FunctionNode>(
+            Assert.Single(Assert.Single(program.Macros).Template.DeclarationNodes));
+        var computedParameters = Assert.IsType<PlaceholderExpressionNode>(function.ComputedParameters);
+        Assert.Equal("function.parameters", computedParameters.Expression.ToSourceText());
+        Assert.Empty(function.Parameters);
+
+        var call = Assert.IsType<CallExpressionNode>(
+            Assert.IsType<ReturnStatement>(Assert.Single(function.Body)).Expression);
+        Assert.IsType<PlaceholderExpressionNode>(Assert.Single(call.Arguments));
+    }
+
+    [Fact]
     public void Parse_ParsesProvidedRequirementMetadata()
     {
         var program = CompilerTestHelpers.Parse(

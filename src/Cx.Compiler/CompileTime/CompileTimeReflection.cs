@@ -134,6 +134,8 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             ParameterNode parameter => parameter.TypeNode,
             GlobalVariableNode global => global.TypeNode,
             TypeAliasNode alias => alias.TargetTypeNode,
+            FunctionNode function => function.ReturnTypeNode,
+            ExternFunctionNode function => function.ReturnTypeNode,
             _ => null,
         };
         if (typeNode is null)

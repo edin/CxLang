@@ -1,0 +1,15 @@
+fn add(left: int, right: int) -> int {
+    return left + right;
+}
+
+macro Wrap(function: declaration) -> declarations {
+    fn @{as_name(concat("wrap_", function.name))}(@{function.parameters}) -> @{function.return_type} {
+        return @{as_name(function.name)}(@{function.parameters});
+    }
+}
+
+use Wrap(add);
+
+fn main() -> int {
+    return wrap_add(2, 5) == 7 ? 0 : 1;
+}

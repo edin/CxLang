@@ -1,6 +1,7 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Source;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.CompileTime;
@@ -136,6 +137,30 @@ internal static class CompileTimeObjectProperties
                 : new CompileTimePropertyResult.Missing();
         }
 
+        if (syntax is FunctionNode function)
+        {
+            return GetFunctionProperty(
+                function,
+                function.Parameters,
+                function.IsPublic,
+                function.IsStatic,
+                isExtern: false,
+                name,
+                context);
+        }
+
+        if (syntax is ExternFunctionNode externFunction)
+        {
+            return GetFunctionProperty(
+                externFunction,
+                externFunction.Parameters,
+                externFunction.IsPublic,
+                isStatic: false,
+                isExtern: true,
+                name,
+                context);
+        }
+
         if (syntax is StructNode structNode && name == "fields")
         {
             return CompileTimePropertyResult.From(new CompileTimeValue.List(
@@ -157,6 +182,44 @@ internal static class CompileTimeObjectProperties
         }
 
         return new CompileTimePropertyResult.Missing();
+    }
+
+    private static CompileTimePropertyResult GetFunctionProperty(
+        SyntaxNode function,
+        IReadOnlyList<ParameterNode> parameters,
+        bool isPublic,
+        bool isStatic,
+        bool isExtern,
+        string name,
+        CompileTimePropertyContext context)
+    {
+        CompileTimeValue? property = name switch
+        {
+            "parameters" => new CompileTimeValue.List(
+                parameters.Select(parameter => new CompileTimeValue.Syntax(parameter)).ToList()),
+            "is_public" => new CompileTimeValue.Boolean(isPublic),
+            "is_static" => new CompileTimeValue.Boolean(isStatic),
+            "is_extern" => new CompileTimeValue.Boolean(isExtern),
+            _ => null,
+        };
+        if (property is not null)
+        {
+            return CompileTimePropertyResult.From(property);
+        }
+
+        if (name != "return_type")
+        {
+            return new CompileTimePropertyResult.Missing();
+        }
+
+        if (!EnsureReflection(context))
+        {
+            return new CompileTimePropertyResult.Failed();
+        }
+
+        return context.Reflection.TryGetType(function, out var returnType)
+            ? CompileTimePropertyResult.From(new CompileTimeValue.Type(returnType))
+            : new CompileTimePropertyResult.Missing();
     }
 
     public static CompileTimePropertyResult GetRequirementMatchProperty(
@@ -202,6 +265,7 @@ internal static class CompileTimeObjectProperties
         StructFieldNode field => field.Name,
         StructNode structNode => structNode.Name,
         FunctionNode function => function.Name,
+        ExternFunctionNode function => function.Name,
         ParameterNode parameter => parameter.Name,
         EnumNode enumNode => enumNode.Name,
         EnumMemberNode enumMember => enumMember.Name,

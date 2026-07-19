@@ -407,6 +407,39 @@ public sealed class CompileTimeIntrinsicTests
     }
 
     [Fact]
+    public void FunctionProperties_ExposeSignatureAndDeclarationFlags()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            public extern fn native_call(value: int, ...) -> bool;
+            """);
+        var function = Assert.Single(program.ExternFunctions);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("function", new CompileTimeValue.Syntax(function));
+        var reflection = new ProgramCompileTimeReflection(program);
+
+        var (name, nameDiagnostics) = Evaluate("function.name", context, reflection);
+        var (parameters, parameterDiagnostics) = Evaluate("function.parameters.count", context, reflection);
+        var (returnType, returnTypeDiagnostics) = Evaluate("function.return_type.name", context, reflection);
+        var (isPublic, publicDiagnostics) = Evaluate("function.is_public", context, reflection);
+        var (isStatic, staticDiagnostics) = Evaluate("function.is_static", context, reflection);
+        var (isExtern, externDiagnostics) = Evaluate("function.is_extern", context, reflection);
+
+        Assert.Equal("native_call", Assert.IsType<CompileTimeValue.String>(name).Value);
+        Assert.Equal(2, Assert.IsType<CompileTimeValue.Integer>(parameters).Value);
+        Assert.Equal("bool", Assert.IsType<CompileTimeValue.String>(returnType).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(isPublic).Value);
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(isStatic).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(isExtern).Value);
+        CompilerTestHelpers.AssertNoErrors(nameDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(parameterDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(returnTypeDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(publicDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(staticDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(externDiagnostics);
+    }
+
+    [Fact]
     public void RequirementMatch_ExposesSuccessAndInferredTypeBindingsAsProperties()
     {
         var program = RequirementReflectionProgram();

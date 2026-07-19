@@ -1148,7 +1148,16 @@ public sealed partial class Parser
         string? implicitOwnerType = null,
         IReadOnlyList<AttributeApplicationNode>? attributes = null)
     {
-        var firstNameToken = ExpectIdentifierLike("Expected function name.");
+        PlaceholderExpressionNode? computedName = null;
+        Token? firstNameToken = null;
+        if (Check(TokenType.At) && PeekType() == TokenType.LBrace)
+        {
+            computedName = ParseComputedFunctionName();
+        }
+        else
+        {
+            firstNameToken = ExpectIdentifierLike("Expected function name.");
+        }
         string? ownerType = implicitOwnerType;
         var functionName = firstNameToken?.Value ?? string.Empty;
 
@@ -1159,12 +1168,10 @@ public sealed partial class Parser
         }
 
         var typeParameters = ParseOptionalTypeParameters();
-        var parameters = ParseParameterList(
-            allowVariadic: false,
-            openMessage: "Expected '(' after function name.",
-            closeMessage: "Expected ')' after function parameters.");
+        var (parameters, computedParameters) = ParseFunctionParameterList();
         if (!isStatic
             && ownerType is not null
+            && computedParameters is null
             && !HasExplicitReceiverParameter(ownerType, parameters.FirstOrDefault()))
         {
             var selfTypeNode = TypeNode.Pointer(fnLocation, new NamedTypeSyntaxNode("Self"));
@@ -1187,7 +1194,56 @@ public sealed partial class Parser
             Body: body,
             Attributes: attributes ?? [],
             ReturnTypeNode: returnTypeNode,
-            OwnerTypeNode: ownerType is null ? null : TypeNode.Named(fnLocation, ownerType));
+            OwnerTypeNode: ownerType is null ? null : TypeNode.Named(fnLocation, ownerType),
+            ComputedName: computedName,
+            ComputedParameters: computedParameters);
+    }
+
+    private (List<ParameterNode> Parameters, PlaceholderExpressionNode? ComputedParameters)
+        ParseFunctionParameterList()
+    {
+        Expect(TokenType.LParen, "Expected '(' after function name.");
+        if (Check(TokenType.At) && PeekType() == TokenType.LBrace)
+        {
+            var computedParameters = ParsePlaceholder(
+                "Expected compile-time expression inside computed parameter list placeholder.",
+                "Expected '}' after computed parameter list expression.");
+            Expect(TokenType.RParen, "Expected ')' after computed function parameters.");
+            return ([], computedParameters);
+        }
+
+        var parameters = ParseParametersAfterOpen(allowVariadic: false);
+        Expect(TokenType.RParen, "Expected ')' after function parameters.");
+        return (parameters, null);
+    }
+
+    private PlaceholderExpressionNode ParseComputedFunctionName()
+        => ParsePlaceholder(
+            "Expected compile-time expression inside computed function name placeholder.",
+            "Expected '}' after computed function name expression.");
+
+    private PlaceholderExpressionNode ParsePlaceholder(string emptyMessage, string closeMessage)
+    {
+        var at = Advance();
+        Advance(); // '{'
+        var expressionTokens = Tokens.ReadBalancedUntil(TokenType.RBrace);
+        var close = Expect(TokenType.RBrace, closeMessage);
+        var expression = expressionTokens.Count == 0
+            ? null
+            : ExpressionTokenParser.TryParse(new TokenSlice(expressionTokens[0].Location, expressionTokens));
+        if (expression is null)
+        {
+            _diagnostics.Report(at.Location, emptyMessage);
+            expression = new ErrorExpressionNode(at.Location);
+        }
+
+        var placeholder = new PlaceholderExpressionNode(at.Location, expression);
+        if (close is not null)
+        {
+            placeholder.Span = SourceSpan.FromBounds(at.Span, close.Span);
+        }
+
+        return placeholder;
     }
 
     private static bool HasExplicitReceiverParameter(string ownerType, ParameterNode? parameter)
@@ -1745,7 +1801,13 @@ public sealed partial class Parser
         string closeMessage)
     {
         Expect(TokenType.LParen, openMessage);
+        var parameters = ParseParametersAfterOpen(allowVariadic);
+        Expect(TokenType.RParen, closeMessage);
+        return parameters;
+    }
 
+    private List<ParameterNode> ParseParametersAfterOpen(bool allowVariadic)
+    {
         var parameters = new List<ParameterNode>();
         if (!Check(TokenType.RParen))
         {
@@ -1761,7 +1823,6 @@ public sealed partial class Parser
         }
 
         ValidateVariadicParameter(parameters);
-        Expect(TokenType.RParen, closeMessage);
         return parameters;
     }
 

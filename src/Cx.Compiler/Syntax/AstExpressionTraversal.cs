@@ -16,6 +16,22 @@ internal static class AstExpressionTraversal
 
         foreach (var function in program.Functions)
         {
+            if (function.ComputedName is not null)
+            {
+                foreach (var expression in Enumerate(function.ComputedName))
+                {
+                    yield return expression;
+                }
+            }
+
+            if (function.ComputedParameters is not null)
+            {
+                foreach (var expression in Enumerate(function.ComputedParameters))
+                {
+                    yield return expression;
+                }
+            }
+
             foreach (var expression in Enumerate(function.Body))
             {
                 yield return expression;
@@ -26,6 +42,22 @@ internal static class AstExpressionTraversal
             .Concat(program.Extensions.SelectMany(node => node.Methods))
             .Concat(program.TaggedUnions.SelectMany(node => node.Methods)))
         {
+            if (function.ComputedName is not null)
+            {
+                foreach (var expression in Enumerate(function.ComputedName))
+                {
+                    yield return expression;
+                }
+            }
+
+            if (function.ComputedParameters is not null)
+            {
+                foreach (var expression in Enumerate(function.ComputedParameters))
+                {
+                    yield return expression;
+                }
+            }
+
             foreach (var expression in Enumerate(function.Body))
             {
                 yield return expression;

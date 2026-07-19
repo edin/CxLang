@@ -12,7 +12,9 @@ public sealed record FunctionNode(
     IReadOnlyList<StatementNode> Body,
     IReadOnlyList<AttributeApplicationNode> Attributes,
     TypeNode? ReturnTypeNode = null,
-    TypeNode? OwnerTypeNode = null) : TopLevelNode(Location)
+    TypeNode? OwnerTypeNode = null,
+    PlaceholderExpressionNode? ComputedName = null,
+    PlaceholderExpressionNode? ComputedParameters = null) : TopLevelNode(Location)
 {
     public IReadOnlyList<TypeNode> TypeArgumentNodes { get; init; } = [];
 }

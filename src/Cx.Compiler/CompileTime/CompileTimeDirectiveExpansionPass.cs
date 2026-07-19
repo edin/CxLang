@@ -36,6 +36,135 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     protected override MacroDeclarationNode RewriteMacroDeclaration(MacroDeclarationNode macro) =>
         macro;
 
+    protected override FunctionNode RewriteFunction(FunctionNode function)
+    {
+        var resolved = ResolveComputedFunctionName(function);
+        resolved = ResolveComputedFunctionParameters(resolved);
+        return base.RewriteFunction(resolved);
+    }
+
+    private FunctionNode ResolveComputedFunctionName(FunctionNode function)
+    {
+        if (function.ComputedName is null)
+        {
+            return function;
+        }
+
+        var value = _evaluator.Evaluate(function.ComputedName.Expression, _context);
+        var name = value switch
+        {
+            CompileTimeValue.Name named => named.Value,
+            CompileTimeValue.String text => text.Value,
+            _ => null,
+        };
+        if (name is null)
+        {
+            if (value is not null)
+            {
+                _diagnostics.Report(
+                    function.ComputedName.Location,
+                    $"Computed function name must evaluate to a name or string, but found {CompileTimeValueFacts.Describe(value)}.");
+            }
+
+            return function;
+        }
+
+        if (!IsIdentifier(name))
+        {
+            _diagnostics.Report(
+                function.ComputedName.Location,
+                $"Computed function name '{name}' is not a valid identifier.");
+            return function;
+        }
+
+        return SyntaxNode.CloneMetadata(
+            function,
+            function with
+            {
+                Name = name,
+                ComputedName = null,
+            });
+    }
+
+    private FunctionNode ResolveComputedFunctionParameters(FunctionNode function)
+    {
+        if (function.ComputedParameters is null)
+        {
+            return function;
+        }
+
+        var value = _evaluator.Evaluate(function.ComputedParameters.Expression, _context);
+        if (value is not CompileTimeValue.List list)
+        {
+            if (value is not null)
+            {
+                _diagnostics.Report(
+                    function.ComputedParameters.Location,
+                    $"Computed function parameters must evaluate to a list of parameter declarations, but found {CompileTimeValueFacts.Describe(value)}.");
+            }
+
+            return function;
+        }
+
+        var parameters = new List<ParameterNode>(list.Values.Count + 1);
+        foreach (var item in list.Values)
+        {
+            if (item is not CompileTimeValue.Syntax { Value: ParameterNode parameter })
+            {
+                _diagnostics.Report(
+                    function.ComputedParameters.Location,
+                    $"Computed function parameter list items must be parameter declarations, but found {CompileTimeValueFacts.Describe(item)}.");
+                continue;
+            }
+
+            if (parameter.IsVariadic)
+            {
+                _diagnostics.Report(
+                    function.ComputedParameters.Location,
+                    "Computed function parameter lists do not support variadic parameters yet.");
+                continue;
+            }
+
+            parameters.Add(CloneParameter(parameter));
+        }
+
+        if (!function.IsStatic
+            && function.OwnerTypeNode is not null
+            && parameters.FirstOrDefault()?.Name != "self")
+        {
+            parameters.Insert(0, new ParameterNode(
+                function.Location,
+                "self",
+                [],
+                TypeNode: TypeNode.Pointer(function.Location, new NamedTypeSyntaxNode("Self"))));
+        }
+
+        return SyntaxNode.CloneMetadata(
+            function,
+            function with
+            {
+                Parameters = parameters,
+                ComputedParameters = null,
+            });
+    }
+
+    protected override ExpressionNode RewriteCallExpression(CallExpressionNode call)
+    {
+        if (call.Arguments is not [PlaceholderExpressionNode placeholder])
+        {
+            return base.RewriteCallExpression(call);
+        }
+
+        var value = _evaluator.Evaluate(placeholder.Expression, _context);
+        if (value is not CompileTimeValue.List list)
+        {
+            return base.RewriteCallExpression(call);
+        }
+
+        var arguments = list.Values.Select(item => ToCallArgument(placeholder, item)).ToList();
+        return base.RewriteCallExpression(call with { Arguments = arguments });
+    }
+
     protected override IReadOnlyList<StatementNode> RewriteStatement(StatementNode statement) =>
         statement switch
         {
@@ -179,6 +308,50 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         }
 
         return SyntaxNode.CloneMetadata(placeholder, expression);
+    }
+
+    private ExpressionNode ToCallArgument(PlaceholderExpressionNode placeholder, CompileTimeValue value)
+    {
+        ExpressionNode? expression = value switch
+        {
+            CompileTimeValue.Name name => new NameExpressionNode(placeholder.Location, name.Value),
+            CompileTimeValue.Syntax { Value: ParameterNode parameter } when !parameter.IsVariadic =>
+                new NameExpressionNode(placeholder.Location, parameter.Name),
+            CompileTimeValue.Syntax { Value: ExpressionNode syntaxExpression } => syntaxExpression with { },
+            _ => null,
+        };
+        if (expression is not null)
+        {
+            return SyntaxNode.CloneMetadata(placeholder, expression);
+        }
+
+        _diagnostics.Report(
+            placeholder.Location,
+            $"Call argument list items must be names, parameters, or expressions, but found {CompileTimeValueFacts.Describe(value)}.");
+        return SyntaxNode.CloneMetadata(placeholder, new ErrorExpressionNode(placeholder.Location));
+    }
+
+    private static ParameterNode CloneParameter(ParameterNode parameter)
+    {
+        var type = parameter.TypeNode is null
+            ? null
+            : SyntaxNode.CloneMetadata(parameter.TypeNode, parameter.TypeNode with { });
+        var attributes = parameter.Attributes.Select(attribute =>
+            SyntaxNode.CloneMetadata(attribute, attribute with
+            {
+                Arguments = attribute.Arguments.Select(argument =>
+                    SyntaxNode.CloneMetadata(argument, argument with
+                    {
+                        Value = SyntaxNode.CloneMetadata(argument.Value, argument.Value with { }),
+                    })).ToList(),
+            })).ToList();
+        return SyntaxNode.CloneMetadata(
+            parameter,
+            parameter with
+            {
+                TypeNode = type,
+                Attributes = attributes,
+            });
     }
 
     private static bool IsIdentifier(string value) =>

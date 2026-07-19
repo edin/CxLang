@@ -97,6 +97,18 @@ internal abstract class AstRewriter
     protected virtual FunctionNode RewriteFunction(FunctionNode function) =>
         function with
         {
+            ComputedName = function.ComputedName is null
+                ? null
+                : function.ComputedName with
+                {
+                    Expression = RewriteRequiredExpression(function.ComputedName.Expression),
+                },
+            ComputedParameters = function.ComputedParameters is null
+                ? null
+                : function.ComputedParameters with
+                {
+                    Expression = RewriteRequiredExpression(function.ComputedParameters.Expression),
+                },
             GenericConstraints = RewriteGenericConstraints(function.GenericConstraints),
             Parameters = RewriteParameters(function.Parameters),
             Body = RewriteStatements(function.Body),

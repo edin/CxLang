@@ -433,4 +433,113 @@ public sealed class MacroExpansionPassTests
             "Macro 'BrokenDebug' claims that 'User' provides 'Debug'",
             "Missing function 'write_debug'");
     }
+
+    [Fact]
+    public void CompileToC_DeclarationArgumentGeneratesTypedFunctionWrapper()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn add(left: int, right: int) -> int {
+                return left + right;
+            }
+
+            macro Wrap(function: declaration) -> declarations {
+                fn @{as_name(concat("wrap_", function.name))}(@{function.parameters}) -> @{function.return_type} {
+                    return @{as_name(function.name)}(@{function.parameters});
+                }
+            }
+
+            use Wrap(add);
+
+            fn main() -> int {
+                return wrap_add(2, 5) == 7 ? 0 : 1;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("wrap_add", result.Output!, StringComparison.Ordinal);
+        Assert.Contains("add(left, right)", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExpandProgram_ReportsInvalidComputedFunctionParameters()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro Generate(value: expression) -> declarations {
+                fn generated(@{value}) -> int {
+                    return 0;
+                }
+            }
+
+            use Generate(1);
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        _ = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "must evaluate to a list of parameter declarations",
+                StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("1", "must evaluate to a name or string")]
+    [InlineData("\"not valid\"", "is not a valid identifier")]
+    public void ExpandProgram_ReportsInvalidComputedFunctionName(string expression, string expectedDiagnostic)
+    {
+        var program = CompilerTestHelpers.Parse(
+            $$"""
+            macro Generate() -> declarations {
+                fn @{{{expression}}}() -> int {
+                    return 0;
+                }
+            }
+
+            use Generate();
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        _ = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(expectedDiagnostic, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ExpandProgram_ReportsInvalidUnknownAndAmbiguousDeclarationArguments()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn duplicate() -> int {
+                return 1;
+            }
+
+            extern fn duplicate() -> int;
+
+            macro Inspect(item: declaration) -> declarations {
+            }
+
+            use Inspect(1);
+            use Inspect(missing);
+            use Inspect(duplicate);
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        _ = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "expects a named function declaration argument",
+                StringComparison.Ordinal));
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "could not resolve function declaration 'missing'",
+                StringComparison.Ordinal));
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "found 2 function declarations named 'duplicate'",
+                StringComparison.Ordinal));
+    }
 }

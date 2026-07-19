@@ -102,6 +102,21 @@ public sealed class PlaceholderExpressionTests
             "Compile-time placeholders are only valid inside macro templates");
     }
 
+    [Fact]
+    public void CompileToC_RejectsComputedFunctionNameOutsideMacroTemplate()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn @{as_name("generated")}() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Compile-time placeholders are only valid inside macro templates");
+    }
+
     private sealed class RenameRewriter : AstRewriter
     {
         protected override ExpressionNode RewriteNameExpression(NameExpressionNode name) =>
