@@ -49,12 +49,21 @@ internal abstract class AstRewriter
             TaggedUnionNode union => [RewriteTaggedUnion(union)],
             GlobalVariableNode global => [RewriteGlobalVariable(global)],
             FunctionNode function => [RewriteFunction(function)],
+            CompileTimeScriptDeclarationNode script => RewriteCompileTimeScriptDeclaration(script),
             MacroDeclarationNode macro => [RewriteMacroDeclaration(macro)],
             MacroInvocationDeclarationNode invocation => [RewriteMacroInvocationDeclaration(invocation)],
             TestNode test => [RewriteTest(test)],
             ExternFunctionNode externFunction => [RewriteExternFunction(externFunction)],
             _ => [node],
         };
+
+    protected virtual IReadOnlyList<TopLevelNode> RewriteCompileTimeScriptDeclaration(
+        CompileTimeScriptDeclarationNode script) =>
+        RewriteStatement(script.Statement)
+            .Select(statement => (TopLevelNode)SyntaxNode.CloneMetadata(
+                script,
+                script with { Statement = statement }))
+            .ToList();
 
     protected virtual CDeclareNode RewriteCDeclare(CDeclareNode cDeclare) =>
         cDeclare with { Members = cDeclare.Members.Select(RewriteCDeclareMember).ToList() };
@@ -353,6 +362,7 @@ internal abstract class AstRewriter
             BinaryExpressionNode binary => RewriteBinaryExpression(binary),
             ConditionalExpressionNode conditional => RewriteConditionalExpression(conditional),
             ScalarRangeExpressionNode range => RewriteScalarRangeExpression(range),
+            ListExpressionNode list => RewriteListExpression(list),
             InitializerExpressionNode initializer => RewriteInitializerExpression(initializer),
             FunctionExpressionNode function => RewriteFunctionExpression(function),
             AssignmentExpressionNode assignment => RewriteAssignmentExpression(assignment),
@@ -416,6 +426,9 @@ internal abstract class AstRewriter
             Start = RewriteRequiredExpression(range.Start),
             End = RewriteRequiredExpression(range.End),
         };
+
+    protected virtual ExpressionNode RewriteListExpression(ListExpressionNode list) =>
+        list with { Elements = list.Elements.Select(RewriteRequiredExpression).ToList() };
 
     protected virtual ExpressionNode RewriteInitializerExpression(InitializerExpressionNode initializer) =>
         initializer with

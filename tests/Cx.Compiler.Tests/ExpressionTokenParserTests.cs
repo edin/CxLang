@@ -315,6 +315,18 @@ public sealed class ExpressionTokenParserTests
     }
 
     [Fact]
+    public void ParseExpression_ParsesDedicatedListExpression()
+    {
+        var expression = CompilerTestHelpers.ParseTokenExpression("[1, [2, 3]]");
+
+        var list = Assert.IsType<ListExpressionNode>(expression);
+        Assert.Equal(2, list.Elements.Count);
+        Assert.IsType<LiteralExpressionNode>(list.Elements[0]);
+        Assert.IsType<ListExpressionNode>(list.Elements[1]);
+        Assert.Equal("[1, [2, 3]]", list.ToSourceText());
+    }
+
+    [Fact]
     public void ParseExpression_ParsesNestedInitializerFieldsFromTokens()
     {
         var expression = CompilerTestHelpers.ParseTokenExpression("Box<Vec<int>> { value: Vec<int> { data: null, length: 0 } }");

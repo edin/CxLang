@@ -9,13 +9,15 @@ public sealed class AttributeSemanticTests
             """
             attribute metadata on field {
                 aliases: list<string>;
+                groups: list<list<string>>;
                 enabled: bool;
                 generated_name: name;
             }
 
             struct Item {
                 @metadata(
-                    aliases: { "id", "identifier", "item_id" },
+                    aliases: ["id", "identifier", "item_id"],
+                    groups: [["core", "public"], ["generated"]],
                     enabled: true,
                     generated_name: as_name(concat("get_", "value"))
                 )
@@ -40,10 +42,10 @@ public sealed class AttributeSemanticTests
             }
 
             struct Item {
-                @aliases({ "one" })
+                @aliases(["one"])
                 first: int;
 
-                @aliases({ "one", "two", "three" })
+                @aliases(["one", "two", "three"])
                 second: int;
             }
 
@@ -65,7 +67,7 @@ public sealed class AttributeSemanticTests
             }
 
             struct Item {
-                @aliases({ "one", 2 })
+                @aliases(["one", 2])
                 value: int;
             }
 

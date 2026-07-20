@@ -188,6 +188,12 @@ internal static class AstExpressionTraversal
                 foreach (var child in Enumerate(conditional.WhenTrue)) yield return child;
                 foreach (var child in Enumerate(conditional.WhenFalse)) yield return child;
                 break;
+            case ListExpressionNode list:
+                foreach (var element in list.Elements)
+                {
+                    foreach (var child in Enumerate(element)) yield return child;
+                }
+                break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)
                 {

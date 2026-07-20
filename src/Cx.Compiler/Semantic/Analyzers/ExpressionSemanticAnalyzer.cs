@@ -67,6 +67,15 @@ internal sealed class ExpressionSemanticAnalyzer(
                 Analyze(conditional.WhenTrue, location, typeEnvironment, mutability);
                 Analyze(conditional.WhenFalse, location, typeEnvironment, mutability);
                 break;
+            case ListExpressionNode list:
+                diagnostics.Report(
+                    list.Location,
+                    "List expressions are only valid during compile-time evaluation.");
+                foreach (var element in list.Elements)
+                {
+                    Analyze(element, location, typeEnvironment, mutability);
+                }
+                break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)
                 {

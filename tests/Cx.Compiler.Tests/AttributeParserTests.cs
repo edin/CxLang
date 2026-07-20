@@ -80,4 +80,21 @@ public sealed class AttributeParserTests
         Assert.Equal("make_pair(\"a:b\", 1)", call.ToSourceText());
         Assert.NotNull(argument.Span);
     }
+
+    [Fact]
+    public void ParseAttributeApplication_UsesListExpressionForListMetadata()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            @meta(groups: [["core", "public"], ["generated"]])
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        var value = Assert.Single(program.Functions.Single().Attributes.Single().Arguments).Value;
+        var groups = Assert.IsType<ListExpressionNode>(value);
+        Assert.Equal(2, groups.Elements.Count);
+        Assert.All(groups.Elements, element => Assert.IsType<ListExpressionNode>(element));
+    }
 }

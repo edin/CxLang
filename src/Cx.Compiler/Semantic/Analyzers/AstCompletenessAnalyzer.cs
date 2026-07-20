@@ -179,6 +179,12 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
                 AnalyzeExpression(conditional.WhenTrue);
                 AnalyzeExpression(conditional.WhenFalse);
                 break;
+            case ListExpressionNode list:
+                foreach (var element in list.Elements)
+                {
+                    AnalyzeExpression(element);
+                }
+                break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)
                 {

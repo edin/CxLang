@@ -48,14 +48,25 @@ internal abstract record CompileTimeValue
             CompileTimeObjectProperties.GetRequirementMatchProperty(this, name, context);
     }
 
-    public sealed record List(IReadOnlyList<CompileTimeValue> Values) : CompileTimeObjectValue
+    public sealed record List : CompileTimeObjectValue
     {
+        private readonly System.Collections.Generic.List<CompileTimeValue> _values;
+
+        public List(IEnumerable<CompileTimeValue> values)
+        {
+            _values = values.ToList();
+        }
+
+        public IReadOnlyList<CompileTimeValue> Values => _values;
+
         public override string DisplayType => "list";
 
         public override CompileTimePropertyResult GetProperty(
             string name,
             CompileTimePropertyContext context) =>
             CompileTimeObjectProperties.GetListProperty(this, name, context);
+
+        internal void Add(CompileTimeValue value) => _values.Add(value);
     }
 }
 

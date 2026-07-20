@@ -39,7 +39,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
         var program = CompilerTestHelpers.Parse(
             """
             fn main() -> int {
-                @foreach(item in { 1, 2, 3 }) {
+                @foreach(item in [1, 2, 3]) {
                     @if(item > 1) {
                         emit();
                     }
@@ -250,7 +250,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
         var program = CompilerTestHelpers.Parse(
             """
             declare "sample.h" {
-                @foreach(library in { "first", "second" }) {
+                @foreach(library in ["first", "second"]) {
                     @if(library == "second") {
                         link "selected";
                     }
@@ -303,6 +303,33 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             diagnostic.Message.Contains(
                 "Compile-time @if condition must evaluate to a boolean value",
                 StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ExpandProgram_ExecutesCompileTimeObjectMethodStatements()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn generated() -> int {
+                @let values = [];
+                values.add(1);
+                @foreach(value in [2, 3]) {
+                    values.add(value);
+                }
+                @if(values.count == 3) {
+                    emit();
+                }
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(2, body.Count);
+        Assert.Equal("emit()", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[1]);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 
     private static (ProgramNode Program, DiagnosticBag Diagnostics) Expand(

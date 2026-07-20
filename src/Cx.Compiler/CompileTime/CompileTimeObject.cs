@@ -12,6 +12,11 @@ internal sealed record CompileTimePropertyContext(
     DiagnosticBag Diagnostics,
     Func<ExpressionNode, CompileTimeValue?> Evaluate);
 
+internal sealed record CompileTimeMethodContext(
+    Location Location,
+    ICompileTimeReflection Reflection,
+    DiagnosticBag Diagnostics);
+
 internal abstract record CompileTimePropertyResult
 {
     public sealed record Found(CompileTimeValue Value) : CompileTimePropertyResult;
@@ -21,6 +26,17 @@ internal abstract record CompileTimePropertyResult
     public sealed record Failed : CompileTimePropertyResult;
 
     public static CompileTimePropertyResult From(CompileTimeValue value) => new Found(value);
+}
+
+internal abstract record CompileTimeMethodResult
+{
+    public sealed record Invoked(CompileTimeValue Value) : CompileTimeMethodResult;
+
+    public sealed record Missing : CompileTimeMethodResult;
+
+    public sealed record Failed : CompileTimeMethodResult;
+
+    public static CompileTimeMethodResult From(CompileTimeValue value) => new Invoked(value);
 }
 
 internal static class CompileTimeObjectProperties

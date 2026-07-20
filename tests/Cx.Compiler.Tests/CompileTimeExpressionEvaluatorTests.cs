@@ -1,6 +1,7 @@
 using Cx.Compiler.CompileTime;
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
 
@@ -62,7 +63,7 @@ public sealed class CompileTimeExpressionEvaluatorTests
     [Fact]
     public void Evaluate_ReturnsVariableLengthCompileTimeList()
     {
-        var (value, diagnostics) = Evaluate("{ 1, 2, 3 }");
+        var (value, diagnostics) = Evaluate("[1, 2, 3]");
 
         var values = Assert.IsType<CompileTimeValue.List>(value).Values;
         Assert.Equal([1L, 2L, 3L], values.Select(item =>
@@ -189,6 +190,208 @@ public sealed class CompileTimeExpressionEvaluatorTests
         Assert.Null(value);
         var diagnostic = Assert.Single(diagnostics.Diagnostics);
         Assert.Contains("Sample property failed", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EvaluateMethod_ListAddMutatesCompileTimeListAndReturnsReceiver()
+    {
+        var context = new CompileTimeEvaluationContext();
+        var list = new CompileTimeValue.List([]);
+        context.Define("values", list);
+
+        var (result, diagnostics) = Evaluate("values.add(42)", context);
+
+        Assert.Same(list, result);
+        Assert.Equal(42, Assert.IsType<CompileTimeValue.Integer>(Assert.Single(list.Values)).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void EvaluateMethod_ReportsMissingObjectMethod()
+    {
+        var context = new CompileTimeEvaluationContext();
+        context.Define("values", new CompileTimeValue.List([]));
+
+        var (result, diagnostics) = Evaluate("values.missing()", context);
+
+        Assert.Null(result);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "Compile-time list value does not have method 'missing'",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EvaluateMethod_ParameterCreateBuildsTypedParameterSyntax()
+    {
+        var (result, diagnostics) = Evaluate("Parameter.create(\"value\", int)");
+
+        var parameter = Assert.IsType<ParameterNode>(
+            Assert.IsType<CompileTimeValue.Syntax>(result).Value);
+        Assert.Equal("value", parameter.Name);
+        Assert.Equal("int", parameter.TypeNode.ToSourceText());
+        Assert.Empty(parameter.Attributes);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void EvaluateMethod_ParameterCreateAcceptsAttributeSyntaxList()
+    {
+        var context = new CompileTimeEvaluationContext();
+        var attribute = new AttributeApplicationNode(
+            Cx.Compiler.Source.Location.Synthetic("<test>"),
+            "export",
+            []);
+        context.Define("attributes", new CompileTimeValue.List([
+            new CompileTimeValue.Syntax(attribute),
+        ]));
+
+        var (result, diagnostics) = Evaluate(
+            "Parameter.create(as_name(\"context\"), int, attributes)",
+            context);
+
+        var parameter = Assert.IsType<ParameterNode>(
+            Assert.IsType<CompileTimeValue.Syntax>(result).Value);
+        Assert.Equal("context", parameter.Name);
+        Assert.Same(attribute, Assert.Single(parameter.Attributes));
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void EvaluateMethod_ParameterCreateReportsInvalidArguments()
+    {
+        var (result, diagnostics) = Evaluate("Parameter.create(1, true)");
+
+        Assert.Null(result);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "expects a string or name as argument 1",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EvaluateMethod_AttributeArgumentAndAttributeCreateBuildTypedSyntax()
+    {
+        var (result, diagnostics) = Evaluate(
+            "Attribute.create(\"binding_name\", [AttributeArgument.named(\"value\", \"native_context\")])");
+
+        var attribute = Assert.IsType<AttributeApplicationNode>(
+            Assert.IsType<CompileTimeValue.Syntax>(result).Value);
+        Assert.Equal("binding_name", attribute.Name);
+        var argument = Assert.Single(attribute.Arguments);
+        Assert.Equal("value", argument.Name);
+        Assert.Equal("\"native_context\"", argument.Value.ToSourceText());
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void EvaluateMethod_AttributeCreateComposesWithParameterCreate()
+    {
+        var (result, diagnostics) = Evaluate(
+            """
+            Parameter.create("context", int, [
+                Attribute.create("binding_name", [
+                    AttributeArgument.positional("native_context")
+                ])
+            ])
+            """);
+
+        var parameter = Assert.IsType<ParameterNode>(
+            Assert.IsType<CompileTimeValue.Syntax>(result).Value);
+        var attribute = Assert.Single(parameter.Attributes);
+        Assert.Equal("binding_name", attribute.Name);
+        Assert.Null(Assert.Single(attribute.Arguments).Name);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void EvaluateMethod_ParameterTransformationsReturnModifiedCopies()
+    {
+        var context = new CompileTimeEvaluationContext();
+        var source = new ParameterNode(
+            Cx.Compiler.Source.Location.Synthetic("<test>"),
+            "value",
+            [],
+            TypeNode: TypeNode.Named(Cx.Compiler.Source.Location.Synthetic("<test>"), "int"));
+        context.Define("parameter", new CompileTimeValue.Syntax(source));
+
+        var (result, diagnostics) = Evaluate(
+            "parameter.with_name(as_name(\"renamed\")).with_type(usize)",
+            context);
+
+        var transformed = Assert.IsType<ParameterNode>(
+            Assert.IsType<CompileTimeValue.Syntax>(result).Value);
+        Assert.Equal("renamed", transformed.Name);
+        Assert.Equal("usize", transformed.TypeNode.ToSourceText());
+        Assert.Equal("value", source.Name);
+        Assert.Equal("int", source.TypeNode.ToSourceText());
+        Assert.NotSame(source, transformed);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void EvaluateMethod_ParameterTransformationReportsWrongValueKind()
+    {
+        var context = new CompileTimeEvaluationContext();
+        context.Define("parameter", new CompileTimeValue.Syntax(new ParameterNode(
+            Cx.Compiler.Source.Location.Synthetic("<test>"),
+            "value",
+            [])));
+
+        var (result, diagnostics) = Evaluate("parameter.with_type(true)", context);
+
+        Assert.Null(result);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "parameter.with_type' expects a type",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EvaluateMethod_ParameterAttributeTransformationsReturnModifiedCopies()
+    {
+        var location = Cx.Compiler.Source.Location.Synthetic("<test>");
+        var sourceAttribute = new AttributeApplicationNode(location, "source", []);
+        var source = new ParameterNode(
+            location,
+            "value",
+            [sourceAttribute],
+            TypeNode: TypeNode.Named(location, "int"));
+        var context = new CompileTimeEvaluationContext();
+        context.Define("parameter", new CompileTimeValue.Syntax(source));
+
+        var (result, diagnostics) = Evaluate(
+            """
+            parameter
+                .with_attributes([Attribute.create("replacement")])
+                .add_attribute(Attribute.create("extra"))
+            """,
+            context);
+
+        var transformed = Assert.IsType<ParameterNode>(
+            Assert.IsType<CompileTimeValue.Syntax>(result).Value);
+        Assert.Equal(["replacement", "extra"], transformed.Attributes.Select(attribute => attribute.Name));
+        Assert.Same(sourceAttribute, Assert.Single(source.Attributes));
+        Assert.NotSame(source, transformed);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void EvaluateMethod_ParameterWithAttributesRejectsNonAttributeItems()
+    {
+        var context = new CompileTimeEvaluationContext();
+        context.Define("parameter", new CompileTimeValue.Syntax(new ParameterNode(
+            Cx.Compiler.Source.Location.Synthetic("<test>"),
+            "value",
+            [])));
+
+        var (result, diagnostics) = Evaluate("parameter.with_attributes([1])", context);
+
+        Assert.Null(result);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "expects attribute syntax items",
+                StringComparison.Ordinal));
     }
 
     private static (CompileTimeValue? Value, DiagnosticBag Diagnostics) Evaluate(

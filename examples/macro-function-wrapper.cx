@@ -3,7 +3,13 @@ fn add(left: int, right: int) -> int {
 }
 
 macro Wrap(function: declaration) -> declarations {
-    fn @{as_name(concat("wrap_", function.name))}(@{function.parameters}) -> @{function.return_type} {
+    @let parameters = [];
+    parameters.add(Parameter.create("context", int));
+    @foreach(parameter in function.parameters) {
+        parameters.add(parameter);
+    }
+
+    fn @{as_name(concat("wrap_", function.name))}(@{parameters}) -> @{function.return_type} {
         return @{as_name(function.name)}(@{function.parameters});
     }
 }
@@ -11,5 +17,5 @@ macro Wrap(function: declaration) -> declarations {
 use Wrap(add);
 
 fn main() -> int {
-    return wrap_add(2, 5) == 7 ? 0 : 1;
+    return wrap_add(0, 2, 5) == 7 ? 0 : 1;
 }

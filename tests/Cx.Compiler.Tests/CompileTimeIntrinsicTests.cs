@@ -248,7 +248,7 @@ public sealed class CompileTimeIntrinsicTests
     {
         var program = CompilerTestHelpers.Parse(
             """
-            @aliases({ "first", "second", "third" })
+            @aliases(["first", "second", "third"])
             fn sample() -> int {
                 return 0;
             }

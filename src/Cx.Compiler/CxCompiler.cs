@@ -146,6 +146,17 @@ public sealed class CxCompiler
             return (null, diagnostics);
         }
 
+        foreach (var list in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<ListExpressionNode>())
+        {
+            diagnostics.Report(
+                list.Location,
+                "List expressions are only valid during compile-time evaluation.");
+        }
+        if (diagnostics.HasErrors)
+        {
+            return (null, diagnostics);
+        }
+
         var mergedProgram = preSemanticLowering.Lower(mergedInputProgram);
         AnnotateModuleNames(mergedProgram, moduleNamesByPath);
         var semanticModel = new SemanticModel();

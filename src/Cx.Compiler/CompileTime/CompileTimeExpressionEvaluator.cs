@@ -10,16 +10,22 @@ internal sealed class CompileTimeExpressionEvaluator
 {
     private readonly DiagnosticBag _diagnostics;
     private readonly CompileTimeIntrinsicRegistry _intrinsics;
+    private readonly CompileTimeObjectRegistry _objects;
+    private readonly CompileTimeMethodRegistry _methods;
     private readonly ICompileTimeReflection _reflection;
 
     public CompileTimeExpressionEvaluator(
         DiagnosticBag diagnostics,
         CompileTimeIntrinsicRegistry? intrinsics = null,
-        ICompileTimeReflection? reflection = null)
+        ICompileTimeReflection? reflection = null,
+        CompileTimeObjectRegistry? objects = null,
+        CompileTimeMethodRegistry? methods = null)
     {
         _diagnostics = diagnostics;
         _intrinsics = intrinsics ?? CompileTimeIntrinsicRegistry.CreateDefault();
         _reflection = reflection ?? UnavailableCompileTimeReflection.Instance;
+        _objects = objects ?? CompileTimeObjectRegistry.CreateDefault();
+        _methods = methods ?? CompileTimeMethodRegistry.Default;
     }
 
     public CompileTimeValue? Evaluate(
@@ -33,6 +39,7 @@ internal sealed class CompileTimeExpressionEvaluator
             UnaryExpressionNode unary => EvaluateUnary(unary, context),
             BinaryExpressionNode binary => EvaluateBinary(binary, context),
             ConditionalExpressionNode conditional => EvaluateConditional(conditional, context),
+            ListExpressionNode list => EvaluateList(list, context),
             InitializerExpressionNode initializer => EvaluateInitializer(initializer, context),
             CallExpressionNode call => EvaluateCall(call, context),
             MemberExpressionNode member => EvaluateMember(member, context),
@@ -164,6 +171,11 @@ internal sealed class CompileTimeExpressionEvaluator
         if (context.TryGet(name.Name, out var value))
         {
             return value;
+        }
+
+        if (_objects.TryGet(name.Name, out var compileTimeObject))
+        {
+            return compileTimeObject;
         }
 
         if (CompileTimeTypeFacts.TryGetKnownType(name.Name, out var knownType))
@@ -306,10 +318,34 @@ internal sealed class CompileTimeExpressionEvaluator
         return new CompileTimeValue.List(values);
     }
 
+    private CompileTimeValue? EvaluateList(
+        ListExpressionNode list,
+        CompileTimeEvaluationContext context)
+    {
+        var values = new List<CompileTimeValue>(list.Elements.Count);
+        foreach (var element in list.Elements)
+        {
+            var value = Evaluate(element, context);
+            if (value is null)
+            {
+                return null;
+            }
+
+            values.Add(value);
+        }
+
+        return new CompileTimeValue.List(values);
+    }
+
     private CompileTimeValue? EvaluateCall(
         CallExpressionNode call,
         CompileTimeEvaluationContext context)
     {
+        if (call.Callee is MemberExpressionNode member)
+        {
+            return EvaluateMethodCall(call, member, context);
+        }
+
         if (call.Callee is not NameExpressionNode name)
         {
             _diagnostics.Report(
@@ -326,8 +362,71 @@ internal sealed class CompileTimeExpressionEvaluator
             return null;
         }
 
-        var arguments = new List<CompileTimeValue>(call.Arguments.Count);
-        foreach (var argumentExpression in call.Arguments)
+        var arguments = EvaluateArguments(call.Arguments, context);
+        if (arguments is null)
+        {
+            return null;
+        }
+
+        return intrinsic.Invoke(new CompileTimeIntrinsicContext(
+            call.Location,
+            arguments,
+            _reflection,
+            _diagnostics,
+            expression => Evaluate(expression, context)));
+    }
+
+    private CompileTimeValue? EvaluateMethodCall(
+        CallExpressionNode call,
+        MemberExpressionNode member,
+        CompileTimeEvaluationContext context)
+    {
+        var target = Evaluate(member.Target, context);
+        if (target is null)
+        {
+            return null;
+        }
+
+        if (target is not CompileTimeObjectValue objectValue)
+        {
+            _diagnostics.Report(
+                member.Location,
+                $"Compile-time {CompileTimeValueFacts.Describe(target)} value is not object-like and does not have method '{member.MemberName}'.");
+            return null;
+        }
+
+        var arguments = EvaluateArguments(call.Arguments, context);
+        if (arguments is null)
+        {
+            return null;
+        }
+
+        var result = _methods.Invoke(
+            objectValue,
+            member.MemberName,
+            arguments,
+            new CompileTimeMethodContext(call.Location, _reflection, _diagnostics));
+        if (result is CompileTimeMethodResult.Invoked invoked)
+        {
+            return invoked.Value;
+        }
+
+        if (result is CompileTimeMethodResult.Missing)
+        {
+            _diagnostics.Report(
+                member.Location,
+                $"Compile-time {objectValue.DisplayType} value does not have method '{member.MemberName}'.");
+        }
+
+        return null;
+    }
+
+    private List<CompileTimeValue>? EvaluateArguments(
+        IReadOnlyList<ExpressionNode> argumentExpressions,
+        CompileTimeEvaluationContext context)
+    {
+        var arguments = new List<CompileTimeValue>(argumentExpressions.Count);
+        foreach (var argumentExpression in argumentExpressions)
         {
             var argument = Evaluate(argumentExpression, context);
             if (argument is null)
@@ -338,12 +437,7 @@ internal sealed class CompileTimeExpressionEvaluator
             arguments.Add(argument);
         }
 
-        return intrinsic.Invoke(new CompileTimeIntrinsicContext(
-            call.Location,
-            arguments,
-            _reflection,
-            _diagnostics,
-            expression => Evaluate(expression, context)));
+        return arguments;
     }
 
     private CompileTimeValue? Compare(

@@ -6,6 +6,22 @@ namespace Cx.Compiler.Tests;
 public sealed class CompileTimeDirectiveTests
 {
     [Fact]
+    public void Compile_RejectsListExpressionOutsideCompileTimeEvaluation()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let values = [1, 2];
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "List expressions are only valid during compile-time evaluation");
+    }
+
+    [Fact]
     public void Parse_ParsesDedicatedCompileTimeLetNode()
     {
         var program = CompilerTestHelpers.Parse(
@@ -163,7 +179,7 @@ public sealed class CompileTimeDirectiveTests
         var result = CompilerTestHelpers.Compile(
             """
             declare "sample.h" {
-                @foreach(library in { "first", "second" }) {
+                @foreach(library in ["first", "second"]) {
                     @if(library == "second") {
                         link "generated";
                     }

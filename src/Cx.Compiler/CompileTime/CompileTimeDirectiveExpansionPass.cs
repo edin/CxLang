@@ -36,6 +36,20 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     protected override MacroDeclarationNode RewriteMacroDeclaration(MacroDeclarationNode macro) =>
         macro;
 
+    protected override IReadOnlyList<TopLevelNode> RewriteCompileTimeScriptDeclaration(
+        CompileTimeScriptDeclarationNode script)
+    {
+        var remainingStatements = RewriteStatement(script.Statement);
+        if (remainingStatements.Count > 0)
+        {
+            _diagnostics.Report(
+                script.Location,
+                "Declaration macro script statements must evaluate entirely at compile time.");
+        }
+
+        return [];
+    }
+
     protected override FunctionNode RewriteFunction(FunctionNode function)
     {
         var resolved = ResolveComputedFunctionName(function);
@@ -171,8 +185,30 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             CompileTimeLetStatementNode compileTimeLet => ExpandLet(compileTimeLet),
             CompileTimeIfStatementNode conditional => ExpandIf(conditional),
             CompileTimeForeachStatementNode foreachNode => ExpandForeach(foreachNode),
+            CStatement expressionStatement when IsCompileTimeMethodCall(expressionStatement.Expression) =>
+                EvaluateCompileTimeMethodCall(expressionStatement),
             _ => base.RewriteStatement(statement),
         };
+
+    private IReadOnlyList<StatementNode> EvaluateCompileTimeMethodCall(CStatement statement)
+    {
+        _evaluator.Evaluate(statement.Expression, _context);
+        return [];
+    }
+
+    private bool IsCompileTimeMethodCall(ExpressionNode expression) =>
+        expression is CallExpressionNode { Callee: MemberExpressionNode member }
+        && IsCompileTimeBoundExpression(member.Target);
+
+    private bool IsCompileTimeBoundExpression(ExpressionNode expression) => expression switch
+    {
+        NameExpressionNode name => _context.TryGet(name.Name, out _),
+        ParenthesizedExpressionNode parenthesized => IsCompileTimeBoundExpression(parenthesized.Expression),
+        MemberExpressionNode member => IsCompileTimeBoundExpression(member.Target),
+        CallExpressionNode { Callee: MemberExpressionNode member } =>
+            IsCompileTimeBoundExpression(member.Target),
+        _ => false,
+    };
 
     protected override IReadOnlyList<StatementNode> RewriteStatements(
         IReadOnlyList<StatementNode> statements)
@@ -355,9 +391,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     }
 
     private static bool IsIdentifier(string value) =>
-        value.Length > 0
-        && (char.IsLetter(value[0]) || value[0] == '_')
-        && value.Skip(1).All(ch => char.IsLetterOrDigit(ch) || ch == '_');
+        CompileTimeNameFacts.IsIdentifier(value);
 
     private static string QuoteString(string value)
     {

@@ -116,6 +116,35 @@ public sealed class MacroBlockTests
     }
 
     [Fact]
+    public void Parse_WrapsCompileTimeStatementsInsideDeclarationMacro()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro Wrap(function: declaration) -> declarations {
+                @let parameters = [];
+                parameters.add(Parameter.create("context", int));
+                @foreach(parameter in function.parameters) {
+                    parameters.add(parameter);
+                }
+
+                fn wrapper(@{parameters}) -> @{function.return_type} {
+                    return 0;
+                }
+            }
+            """);
+
+        var declarations = Assert.Single(program.Macros).Template.DeclarationNodes;
+        Assert.Equal(4, declarations.Count);
+        Assert.IsType<CompileTimeLetStatementNode>(
+            Assert.IsType<CompileTimeScriptDeclarationNode>(declarations[0]).Statement);
+        Assert.IsType<CStatement>(
+            Assert.IsType<CompileTimeScriptDeclarationNode>(declarations[1]).Statement);
+        Assert.IsType<CompileTimeForeachStatementNode>(
+            Assert.IsType<CompileTimeScriptDeclarationNode>(declarations[2]).Statement);
+        Assert.IsType<FunctionNode>(declarations[3]);
+    }
+
+    [Fact]
     public void Parse_RepresentsComputedFunctionNameAsStructuredPlaceholder()
     {
         var program = CompilerTestHelpers.Parse(

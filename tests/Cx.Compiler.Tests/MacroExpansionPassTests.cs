@@ -462,6 +462,203 @@ public sealed class MacroExpansionPassTests
     }
 
     [Fact]
+    public void CompileToC_ParameterConstructorBuildsGeneratedFunctionSignature()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Parameter {
+                value: int;
+            }
+
+            macro GenerateAdd() -> declarations {
+                fn generated_add(@{[
+                    Parameter.create("left", int),
+                    Parameter.create("right", int)
+                ]}) -> int {
+                    return left + right;
+                }
+            }
+
+            use GenerateAdd();
+
+            fn main() -> int {
+                return generated_add(2, 5) == 7 ? 0 : 1;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("generated_add(int left, int right)", result.Output!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_DeclarationScriptBuildsAndMutatesParameterList()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn add(left: int, right: int) -> int {
+                return left + right;
+            }
+
+            macro WrapWithContext(function: declaration) -> declarations {
+                @let parameters = [];
+                parameters.add(Parameter.create("context", int));
+                @foreach(parameter in function.parameters) {
+                    parameters.add(parameter);
+                }
+
+                fn @{as_name(concat("wrap_", function.name))}(@{parameters}) -> @{function.return_type} {
+                    return @{as_name(function.name)}(@{function.parameters});
+                }
+            }
+
+            use WrapWithContext(add);
+
+            fn main() -> int {
+                return wrap_add(0, 2, 5) == 7 ? 0 : 1;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("wrap_add(int context, int left, int right)", result.Output!, StringComparison.Ordinal);
+        Assert.Contains("add(left, right)", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_ConstructedAttributeCanBeAppliedToConstructedParameter()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            attribute binding_name on parameter {
+                value: string;
+            }
+
+            macro Generate() -> declarations {
+                @let attributes = [
+                    Attribute.create("binding_name", [
+                        AttributeArgument.named("value", "native_context")
+                    ])
+                ];
+                @let parameters = [
+                    Parameter.create("context", int, attributes)
+                ];
+
+                fn generated(@{parameters}) -> int {
+                    return context;
+                }
+            }
+
+            use Generate();
+
+            fn main() -> int {
+                return generated(0);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("generated(int context)", result.Output!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_ReflectedParametersCanBeRenamedAndRetypedImmutably()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn add(left: int, right: int) -> int {
+                return left + right;
+            }
+
+            macro Transform(function: declaration) -> declarations {
+                @let parameters = [];
+                @foreach(parameter in function.parameters) {
+                    parameters.add(
+                        parameter
+                            .with_name(as_name(concat("wrapped_", parameter.name)))
+                            .with_type(usize)
+                    );
+                }
+
+                fn transformed(@{parameters}) -> usize {
+                    return wrapped_left + wrapped_right;
+                }
+            }
+
+            use Transform(add);
+
+            fn main() -> int {
+                return transformed(2, 5) == 7 ? 0 : 1;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("transformed", result.Output!, StringComparison.Ordinal);
+        Assert.Contains("wrapped_left", result.Output, StringComparison.Ordinal);
+        Assert.Contains("wrapped_right", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_ReflectedParameterAttributesCanBeExtendedImmutably()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            attribute source_parameter on parameter;
+            attribute generated_parameter on parameter;
+
+            fn source(@source_parameter value: int) -> int {
+                return value;
+            }
+
+            macro Transform(function: declaration) -> declarations {
+                @let parameters = [];
+                @foreach(parameter in function.parameters) {
+                    parameters.add(
+                        parameter.add_attribute(
+                            Attribute.create("generated_parameter")
+                        )
+                    );
+                }
+
+                fn transformed(@{parameters}) -> int {
+                    return value;
+                }
+            }
+
+            use Transform(source);
+
+            fn main() -> int {
+                return transformed(0);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("transformed(int value)", result.Output!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExpandProgram_RejectsRuntimeStatementInDeclarationScriptPosition()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro Broken() -> declarations {
+                missing.call();
+
+                fn generated() -> int {
+                    return 0;
+                }
+            }
+
+            use Broken();
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        _ = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "must evaluate entirely at compile time",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ExpandProgram_ReportsInvalidComputedFunctionParameters()
     {
         var program = CompilerTestHelpers.Parse(

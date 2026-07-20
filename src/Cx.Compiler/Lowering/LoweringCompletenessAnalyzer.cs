@@ -235,6 +235,15 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                 AnalyzeExpression(conditional.WhenTrue);
                 AnalyzeExpression(conditional.WhenFalse);
                 break;
+            case ListExpressionNode list:
+                diagnostics.Report(
+                    list.Location,
+                    "Internal lowering error: compile-time list expression remains after lowering.");
+                foreach (var element in list.Elements)
+                {
+                    AnalyzeExpression(element);
+                }
+                break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)
                 {

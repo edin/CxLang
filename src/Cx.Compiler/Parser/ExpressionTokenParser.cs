@@ -462,6 +462,11 @@ internal sealed class ExpressionTokenParser
             return sizeOfExpression;
         }
 
+        if (TryParseListExpression(out var listExpression))
+        {
+            return listExpression;
+        }
+
         if (TryParseInitializerExpression(out var initializerExpression))
         {
             return initializerExpression;
@@ -959,6 +964,48 @@ internal sealed class ExpressionTokenParser
             or TokenType.Enum
             or TokenType.Union
             or TokenType.Fn;
+    }
+
+    private bool TryParseListExpression(out ExpressionNode expression)
+    {
+        expression = null!;
+        var position = Save();
+        var openBracket = Match(TokenType.LBracket);
+        if (openBracket is null)
+        {
+            return false;
+        }
+
+        var elements = new List<ExpressionNode>();
+        if (!Check(TokenType.RBracket))
+        {
+            do
+            {
+                if (Check(TokenType.RBracket))
+                {
+                    break;
+                }
+
+                var element = ParseExpression();
+                if (element is null)
+                {
+                    Restore(position);
+                    return false;
+                }
+
+                elements.Add(element);
+            }
+            while (Match(TokenType.Comma) is not null);
+        }
+
+        if (Match(TokenType.RBracket) is null)
+        {
+            Restore(position);
+            return false;
+        }
+
+        expression = new ListExpressionNode(openBracket.Location, elements);
+        return true;
     }
 
     private bool TryParseInitializerExpression(out ExpressionNode expression)

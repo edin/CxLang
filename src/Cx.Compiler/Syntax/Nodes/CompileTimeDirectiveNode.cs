@@ -19,6 +19,10 @@ public sealed record CompileTimeForeachStatementNode(
     ExpressionNode IterableExpression,
     IReadOnlyList<StatementNode> Body) : StatementNode(Location);
 
+public sealed record CompileTimeScriptDeclarationNode(
+    Location Location,
+    StatementNode Statement) : TopLevelNode(Location);
+
 public sealed record CompileTimeIfDeclarationNode(
     Location Location,
     ExpressionNode Condition,

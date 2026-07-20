@@ -411,6 +411,19 @@ public sealed partial class Parser
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
             var declarationStart = Current;
+            if (IsCompileTimeDeclarationScriptStart())
+            {
+                if (ParseStatement() is { } statement)
+                {
+                    AddSpannedNode(
+                        declarations,
+                        new CompileTimeScriptDeclarationNode(statement.Location, statement),
+                        declarationStart);
+                }
+
+                continue;
+            }
+
             var attributes = ParseAttributeApplications();
             var visibility = Match(TokenType.Public) is null
                 ? DeclarationVisibility.Module
@@ -468,6 +481,11 @@ public sealed partial class Parser
         template.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
         return template;
     }
+
+    private bool IsCompileTimeDeclarationScriptStart() =>
+        (Check(TokenType.At)
+            && PeekType() is TokenType.Let or TokenType.If or TokenType.Foreach)
+        || (Check(TokenType.Identifier) && PeekType() == TokenType.Dot);
 
     private MacroInvocationDeclarationNode ParseMacroInvocationDeclaration(Token useToken)
     {
