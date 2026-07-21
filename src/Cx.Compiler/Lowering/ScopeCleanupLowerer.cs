@@ -8,8 +8,10 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
 {
     private readonly List<CleanupBinding> _activeCleanups = [];
     private readonly Stack<ControlTarget> _controlTargets = [];
+    private readonly List<Dictionary<string, CleanupBinding?>> _bindingScopes = [];
     private HashSet<string> _usedNames = new(StringComparer.Ordinal);
     private int _returnTemporaryIndex;
+    private int _replacementTemporaryIndex;
 
     public static ProgramNode Lower(ProgramNode program) =>
         new ScopeCleanupLowerer().RewriteProgram(program);
@@ -43,6 +45,7 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
     protected override IReadOnlyList<StatementNode> RewriteStatements(IReadOnlyList<StatementNode> statements)
     {
         var cleanupStart = _activeCleanups.Count;
+        _bindingScopes.Add(new Dictionary<string, CleanupBinding?>(StringComparer.Ordinal));
         var rewritten = new List<StatementNode>();
         foreach (var statement in statements)
         {
@@ -55,6 +58,14 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
         }
 
         _activeCleanups.RemoveRange(cleanupStart, _activeCleanups.Count - cleanupStart);
+        _bindingScopes.RemoveAt(_bindingScopes.Count - 1);
+        return rewritten;
+    }
+
+    protected override IReadOnlyList<StatementNode> RewriteLetStatement(LetStatement let)
+    {
+        var rewritten = base.RewriteLetStatement(let);
+        DeclareBinding(let.Name, cleanup: null);
         return rewritten;
     }
 
@@ -70,10 +81,12 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
                 initializer,
                 usingStatement.TypeNode));
 
-        _activeCleanups.Add(new CleanupBinding(
+        var cleanup = new CleanupBinding(
             usingStatement.Name,
             usingStatement.Location,
-            usingStatement.Span));
+            usingStatement.Span);
+        _activeCleanups.Add(cleanup);
+        DeclareBinding(usingStatement.Name, cleanup);
         return [declaration];
     }
 
@@ -88,11 +101,12 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
         var result = new List<StatementNode>();
         if (expression is not null)
         {
+            var transferredCleanupIndex = FindTransferredCleanupIndex(ret.Expression);
             var temporaryName = NextReturnTemporaryName();
             result.Add(WithSpan(
                 new LetStatement(ret.Location, IsConst: false, temporaryName, expression),
                 ret.Span));
-            result.AddRange(CreateCleanups(0));
+            result.AddRange(CreateCleanups(0, transferredCleanupIndex));
             result.Add(WithSpan(
                 new ReturnStatement(
                     ret.Location,
@@ -106,6 +120,41 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
         }
 
         return result;
+    }
+
+    protected override IReadOnlyList<StatementNode> RewriteCStatement(CStatement statement)
+    {
+        if (statement.Expression is not AssignmentExpressionNode
+            {
+                Operator: AssignmentOperator.Assign,
+                Target: NameExpressionNode target,
+            } assignment
+            || FindVisibleCleanup(target.Name) is not { } binding)
+        {
+            return base.RewriteCStatement(statement);
+        }
+
+        var replacement = RewriteExpression(assignment.Value)!;
+        var temporaryName = NextReplacementTemporaryName();
+        var temporary = WithSpan(
+            new LetStatement(
+                statement.Location,
+                IsConst: false,
+                temporaryName,
+                replacement),
+            statement.Span);
+        var rewrittenAssignment = SyntaxNode.CloneMetadata(
+            assignment,
+            assignment with
+            {
+                Target = RewriteExpression(assignment.Target)!,
+                Value = new NameExpressionNode(assignment.Value.Location, temporaryName),
+            });
+        var assignmentStatement = SyntaxNode.CloneMetadata(
+            statement,
+            statement with { Expression = rewrittenAssignment });
+
+        return [temporary, CreateCleanup(binding), assignmentStatement];
     }
 
     protected override IReadOnlyList<StatementNode> RewriteStatement(StatementNode statement) =>
@@ -122,19 +171,33 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
             () => base.RewriteWhileStatement(whileStatement));
 
     protected override IReadOnlyList<StatementNode> RewriteForStatement(ForStatement forStatement) =>
-        WithControlTarget(
-            supportsContinue: true,
-            () => base.RewriteForStatement(forStatement));
+        WithBindingScope(
+            ForBindingNames(forStatement),
+            () => WithControlTarget(
+                supportsContinue: true,
+                () => base.RewriteForStatement(forStatement)));
 
     protected override IReadOnlyList<StatementNode> RewriteForeachStatement(ForeachStatement foreachStatement) =>
-        WithControlTarget(
-            supportsContinue: true,
-            () => base.RewriteForeachStatement(foreachStatement));
+        WithBindingScope(
+            new[]
+            {
+                foreachStatement.IndexBinding?.Name,
+                foreachStatement.KeyBinding?.Name,
+                foreachStatement.ValueBinding?.Name,
+            }.Where(name => name is not null).Select(name => name!),
+            () => WithControlTarget(
+                supportsContinue: true,
+                () => base.RewriteForeachStatement(foreachStatement)));
 
     protected override IReadOnlyList<StatementNode> RewriteSwitchStatement(SwitchStatement switchStatement) =>
         WithControlTarget(
             supportsContinue: false,
             () => base.RewriteSwitchStatement(switchStatement));
+
+    protected override MatchArmNode RewriteMatchArm(MatchArmNode arm) =>
+        WithBindingScope(
+            arm.BindingName is null ? [] : [arm.BindingName],
+            () => base.RewriteMatchArm(arm));
 
     private IReadOnlyList<StatementNode> RewriteBreakStatement(BreakStatement statement)
     {
@@ -170,17 +233,28 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
     {
         _activeCleanups.Clear();
         _controlTargets.Clear();
+        _bindingScopes.Clear();
+        var parameterScope = new Dictionary<string, CleanupBinding?>(StringComparer.Ordinal);
+        foreach (var name in parameterNames)
+        {
+            parameterScope[name] = null;
+        }
+        _bindingScopes.Add(parameterScope);
         _usedNames = parameterNames
             .Concat(CollectLocalNames(body))
             .ToHashSet(StringComparer.Ordinal);
         _returnTemporaryIndex = 0;
+        _replacementTemporaryIndex = 0;
     }
 
     private ContextState SaveContext() => new(
         [.. _activeCleanups],
         [.. _controlTargets.Reverse()],
+        _bindingScopes.Select(scope =>
+            new Dictionary<string, CleanupBinding?>(scope, StringComparer.Ordinal)).ToList(),
         _usedNames,
-        _returnTemporaryIndex);
+        _returnTemporaryIndex,
+        _replacementTemporaryIndex);
 
     private void RestoreContext(ContextState state)
     {
@@ -192,16 +266,25 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
             _controlTargets.Push(target);
         }
 
+        _bindingScopes.Clear();
+        _bindingScopes.AddRange(state.BindingScopes);
+
         _usedNames = state.UsedNames;
         _returnTemporaryIndex = state.ReturnTemporaryIndex;
+        _replacementTemporaryIndex = state.ReplacementTemporaryIndex;
     }
 
-    private IReadOnlyList<StatementNode> CreateCleanups(int cleanupStart)
+    private IReadOnlyList<StatementNode> CreateCleanups(
+        int cleanupStart,
+        int excludedIndex = -1)
     {
         var cleanups = new List<StatementNode>();
         for (var index = _activeCleanups.Count - 1; index >= cleanupStart; index--)
         {
-            cleanups.Add(CreateCleanup(_activeCleanups[index]));
+            if (index != excludedIndex)
+            {
+                cleanups.Add(CreateCleanup(_activeCleanups[index]));
+            }
         }
 
         return cleanups;
@@ -231,6 +314,43 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
         return result;
     }
 
+    private T WithBindingScope<T>(IEnumerable<string> names, Func<T> action)
+    {
+        var scope = new Dictionary<string, CleanupBinding?>(StringComparer.Ordinal);
+        foreach (var name in names)
+        {
+            scope[name] = null;
+        }
+
+        _bindingScopes.Add(scope);
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            _bindingScopes.RemoveAt(_bindingScopes.Count - 1);
+        }
+    }
+
+    private static IEnumerable<string> ForBindingNames(ForStatement statement)
+    {
+        if (statement.CachedRangeEndInitializer is not null)
+        {
+            yield return statement.CachedRangeEndInitializer.Name;
+        }
+
+        if (statement.CounterInitializer is not null)
+        {
+            yield return statement.CounterInitializer.Name;
+        }
+
+        if (statement.Initializer is ForDeclarationInitializerNode declaration)
+        {
+            yield return declaration.Name;
+        }
+    }
+
     private string NextReturnTemporaryName()
     {
         string name;
@@ -241,6 +361,63 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
         while (!_usedNames.Add(name));
 
         return name;
+    }
+
+    private string NextReplacementTemporaryName()
+    {
+        string name;
+        do
+        {
+            name = $"__cx_using_replacement_{_replacementTemporaryIndex++}";
+        }
+        while (!_usedNames.Add(name));
+
+        return name;
+    }
+
+    private int FindTransferredCleanupIndex(ExpressionNode? expression)
+    {
+        while (expression is ParenthesizedExpressionNode parenthesized)
+        {
+            expression = parenthesized.Expression;
+        }
+
+        if (expression is not NameExpressionNode name
+            || FindVisibleCleanup(name.Name) is not { } cleanup)
+        {
+            return -1;
+        }
+
+        for (var index = _activeCleanups.Count - 1; index >= 0; index--)
+        {
+            if (ReferenceEquals(_activeCleanups[index], cleanup))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private CleanupBinding? FindVisibleCleanup(string name)
+    {
+        for (var index = _bindingScopes.Count - 1; index >= 0; index--)
+        {
+            if (_bindingScopes[index].TryGetValue(name, out var cleanup))
+            {
+                return cleanup;
+            }
+        }
+
+        return null;
+    }
+
+    private void DeclareBinding(string name, CleanupBinding? cleanup)
+    {
+        if (_bindingScopes.Count > 0)
+        {
+            _bindingScopes[^1][name] = cleanup;
+        }
     }
 
     private static bool MayFallThrough(IReadOnlyList<StatementNode> statements) =>
@@ -328,6 +505,8 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
     private sealed record ContextState(
         IReadOnlyList<CleanupBinding> ActiveCleanups,
         IReadOnlyList<ControlTarget> ControlTargets,
+        IReadOnlyList<Dictionary<string, CleanupBinding?>> BindingScopes,
         HashSet<string> UsedNames,
-        int ReturnTemporaryIndex);
+        int ReturnTemporaryIndex,
+        int ReplacementTemporaryIndex);
 }
