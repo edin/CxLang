@@ -21,7 +21,11 @@ public sealed partial class Parser
 
     private Token? ExpectIdentifierLike(string message)
     {
-        if (Current.Type is TokenType.Identifier or TokenType.Type or TokenType.Default or TokenType.Match)
+        if (Current.Type is TokenType.Identifier
+            or TokenType.Type
+            or TokenType.Default
+            or TokenType.Match
+            or TokenType.Module)
         {
             return Advance();
         }

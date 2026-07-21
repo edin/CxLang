@@ -15,16 +15,22 @@ internal sealed class MacroExpansionPass : AstRewriter
     private readonly IReadOnlyDictionary<string, MacroDeclarationNode> _macros;
     private readonly IReadOnlyList<MacroProvidedRequirementClaim> _providedRequirementClaims;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<SyntaxNode>> _functionDeclarations;
+    private readonly IReadOnlyDictionary<string, string>? _moduleNamesByPath;
+    private readonly TypeRefParser _typeRefParser;
+    private readonly CompileTimeExpressionEvaluator _argumentEvaluator;
     private int _expansionDepth;
 
     public MacroExpansionPass(
         DiagnosticBag diagnostics,
         ProgramNode program,
-        ICompileTimeReflection? reflection = null)
+        ICompileTimeReflection? reflection = null,
+        IReadOnlyDictionary<string, string>? moduleNamesByPath = null)
     {
         _diagnostics = diagnostics;
         _macros = BuildMacroMap(program.Macros);
         _functionDeclarations = BuildFunctionDeclarationMap(program);
+        _typeRefParser = new TypeRefParser(program);
+        _moduleNamesByPath = moduleNamesByPath;
         _providedRequirementClaims = MacroProvidedRequirementCollector.Collect(
             program,
             _macros,
@@ -32,11 +38,18 @@ internal sealed class MacroExpansionPass : AstRewriter
         _reflection = new ProspectiveCompileTimeReflection(
             reflection ?? new ProgramCompileTimeReflection(program),
             _providedRequirementClaims);
+        _argumentEvaluator = new CompileTimeExpressionEvaluator(
+            diagnostics,
+            reflection: _reflection);
     }
 
     public override ProgramNode RewriteProgram(ProgramNode program)
     {
         var expanded = base.RewriteProgram(program);
+        new GeneratedDeclarationCollisionValidator(
+            _diagnostics,
+            expanded,
+            _moduleNamesByPath).Validate();
         ValidateProvidedRequirements(expanded);
         return expanded;
     }
@@ -48,12 +61,9 @@ internal sealed class MacroExpansionPass : AstRewriter
         var rewritten = base.RewriteStruct(structNode);
         foreach (var invocation in rewritten.MacroInvocationNodes)
         {
-            var arguments = invocation.Arguments.Select(argument =>
-                argument is NameExpressionNode { Name: "Self" }
-                    ? SyntaxNode.CloneMetadata(
-                        argument,
-                        new NameExpressionNode(argument.Location, rewritten.Name))
-                    : argument).ToList();
+            var arguments = invocation.Arguments
+                .Select(argument => ReplaceSelfArgument(argument, rewritten.Name))
+                .ToList();
             var boundInvocation = SyntaxNode.CloneMetadata(
                 invocation,
                 invocation with { Arguments = arguments });
@@ -154,7 +164,7 @@ internal sealed class MacroExpansionPass : AstRewriter
 
     private bool TryPrepareExpansion(
         string macroName,
-        IReadOnlyList<ExpressionNode> arguments,
+        IReadOnlyList<MacroArgumentNode> arguments,
         Cx.Compiler.Source.Location location,
         MacroExpansionKind expectedKind,
         out MacroDeclarationNode macro,
@@ -200,22 +210,42 @@ internal sealed class MacroExpansionPass : AstRewriter
             context.Define(parameter.Name, value);
         }
 
+        if (!context.TryGet("module", out _)
+            && _reflection.TryGetModuleForFile(location.File.Path, out var reflectedModule))
+        {
+            context.Define("module", new CompileTimeValue.Module(reflectedModule));
+        }
+
         return true;
     }
 
-    private CompileTimeValue? BindArgument(MacroParameterNode parameter, ExpressionNode argument) =>
+    private CompileTimeValue? BindArgument(MacroParameterNode parameter, MacroArgumentNode argument) =>
         parameter.Kind switch
         {
-            MacroParameterKind.Expression => new CompileTimeValue.Syntax(argument),
+            MacroParameterKind.Expression => BindExpression(parameter, argument),
             MacroParameterKind.Name => BindName(parameter, argument),
             MacroParameterKind.Type => BindType(parameter, argument),
             MacroParameterKind.Declaration => BindDeclaration(parameter, argument),
+            MacroParameterKind.Module => BindModule(parameter, argument),
             _ => null,
         };
 
-    private CompileTimeValue? BindName(MacroParameterNode parameter, ExpressionNode argument)
+    private CompileTimeValue? BindExpression(
+        MacroParameterNode parameter,
+        MacroArgumentNode argument)
     {
-        var name = argument switch
+        if (argument.ExpressionCandidate is { } expression)
+        {
+            return new CompileTimeValue.Syntax(expression);
+        }
+
+        _diagnostics.Report(argument.Location, $"Macro parameter '{parameter.Name}' expects an expression argument.");
+        return null;
+    }
+
+    private CompileTimeValue? BindName(MacroParameterNode parameter, MacroArgumentNode argument)
+    {
+        var name = argument.ExpressionCandidate switch
         {
             NameExpressionNode identifier => identifier.Name,
             LiteralExpressionNode { Kind: LiteralKind.String } literal => literal.LiteralText.Trim('"'),
@@ -230,23 +260,36 @@ internal sealed class MacroExpansionPass : AstRewriter
         return null;
     }
 
-    private CompileTimeValue? BindType(MacroParameterNode parameter, ExpressionNode argument)
+    private CompileTimeValue? BindType(MacroParameterNode parameter, MacroArgumentNode argument)
     {
-        var name = ExpressionNameFacts.GetQualifiedName(argument);
+        if (argument.TypeCandidate is { } typeNode)
+        {
+            var type = _typeRefParser.Parse(typeNode);
+            if (type is not TypeRef.Unknown)
+            {
+                return new CompileTimeValue.Type(type);
+            }
+        }
+
+        var name = argument.ExpressionCandidate is null
+            ? null
+            : ExpressionNameFacts.GetQualifiedName(argument.ExpressionCandidate);
         if (name is not null)
         {
             return new CompileTimeValue.Type(new TypeRef.Named(name, []));
         }
 
-        _diagnostics.Report(argument.Location, $"Macro parameter '{parameter.Name}' expects a type name argument.");
+        _diagnostics.Report(argument.Location, $"Macro parameter '{parameter.Name}' expects a type argument.");
         return null;
     }
 
     private CompileTimeValue? BindDeclaration(
         MacroParameterNode parameter,
-        ExpressionNode argument)
+        MacroArgumentNode argument)
     {
-        var name = ExpressionNameFacts.GetQualifiedName(argument);
+        var name = argument.ExpressionCandidate is null
+            ? null
+            : ExpressionNameFacts.GetQualifiedName(argument.ExpressionCandidate);
         if (name is null)
         {
             _diagnostics.Report(
@@ -272,6 +315,64 @@ internal sealed class MacroExpansionPass : AstRewriter
         }
 
         return new CompileTimeValue.Syntax(declarations[0]);
+    }
+
+    private CompileTimeValue? BindModule(
+        MacroParameterNode parameter,
+        MacroArgumentNode argument)
+    {
+        if (argument.ExpressionCandidate is { } expression)
+        {
+            var value = _argumentEvaluator.Evaluate(
+                expression,
+                new CompileTimeEvaluationContext());
+            if (value is CompileTimeValue.Module module)
+            {
+                return module;
+            }
+
+            if (value is CompileTimeValue.String moduleName)
+            {
+                if (_reflection.TryGetModule(moduleName.Value, out var reflectedModule))
+                {
+                    return new CompileTimeValue.Module(reflectedModule);
+                }
+
+                _diagnostics.Report(
+                    argument.Location,
+                    $"Macro parameter '{parameter.Name}' could not resolve module '{moduleName.Value}'.");
+                return null;
+            }
+
+            if (value is null)
+            {
+                return null;
+            }
+        }
+
+        _diagnostics.Report(
+            argument.Location,
+            $"Macro parameter '{parameter.Name}' expects a module argument or module-name string.");
+        return null;
+    }
+
+    private static MacroArgumentNode ReplaceSelfArgument(
+        MacroArgumentNode argument,
+        string ownerName)
+    {
+        var expression = argument.ExpressionCandidate is NameExpressionNode { Name: "Self" }
+            ? SyntaxNode.CloneMetadata(
+                argument.ExpressionCandidate,
+                new NameExpressionNode(argument.Location, ownerName))
+            : argument.ExpressionCandidate;
+        var type = argument.TypeCandidate?.Syntax is NamedTypeSyntaxNode { Name: "Self" }
+            ? SyntaxNode.CloneMetadata(
+                argument.TypeCandidate,
+                TypeNode.Named(argument.Location, ownerName))
+            : argument.TypeCandidate;
+        return SyntaxNode.CloneMetadata(
+            argument,
+            argument with { ExpressionCandidate = expression, TypeCandidate = type });
     }
 
     private IReadOnlyDictionary<string, MacroDeclarationNode> BuildMacroMap(

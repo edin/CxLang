@@ -36,6 +36,14 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     protected override MacroDeclarationNode RewriteMacroDeclaration(MacroDeclarationNode macro) =>
         macro;
 
+    protected override IReadOnlyList<TopLevelNode> RewriteTopLevelNode(TopLevelNode node) =>
+        node switch
+        {
+            CompileTimeIfTopLevelNode conditional => ExpandTopLevelIf(conditional),
+            CompileTimeForeachTopLevelNode foreachNode => ExpandTopLevelForeach(foreachNode),
+            _ => base.RewriteTopLevelNode(node),
+        };
+
     protected override IReadOnlyList<TopLevelNode> RewriteCompileTimeScriptDeclaration(
         CompileTimeScriptDeclarationNode script)
     {
@@ -48,6 +56,64 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         }
 
         return [];
+    }
+
+    private IReadOnlyList<TopLevelNode> ExpandTopLevelDeclarations(
+        IReadOnlyList<TopLevelNode> declarations) =>
+        declarations.SelectMany(RewriteTopLevelNode).ToList();
+
+    private IReadOnlyList<TopLevelNode> ExpandTopLevelIf(
+        CompileTimeIfTopLevelNode conditional)
+    {
+        var value = _evaluator.Evaluate(conditional.Condition, _context);
+        if (value is not CompileTimeValue.Boolean boolean)
+        {
+            if (value is not null)
+            {
+                _diagnostics.Report(
+                    conditional.Condition.Location,
+                    "Compile-time @if condition must evaluate to a boolean value.");
+            }
+
+            return [];
+        }
+
+        var branchContext = _context.CreateChild();
+        return WithContext(
+            branchContext,
+            () => ExpandTopLevelDeclarations(
+                boolean.Value
+                    ? conditional.ThenDeclarations
+                    : conditional.ElseDeclarations));
+    }
+
+    private IReadOnlyList<TopLevelNode> ExpandTopLevelForeach(
+        CompileTimeForeachTopLevelNode foreachNode)
+    {
+        var value = _evaluator.Evaluate(foreachNode.IterableExpression, _context);
+        if (value is not CompileTimeValue.List list)
+        {
+            if (value is not null)
+            {
+                _diagnostics.Report(
+                    foreachNode.IterableExpression.Location,
+                    "Compile-time @foreach expression must evaluate to a list value.");
+            }
+
+            return [];
+        }
+
+        var result = new List<TopLevelNode>();
+        foreach (var item in list.Values)
+        {
+            var iterationContext = _context.CreateChild();
+            iterationContext.Define(foreachNode.BindingName, item);
+            result.AddRange(WithContext(
+                iterationContext,
+                () => ExpandTopLevelDeclarations(foreachNode.Declarations)));
+        }
+
+        return result;
     }
 
     protected override FunctionNode RewriteFunction(FunctionNode function)
@@ -123,7 +189,14 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         var parameters = new List<ParameterNode>(list.Values.Count + 1);
         foreach (var item in list.Values)
         {
-            if (item is not CompileTimeValue.Syntax { Value: ParameterNode parameter })
+            var parameter = item switch
+            {
+                CompileTimeValue.Syntax { Value: ParameterNode syntax } => syntax,
+                CompileTimeValue.ResolvedParameter resolved =>
+                    CompileTimeResolvedSyntax.ToParameter(resolved.Value),
+                _ => null,
+            };
+            if (parameter is null)
             {
                 _diagnostics.Report(
                     function.ComputedParameters.Location,
@@ -166,17 +239,19 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     {
         if (call.Arguments is not [PlaceholderExpressionNode placeholder])
         {
-            return base.RewriteCallExpression(call);
+            return SyntaxNode.CloneMetadata(call, base.RewriteCallExpression(call));
         }
 
         var value = _evaluator.Evaluate(placeholder.Expression, _context);
         if (value is not CompileTimeValue.List list)
         {
-            return base.RewriteCallExpression(call);
+            return SyntaxNode.CloneMetadata(call, base.RewriteCallExpression(call));
         }
 
         var arguments = list.Values.Select(item => ToCallArgument(placeholder, item)).ToList();
-        return base.RewriteCallExpression(call with { Arguments = arguments });
+        return SyntaxNode.CloneMetadata(
+            call,
+            base.RewriteCallExpression(call with { Arguments = arguments }));
     }
 
     protected override IReadOnlyList<StatementNode> RewriteStatement(StatementNode statement) =>
@@ -353,6 +428,8 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             CompileTimeValue.Name name => new NameExpressionNode(placeholder.Location, name.Value),
             CompileTimeValue.Syntax { Value: ParameterNode parameter } when !parameter.IsVariadic =>
                 new NameExpressionNode(placeholder.Location, parameter.Name),
+            CompileTimeValue.ResolvedParameter parameter when !parameter.Value.Declaration.IsVariadic =>
+                new NameExpressionNode(placeholder.Location, parameter.Value.Name),
             CompileTimeValue.Syntax { Value: ExpressionNode syntaxExpression } => syntaxExpression with { },
             _ => null,
         };

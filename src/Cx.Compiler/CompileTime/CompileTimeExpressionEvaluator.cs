@@ -12,6 +12,7 @@ internal sealed class CompileTimeExpressionEvaluator
     private readonly CompileTimeIntrinsicRegistry _intrinsics;
     private readonly CompileTimeObjectRegistry _objects;
     private readonly CompileTimeMethodRegistry _methods;
+    private readonly CompileTimePropertyRegistry _properties;
     private readonly ICompileTimeReflection _reflection;
 
     public CompileTimeExpressionEvaluator(
@@ -19,13 +20,15 @@ internal sealed class CompileTimeExpressionEvaluator
         CompileTimeIntrinsicRegistry? intrinsics = null,
         ICompileTimeReflection? reflection = null,
         CompileTimeObjectRegistry? objects = null,
-        CompileTimeMethodRegistry? methods = null)
+        CompileTimeMethodRegistry? methods = null,
+        CompileTimePropertyRegistry? properties = null)
     {
         _diagnostics = diagnostics;
         _intrinsics = intrinsics ?? CompileTimeIntrinsicRegistry.CreateDefault();
         _reflection = reflection ?? UnavailableCompileTimeReflection.Instance;
         _objects = objects ?? CompileTimeObjectRegistry.CreateDefault();
         _methods = methods ?? CompileTimeMethodRegistry.Default;
+        _properties = properties ?? CompileTimePropertyRegistry.Default;
     }
 
     public CompileTimeValue? Evaluate(
@@ -40,11 +43,33 @@ internal sealed class CompileTimeExpressionEvaluator
             BinaryExpressionNode binary => EvaluateBinary(binary, context),
             ConditionalExpressionNode conditional => EvaluateConditional(conditional, context),
             ListExpressionNode list => EvaluateList(list, context),
+            TypeLiteralExpressionNode typeLiteral => EvaluateTypeLiteral(typeLiteral),
             InitializerExpressionNode initializer => EvaluateInitializer(initializer, context),
             CallExpressionNode call => EvaluateCall(call, context),
             MemberExpressionNode member => EvaluateMember(member, context),
             _ => Unsupported(expression),
         };
+
+    private CompileTimeValue? EvaluateTypeLiteral(TypeLiteralExpressionNode typeLiteral)
+    {
+        if (!_reflection.IsAvailable)
+        {
+            _diagnostics.Report(
+                typeLiteral.Location,
+                "Compile-time type literals require type reflection.");
+            return null;
+        }
+
+        if (!_reflection.TryGetType(typeLiteral.TypeNode, out var type))
+        {
+            _diagnostics.Report(
+                typeLiteral.Location,
+                "Could not resolve compile-time type literal.");
+            return null;
+        }
+
+        return new CompileTimeValue.Type(type);
+    }
 
     private CompileTimeValue? EvaluateMember(
         MemberExpressionNode member,
@@ -64,13 +89,15 @@ internal sealed class CompileTimeExpressionEvaluator
             return null;
         }
 
-        var property = objectValue.GetProperty(
+        var propertyContext = new CompileTimePropertyContext(
+            member.Location,
+            _reflection,
+            _diagnostics,
+            expression => Evaluate(expression, context));
+        var property = _properties.Get(
+            objectValue,
             member.MemberName,
-            new CompileTimePropertyContext(
-                member.Location,
-                _reflection,
-                _diagnostics,
-                expression => Evaluate(expression, context)));
+            propertyContext);
         if (property is CompileTimePropertyResult.Found found)
         {
             return found.Value;
@@ -93,6 +120,7 @@ internal sealed class CompileTimeExpressionEvaluator
                 string.Equals(literal.LiteralText, "true", StringComparison.Ordinal)),
             LiteralKind.Integer => ParseInteger(literal),
             LiteralKind.String => ParseString(literal),
+            LiteralKind.Null => new CompileTimeValue.Null(),
             _ => Unsupported(literal),
         };
 
@@ -471,6 +499,7 @@ internal sealed class CompileTimeExpressionEvaluator
                 string.Equals(a.Value, b.Value, StringComparison.Ordinal),
             (CompileTimeValue.Type a, CompileTimeValue.Type b) =>
                 TypeIdentity.ResolvedEquals(a.Value, b.Value),
+            (CompileTimeValue.Null, CompileTimeValue.Null) => true,
             _ => false,
         };
 

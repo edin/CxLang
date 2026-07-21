@@ -8,13 +8,25 @@ internal interface ICompileTimeReflection
 {
     bool IsAvailable { get; }
 
-    bool TryGetFields(TypeRef type, out IReadOnlyList<StructFieldNode> fields);
+    bool TryGetFields(TypeRef type, out IReadOnlyList<ResolvedField> fields);
+
+    bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods);
+
+    bool TryGetModule(string name, out ReflectedModule module);
+
+    bool TryGetModuleForFile(string path, out ReflectedModule module);
+
+    bool TryGetOwnerType(FunctionNode function, out TypeRef ownerType);
 
     bool TryGetType(SyntaxNode syntax, out TypeRef type);
 
     bool TryGetAttributes(
         SyntaxNode syntax,
         out IReadOnlyList<AttributeApplicationNode> attributes);
+
+    bool TryGetAttributeDeclaration(
+        string name,
+        out AttributeDeclarationNode declaration);
 
     bool TryGetRequirement(string name, out RequirementNode requirement);
 
@@ -29,6 +41,15 @@ internal interface ICompileTimeReflection
         out bool declares);
 }
 
+internal sealed record ReflectedModule(
+    string Name,
+    IReadOnlyList<SyntaxNode> Functions,
+    IReadOnlyList<ReflectedModuleType> Types);
+
+internal sealed record ReflectedModuleType(
+    TypeRef Type,
+    TopLevelNode Declaration);
+
 internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
 {
     public static UnavailableCompileTimeReflection Instance { get; } = new();
@@ -39,9 +60,33 @@ internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
 
     public bool IsAvailable => false;
 
-    public bool TryGetFields(TypeRef type, out IReadOnlyList<StructFieldNode> fields)
+    public bool TryGetFields(TypeRef type, out IReadOnlyList<ResolvedField> fields)
     {
         fields = [];
+        return false;
+    }
+
+    public bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods)
+    {
+        methods = [];
+        return false;
+    }
+
+    public bool TryGetModule(string name, out ReflectedModule module)
+    {
+        module = null!;
+        return false;
+    }
+
+    public bool TryGetModuleForFile(string path, out ReflectedModule module)
+    {
+        module = null!;
+        return false;
+    }
+
+    public bool TryGetOwnerType(FunctionNode function, out TypeRef ownerType)
+    {
+        ownerType = new TypeRef.Unknown();
         return false;
     }
 
@@ -56,6 +101,14 @@ internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
         out IReadOnlyList<AttributeApplicationNode> attributes)
     {
         attributes = [];
+        return false;
+    }
+
+    public bool TryGetAttributeDeclaration(
+        string name,
+        out AttributeDeclarationNode declaration)
+    {
+        declaration = null!;
         return false;
     }
 
@@ -89,46 +142,90 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
     private readonly ProgramNode _program;
     private readonly TypeRefParser _typeRefParser;
     private readonly RequirementMatcher _requirementMatcher;
+    private readonly TypeSystem _typeSystem;
+    private readonly IReadOnlyDictionary<string, string> _moduleNamesByPath;
 
-    public ProgramCompileTimeReflection(ProgramNode program)
+    public ProgramCompileTimeReflection(
+        ProgramNode program,
+        IReadOnlyDictionary<string, string>? moduleNamesByPath = null)
     {
         _program = program;
         _typeRefParser = new TypeRefParser(program);
         _requirementMatcher = new RequirementMatcher(program);
+        _typeSystem = new TypeSystem(program);
+        _moduleNamesByPath = moduleNamesByPath
+            ?? BuildFallbackModuleMap(program);
+    }
+
+    public bool TryGetModule(string name, out ReflectedModule module)
+    {
+        if (!_moduleNamesByPath.Values.Contains(name, StringComparer.Ordinal))
+        {
+            module = null!;
+            return false;
+        }
+
+        module = BuildModule(name);
+        return true;
+    }
+
+    public bool TryGetModuleForFile(string path, out ReflectedModule module)
+    {
+        if (!_moduleNamesByPath.TryGetValue(path, out var moduleName))
+        {
+            module = null!;
+            return false;
+        }
+
+        module = BuildModule(moduleName);
+        return true;
     }
 
     public bool IsAvailable => true;
 
-    public bool TryGetFields(TypeRef type, out IReadOnlyList<StructFieldNode> fields)
+    public bool TryGetFields(TypeRef type, out IReadOnlyList<ResolvedField> fields)
     {
-        var named = TypeRefFacts.UnwrapConst(TypeRefFacts.UnwrapAlias(type)) as TypeRef.Named;
-        if (named is null)
+        var resolved = _typeSystem.ResolveDefinition(type);
+        if (resolved.Symbol is not TypeSymbol.Struct)
         {
             fields = [];
             return false;
         }
 
-        var qualifiedName = named.ModuleName is null
-            ? null
-            : $"{named.ModuleName}.{named.Name}";
-        var structNode = _program.Structs.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, named.Name, StringComparison.Ordinal)
-            || qualifiedName is not null
-            && string.Equals(candidate.Name, qualifiedName, StringComparison.Ordinal));
-        if (structNode is null)
-        {
-            fields = [];
-            return false;
-        }
-
-        fields = structNode.Fields;
+        fields = _typeSystem.GetFields(resolved);
         return true;
+    }
+
+    public bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods)
+    {
+        var resolved = _typeSystem.ResolveDefinition(type);
+        if (resolved.Symbol is null)
+        {
+            methods = [];
+            return false;
+        }
+
+        methods = _typeSystem.GetMethods(resolved);
+        return true;
+    }
+
+    public bool TryGetOwnerType(FunctionNode function, out TypeRef ownerType)
+    {
+        if (function.OwnerTypeNode is null)
+        {
+            ownerType = new TypeRef.Unknown();
+            return false;
+        }
+
+        ownerType = _typeRefParser.Parse(function.OwnerTypeNode);
+        return ownerType is not TypeRef.Unknown;
     }
 
     public bool TryGetType(SyntaxNode syntax, out TypeRef type)
     {
         var typeNode = syntax switch
         {
+            TypeNode node => node,
             StructFieldNode field => field.TypeNode,
             TaggedUnionVariantNode variant => variant.TypeNode,
             ParameterNode parameter => parameter.TypeNode,
@@ -187,6 +284,15 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             or ExtensionNode
             or TypeAdapterNode
             or TestNode;
+    }
+
+    public bool TryGetAttributeDeclaration(
+        string name,
+        out AttributeDeclarationNode declaration)
+    {
+        declaration = _program.AttributeDeclarations.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, name, StringComparison.Ordinal))!;
+        return declaration is not null;
     }
 
     public bool TryGetRequirement(string name, out RequirementNode requirement)
@@ -276,4 +382,56 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
                 function.IsVariadic),
             _ => type,
         };
+
+    private ReflectedModule BuildModule(string name)
+    {
+        var functions = _program.Functions
+            .Where(function => function.OwnerTypeNode is null && IsInModule(function, name))
+            .Cast<SyntaxNode>()
+            .Concat(_program.ExternFunctions.Where(function => IsInModule(function, name)))
+            .ToList();
+        var types = _program.Declarations
+            .Where(declaration => IsInModule(declaration, name))
+            .Select(ToReflectedType)
+            .OfType<ReflectedModuleType>()
+            .ToList();
+        return new ReflectedModule(name, functions, types);
+    }
+
+    private bool IsInModule(SyntaxNode syntax, string moduleName) =>
+        _moduleNamesByPath.TryGetValue(syntax.Location.File.Path, out var declaredModule)
+        && string.Equals(declaredModule, moduleName, StringComparison.Ordinal);
+
+    private ReflectedModuleType? ToReflectedType(TopLevelNode declaration)
+    {
+        var (name, typeParameters) = declaration switch
+        {
+            StructNode node => (node.Name, node.TypeParameters),
+            TypeAdapterNode node => (node.Name, node.TypeParameters),
+            TypeAliasNode node => (node.Name, (IReadOnlyList<string>)[]),
+            EnumNode node => (node.Name, (IReadOnlyList<string>)[]),
+            InterfaceNode node => (node.Name, (IReadOnlyList<string>)[]),
+            TaggedUnionNode node => (node.Name, (IReadOnlyList<string>)[]),
+            _ => (string.Empty, (IReadOnlyList<string>)[]),
+        };
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        var arguments = typeParameters
+            .Select(parameter => (TypeRef)new TypeRef.Named(parameter, []))
+            .ToList();
+        return new ReflectedModuleType(new TypeRef.Named(name, arguments), declaration);
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildFallbackModuleMap(ProgramNode program)
+    {
+        var moduleName = program.Module?.Name ?? string.Empty;
+        return program.Declarations
+            .Select(declaration => declaration.Location.File.Path)
+            .Append(program.Location.File.Path)
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(path => path, _ => moduleName, StringComparer.Ordinal);
+    }
 }

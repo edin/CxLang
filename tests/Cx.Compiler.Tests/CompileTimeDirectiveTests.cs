@@ -22,6 +22,22 @@ public sealed class CompileTimeDirectiveTests
     }
 
     [Fact]
+    public void Compile_RejectsTypeLiteralOutsideCompileTimeEvaluation()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let signature = Type.from(fn(int) -> int);
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Type literals are only valid during compile-time evaluation");
+    }
+
+    [Fact]
     public void Parse_ParsesDedicatedCompileTimeLetNode()
     {
         var program = CompilerTestHelpers.Parse(

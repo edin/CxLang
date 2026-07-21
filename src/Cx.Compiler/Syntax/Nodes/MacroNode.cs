@@ -8,6 +8,7 @@ public enum MacroParameterKind
     Type,
     Name,
     Declaration,
+    Module,
 }
 
 public enum MacroExpansionKind
@@ -29,10 +30,15 @@ public sealed record MacroTemplateBlockNode(
     public IReadOnlyList<TopLevelNode> DeclarationNodes => Declarations ?? [];
 }
 
+public sealed record MacroArgumentNode(
+    Location Location,
+    ExpressionNode? ExpressionCandidate,
+    TypeNode? TypeCandidate) : SyntaxNode(Location);
+
 public sealed record MacroInvocationDeclarationNode(
     Location Location,
     string MacroName,
-    IReadOnlyList<ExpressionNode> Arguments) : TopLevelNode(Location);
+    IReadOnlyList<MacroArgumentNode> Arguments) : TopLevelNode(Location);
 
 public sealed record MacroProvidedRequirementNode(
     Location Location,

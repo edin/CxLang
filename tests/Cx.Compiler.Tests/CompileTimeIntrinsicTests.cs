@@ -88,7 +88,7 @@ public sealed class CompileTimeIntrinsicTests
         Assert.Equal(
             ["name", "age"],
             fields.Select(field =>
-                Assert.IsType<StructFieldNode>(Assert.IsType<CompileTimeValue.Syntax>(field).Value).Name));
+                Assert.IsType<CompileTimeValue.ResolvedField>(field).Value.Name));
         CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 
@@ -440,6 +440,106 @@ public sealed class CompileTimeIntrinsicTests
     }
 
     [Fact]
+    public void MethodReflection_ExposesStructMethodsAndOwnerType()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct User {
+                public fn score(multiplier: int) -> int {
+                    return multiplier;
+                }
+            }
+            """);
+        var structNode = Assert.Single(program.Structs);
+        var method = Assert.Single(structNode.Methods);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("target", new CompileTimeValue.Type(new TypeRef.Named("User", [])));
+        context.Define("declaration", new CompileTimeValue.Syntax(structNode));
+        context.Define("method", new CompileTimeValue.Syntax(method));
+        var reflection = new ProgramCompileTimeReflection(program);
+
+        var (typeMethods, typeMethodsDiagnostics) = Evaluate("target.methods.count", context, reflection);
+        var (syntaxMethods, syntaxMethodsDiagnostics) = Evaluate("declaration.methods.count", context, reflection);
+        var (ownerName, ownerDiagnostics) = Evaluate("method.owner_type.name", context, reflection);
+        var (parameterCount, parameterDiagnostics) = Evaluate("method.parameters.count", context, reflection);
+        var (returnType, returnTypeDiagnostics) = Evaluate("method.return_type.name", context, reflection);
+
+        Assert.Equal(1, Assert.IsType<CompileTimeValue.Integer>(typeMethods).Value);
+        Assert.Equal(1, Assert.IsType<CompileTimeValue.Integer>(syntaxMethods).Value);
+        Assert.Equal("User", Assert.IsType<CompileTimeValue.String>(ownerName).Value);
+        Assert.Equal(2, Assert.IsType<CompileTimeValue.Integer>(parameterCount).Value);
+        Assert.Equal("int", Assert.IsType<CompileTimeValue.String>(returnType).Value);
+        CompilerTestHelpers.AssertNoErrors(typeMethodsDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(syntaxMethodsDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(ownerDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(parameterDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(returnTypeDiagnostics);
+    }
+
+    [Fact]
+    public void ResolvedMemberReflection_SpecializesGenericsAndIncludesExtensions()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                value: T;
+
+                fn get() -> T {
+                    return self.value;
+                }
+            }
+
+            extension Box<T> {
+                fn replace(value: T) -> T {
+                    return value;
+                }
+            }
+            """);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("target", new CompileTimeValue.Type(
+            new TypeRef.Named("Box", [TypeRef.Int])));
+        var reflection = new ProgramCompileTimeReflection(program);
+
+        var (fieldListValue, fieldListDiagnostics) = Evaluate("target.fields", context, reflection);
+        var field = Assert.IsType<CompileTimeValue.ResolvedField>(
+            Assert.Single(Assert.IsType<CompileTimeValue.List>(fieldListValue).Values));
+        context.Define("field", field);
+
+        var (methodListValue, methodListDiagnostics) = Evaluate("target.methods", context, reflection);
+        var methods = Assert.IsType<CompileTimeValue.List>(methodListValue).Values
+            .Select(Assert.IsType<CompileTimeValue.ResolvedMethod>)
+            .ToList();
+        var replace = Assert.Single(methods, method => method.Value.Name == "replace");
+        context.Define("method", replace);
+        context.Define("parameter", replace.Value.Parameters.Last() is { } parameter
+            ? new CompileTimeValue.ResolvedParameter(parameter)
+            : throw new InvalidOperationException());
+
+        var (fieldType, fieldTypeDiagnostics) = Evaluate("field.type.name", context, reflection);
+        var (rawFieldType, rawFieldTypeDiagnostics) = Evaluate("field.declaration.type.name", context, reflection);
+        var (returnType, returnTypeDiagnostics) = Evaluate("method.return_type.name", context, reflection);
+        var (parameterType, parameterTypeDiagnostics) = Evaluate("parameter.type.name", context, reflection);
+        var (ownerType, ownerTypeDiagnostics) = Evaluate("method.owner_type.display_name", context, reflection);
+
+        Assert.Equal("int", Assert.IsType<CompileTimeValue.String>(fieldType).Value);
+        Assert.Equal("T", Assert.IsType<CompileTimeValue.String>(rawFieldType).Value);
+        Assert.Equal("int", Assert.IsType<CompileTimeValue.String>(returnType).Value);
+        Assert.Equal("int", Assert.IsType<CompileTimeValue.String>(parameterType).Value);
+        Assert.Equal("Box<int>", Assert.IsType<CompileTimeValue.String>(ownerType).Value);
+        Assert.Equal(
+            "Box<int>*",
+            TypeRefFormatter.ToCxString(replace.Value.Parameters[0].Type));
+        Assert.Equal(2, methods.Count);
+        CompilerTestHelpers.AssertNoErrors(fieldListDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(methodListDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(fieldTypeDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(rawFieldTypeDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(returnTypeDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(parameterTypeDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(ownerTypeDiagnostics);
+    }
+
+    [Fact]
     public void RequirementMatch_ExposesSuccessAndInferredTypeBindingsAsProperties()
     {
         var program = RequirementReflectionProgram();
@@ -468,6 +568,10 @@ public sealed class CompileTimeIntrinsicTests
             "requirement_match(target, Mapping).V",
             context,
             reflection);
+        var (methodBinding, methodBindingDiagnostics) = Evaluate(
+            "target.match(Contiguous).T",
+            context,
+            reflection);
 
         Assert.True(Assert.IsType<CompileTimeValue.Boolean>(success).Value);
         Assert.True(TypeIdentity.ResolvedEquals(
@@ -480,11 +584,15 @@ public sealed class CompileTimeIntrinsicTests
         Assert.True(TypeIdentity.ResolvedEquals(
             TypeRef.Int,
             Assert.IsType<CompileTimeValue.Type>(mappingValue).Value));
+        Assert.True(TypeIdentity.ResolvedEquals(
+            TypeRef.Int,
+            Assert.IsType<CompileTimeValue.Type>(methodBinding).Value));
         CompilerTestHelpers.AssertNoErrors(successDiagnostics);
         CompilerTestHelpers.AssertNoErrors(bindingDiagnostics);
         CompilerTestHelpers.AssertNoErrors(sameDiagnostics);
         CompilerTestHelpers.AssertNoErrors(mappingKeyDiagnostics);
         CompilerTestHelpers.AssertNoErrors(mappingValueDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(methodBindingDiagnostics);
     }
 
     [Fact]
@@ -541,6 +649,196 @@ public sealed class CompileTimeIntrinsicTests
         Assert.False(registry.Register(new ConcatCompileTimeIntrinsic()));
         Assert.True(registry.TryGet("concat", out var intrinsic));
         Assert.IsType<ConcatCompileTimeIntrinsic>(intrinsic);
+    }
+
+    [Fact]
+    public void ModuleIntrinsic_ReportsUnknownModule()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            module sample;
+            fn main() -> int { return 0; }
+            """);
+
+        var (value, diagnostics) = Evaluate(
+            "module(\"missing\")",
+            reflection: new ProgramCompileTimeReflection(program));
+
+        Assert.Null(value);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("module 'missing' is not visible", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AttributeLookup_ReturnsDynamicFieldsAndNullWhenAbsent()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            attribute route on fn {
+                method: string;
+                path: string;
+            }
+
+            @route("GET", path: "/users")
+            public fn users() -> int {
+                return 0;
+            }
+            """);
+        var reflection = new ProgramCompileTimeReflection(program);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("handler", new CompileTimeValue.Syntax(Assert.Single(program.Functions)));
+
+        var (method, methodDiagnostics) = Evaluate(
+            "handler.attribute(\"route\").method",
+            context,
+            reflection);
+        var (path, pathDiagnostics) = Evaluate(
+            "handler.attribute(\"route\").path",
+            context,
+            reflection);
+        var (missing, missingDiagnostics) = Evaluate(
+            "handler.attribute(\"missing\") == null",
+            context,
+            reflection);
+
+        Assert.Equal("GET", Assert.IsType<CompileTimeValue.String>(method).Value);
+        Assert.Equal("/users", Assert.IsType<CompileTimeValue.String>(path).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(missing).Value);
+        CompilerTestHelpers.AssertNoErrors(methodDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(pathDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(missingDiagnostics);
+    }
+
+    [Fact]
+    public void NullPropertyAccess_ReportsObjectLikeDiagnostic()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            public fn users() -> int {
+                return 0;
+            }
+            """);
+        var reflection = new ProgramCompileTimeReflection(program);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("handler", new CompileTimeValue.Syntax(Assert.Single(program.Functions)));
+
+        var (value, diagnostics) = Evaluate(
+            "handler.attribute(\"missing\").path",
+            context,
+            reflection);
+
+        Assert.Null(value);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "Compile-time null value is not object-like",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FunctionSignature_MatchesStructuredFunctionTypeLiteral()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Request {}
+            struct Response {}
+
+            struct Service {
+                public fn handle(request: Request*) -> Response {
+                    return Response {};
+                }
+            }
+
+            public fn handler(request: Request*) -> Response {
+                return Response {};
+            }
+            """);
+        var reflection = new ProgramCompileTimeReflection(program);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("handler", new CompileTimeValue.Syntax(Assert.Single(program.Functions)));
+        Assert.True(reflection.TryGetMethods(new TypeRef.Named("Service", []), out var methods));
+        context.Define("method", new CompileTimeValue.ResolvedMethod(Assert.Single(methods)));
+
+        var (signature, signatureDiagnostics) = Evaluate(
+            "handler.signature",
+            context,
+            reflection);
+        var (matches, matchDiagnostics) = Evaluate(
+            "handler.match(Type.from(fn(Request*) -> Response))",
+            context,
+            reflection);
+        var (doesNotMatch, mismatchDiagnostics) = Evaluate(
+            "handler.match(Type.from(fn(Request*) -> int))",
+            context,
+            reflection);
+        var (methodMatches, methodMatchDiagnostics) = Evaluate(
+            "method.match(Type.from(fn(Request*) -> Response))",
+            context,
+            reflection);
+
+        Assert.IsType<TypeRef.Function>(Assert.IsType<CompileTimeValue.Type>(signature).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(matches).Value);
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(doesNotMatch).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(methodMatches).Value);
+        CompilerTestHelpers.AssertNoErrors(signatureDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(matchDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(mismatchDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(methodMatchDiagnostics);
+    }
+
+    [Fact]
+    public void TypeFactories_ConstructStructuredTypes()
+    {
+        var context = new CompileTimeEvaluationContext();
+        context.Define("user", new CompileTimeValue.Type(new TypeRef.Named("User", [])));
+        context.Define("box", new CompileTimeValue.Type(new TypeRef.Named("Box", [])));
+
+        var (pointer, pointerDiagnostics) = Evaluate("Type.pointer(user)", context);
+        var (constant, constDiagnostics) = Evaluate("Type.const(user)", context);
+        var (array, arrayDiagnostics) = Evaluate("Type.array(int, 16)", context);
+        var (generic, genericDiagnostics) = Evaluate("Type.generic(box, [int])", context);
+        var (function, functionDiagnostics) = Evaluate(
+            "Type.function([Type.pointer(user), usize], bool)",
+            context);
+
+        Assert.Equal(
+            new TypeRef.Pointer(new TypeRef.Named("User", [])),
+            Assert.IsType<CompileTimeValue.Type>(pointer).Value);
+        Assert.Equal(
+            new TypeRef.Const(new TypeRef.Named("User", [])),
+            Assert.IsType<CompileTimeValue.Type>(constant).Value);
+        Assert.Equal(
+            new TypeRef.FixedArray(TypeRef.Int, new ArrayLengthNode.Integer(16)),
+            Assert.IsType<CompileTimeValue.Type>(array).Value);
+        var genericType = Assert.IsType<TypeRef.Named>(
+            Assert.IsType<CompileTimeValue.Type>(generic).Value);
+        Assert.Equal("Box", genericType.Name);
+        Assert.Equal(TypeRef.Int, Assert.Single(genericType.Arguments));
+
+        var functionType = Assert.IsType<TypeRef.Function>(
+            Assert.IsType<CompileTimeValue.Type>(function).Value);
+        Assert.Equal(2, functionType.Parameters.Count);
+        Assert.IsType<TypeRef.Pointer>(functionType.Parameters[0]);
+        Assert.Equal(TypeRef.Usize, functionType.Parameters[1]);
+        Assert.Equal(TypeRef.Bool, functionType.ReturnType);
+        CompilerTestHelpers.AssertNoErrors(pointerDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(constDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(arrayDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(genericDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(functionDiagnostics);
+    }
+
+    [Theory]
+    [InlineData("Type.pointer(1)", "Type.pointer")]
+    [InlineData("Type.array(int, -1)", "Type.array")]
+    [InlineData("Type.generic(int, [int, 1])", "Type.generic")]
+    [InlineData("Type.function([int, 1], bool)", "Type.function")]
+    public void TypeFactories_RejectInvalidArguments(string source, string method)
+    {
+        var (value, diagnostics) = Evaluate(source);
+
+        Assert.Null(value);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(method, StringComparison.Ordinal));
     }
 
     private static (CompileTimeValue? Value, DiagnosticBag Diagnostics) Evaluate(

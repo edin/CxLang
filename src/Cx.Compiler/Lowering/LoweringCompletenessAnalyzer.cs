@@ -83,7 +83,7 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                         $"Internal lowering error: macro invocation '{invocation.MacroName}' remains after lowering.");
                     foreach (var argument in invocation.Arguments)
                     {
-                        AnalyzeExpression(argument);
+                        AnalyzeExpression(argument.ExpressionCandidate);
                     }
                     break;
                 case LetStatement let:
@@ -243,6 +243,11 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                 {
                     AnalyzeExpression(element);
                 }
+                break;
+            case TypeLiteralExpressionNode typeLiteral:
+                diagnostics.Report(
+                    typeLiteral.Location,
+                    "Internal lowering error: compile-time type literal remains after lowering.");
                 break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)

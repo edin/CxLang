@@ -130,7 +130,8 @@ public sealed class CxCompiler
         var macroExpansion = new MacroExpansionPass(
             diagnostics,
             mergedInputProgram,
-            new ProgramCompileTimeReflection(mergedInputProgram));
+            new ProgramCompileTimeReflection(mergedInputProgram, moduleNamesByPath),
+            moduleNamesByPath);
         mergedInputProgram = macroExpansion.RewriteProgram(mergedInputProgram);
         if (diagnostics.HasErrors)
         {
@@ -139,7 +140,7 @@ public sealed class CxCompiler
 
         var compileTimeExpansion = new CompileTimeDirectiveExpansionPass(
             diagnostics,
-            new ProgramCompileTimeReflection(mergedInputProgram));
+            new ProgramCompileTimeReflection(mergedInputProgram, moduleNamesByPath));
         mergedInputProgram = compileTimeExpansion.ExpandProgram(mergedInputProgram);
         if (diagnostics.HasErrors)
         {
@@ -151,6 +152,12 @@ public sealed class CxCompiler
             diagnostics.Report(
                 list.Location,
                 "List expressions are only valid during compile-time evaluation.");
+        }
+        foreach (var typeLiteral in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<TypeLiteralExpressionNode>())
+        {
+            diagnostics.Report(
+                typeLiteral.Location,
+                "Type literals are only valid during compile-time evaluation.");
         }
         if (diagnostics.HasErrors)
         {

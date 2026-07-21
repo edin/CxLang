@@ -168,7 +168,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn generated() -> int {
-                @let match = requirement_match(target, Contiguous);
+                @let match = target.match(Contiguous);
                 @if(match.success) {
                     let item: @{match.T} = 0;
                 }
@@ -328,6 +328,45 @@ public sealed class CompileTimeDirectiveExpansionPassTests
         var body = Assert.Single(expanded.Functions).Body;
         Assert.Equal(2, body.Count);
         Assert.Equal("emit()", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[1]);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_IteratesReflectedPublicMethods()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct User {
+                public fn visible() -> int {
+                    return 1;
+                }
+
+                fn hidden() -> int {
+                    return 2;
+                }
+            }
+
+            fn generated() -> int {
+                @foreach(method in target.methods) {
+                    @if(method.is_public) {
+                        emit_public_method();
+                    }
+                }
+
+                return 0;
+            }
+            """);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("target", new CompileTimeValue.Type(new TypeRef.Named("User", [])));
+
+        var (expanded, diagnostics) = Expand(program, context);
+
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(2, body.Count);
+        Assert.Equal(
+            "emit_public_method()",
+            Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
         Assert.IsType<ReturnStatement>(body[1]);
         CompilerTestHelpers.AssertNoErrors(diagnostics);
     }

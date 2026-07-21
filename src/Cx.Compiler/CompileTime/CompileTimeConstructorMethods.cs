@@ -8,6 +8,17 @@ internal sealed class AttributeArgumentCompileTimeObject : CompileTimeScriptObje
 
     public override Type ReceiverType => typeof(AttributeArgumentNode);
 
+    [CompileTimeProperty("value")]
+    private CompileTimePropertyResult Value(
+        AttributeArgumentNode argument,
+        CompileTimePropertyContext context)
+    {
+        var value = context.Evaluate(argument.Value);
+        return value is null
+            ? new CompileTimePropertyResult.Failed()
+            : CompileTimePropertyResult.From(value);
+    }
+
     [CompileTimeMethod("positional")]
     private CompileTimeMethodResult Positional(
         IReadOnlyList<CompileTimeValue> arguments,
@@ -81,6 +92,53 @@ internal sealed class AttributeCompileTimeObject : CompileTimeScriptObject
     public override string GlobalName => "Attribute";
 
     public override Type ReceiverType => typeof(AttributeApplicationNode);
+
+    [CompileTimeProperty("arguments")]
+    private CompileTimePropertyResult Arguments(
+        AttributeApplicationNode attribute,
+        CompileTimePropertyContext context) =>
+        CompileTimePropertyResult.From(new CompileTimeValue.List(
+            attribute.Arguments.Select(argument => new CompileTimeValue.Syntax(argument)).ToList()));
+
+    public override CompileTimePropertyResult GetDynamicProperty(
+        object receiver,
+        string propertyName,
+        CompileTimePropertyContext context)
+    {
+        var attribute = (AttributeApplicationNode)receiver;
+        if (!context.Reflection.TryGetAttributeDeclaration(attribute.Name, out var declaration))
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                $"Cannot resolve declaration for compile-time attribute '{attribute.Name}'.");
+            return new CompileTimePropertyResult.Failed();
+        }
+
+        var positionalIndex = 0;
+        foreach (var argument in attribute.Arguments)
+        {
+            var fieldName = argument.Name;
+            if (fieldName is null)
+            {
+                fieldName = positionalIndex < declaration.Fields.Count
+                    ? declaration.Fields[positionalIndex].Name
+                    : null;
+                positionalIndex++;
+            }
+
+            if (!string.Equals(fieldName, propertyName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var value = context.Evaluate(argument.Value);
+            return value is null
+                ? new CompileTimePropertyResult.Failed()
+                : CompileTimePropertyResult.From(value);
+        }
+
+        return new CompileTimePropertyResult.Missing();
+    }
 
     [CompileTimeMethod("create")]
     private CompileTimeMethodResult Create(

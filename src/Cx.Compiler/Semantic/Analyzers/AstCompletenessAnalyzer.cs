@@ -54,7 +54,7 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
                 case MacroInvocationStatementNode invocation:
                     foreach (var argument in invocation.Arguments)
                     {
-                        AnalyzeExpression(argument);
+                        AnalyzeExpression(argument.ExpressionCandidate);
                     }
                     break;
                 case LetStatement let:
@@ -184,6 +184,8 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
                 {
                     AnalyzeExpression(element);
                 }
+                break;
+            case TypeLiteralExpressionNode:
                 break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)

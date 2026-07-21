@@ -76,6 +76,11 @@ internal sealed class ExpressionSemanticAnalyzer(
                     Analyze(element, location, typeEnvironment, mutability);
                 }
                 break;
+            case TypeLiteralExpressionNode typeLiteral:
+                diagnostics.Report(
+                    typeLiteral.Location,
+                    "Type literals are only valid during compile-time evaluation.");
+                break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)
                 {

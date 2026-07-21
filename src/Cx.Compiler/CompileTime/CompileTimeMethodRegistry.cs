@@ -13,6 +13,12 @@ internal abstract class CompileTimeScriptObject
     public virtual string? GlobalName => null;
 
     public abstract Type ReceiverType { get; }
+
+    public virtual CompileTimePropertyResult GetDynamicProperty(
+        object receiver,
+        string propertyName,
+        CompileTimePropertyContext context) =>
+        new CompileTimePropertyResult.Missing();
 }
 
 internal sealed class CompileTimeMethodRegistry

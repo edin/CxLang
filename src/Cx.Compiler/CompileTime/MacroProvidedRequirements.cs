@@ -113,9 +113,14 @@ internal static class MacroProvidedRequirementCollector
             }
 
             var argument = invocation.Arguments[index];
-            var type = argument is NameExpressionNode { Name: "Self" } && selfType is not null
+            var isSelf = argument.ExpressionCandidate is NameExpressionNode { Name: "Self" }
+                || argument.TypeCandidate?.Syntax is NamedTypeSyntaxNode { Name: "Self" };
+            var type = isSelf && selfType is not null
                 ? selfType
-                : ExpressionNameFacts.GetQualifiedName(argument) is { } name
+                : argument.TypeCandidate is { } typeNode
+                    ? parser.Parse(typeNode)
+                    : argument.ExpressionCandidate is not null
+                    && ExpressionNameFacts.GetQualifiedName(argument.ExpressionCandidate) is { } name
                     ? new TypeRef.Named(name, [])
                     : null;
             if (type is not null)
@@ -153,8 +158,20 @@ internal sealed class ProspectiveCompileTimeReflection(
 {
     public bool IsAvailable => inner.IsAvailable;
 
-    public bool TryGetFields(TypeRef type, out IReadOnlyList<StructFieldNode> fields) =>
+    public bool TryGetFields(TypeRef type, out IReadOnlyList<ResolvedField> fields) =>
         inner.TryGetFields(type, out fields);
+
+    public bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods) =>
+        inner.TryGetMethods(type, out methods);
+
+    public bool TryGetModule(string name, out ReflectedModule module) =>
+        inner.TryGetModule(name, out module);
+
+    public bool TryGetModuleForFile(string path, out ReflectedModule module) =>
+        inner.TryGetModuleForFile(path, out module);
+
+    public bool TryGetOwnerType(FunctionNode function, out TypeRef ownerType) =>
+        inner.TryGetOwnerType(function, out ownerType);
 
     public bool TryGetType(SyntaxNode syntax, out TypeRef type) => inner.TryGetType(syntax, out type);
 
@@ -162,6 +179,11 @@ internal sealed class ProspectiveCompileTimeReflection(
         SyntaxNode syntax,
         out IReadOnlyList<AttributeApplicationNode> attributes) =>
         inner.TryGetAttributes(syntax, out attributes);
+
+    public bool TryGetAttributeDeclaration(
+        string name,
+        out AttributeDeclarationNode declaration) =>
+        inner.TryGetAttributeDeclaration(name, out declaration);
 
     public bool TryGetRequirement(string name, out RequirementNode requirement) =>
         inner.TryGetRequirement(name, out requirement);

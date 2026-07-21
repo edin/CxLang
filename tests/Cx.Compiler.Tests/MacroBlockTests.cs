@@ -139,9 +139,34 @@ public sealed class MacroBlockTests
             Assert.IsType<CompileTimeScriptDeclarationNode>(declarations[0]).Statement);
         Assert.IsType<CStatement>(
             Assert.IsType<CompileTimeScriptDeclarationNode>(declarations[1]).Statement);
-        Assert.IsType<CompileTimeForeachStatementNode>(
-            Assert.IsType<CompileTimeScriptDeclarationNode>(declarations[2]).Statement);
+        Assert.IsType<CompileTimeForeachTopLevelNode>(declarations[2]);
         Assert.IsType<FunctionNode>(declarations[3]);
+    }
+
+    [Fact]
+    public void Parse_UsesDeclarationBodiesForCompileTimeDirectivesInDeclarationMacros()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro Generate(names: expression) -> declarations {
+                @foreach(name in names) {
+                    @if(name == "enabled") {
+                        fn @{as_name(name)}() -> int {
+                            return 0;
+                        }
+                    }
+                }
+            }
+            """);
+
+        var foreachNode = Assert.IsType<CompileTimeForeachTopLevelNode>(
+            Assert.Single(Assert.Single(program.Macros).Template.DeclarationNodes));
+        var conditional = Assert.IsType<CompileTimeIfTopLevelNode>(
+            Assert.Single(foreachNode.Declarations));
+        Assert.IsType<FunctionNode>(Assert.Single(conditional.ThenDeclarations));
+        Assert.Empty(conditional.ElseDeclarations);
+        Assert.NotNull(foreachNode.Span);
+        Assert.NotNull(conditional.Span);
     }
 
     [Fact]

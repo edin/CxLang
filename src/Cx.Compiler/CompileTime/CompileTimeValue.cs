@@ -6,6 +6,8 @@ namespace Cx.Compiler.CompileTime;
 
 internal abstract record CompileTimeValue
 {
+    public sealed record Null : CompileTimeValue;
+
     public sealed record Boolean(bool Value) : CompileTimeValue;
 
     public sealed record Integer(long Value) : CompileTimeValue;
@@ -17,11 +19,11 @@ internal abstract record CompileTimeValue
     public sealed record Type(TypeRef Value) : CompileTimeObjectValue
     {
         public override string DisplayType => "type";
+    }
 
-        public override CompileTimePropertyResult GetProperty(
-            string name,
-            CompileTimePropertyContext context) =>
-            CompileTimeObjectProperties.GetTypeProperty(this, name, context);
+    public sealed record Module(ReflectedModule Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "module";
     }
 
     public sealed record Syntax(SyntaxNode Value) : CompileTimeObjectValue
@@ -29,11 +31,6 @@ internal abstract record CompileTimeValue
         public override string DisplayType => Value is FunctionNode or ExternFunctionNode
             ? "function declaration"
             : "syntax";
-
-        public override CompileTimePropertyResult GetProperty(
-            string name,
-            CompileTimePropertyContext context) =>
-            CompileTimeObjectProperties.GetSyntaxProperty(this, name, context);
     }
 
     public sealed record RequirementMatch(
@@ -41,11 +38,24 @@ internal abstract record CompileTimeValue
         RequirementNode Requirement) : CompileTimeObjectValue
     {
         public override string DisplayType => "requirement match";
+    }
 
-        public override CompileTimePropertyResult GetProperty(
-            string name,
-            CompileTimePropertyContext context) =>
-            CompileTimeObjectProperties.GetRequirementMatchProperty(this, name, context);
+    public sealed record ResolvedField(
+        Cx.Compiler.Semantic.ResolvedField Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "resolved field";
+    }
+
+    public sealed record ResolvedMethod(
+        Cx.Compiler.Semantic.ResolvedMethod Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "resolved method";
+    }
+
+    public sealed record ResolvedParameter(
+        Cx.Compiler.Semantic.ResolvedParameter Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "resolved parameter";
     }
 
     public sealed record List : CompileTimeObjectValue
@@ -61,11 +71,6 @@ internal abstract record CompileTimeValue
 
         public override string DisplayType => "list";
 
-        public override CompileTimePropertyResult GetProperty(
-            string name,
-            CompileTimePropertyContext context) =>
-            CompileTimeObjectProperties.GetListProperty(this, name, context);
-
         internal void Add(CompileTimeValue value) => _values.Add(value);
     }
 }
@@ -73,10 +78,6 @@ internal abstract record CompileTimeValue
 internal abstract record CompileTimeObjectValue : CompileTimeValue
 {
     public abstract string DisplayType { get; }
-
-    public abstract CompileTimePropertyResult GetProperty(
-        string name,
-        CompileTimePropertyContext context);
 }
 
 internal static class CompileTimeValueFacts
@@ -84,6 +85,7 @@ internal static class CompileTimeValueFacts
     public static string Describe(CompileTimeValue value) => value switch
     {
         CompileTimeObjectValue objectValue => objectValue.DisplayType,
+        CompileTimeValue.Null => "null",
         CompileTimeValue.Boolean => "boolean",
         CompileTimeValue.Integer => "integer",
         CompileTimeValue.String => "string",

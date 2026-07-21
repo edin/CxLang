@@ -4,6 +4,32 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.CompileTime;
 
+internal sealed class ModuleCompileTimeIntrinsic : ICompileTimeIntrinsic
+{
+    public string Name => "module";
+
+    public CompileTimeValue? Invoke(CompileTimeIntrinsicContext context)
+    {
+        if (context.Arguments is not [CompileTimeValue.String moduleName])
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                "Compile-time intrinsic 'module' expects exactly one module-name string argument.");
+            return null;
+        }
+
+        if (!context.Reflection.TryGetModule(moduleName.Value, out var module))
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                $"Compile-time module '{moduleName.Value}' is not visible.");
+            return null;
+        }
+
+        return new CompileTimeValue.Module(module);
+    }
+}
+
 internal sealed class ConcatCompileTimeIntrinsic : ICompileTimeIntrinsic
 {
     public string Name => "concat";
@@ -90,7 +116,7 @@ internal sealed class FieldsCompileTimeIntrinsic : ICompileTimeIntrinsic
         }
 
         return new CompileTimeValue.List(
-            fields.Select(field => new CompileTimeValue.Syntax(field)).ToList());
+            fields.Select(field => new CompileTimeValue.ResolvedField(field)).ToList());
     }
 }
 
@@ -100,31 +126,34 @@ internal sealed class NameCompileTimeIntrinsic : ICompileTimeIntrinsic
 
     public CompileTimeValue? Invoke(CompileTimeIntrinsicContext context)
     {
-        if (context.Arguments is not [CompileTimeValue.Syntax syntax])
+        if (context.Arguments.Count != 1)
         {
             context.Diagnostics.Report(
                 context.Location,
-                "Compile-time intrinsic 'name' expects exactly one syntax argument.");
+                "Compile-time intrinsic 'name' expects exactly one syntax or resolved-member argument.");
             return null;
         }
 
-        var name = syntax.Value switch
+        var name = context.Arguments[0] switch
         {
-            StructFieldNode field => field.Name,
-            StructNode structNode => structNode.Name,
-            FunctionNode function => function.Name,
-            ParameterNode parameter => parameter.Name,
-            EnumNode enumNode => enumNode.Name,
-            TaggedUnionNode union => union.Name,
-            AttributeApplicationNode attribute => attribute.Name,
-            AttributeArgumentNode { Name: not null } argument => argument.Name,
+            CompileTimeValue.ResolvedField field => field.Value.Name,
+            CompileTimeValue.ResolvedMethod method => method.Value.Name,
+            CompileTimeValue.ResolvedParameter parameter => parameter.Value.Name,
+            CompileTimeValue.Syntax { Value: StructFieldNode field } => field.Name,
+            CompileTimeValue.Syntax { Value: StructNode structNode } => structNode.Name,
+            CompileTimeValue.Syntax { Value: FunctionNode function } => function.Name,
+            CompileTimeValue.Syntax { Value: ParameterNode parameter } => parameter.Name,
+            CompileTimeValue.Syntax { Value: EnumNode enumNode } => enumNode.Name,
+            CompileTimeValue.Syntax { Value: TaggedUnionNode union } => union.Name,
+            CompileTimeValue.Syntax { Value: AttributeApplicationNode attribute } => attribute.Name,
+            CompileTimeValue.Syntax { Value: AttributeArgumentNode { Name: not null } argument } => argument.Name,
             _ => null,
         };
         if (name is null)
         {
             context.Diagnostics.Report(
                 context.Location,
-                $"Compile-time intrinsic 'name' does not support syntax node '{syntax.Value.GetType().Name}'.");
+                $"Compile-time intrinsic 'name' does not support {CompileTimeValueFacts.Describe(context.Arguments[0])} values.");
             return null;
         }
 
@@ -138,11 +167,32 @@ internal sealed class TypeCompileTimeIntrinsic : ICompileTimeIntrinsic
 
     public CompileTimeValue? Invoke(CompileTimeIntrinsicContext context)
     {
-        if (context.Arguments is not [CompileTimeValue.Syntax syntax])
+        if (context.Arguments.Count != 1)
         {
             context.Diagnostics.Report(
                 context.Location,
-                "Compile-time intrinsic 'type' expects exactly one syntax argument.");
+                "Compile-time intrinsic 'type' expects exactly one syntax or resolved-member argument.");
+            return null;
+        }
+
+        var argument = context.Arguments[0];
+        var resolvedType = argument switch
+        {
+            CompileTimeValue.ResolvedField field => field.Value.Type,
+            CompileTimeValue.ResolvedMethod method => method.Value.ReturnType,
+            CompileTimeValue.ResolvedParameter parameter => parameter.Value.Type,
+            _ => null,
+        };
+        if (resolvedType is not null)
+        {
+            return new CompileTimeValue.Type(resolvedType);
+        }
+
+        if (argument is not CompileTimeValue.Syntax syntax)
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                $"Compile-time intrinsic 'type' does not support {CompileTimeValueFacts.Describe(argument)} values.");
             return null;
         }
 
@@ -172,11 +222,24 @@ internal sealed class AttributesCompileTimeIntrinsic : ICompileTimeIntrinsic
 
     public CompileTimeValue? Invoke(CompileTimeIntrinsicContext context)
     {
-        if (context.Arguments is not [CompileTimeValue.Syntax syntax])
+        if (context.Arguments.Count != 1)
         {
             context.Diagnostics.Report(
                 context.Location,
-                "Compile-time intrinsic 'attributes' expects exactly one syntax argument.");
+                "Compile-time intrinsic 'attributes' expects exactly one syntax or resolved-member argument.");
+            return null;
+        }
+
+        if (CompileTimeResolvedValueFacts.TryGetAttributes(context.Arguments[0], out var resolvedAttributes))
+        {
+            return CompileTimeResolvedValueFacts.ToAttributeList(resolvedAttributes);
+        }
+
+        if (context.Arguments[0] is not CompileTimeValue.Syntax syntax)
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                $"Compile-time intrinsic 'attributes' does not support {CompileTimeValueFacts.Describe(context.Arguments[0])} values.");
             return null;
         }
 
@@ -207,12 +270,26 @@ internal sealed class HasAttributeCompileTimeIntrinsic : ICompileTimeIntrinsic
 
     public CompileTimeValue? Invoke(CompileTimeIntrinsicContext context)
     {
-        if (context.Arguments is not
-            [CompileTimeValue.Syntax syntax, CompileTimeValue.String attributeName])
+        if (context.Arguments is not [var target, CompileTimeValue.String attributeName])
         {
             context.Diagnostics.Report(
                 context.Location,
-                "Compile-time intrinsic 'has_attribute' expects one syntax argument and one string argument.");
+                "Compile-time intrinsic 'has_attribute' expects one syntax or resolved-member argument and one string argument.");
+            return null;
+        }
+
+        if (CompileTimeResolvedValueFacts.TryGetAttributes(target, out var resolvedAttributes))
+        {
+            return new CompileTimeValue.Boolean(
+                resolvedAttributes.Any(attribute =>
+                    string.Equals(attribute.Name, attributeName.Value, StringComparison.Ordinal)));
+        }
+
+        if (target is not CompileTimeValue.Syntax syntax)
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                $"Compile-time intrinsic 'has_attribute' does not support {CompileTimeValueFacts.Describe(target)} values.");
             return null;
         }
 

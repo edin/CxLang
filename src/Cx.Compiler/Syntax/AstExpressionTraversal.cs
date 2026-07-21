@@ -85,7 +85,10 @@ internal static class AstExpressionTraversal
                 case MacroInvocationStatementNode invocation:
                     foreach (var argument in invocation.Arguments)
                     {
-                        foreach (var expression in Enumerate(argument)) yield return expression;
+                        if (argument.ExpressionCandidate is not null)
+                        {
+                            foreach (var expression in Enumerate(argument.ExpressionCandidate)) yield return expression;
+                        }
                     }
                     break;
                 case LetStatement { Initializer: not null } let:
@@ -193,6 +196,8 @@ internal static class AstExpressionTraversal
                 {
                     foreach (var child in Enumerate(element)) yield return child;
                 }
+                break;
+            case TypeLiteralExpressionNode:
                 break;
             case InitializerExpressionNode initializer:
                 foreach (var field in initializer.Fields)

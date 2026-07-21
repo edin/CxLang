@@ -135,6 +135,10 @@ public sealed record ListExpressionNode(
     Location Location,
     IReadOnlyList<ExpressionNode> Elements) : ExpressionNode(Location);
 
+public sealed record TypeLiteralExpressionNode(
+    Location Location,
+    TypeNode TypeNode) : ExpressionNode(Location);
+
 public sealed record InitializerExpressionNode(
     Location Location,
     IReadOnlyList<InitializerFieldNode> Fields,
@@ -203,6 +207,7 @@ public static class ExpressionNodeExtensions
         ScalarRangeExpressionNode range =>
             $"{range.Start.ToSourceText()}{(range.IsInclusive ? "..." : "..")}{range.End.ToSourceText()}",
         ListExpressionNode list => $"[{FormatArguments(list.Elements)}]",
+        TypeLiteralExpressionNode typeLiteral => typeLiteral.TypeNode.ToSourceText(),
         InitializerExpressionNode initializer => FormatInitializer(initializer),
         FunctionExpressionNode function => FormatFunctionExpression(function),
         AssignmentExpressionNode assignment =>

@@ -457,6 +457,11 @@ internal sealed class ExpressionTokenParser
             return functionExpression;
         }
 
+        if (TryParseTypeLiteralExpression(out var typeLiteralExpression))
+        {
+            return typeLiteralExpression;
+        }
+
         if (TryParseSizeOfExpression(out var sizeOfExpression))
         {
             return sizeOfExpression;
@@ -657,6 +662,39 @@ internal sealed class ExpressionTokenParser
             body,
             BlockBody: null,
             ReturnTypeNode: returnTypeNode);
+        return true;
+    }
+
+    private bool TryParseTypeLiteralExpression(out ExpressionNode expression)
+    {
+        expression = null!;
+        if (!Check(TokenType.Fn))
+        {
+            return false;
+        }
+
+        TypeNode? parsedType = null;
+        var consumedCount = 0;
+        for (var count = 1; _position + count <= _tokens.Count; count++)
+        {
+            var candidate = _tokens.Skip(_position).Take(count).ToList();
+            if (TypeTokenParser.TryParse(candidate) is { } type)
+            {
+                parsedType = type;
+                consumedCount = count;
+            }
+        }
+
+        if (parsedType?.Syntax is not FunctionTypeSyntaxNode || consumedCount == 0)
+        {
+            return false;
+        }
+
+        _position += consumedCount;
+        expression = new TypeLiteralExpressionNode(parsedType.Location, parsedType)
+        {
+            Span = parsedType.Span,
+        };
         return true;
     }
 
@@ -1413,7 +1451,14 @@ internal sealed class ExpressionTokenParser
 
     private Token? ExpectIdentifierLike(bool matchOnly = false)
     {
-        if (!IsAtEnd && Current.Type is TokenType.Identifier or TokenType.Type or TokenType.Default or TokenType.Match)
+        if (!IsAtEnd && Current.Type is TokenType.Identifier
+            or TokenType.Type
+            or TokenType.Const
+            or TokenType.Default
+            or TokenType.Match
+            or TokenType.Module
+            or TokenType.Attribute
+            or TokenType.From)
         {
             return matchOnly ? Current : Advance();
         }

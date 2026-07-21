@@ -13,6 +13,16 @@ internal static class CompileTimeBuiltIns
         new AttributeCompileTimeObject(),
         new ParameterCompileTimeObject(),
         new ListCompileTimeObject(),
+        new ModuleCompileTimeObject(),
+        new TypeCompileTimeObject(),
+        new SyntaxCompileTimeObject(),
+        new FunctionCompileTimeObject(),
+        new ExternFunctionCompileTimeObject(),
+        new StructCompileTimeObject(),
+        new RequirementMatchCompileTimeObject(),
+        new ResolvedFieldCompileTimeObject(),
+        new ResolvedMethodCompileTimeObject(),
+        new ResolvedParameterCompileTimeObject(),
     ];
 }
 
@@ -55,11 +65,6 @@ internal sealed record CompileTimeScriptObjectValue(
     CompileTimeScriptObject Definition) : CompileTimeObjectValue
 {
     public override string DisplayType => $"object '{Definition.GlobalName}'";
-
-    public override CompileTimePropertyResult GetProperty(
-        string name,
-        CompileTimePropertyContext context) =>
-        new CompileTimePropertyResult.Missing();
 }
 
 internal static class CompileTimeConstructorFacts

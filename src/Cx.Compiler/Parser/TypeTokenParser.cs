@@ -7,6 +7,19 @@ namespace Cx.Compiler.Parser;
 
 internal static class TypeTokenParser
 {
+    public static TypeNode? TryParse(IReadOnlyList<Token> tokens)
+    {
+        if (tokens.Count == 0 || TryParseSyntax(tokens) is not { } syntax)
+        {
+            return null;
+        }
+
+        return SyntaxNode.WithSpan(
+            TypeNode.Create(tokens[0].Location, syntax),
+            tokens[0].Span,
+            tokens[^1].Span);
+    }
+
     public static TypeNode Parse(IReadOnlyList<Token> tokens)
     {
         if (tokens.Count == 0)
@@ -14,13 +27,9 @@ internal static class TypeTokenParser
             return TypeNode.CreateFromText(Location.Synthetic("<type-token-parser>"), string.Empty);
         }
 
-        var syntax = TryParseSyntax(tokens);
-        if (syntax is not null)
+        if (TryParse(tokens) is { } parsed)
         {
-            return SyntaxNode.WithSpan(
-                TypeNode.Create(tokens[0].Location, syntax),
-                tokens[0].Span,
-                tokens[^1].Span);
+            return parsed;
         }
 
         var typeName = ToTypeSourceText(tokens);
@@ -75,6 +84,11 @@ internal static class TypeTokenParser
 
         public TypeSyntaxNode? ParseType()
         {
+            if (IsAtEnd)
+            {
+                return null;
+            }
+
             if (Match(TokenType.Fn) is not null)
             {
                 return ParseFunctionType();
@@ -127,6 +141,11 @@ internal static class TypeTokenParser
             {
                 do
                 {
+                    if (IsAtEnd)
+                    {
+                        return null;
+                    }
+
                     if (Match(TokenType.Ellipsis) is not null)
                     {
                         isVariadic = true;

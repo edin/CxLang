@@ -466,6 +466,21 @@ public sealed class ExpressionTokenParserTests
     }
 
     [Fact]
+    public void ParseExpression_ParsesStructuredFunctionTypeLiteral()
+    {
+        var expression = CompilerTestHelpers.ParseTokenExpression(
+            "Type.from(fn(Request*) -> Response)");
+
+        var call = Assert.IsType<CallExpressionNode>(expression);
+        var typeLiteral = Assert.IsType<TypeLiteralExpressionNode>(Assert.Single(call.Arguments));
+        var functionType = Assert.IsType<FunctionTypeSyntaxNode>(typeLiteral.TypeNode.Syntax);
+        var parameter = Assert.IsType<PointerTypeSyntaxNode>(Assert.Single(functionType.Parameters));
+        Assert.Equal("Request", Assert.IsType<NamedTypeSyntaxNode>(parameter.Element).Name);
+        Assert.Equal("Response", Assert.IsType<NamedTypeSyntaxNode>(functionType.ReturnType).Name);
+        Assert.Equal("fn(Request*)->Response", typeLiteral.ToSourceText());
+    }
+
+    [Fact]
     public void ParseExpression_ParsesBlockFunctionExpressionFromTokens()
     {
         var expression = CompilerTestHelpers.ParseTokenExpression("fn(value: int) -> int { return value + 1; }");

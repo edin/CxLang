@@ -36,6 +36,11 @@ internal sealed record ResolvedField(
     TypeRef Type,
     StructFieldNode Declaration);
 
+internal sealed record ResolvedParameter(
+    string Name,
+    TypeRef Type,
+    ParameterNode Declaration);
+
 internal enum ResolvedMethodKind
 {
     Direct,
@@ -64,9 +69,13 @@ internal sealed record ResolvedMethod(
     string Name,
     TypeRef OwnerType,
     TypeRef ReturnType,
-    IReadOnlyList<TypeRef> ParameterTypes,
+    IReadOnlyList<ResolvedParameter> Parameters,
     ResolvedMethodTarget Target)
 {
+    public IReadOnlyList<TypeRef> ParameterTypes => Parameters
+        .Select(parameter => parameter.Type)
+        .ToList();
+
     public FunctionNode Declaration => Target.Function;
 
     public ResolvedMethod DirectMethod =>
@@ -88,7 +97,7 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
     public IReadOnlyList<ResolvedField> GetFields(ResolvedType type) =>
         type.Symbol switch
         {
-            TypeSymbol.Struct structSymbol => ResolveFields(structSymbol.Declaration, type.Substitutions),
+            TypeSymbol.Struct structSymbol => ResolveFields(structSymbol.Declaration, type),
             _ => [],
         };
 
@@ -103,14 +112,16 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
 
     private IReadOnlyList<ResolvedField> ResolveFields(
         StructNode declaration,
-        IReadOnlyDictionary<string, TypeRef> substitutions) =>
+        ResolvedType type) =>
         declaration.Fields
             .Select(field =>
             {
                 var fieldType = field.TypeNode.ToTypeRef(_parser);
+                fieldType = TypeRefRewriter.Substitute(fieldType, type.Substitutions);
+                fieldType = TypeRefRewriter.SubstituteSelf(fieldType, type.Type);
                 return new ResolvedField(
                     field.Name,
-                    TypeRefRewriter.Substitute(fieldType, substitutions),
+                    fieldType,
                     field);
             })
             .ToList();
@@ -126,7 +137,8 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
                     && ExtensionConstraintsSatisfied(extension, type))
                 .SelectMany(extension => extension.Methods))
             .Concat(program.Functions.Where(function =>
-                HasOwnerName(function.OwnerTypeNode, declaration.Name)));
+                HasOwnerName(function.OwnerTypeNode, declaration.Name)))
+            .Distinct((IEqualityComparer<FunctionNode>)ReferenceEqualityComparer.Instance);
         return methods
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
             .ToList();
@@ -188,17 +200,17 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
             returnType = TypeRefRewriter.Substitute(returnType, type.Substitutions);
             returnType = TypeRefRewriter.SubstituteSelf(returnType, selfType);
 
-            var parameterTypes = baseMethod.ParameterTypes.ToList();
-            if (!expose.IsStatic && parameterTypes.Count > 0)
+            var parameters = baseMethod.Parameters.ToList();
+            if (!expose.IsStatic && parameters.Count > 0)
             {
-                parameterTypes[0] = new TypeRef.Pointer(selfType);
+                parameters[0] = parameters[0] with { Type = new TypeRef.Pointer(selfType) };
             }
 
             exposed.Add(new ResolvedMethod(
                 expose.ExposedName,
                 type.Type,
                 returnType,
-                parameterTypes,
+                parameters,
                 new ResolvedMethodTarget.Exposed(declaration, expose, baseMethod)));
         }
 
@@ -211,18 +223,28 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         IReadOnlyDictionary<string, TypeRef> substitutions)
     {
         var returnType = method.ReturnTypeNode.ToTypeRef(_parser);
-        var parameterTypes = method.Parameters
+        var parameters = method.Parameters
             .Where(parameter => !parameter.IsVariadic)
-            .Select(parameter => parameter.TypeNode.ToTypeRef(_parser))
-            .Select(parameterType => TypeRefRewriter.Substitute(parameterType, substitutions))
+            .Select(parameter => new ResolvedParameter(
+                parameter.Name,
+                ResolveMemberType(parameter.TypeNode.ToTypeRef(_parser), ownerType, substitutions),
+                parameter))
             .ToList();
         return new ResolvedMethod(
             method.Name,
             ownerType,
-            TypeRefRewriter.Substitute(returnType, substitutions),
-            parameterTypes,
+            ResolveMemberType(returnType, ownerType, substitutions),
+            parameters,
             new ResolvedMethodTarget.Direct(method));
     }
+
+    private static TypeRef ResolveMemberType(
+        TypeRef type,
+        TypeRef ownerType,
+        IReadOnlyDictionary<string, TypeRef> substitutions) =>
+        TypeRefRewriter.SubstituteSelf(
+            TypeRefRewriter.Substitute(type, substitutions),
+            ownerType);
 
     private bool ExtensionConstraintsSatisfied(
         ExtensionNode extension,
@@ -305,9 +327,15 @@ internal sealed class TypeResolver(
     public ResolvedType ResolveDefinition(TypeRef type)
     {
         var resolved = Resolve(type);
-        return resolved.Symbol is TypeSymbol.Alias && type is TypeRef.Alias alias
-            ? ResolveDefinition(alias.Target)
-            : resolved;
+        if (resolved.Symbol is not TypeSymbol.Alias aliasSymbol)
+        {
+            return resolved;
+        }
+
+        var target = type is TypeRef.Alias alias
+            ? alias.Target
+            : aliasSymbol.Declaration.TargetTypeNode.ToTypeRef(new TypeRefParser(program));
+        return ResolveDefinition(target);
     }
 
     private ResolvedType ResolveAlias(TypeRef.Alias alias)

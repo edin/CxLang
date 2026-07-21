@@ -51,6 +51,31 @@ public sealed class CompileTimeExpressionEvaluatorTests
         CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 
+    [Theory]
+    [InlineData("pointer", "is_pointer")]
+    [InlineData("array", "is_array")]
+    [InlineData("named", "is_named")]
+    [InlineData("function", "is_function")]
+    [InlineData("constant", "is_const")]
+    public void Evaluate_TypeShapePropertiesReturnTypedBooleans(
+        string bindingName,
+        string propertyName)
+    {
+        var context = new CompileTimeEvaluationContext();
+        context.Define("pointer", new CompileTimeValue.Type(new TypeRef.Pointer(TypeRef.Int)));
+        context.Define("array", new CompileTimeValue.Type(new TypeRef.FixedArray(
+            TypeRef.Int,
+            new ArrayLengthNode.Integer(4))));
+        context.Define("named", new CompileTimeValue.Type(TypeRef.Int));
+        context.Define("function", new CompileTimeValue.Type(new TypeRef.Function([], TypeRef.Int)));
+        context.Define("constant", new CompileTimeValue.Type(new TypeRef.Const(TypeRef.Int)));
+
+        var (value, diagnostics) = Evaluate($"{bindingName}.{propertyName}", context);
+
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(value).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
     [Fact]
     public void Evaluate_UnescapesStringValues()
     {
@@ -168,12 +193,13 @@ public sealed class CompileTimeExpressionEvaluatorTests
     }
 
     [Fact]
-    public void EvaluateMember_UsesCompileTimeObjectPropertyProtocol()
+    public void EvaluateMember_UsesRegisteredCompileTimeProperty()
     {
         var context = new CompileTimeEvaluationContext();
         context.Define("sample", new SampleCompileTimeObject());
 
-        var (value, diagnostics) = Evaluate("sample.answer", context);
+        var properties = CompileTimePropertyRegistry.CreateFromObjects(new SampleScriptObject());
+        var (value, diagnostics) = Evaluate("sample.answer", context, properties);
 
         Assert.Equal(42, Assert.IsType<CompileTimeValue.Integer>(value).Value);
         CompilerTestHelpers.AssertNoErrors(diagnostics);
@@ -185,7 +211,8 @@ public sealed class CompileTimeExpressionEvaluatorTests
         var context = new CompileTimeEvaluationContext();
         context.Define("sample", new SampleCompileTimeObject());
 
-        var (value, diagnostics) = Evaluate("sample.failed", context);
+        var properties = CompileTimePropertyRegistry.CreateFromObjects(new SampleScriptObject());
+        var (value, diagnostics) = Evaluate("sample.failed", context, properties);
 
         Assert.Null(value);
         var diagnostic = Assert.Single(diagnostics.Diagnostics);
@@ -396,10 +423,11 @@ public sealed class CompileTimeExpressionEvaluatorTests
 
     private static (CompileTimeValue? Value, DiagnosticBag Diagnostics) Evaluate(
         string source,
-        CompileTimeEvaluationContext? context = null)
+        CompileTimeEvaluationContext? context = null,
+        CompileTimePropertyRegistry? properties = null)
     {
         var diagnostics = new DiagnosticBag();
-        var evaluator = new CompileTimeExpressionEvaluator(diagnostics);
+        var evaluator = new CompileTimeExpressionEvaluator(diagnostics, properties: properties);
         var value = evaluator.Evaluate(
             CompilerTestHelpers.ParseTokenExpression(source),
             context ?? new CompileTimeEvaluationContext());
@@ -409,23 +437,25 @@ public sealed class CompileTimeExpressionEvaluatorTests
     private sealed record SampleCompileTimeObject : CompileTimeObjectValue
     {
         public override string DisplayType => "sample object";
+    }
 
-        public override CompileTimePropertyResult GetProperty(
-            string name,
+    private sealed class SampleScriptObject : CompileTimeScriptObject
+    {
+        public override Type ReceiverType => typeof(SampleCompileTimeObject);
+
+        [CompileTimeProperty("answer")]
+        private CompileTimePropertyResult Answer(
+            SampleCompileTimeObject receiver,
+            CompileTimePropertyContext context) =>
+            CompileTimePropertyResult.From(new CompileTimeValue.Integer(42));
+
+        [CompileTimeProperty("failed")]
+        private CompileTimePropertyResult Failed(
+            SampleCompileTimeObject receiver,
             CompileTimePropertyContext context)
         {
-            if (name == "answer")
-            {
-                return CompileTimePropertyResult.From(new CompileTimeValue.Integer(42));
-            }
-
-            if (name == "failed")
-            {
-                context.Diagnostics.Report(context.Location, "Sample property failed.");
-                return new CompileTimePropertyResult.Failed();
-            }
-
-            return new CompileTimePropertyResult.Missing();
+            context.Diagnostics.Report(context.Location, "Sample property failed.");
+            return new CompileTimePropertyResult.Failed();
         }
     }
 }

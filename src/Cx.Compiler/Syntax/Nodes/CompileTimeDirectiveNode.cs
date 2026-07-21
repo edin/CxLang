@@ -23,6 +23,18 @@ public sealed record CompileTimeScriptDeclarationNode(
     Location Location,
     StatementNode Statement) : TopLevelNode(Location);
 
+public sealed record CompileTimeIfTopLevelNode(
+    Location Location,
+    ExpressionNode Condition,
+    IReadOnlyList<TopLevelNode> ThenDeclarations,
+    IReadOnlyList<TopLevelNode> ElseDeclarations) : TopLevelNode(Location);
+
+public sealed record CompileTimeForeachTopLevelNode(
+    Location Location,
+    string BindingName,
+    ExpressionNode IterableExpression,
+    IReadOnlyList<TopLevelNode> Declarations) : TopLevelNode(Location);
+
 public sealed record CompileTimeIfDeclarationNode(
     Location Location,
     ExpressionNode Condition,

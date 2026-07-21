@@ -524,6 +524,443 @@ public sealed class MacroExpansionPassTests
     }
 
     [Fact]
+    public void CompileToC_DeclarationForeachAndIfGenerateOneFunctionPerMatchingMethod()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Source {
+                public static fn first() -> int {
+                    return 1;
+                }
+
+                static fn hidden() -> int {
+                    return 2;
+                }
+
+                public static fn second() -> int {
+                    return 3;
+                }
+            }
+
+            macro WrapPublic(target: type) -> declarations {
+                @foreach(method in target.methods) {
+                    @if(method.is_public) {
+                        fn @{as_name(concat("wrap_", method.name))}() -> int {
+                            return 0;
+                        }
+                    }
+                }
+            }
+
+            use WrapPublic(Source);
+
+            fn main() -> int {
+                return wrap_first() + wrap_second();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("wrap_first", result.Output!, StringComparison.Ordinal);
+        Assert.Contains("wrap_second", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("wrap_hidden", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_ReportsDuplicateFunctionGeneratedByForeachAtInvocation()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            macro Generate() -> declarations {
+                @foreach(name in ["same", "same"]) {
+                    fn @{as_name(name)}() -> int {
+                        return 0;
+                    }
+                }
+            }
+
+            use Generate();
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Macro-generated function 'same()' conflicts with macro-generated function");
+        var diagnostic = Assert.Single(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("Macro-generated function 'same()'", StringComparison.Ordinal));
+        Assert.Equal(9, diagnostic.Location.Line);
+    }
+
+    [Fact]
+    public void CompileToC_AllowsGeneratedFunctionOverloadsWithDifferentParameterTypes()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            macro Generate(target: type) -> declarations {
+                fn generated(value: @{target}) -> int {
+                    return 0;
+                }
+            }
+
+            use Generate(int);
+            use Generate(usize);
+
+            fn main() -> int {
+                return generated(1);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+    }
+
+    [Fact]
+    public void CompileToC_ReportsGeneratedFunctionCollidingWithExistingDeclaration()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn existing(value: int) -> int {
+                return value;
+            }
+
+            macro Generate() -> declarations {
+                fn existing(value: int) -> int {
+                    return value;
+                }
+            }
+
+            use Generate();
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Macro-generated function 'existing(int)' conflicts with function declared at main.cx:1:1");
+    }
+
+    [Fact]
+    public void CompileToC_ReportsGeneratedExtensionMethodCollidingWithOwnedMethod()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct User {
+                fn debug() -> int {
+                    return 1;
+                }
+            }
+
+            macro Debug(target: type) -> declarations {
+                extension @{target} {
+                    fn debug() -> int {
+                        return 2;
+                    }
+                }
+            }
+
+            use Debug(User);
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Macro-generated function 'User.debug()' conflicts with function");
+    }
+
+    [Fact]
+    public void CompileToC_ModuleReflectionEnumeratesOnlyPublicFunctionsAndTypes()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            module sample;
+
+            public fn exported() -> int {
+                return 1;
+            }
+
+            fn hidden() -> int {
+                return 2;
+            }
+
+            public struct User {}
+            struct Hidden {}
+
+            macro GenerateBindings() -> declarations {
+                @foreach(function in module.public_functions) {
+                    fn @{as_name(concat("wrap_", function.name))}() -> int {
+                        return 0;
+                    }
+                }
+
+                @let reflected_module = module("sample");
+                @foreach(target in reflected_module.public_types) {
+                    @if(target.is_struct) {
+                        fn @{as_name(concat("bind_", target.name))}() -> int {
+                            return 0;
+                        }
+                    }
+                }
+            }
+
+            use GenerateBindings();
+
+            fn main() -> int {
+                return wrap_exported() + bind_User();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("wrap_exported", result.Output!, StringComparison.Ordinal);
+        Assert.Contains("bind_User", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("wrap_hidden", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("bind_Hidden", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_RouteMacroUsesNullableAttributeAndDynamicFields()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            module api;
+
+            attribute route on fn {
+                method: string;
+                path: string;
+            }
+
+            extern fn register_route(
+                method: const char*,
+                path: const char*,
+                handler: fn() -> int
+            ) -> void;
+
+            @route(method: "GET", path: "/users")
+            public fn users() -> int {
+                return 0;
+            }
+
+            public fn health() -> int {
+                return 0;
+            }
+
+            macro RegisterRoutes() -> declarations {
+                fn register_routes() -> void {
+                    @foreach(handler in module.public_functions) {
+                        @let route = handler.attribute("route");
+                        @if(route != null) {
+                            @if(!handler.match(Type.from(fn() -> int))) {
+                                compile_error(concat("Invalid route handler: ", handler.name));
+                            }
+
+                            register_route(
+                                @{route.method},
+                                @{route.path},
+                                @{as_name(handler.name)}
+                            );
+                        }
+                    }
+                }
+            }
+
+            use RegisterRoutes();
+
+            fn main() -> int {
+                register_routes();
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("register_route(\"GET\", \"/users\",", result.Output!, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"/health\"", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_RouteMacroGeneratesDispatcherBody()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            module api;
+
+            attribute route on fn {
+                id: int;
+            }
+
+            @route(id: 1)
+            public fn users() -> int {
+                return 10;
+            }
+
+            @route(id: 2)
+            public fn health() -> int {
+                return 20;
+            }
+
+            public fn helper() -> int {
+                return 30;
+            }
+
+            macro BuildDispatcher(target: module) -> declarations {
+                fn dispatch(route_id: int) -> int {
+                    @foreach(handler in target.public_functions) {
+                        @let route = handler.attribute("route");
+                        @if(route != null) {
+                            if (route_id == @{route.id}) {
+                                return @{handler.reference}();
+                            }
+                        }
+                    }
+
+                    return -1;
+                }
+            }
+
+            use BuildDispatcher("api");
+
+            fn main() -> int {
+                return dispatch(2);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("route_id == 1", result.Output!, StringComparison.Ordinal);
+        Assert.Contains("route_id == 2", result.Output, StringComparison.Ordinal);
+        Assert.Contains("return users()", result.Output, StringComparison.Ordinal);
+        Assert.Contains("return health()", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("return helper()", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileToC_DispatchMacroUsesCrossModuleFunctionReferences()
+    {
+        var result = CompilerTestHelpers.Compile(
+        [
+            CompilerTestHelpers.Source(
+                """
+                module app;
+
+                import api;
+
+                fn users() -> int {
+                    return -1;
+                }
+
+                macro BuildDispatcher(target: module) -> declarations {
+                    fn dispatch(route_id: int) -> int {
+                        @foreach(handler in target.public_functions) {
+                            @let route = handler.attribute("route");
+                            @if(route != null) {
+                                if (route_id == @{route.id}) {
+                                    return @{handler.reference}();
+                                }
+                            }
+                        }
+
+                        return -1;
+                    }
+                }
+
+                use BuildDispatcher(module("api"));
+
+                fn main() -> int {
+                    return dispatch(1);
+                }
+                """),
+            CompilerTestHelpers.Source(
+                """
+                module api;
+
+                attribute route on fn {
+                    id: int;
+                }
+
+                @route(id: 1)
+                public fn users() -> int {
+                    return 10;
+                }
+                """,
+                "api.cx"),
+        ]);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("return api_users()", result.Output!, StringComparison.Ordinal);
+        Assert.DoesNotContain("return app_users()", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExpandProgram_ResolvedGenericMethodParametersCanBeSpliced()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                static fn identity(value: T) -> T {
+                    return value;
+                }
+            }
+
+            macro Wrap(target: type) -> declarations {
+                @let parameters = [];
+                @foreach(method in target.methods) {
+                    @foreach(parameter in method.parameters) {
+                        parameters.add(parameter);
+                    }
+                }
+
+                fn wrap_identity(@{parameters}) -> int {
+                    return value;
+                }
+            }
+
+            use Wrap(Box<int>);
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        var expanded = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        var wrapper = Assert.Single(expanded.Functions);
+        var parameter = Assert.Single(wrapper.Parameters);
+        Assert.Equal("value", parameter.Name);
+        Assert.Equal("int", parameter.TypeNode?.ToSourceText());
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_BindsCompositeMacroTypeArgumentsStructurally()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct User {}
+
+            macro EmitType(target: type) -> statements {
+                emit(@{target.display_name});
+            }
+
+            fn sample() -> int {
+                use EmitType(const User*);
+                use EmitType(int[4]);
+                use EmitType(fn(int) -> bool);
+                return 0;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        var expanded = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal("emit(\"const User*\")", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.Equal("emit(\"int[4]\")", Assert.IsType<CStatement>(body[1]).Expression.ToSourceText());
+        Assert.Equal("emit(\"fn(int)->bool\")", Assert.IsType<CStatement>(body[2]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[3]);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
     public void CompileToC_ConstructedAttributeCanBeAppliedToConstructedParameter()
     {
         var result = CompilerTestHelpers.Compile(
@@ -738,5 +1175,46 @@ public sealed class MacroExpansionPassTests
             diagnostic.Message.Contains(
                 "found 2 function declarations named 'duplicate'",
                 StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ExpandProgram_ReportsInvalidModuleArgument()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro Inspect(target: module) -> declarations {
+            }
+
+            use Inspect(1);
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        _ = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "expects a module argument or module-name string",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ExpandProgram_BindsResolvedModuleArgument()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            module sample;
+
+            macro Inspect(target: module) -> declarations {
+                @foreach(function in target.public_functions) {
+                }
+            }
+
+            use Inspect(module("sample"));
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        _ = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 }

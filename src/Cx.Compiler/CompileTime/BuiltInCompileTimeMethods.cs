@@ -8,6 +8,12 @@ internal sealed class ListCompileTimeObject : CompileTimeScriptObject
 {
     public override Type ReceiverType => typeof(CompileTimeValue.List);
 
+    [CompileTimeProperty("count")]
+    private CompileTimePropertyResult Count(
+        CompileTimeValue.List list,
+        CompileTimePropertyContext context) =>
+        CompileTimePropertyResult.From(new CompileTimeValue.Integer(list.Values.Count));
+
     [CompileTimeMethod("add")]
     private CompileTimeMethodResult Add(
         CompileTimeValue.List list,

@@ -50,6 +50,8 @@ internal abstract class AstRewriter
             GlobalVariableNode global => [RewriteGlobalVariable(global)],
             FunctionNode function => [RewriteFunction(function)],
             CompileTimeScriptDeclarationNode script => RewriteCompileTimeScriptDeclaration(script),
+            CompileTimeIfTopLevelNode conditional => [RewriteCompileTimeIfTopLevel(conditional)],
+            CompileTimeForeachTopLevelNode foreachNode => [RewriteCompileTimeForeachTopLevel(foreachNode)],
             MacroDeclarationNode macro => [RewriteMacroDeclaration(macro)],
             MacroInvocationDeclarationNode invocation => [RewriteMacroInvocationDeclaration(invocation)],
             TestNode test => [RewriteTest(test)],
@@ -64,6 +66,23 @@ internal abstract class AstRewriter
                 script,
                 script with { Statement = statement }))
             .ToList();
+
+    protected virtual CompileTimeIfTopLevelNode RewriteCompileTimeIfTopLevel(
+        CompileTimeIfTopLevelNode conditional) =>
+        conditional with
+        {
+            Condition = RewriteRequiredExpression(conditional.Condition),
+            ThenDeclarations = conditional.ThenDeclarations.SelectMany(RewriteTopLevelNode).ToList(),
+            ElseDeclarations = conditional.ElseDeclarations.SelectMany(RewriteTopLevelNode).ToList(),
+        };
+
+    protected virtual CompileTimeForeachTopLevelNode RewriteCompileTimeForeachTopLevel(
+        CompileTimeForeachTopLevelNode foreachNode) =>
+        foreachNode with
+        {
+            IterableExpression = RewriteRequiredExpression(foreachNode.IterableExpression),
+            Declarations = foreachNode.Declarations.SelectMany(RewriteTopLevelNode).ToList(),
+        };
 
     protected virtual CDeclareNode RewriteCDeclare(CDeclareNode cDeclare) =>
         cDeclare with { Members = cDeclare.Members.Select(RewriteCDeclareMember).ToList() };
@@ -101,7 +120,14 @@ internal abstract class AstRewriter
 
     protected virtual MacroInvocationDeclarationNode RewriteMacroInvocationDeclaration(
         MacroInvocationDeclarationNode invocation) =>
-        invocation with { Arguments = invocation.Arguments.Select(RewriteRequiredExpression).ToList() };
+        invocation with { Arguments = invocation.Arguments.Select(RewriteMacroArgument).ToList() };
+
+    protected virtual MacroArgumentNode RewriteMacroArgument(MacroArgumentNode argument) =>
+        argument with
+        {
+            ExpressionCandidate = RewriteExpression(argument.ExpressionCandidate),
+            TypeCandidate = RewriteType(argument.TypeCandidate),
+        };
 
     protected virtual FunctionNode RewriteFunction(FunctionNode function) =>
         function with
@@ -252,7 +278,7 @@ internal abstract class AstRewriter
         };
 
     protected virtual MacroInvocationStatementNode RewriteMacroInvocation(MacroInvocationStatementNode invocation) =>
-        invocation with { Arguments = invocation.Arguments.Select(RewriteRequiredExpression).ToList() };
+        invocation with { Arguments = invocation.Arguments.Select(RewriteMacroArgument).ToList() };
 
     protected virtual IReadOnlyList<StatementNode> RewriteCompileTimeLetStatement(
         CompileTimeLetStatementNode compileTimeLet) =>
@@ -363,6 +389,7 @@ internal abstract class AstRewriter
             ConditionalExpressionNode conditional => RewriteConditionalExpression(conditional),
             ScalarRangeExpressionNode range => RewriteScalarRangeExpression(range),
             ListExpressionNode list => RewriteListExpression(list),
+            TypeLiteralExpressionNode typeLiteral => RewriteTypeLiteralExpression(typeLiteral),
             InitializerExpressionNode initializer => RewriteInitializerExpression(initializer),
             FunctionExpressionNode function => RewriteFunctionExpression(function),
             AssignmentExpressionNode assignment => RewriteAssignmentExpression(assignment),
@@ -429,6 +456,9 @@ internal abstract class AstRewriter
 
     protected virtual ExpressionNode RewriteListExpression(ListExpressionNode list) =>
         list with { Elements = list.Elements.Select(RewriteRequiredExpression).ToList() };
+
+    protected virtual ExpressionNode RewriteTypeLiteralExpression(TypeLiteralExpressionNode typeLiteral) =>
+        typeLiteral with { TypeNode = RewriteType(typeLiteral.TypeNode) ?? typeLiteral.TypeNode };
 
     protected virtual ExpressionNode RewriteInitializerExpression(InitializerExpressionNode initializer) =>
         initializer with
