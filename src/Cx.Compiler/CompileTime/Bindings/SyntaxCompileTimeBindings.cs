@@ -1,24 +1,25 @@
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.CompileTime;
 
-internal sealed class SyntaxCompileTimeObject : CompileTimeScriptObject
+internal sealed class SyntaxCompileTimeBinding : CompileTimeTypeBinding
 {
     public override Type ReceiverType => typeof(SyntaxNode);
 
     [CompileTimeProperty("name")]
     private CompileTimePropertyResult Name(
-        SyntaxNode syntax,
-        CompileTimePropertyContext context) =>
+        CompileTimePropertyContext context,
+        SyntaxNode syntax) =>
         TryGetName(syntax) is { } name
             ? CompileTimePropertyResult.From(new CompileTimeValue.String(name))
             : new CompileTimePropertyResult.Missing();
 
     [CompileTimeProperty("type")]
     private CompileTimePropertyResult Type(
-        SyntaxNode syntax,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        SyntaxNode syntax)
     {
         if (!CompileTimePropertyFacts.EnsureReflection(context))
         {
@@ -32,8 +33,8 @@ internal sealed class SyntaxCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeProperty("attributes")]
     private CompileTimePropertyResult Attributes(
-        SyntaxNode syntax,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        SyntaxNode syntax)
     {
         if (!CompileTimePropertyFacts.EnsureReflection(context))
         {
@@ -48,19 +49,10 @@ internal sealed class SyntaxCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeMethod("attribute")]
     private CompileTimeMethodResult Attribute(
+        CompileTimeMethodContext context,
         SyntaxNode syntax,
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
+        string attributeName)
     {
-        if (arguments is not [var nameValue]
-            || CompileTimeConstructorFacts.GetName(nameValue) is not { } attributeName)
-        {
-            context.Diagnostics.Report(
-                context.Location,
-                "Compile-time method 'attribute' expects exactly one string or name argument.");
-            return new CompileTimeMethodResult.Failed();
-        }
-
         if (!context.Reflection.IsAvailable)
         {
             context.Diagnostics.Report(
@@ -104,32 +96,32 @@ internal sealed class SyntaxCompileTimeObject : CompileTimeScriptObject
     };
 }
 
-internal sealed class FunctionCompileTimeObject : CompileTimeScriptObject
+internal sealed class FunctionCompileTimeBinding : CompileTimeTypeBinding
 {
     public override Type ReceiverType => typeof(FunctionNode);
 
     [CompileTimeProperty("reference")]
     private CompileTimePropertyResult Reference(
-        FunctionNode function,
-        CompileTimePropertyContext context) =>
+        CompileTimePropertyContext context,
+        FunctionNode function) =>
         CompileTimeFunctionReferenceFacts.Create(function, context);
 
     [CompileTimeProperty("parameters")]
-    private CompileTimePropertyResult Parameters(
-        FunctionNode function,
-        CompileTimePropertyContext context) =>
+    private IReadOnlyList<ParameterNode> Parameters(
+        CompileTimePropertyContext context,
+        FunctionNode function) =>
         CompileTimePropertyFacts.Parameters(function.Parameters);
 
     [CompileTimeProperty("return_type")]
     private CompileTimePropertyResult ReturnType(
-        FunctionNode function,
-        CompileTimePropertyContext context) =>
+        CompileTimePropertyContext context,
+        FunctionNode function) =>
         CompileTimePropertyFacts.GetReflectedType(function, context);
 
     [CompileTimeProperty("signature")]
     private CompileTimePropertyResult Signature(
-        FunctionNode function,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        FunctionNode function)
     {
         var signature = CompileTimeFunctionSignatureFacts.Create(
             function,
@@ -143,9 +135,9 @@ internal sealed class FunctionCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeMethod("match")]
     private CompileTimeMethodResult Match(
+        CompileTimeMethodContext context,
         FunctionNode function,
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
+        TypeRef.Function expected)
     {
         var signature = CompileTimeFunctionSignatureFacts.Create(
             function,
@@ -154,31 +146,29 @@ internal sealed class FunctionCompileTimeObject : CompileTimeScriptObject
             context.Location);
         return signature is null
             ? new CompileTimeMethodResult.Failed()
-            : CompileTimeFunctionSignatureFacts.Match(signature, arguments, context);
+            : CompileTimeMethodResult.From(new CompileTimeValue.Boolean(
+                CompileTimeFunctionSignatureFacts.Match(signature, expected)));
     }
 
     [CompileTimeProperty("is_public")]
-    private CompileTimePropertyResult IsPublic(
-        FunctionNode function,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Boolean(function.IsPublic));
+    private bool IsPublic(
+        CompileTimePropertyContext context,
+        FunctionNode function) => function.IsPublic;
 
     [CompileTimeProperty("is_static")]
-    private CompileTimePropertyResult IsStatic(
-        FunctionNode function,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Boolean(function.IsStatic));
+    private bool IsStatic(
+        CompileTimePropertyContext context,
+        FunctionNode function) => function.IsStatic;
 
     [CompileTimeProperty("is_extern")]
-    private CompileTimePropertyResult IsExtern(
-        FunctionNode function,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Boolean(false));
+    private bool IsExtern(
+        CompileTimePropertyContext context,
+        FunctionNode function) => false;
 
     [CompileTimeProperty("owner_type")]
     private CompileTimePropertyResult OwnerType(
-        FunctionNode function,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        FunctionNode function)
     {
         if (!CompileTimePropertyFacts.EnsureReflection(context))
         {
@@ -191,32 +181,32 @@ internal sealed class FunctionCompileTimeObject : CompileTimeScriptObject
     }
 }
 
-internal sealed class ExternFunctionCompileTimeObject : CompileTimeScriptObject
+internal sealed class ExternFunctionCompileTimeBinding : CompileTimeTypeBinding
 {
     public override Type ReceiverType => typeof(ExternFunctionNode);
 
     [CompileTimeProperty("reference")]
     private CompileTimePropertyResult Reference(
-        ExternFunctionNode function,
-        CompileTimePropertyContext context) =>
+        CompileTimePropertyContext context,
+        ExternFunctionNode function) =>
         CompileTimeFunctionReferenceFacts.Create(function, context);
 
     [CompileTimeProperty("parameters")]
-    private CompileTimePropertyResult Parameters(
-        ExternFunctionNode function,
-        CompileTimePropertyContext context) =>
+    private IReadOnlyList<ParameterNode> Parameters(
+        CompileTimePropertyContext context,
+        ExternFunctionNode function) =>
         CompileTimePropertyFacts.Parameters(function.Parameters);
 
     [CompileTimeProperty("return_type")]
     private CompileTimePropertyResult ReturnType(
-        ExternFunctionNode function,
-        CompileTimePropertyContext context) =>
+        CompileTimePropertyContext context,
+        ExternFunctionNode function) =>
         CompileTimePropertyFacts.GetReflectedType(function, context);
 
     [CompileTimeProperty("signature")]
     private CompileTimePropertyResult Signature(
-        ExternFunctionNode function,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        ExternFunctionNode function)
     {
         var signature = CompileTimeFunctionSignatureFacts.Create(
             function,
@@ -230,9 +220,9 @@ internal sealed class ExternFunctionCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeMethod("match")]
     private CompileTimeMethodResult Match(
+        CompileTimeMethodContext context,
         ExternFunctionNode function,
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
+        TypeRef.Function expected)
     {
         var signature = CompileTimeFunctionSignatureFacts.Create(
             function,
@@ -241,26 +231,24 @@ internal sealed class ExternFunctionCompileTimeObject : CompileTimeScriptObject
             context.Location);
         return signature is null
             ? new CompileTimeMethodResult.Failed()
-            : CompileTimeFunctionSignatureFacts.Match(signature, arguments, context);
+            : CompileTimeMethodResult.From(new CompileTimeValue.Boolean(
+                CompileTimeFunctionSignatureFacts.Match(signature, expected)));
     }
 
     [CompileTimeProperty("is_public")]
-    private CompileTimePropertyResult IsPublic(
-        ExternFunctionNode function,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Boolean(function.IsPublic));
+    private bool IsPublic(
+        CompileTimePropertyContext context,
+        ExternFunctionNode function) => function.IsPublic;
 
     [CompileTimeProperty("is_static")]
-    private CompileTimePropertyResult IsStatic(
-        ExternFunctionNode function,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Boolean(false));
+    private bool IsStatic(
+        CompileTimePropertyContext context,
+        ExternFunctionNode function) => false;
 
     [CompileTimeProperty("is_extern")]
-    private CompileTimePropertyResult IsExtern(
-        ExternFunctionNode function,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Boolean(true));
+    private bool IsExtern(
+        CompileTimePropertyContext context,
+        ExternFunctionNode function) => true;
 }
 
 internal static class CompileTimeFunctionReferenceFacts
@@ -309,59 +297,49 @@ internal static class CompileTimeFunctionReferenceFacts
     }
 }
 
-internal sealed class StructCompileTimeObject : CompileTimeScriptObject
+internal sealed class StructCompileTimeBinding : CompileTimeTypeBinding
 {
     public override Type ReceiverType => typeof(StructNode);
 
     [CompileTimeProperty("fields")]
-    private CompileTimePropertyResult Fields(
-        StructNode structNode,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.List(
-            structNode.Fields.Select(field => new CompileTimeValue.Syntax(field)).ToList()));
+    private IReadOnlyList<StructFieldNode> Fields(
+        CompileTimePropertyContext context,
+        StructNode structNode) => structNode.Fields;
 
     [CompileTimeProperty("methods")]
-    private CompileTimePropertyResult Methods(
-        StructNode structNode,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.List(
-            structNode.Methods.Select(method => new CompileTimeValue.Syntax(method)).ToList()));
+    private IReadOnlyList<FunctionNode> Methods(
+        CompileTimePropertyContext context,
+        StructNode structNode) => structNode.Methods;
 }
 
-internal sealed class RequirementMatchCompileTimeObject : CompileTimeScriptObject
+internal sealed class RequirementMatchCompileTimeBinding : CompileTimeTypeBinding
 {
     public override Type ReceiverType => typeof(CompileTimeValue.RequirementMatch);
 
     [CompileTimeProperty("success")]
-    private CompileTimePropertyResult Success(
-        CompileTimeValue.RequirementMatch match,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Boolean(match.Value.Success));
+    private bool Success(
+        CompileTimePropertyContext context,
+        CompileTimeValue.RequirementMatch match) => match.Value.Success;
 
     [CompileTimeProperty("type")]
-    private CompileTimePropertyResult Type(
-        CompileTimeValue.RequirementMatch match,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Type(match.Value.ConcreteTypeRef));
+    private TypeRef Type(
+        CompileTimePropertyContext context,
+        CompileTimeValue.RequirementMatch match) => match.Value.ConcreteTypeRef;
 
     [CompileTimeProperty("requirement")]
-    private CompileTimePropertyResult Requirement(
-        CompileTimeValue.RequirementMatch match,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.Syntax(match.Requirement));
+    private RequirementNode Requirement(
+        CompileTimePropertyContext context,
+        CompileTimeValue.RequirementMatch match) => match.Requirement;
 
     [CompileTimeProperty("requirement_name")]
-    private CompileTimePropertyResult RequirementName(
-        CompileTimeValue.RequirementMatch match,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.String(match.Value.RequirementName));
+    private string RequirementName(
+        CompileTimePropertyContext context,
+        CompileTimeValue.RequirementMatch match) => match.Value.RequirementName;
 
     [CompileTimeProperty("failures")]
-    private CompileTimePropertyResult Failures(
-        CompileTimeValue.RequirementMatch match,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.List(
-            match.Value.Failures.Select(failure => new CompileTimeValue.String(failure)).ToList()));
+    private IReadOnlyList<string> Failures(
+        CompileTimePropertyContext context,
+        CompileTimeValue.RequirementMatch match) => match.Value.Failures;
 
     public override CompileTimePropertyResult GetDynamicProperty(
         object receiver,
@@ -377,9 +355,8 @@ internal sealed class RequirementMatchCompileTimeObject : CompileTimeScriptObjec
 
 internal static class CompileTimePropertyFacts
 {
-    public static CompileTimePropertyResult Parameters(IReadOnlyList<ParameterNode> parameters) =>
-        CompileTimePropertyResult.From(new CompileTimeValue.List(
-            parameters.Select(parameter => new CompileTimeValue.Syntax(parameter)).ToList()));
+    public static IReadOnlyList<ParameterNode> Parameters(
+        IReadOnlyList<ParameterNode> parameters) => parameters;
 
     public static CompileTimePropertyResult GetReflectedType(
         SyntaxNode syntax,

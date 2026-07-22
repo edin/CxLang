@@ -198,7 +198,7 @@ public sealed class CompileTimeExpressionEvaluatorTests
         var context = new CompileTimeEvaluationContext();
         context.Define("sample", new SampleCompileTimeObject());
 
-        var properties = CompileTimePropertyRegistry.CreateFromObjects(new SampleScriptObject());
+        var properties = CompileTimePropertyRegistry.CreateFromBindings(new SampleTypeBinding());
         var (value, diagnostics) = Evaluate("sample.answer", context, properties);
 
         Assert.Equal(42, Assert.IsType<CompileTimeValue.Integer>(value).Value);
@@ -211,7 +211,7 @@ public sealed class CompileTimeExpressionEvaluatorTests
         var context = new CompileTimeEvaluationContext();
         context.Define("sample", new SampleCompileTimeObject());
 
-        var properties = CompileTimePropertyRegistry.CreateFromObjects(new SampleScriptObject());
+        var properties = CompileTimePropertyRegistry.CreateFromBindings(new SampleTypeBinding());
         var (value, diagnostics) = Evaluate("sample.failed", context, properties);
 
         Assert.Null(value);
@@ -439,7 +439,7 @@ public sealed class CompileTimeExpressionEvaluatorTests
         public override string DisplayType => "sample object";
     }
 
-    private sealed class SampleScriptObject : CompileTimeScriptObject
+    private sealed class SampleTypeBinding : CompileTimeTypeBinding
     {
         public override Type ReceiverType => typeof(SampleCompileTimeObject);
 

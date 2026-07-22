@@ -10,7 +10,7 @@ public sealed class CompileTimePropertyRegistryTests
     [Fact]
     public void Get_DiscoversMarkedReceiverProperty()
     {
-        var registry = CompileTimePropertyRegistry.CreateFromObjects(new CustomObject());
+        var registry = CompileTimePropertyRegistry.CreateFromBindings(new CustomBinding());
         var diagnostics = new DiagnosticBag();
         var receiver = new CompileTimeValue.List([
             new CompileTimeValue.Integer(1),
@@ -51,20 +51,20 @@ public sealed class CompileTimePropertyRegistryTests
     }
 
     [Fact]
-    public void CreateFromObjects_RejectsDuplicateProperties()
+    public void CreateFromBindings_RejectsDuplicateProperties()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            CompileTimePropertyRegistry.CreateFromObjects(new DuplicateObject()));
+            CompileTimePropertyRegistry.CreateFromBindings(new DuplicateBinding()));
 
         Assert.Contains("Duplicate compile-time property", exception.Message, StringComparison.Ordinal);
         Assert.Contains("List.duplicate", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void CreateFromObjects_RejectsInvalidHandlerSignature()
+    public void CreateFromBindings_RejectsInvalidHandlerSignature()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            CompileTimePropertyRegistry.CreateFromObjects(new InvalidObject()));
+            CompileTimePropertyRegistry.CreateFromBindings(new InvalidBinding()));
 
         Assert.Contains(
             "must be an instance method returning CompileTimePropertyResult",
@@ -79,18 +79,18 @@ public sealed class CompileTimePropertyRegistryTests
             diagnostics,
             _ => null);
 
-    private sealed class CustomObject : CompileTimeScriptObject
+    private sealed class CustomBinding : CompileTimeTypeBinding
     {
         public override Type ReceiverType => typeof(CompileTimeValue.List);
 
         [CompileTimeProperty("size")]
-        private CompileTimePropertyResult Size(
-            CompileTimeValue.List receiver,
-            CompileTimePropertyContext context) =>
-            CompileTimePropertyResult.From(new CompileTimeValue.Integer(receiver.Values.Count));
+        private long Size(
+            CompileTimePropertyContext context,
+            CompileTimeValue.List receiver) =>
+            receiver.Values.Count;
     }
 
-    private sealed class DuplicateObject : CompileTimeScriptObject
+    private sealed class DuplicateBinding : CompileTimeTypeBinding
     {
         public override Type ReceiverType => typeof(CompileTimeValue.List);
 
@@ -107,7 +107,7 @@ public sealed class CompileTimePropertyRegistryTests
             CompileTimePropertyResult.From(receiver);
     }
 
-    private sealed class InvalidObject : CompileTimeScriptObject
+    private sealed class InvalidBinding : CompileTimeTypeBinding
     {
         public override Type ReceiverType => typeof(CompileTimeValue.List);
 

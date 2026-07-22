@@ -5,70 +5,45 @@ using System.Text;
 
 namespace Cx.Compiler.CompileTime;
 
-internal static class CompileTimeBuiltIns
-{
-    public static IReadOnlyList<CompileTimeScriptObject> Objects { get; } =
-    [
-        new AttributeArgumentCompileTimeObject(),
-        new AttributeCompileTimeObject(),
-        new CompileTimeDiagnosticObject(),
-        new ParameterCompileTimeObject(),
-        new ListCompileTimeObject(),
-        new ModuleCompileTimeObject(),
-        new TypeCompileTimeObject(),
-        new SyntaxCompileTimeObject(),
-        new FunctionCompileTimeObject(),
-        new ExternFunctionCompileTimeObject(),
-        new StructCompileTimeObject(),
-        new EnumMemberCompileTimeObject(),
-        new EnumMemberDataCompileTimeObject(),
-        new EnumDataFieldCompileTimeObject(),
-        new RequirementMatchCompileTimeObject(),
-        new ResolvedFieldCompileTimeObject(),
-        new ResolvedMethodCompileTimeObject(),
-        new ResolvedParameterCompileTimeObject(),
-    ];
-}
-
 internal sealed class CompileTimeObjectRegistry
 {
     private readonly Dictionary<string, CompileTimeObjectValue> _objects = new(StringComparer.Ordinal);
 
     public static CompileTimeObjectRegistry CreateDefault() =>
-        Create(CompileTimeBuiltIns.Objects);
+        Create(BuiltInCompileTimeBindings.Bindings);
 
-    internal static CompileTimeObjectRegistry Create(IEnumerable<CompileTimeScriptObject> objects)
+    internal static CompileTimeObjectRegistry Create(IEnumerable<CompileTimeTypeBinding> bindings)
     {
         var registry = new CompileTimeObjectRegistry();
-        foreach (var scriptObject in objects)
+        foreach (var binding in bindings)
         {
-            if (scriptObject.GlobalName is not null)
+            if (binding.GlobalName is not null)
             {
-                registry.Register(scriptObject);
+                registry.Register(binding);
             }
         }
 
         return registry;
     }
 
-    public void Register(CompileTimeScriptObject definition)
+    public void Register(CompileTimeTypeBinding binding)
     {
-        if (definition.GlobalName is null)
+        if (binding.GlobalName is null)
         {
-            throw new InvalidOperationException("A compile-time object without a global name cannot be registered globally.");
+            throw new InvalidOperationException("A compile-time type binding without a global name cannot be registered globally.");
         }
 
-        _objects[definition.GlobalName] = new CompileTimeScriptObjectValue(definition);
+        _objects[binding.GlobalName] = new CompileTimeGlobalObjectValue(binding);
     }
 
     public bool TryGet(string name, out CompileTimeObjectValue value) =>
         _objects.TryGetValue(name, out value!);
 }
 
-internal sealed record CompileTimeScriptObjectValue(
-    CompileTimeScriptObject Definition) : CompileTimeObjectValue
+internal sealed record CompileTimeGlobalObjectValue(
+    CompileTimeTypeBinding Binding) : CompileTimeObjectValue
 {
-    public override string DisplayType => $"object '{Definition.GlobalName}'";
+    public override string DisplayType => $"object '{Binding.GlobalName}'";
 }
 
 internal static class CompileTimeConstructorFacts

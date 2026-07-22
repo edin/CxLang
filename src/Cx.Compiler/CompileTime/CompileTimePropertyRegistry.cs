@@ -11,39 +11,39 @@ internal sealed class CompileTimePropertyAttribute(string propertyName) : Attrib
 internal sealed class CompileTimePropertyRegistry
 {
     private static readonly Lazy<CompileTimePropertyRegistry> DefaultRegistry = new(
-        () => CreateFromObjects(CompileTimeBuiltIns.Objects));
+        () => CreateFromBindings(BuiltInCompileTimeBindings.Bindings));
 
     private readonly IReadOnlyDictionary<(Type ReceiverType, string PropertyName), RegisteredProperty> _properties;
-    private readonly IReadOnlyDictionary<Type, CompileTimeScriptObject> _objects;
+    private readonly IReadOnlyDictionary<Type, CompileTimeTypeBinding> _bindings;
 
     private CompileTimePropertyRegistry(
         IReadOnlyDictionary<(Type ReceiverType, string PropertyName), RegisteredProperty> properties,
-        IReadOnlyDictionary<Type, CompileTimeScriptObject> objects)
+        IReadOnlyDictionary<Type, CompileTimeTypeBinding> bindings)
     {
         _properties = properties;
-        _objects = objects;
+        _bindings = bindings;
     }
 
     public static CompileTimePropertyRegistry Default => DefaultRegistry.Value;
 
-    internal static CompileTimePropertyRegistry CreateFromObjects(
-        params CompileTimeScriptObject[] objects) =>
-        CreateFromObjects((IEnumerable<CompileTimeScriptObject>)objects);
+    internal static CompileTimePropertyRegistry CreateFromBindings(
+        params CompileTimeTypeBinding[] bindings) =>
+        CreateFromBindings((IEnumerable<CompileTimeTypeBinding>)bindings);
 
-    internal static CompileTimePropertyRegistry CreateFromObjects(
-        IEnumerable<CompileTimeScriptObject> objects)
+    internal static CompileTimePropertyRegistry CreateFromBindings(
+        IEnumerable<CompileTimeTypeBinding> bindings)
     {
         var properties = new Dictionary<(Type, string), RegisteredProperty>();
-        var registeredObjects = new Dictionary<Type, CompileTimeScriptObject>();
-        foreach (var scriptObject in objects)
+        var registeredBindings = new Dictionary<Type, CompileTimeTypeBinding>();
+        foreach (var binding in bindings)
         {
-            if (!registeredObjects.TryAdd(scriptObject.ReceiverType, scriptObject))
+            if (!registeredBindings.TryAdd(binding.ReceiverType, binding))
             {
                 throw new InvalidOperationException(
-                    $"Duplicate compile-time script object for receiver type '{scriptObject.ReceiverType.Name}'.");
+                    $"Duplicate compile-time type binding for receiver type '{binding.ReceiverType.Name}'.");
             }
 
-            var methods = scriptObject.GetType().GetMethods(
+            var methods = binding.GetType().GetMethods(
                 BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
             foreach (var method in methods)
             {
@@ -53,19 +53,19 @@ internal sealed class CompileTimePropertyRegistry
                     continue;
                 }
 
-                ValidateHandler(scriptObject, method, marker);
-                var key = (scriptObject.ReceiverType, marker.PropertyName);
+                var isLegacy = ValidateHandler(binding, method, marker);
+                var key = (binding.ReceiverType, marker.PropertyName);
                 if (properties.TryGetValue(key, out var existing))
                 {
                     throw new InvalidOperationException(
-                        $"Duplicate compile-time property '{scriptObject.ReceiverType.Name}.{marker.PropertyName}' is registered by '{existing.Method.DeclaringType?.FullName}.{existing.Method.Name}' and '{method.DeclaringType?.FullName}.{method.Name}'.");
+                        $"Duplicate compile-time property '{binding.ReceiverType.Name}.{marker.PropertyName}' is registered by '{existing.Method.DeclaringType?.FullName}.{existing.Method.Name}' and '{method.DeclaringType?.FullName}.{method.Name}'.");
                 }
 
-                properties.Add(key, new RegisteredProperty(scriptObject, method));
+                properties.Add(key, new RegisteredProperty(binding, method, isLegacy));
             }
         }
 
-        return new CompileTimePropertyRegistry(properties, registeredObjects);
+        return new CompileTimePropertyRegistry(properties, registeredBindings);
     }
 
     public CompileTimePropertyResult Get(
@@ -77,15 +77,35 @@ internal sealed class CompileTimePropertyRegistry
         var property = FindProperty(target.GetType(), propertyName);
         if (property is null)
         {
-            return FindObject(target.GetType())?.GetDynamicProperty(target, propertyName, context)
+            return FindBinding(target.GetType())?.GetDynamicProperty(target, propertyName, context)
                 ?? new CompileTimePropertyResult.Missing();
         }
 
         try
         {
-            return (CompileTimePropertyResult)property.Method.Invoke(
-                property.Target,
-                [target, context])!;
+            var invocationArguments = property.IsLegacy
+                ? new object?[] { target, context }
+                : [context, target];
+            var result = property.Method.Invoke(property.Target, invocationArguments);
+            if (result is CompileTimePropertyResult explicitResult)
+            {
+                return explicitResult;
+            }
+
+            if (result is null
+                && typeof(CompileTimePropertyResult).IsAssignableFrom(property.Method.ReturnType))
+            {
+                throw new InvalidOperationException(
+                    $"Compile-time property handler '{property.Method.DeclaringType?.FullName}.{property.Method.Name}' returned null instead of a result.");
+            }
+
+            if (CompileTimeValueConverter.TryConvertReturnValue(result, out var value))
+            {
+                return CompileTimePropertyResult.From(value);
+            }
+
+            throw new InvalidOperationException(
+                $"Compile-time property handler '{property.Method.DeclaringType?.FullName}.{property.Method.Name}' returned an unsupported value.");
         }
         catch (TargetInvocationException exception) when (exception.InnerException is not null)
         {
@@ -108,25 +128,25 @@ internal sealed class CompileTimePropertyRegistry
         return null;
     }
 
-    private CompileTimeScriptObject? FindObject(Type receiverType)
+    private CompileTimeTypeBinding? FindBinding(Type receiverType)
     {
         for (var type = receiverType; type is not null; type = type.BaseType)
         {
-            if (_objects.TryGetValue(type, out var scriptObject))
+            if (_bindings.TryGetValue(type, out var binding))
             {
-                return scriptObject;
+                return binding;
             }
         }
 
         return null;
     }
 
-    private static void ValidateHandler(
-        CompileTimeScriptObject scriptObject,
+    private static bool ValidateHandler(
+        CompileTimeTypeBinding binding,
         MethodInfo method,
         CompileTimePropertyAttribute marker)
     {
-        if (method.IsStatic || method.ReturnType != typeof(CompileTimePropertyResult))
+        if (method.IsStatic)
         {
             throw InvalidHandler(method, "must be an instance method returning CompileTimePropertyResult");
         }
@@ -137,20 +157,44 @@ internal sealed class CompileTimePropertyRegistry
         }
 
         var parameters = method.GetParameters();
+        if (parameters.Length == 2
+            && parameters[0].ParameterType == binding.ReceiverType
+            && parameters[1].ParameterType == typeof(CompileTimePropertyContext))
+        {
+            if (method.ReturnType != typeof(CompileTimePropertyResult))
+            {
+                throw InvalidHandler(
+                    method,
+                    "uses a legacy signature and must return CompileTimePropertyResult");
+            }
+
+            return true;
+        }
+
         if (parameters.Length != 2
-            || parameters[0].ParameterType != scriptObject.ReceiverType
-            || parameters[1].ParameterType != typeof(CompileTimePropertyContext))
+            || parameters[0].ParameterType != typeof(CompileTimePropertyContext)
+            || parameters[1].ParameterType != binding.ReceiverType)
         {
             throw InvalidHandler(
                 method,
-                $"must accept ({scriptObject.ReceiverType.Name}, CompileTimePropertyContext)");
+                $"must accept either ({binding.ReceiverType.Name}, CompileTimePropertyContext) or (CompileTimePropertyContext, {binding.ReceiverType.Name})");
         }
+
+        if (!CompileTimeValueConverter.IsSupportedReturnType(
+                method.ReturnType,
+                typeof(CompileTimePropertyResult)))
+        {
+            throw InvalidHandler(method, $"returns unsupported type '{method.ReturnType.Name}'");
+        }
+
+        return false;
     }
 
     private static InvalidOperationException InvalidHandler(MethodInfo method, string requirement) =>
         new($"Compile-time property handler '{method.DeclaringType?.FullName}.{method.Name}' {requirement}.");
 
     private sealed record RegisteredProperty(
-        CompileTimeScriptObject Target,
-        MethodInfo Method);
+        CompileTimeTypeBinding Target,
+        MethodInfo Method,
+        bool IsLegacy);
 }

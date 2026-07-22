@@ -94,20 +94,8 @@ internal static class CompileTimeFunctionSignatureFacts
             parameters.Any(parameter => parameter.IsVariadic));
     }
 
-    public static CompileTimeMethodResult Match(
+    public static bool Match(
         TypeRef.Function signature,
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
-    {
-        if (arguments is not [CompileTimeValue.Type { Value: TypeRef.Function expected }])
-        {
-            context.Diagnostics.Report(
-                context.Location,
-                "Compile-time method 'match' expects exactly one function type.");
-            return new CompileTimeMethodResult.Failed();
-        }
-
-        return CompileTimeMethodResult.From(new CompileTimeValue.Boolean(
-            TypeIdentity.ResolvedEquals(signature, expected)));
-    }
+        TypeRef.Function expected) =>
+        TypeIdentity.ResolvedEquals(signature, expected);
 }

@@ -3,173 +3,117 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.CompileTime;
 
-internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
+internal sealed class TypeCompileTimeBinding : CompileTimeTypeBinding
 {
     public override string GlobalName => "Type";
 
     public override Type ReceiverType => typeof(CompileTimeValue.Type);
 
     [CompileTimeMethod("from")]
-    private CompileTimeMethodResult From(
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
-    {
-        if (arguments is not [CompileTimeValue.Type type])
-        {
-            context.Diagnostics.Report(
-                context.Location,
-                "Compile-time method 'Type.from' expects exactly one type literal.");
-            return new CompileTimeMethodResult.Failed();
-        }
-
-        return CompileTimeMethodResult.From(type);
-    }
+    private TypeRef From(
+        CompileTimeMethodContext context,
+        TypeRef type) => type;
 
     [CompileTimeMethod("pointer")]
-    private CompileTimeMethodResult Pointer(
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
-    {
-        if (arguments is not [CompileTimeValue.Type element])
-        {
-            return InvalidArguments(context, "Type.pointer", "exactly one type argument");
-        }
-
-        return Type(new TypeRef.Pointer(element.Value));
-    }
+    private TypeRef.Pointer Pointer(
+        CompileTimeMethodContext context,
+        TypeRef element) =>
+        new(element);
 
     [CompileTimeMethod("const")]
-    private CompileTimeMethodResult Const(
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
-    {
-        if (arguments is not [CompileTimeValue.Type element])
-        {
-            return InvalidArguments(context, "Type.const", "exactly one type argument");
-        }
-
-        return Type(new TypeRef.Const(element.Value));
-    }
+    private TypeRef.Const Const(
+        CompileTimeMethodContext context,
+        TypeRef element) =>
+        new(element);
 
     [CompileTimeMethod("array")]
     private CompileTimeMethodResult Array(
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
+        CompileTimeMethodContext context,
+        TypeRef element,
+        long length)
     {
-        if (arguments is not
-            [CompileTimeValue.Type element, CompileTimeValue.Integer { Value: >= 0 } length])
+        if (length < 0)
         {
-            return InvalidArguments(
-                context,
-                "Type.array",
-                "a type and a non-negative integer length");
+            context.Diagnostics.Report(
+                context.Location,
+                "Compile-time method 'Type.array' expects a non-negative integer length.");
+            return new CompileTimeMethodResult.Failed();
         }
 
-        return Type(new TypeRef.FixedArray(
-            element.Value,
-            new ArrayLengthNode.Integer((ulong)length.Value)));
+        return CompileTimeMethodResult.From(new CompileTimeValue.Type(new TypeRef.FixedArray(
+            element,
+            new ArrayLengthNode.Integer((ulong)length))));
     }
 
     [CompileTimeMethod("generic")]
-    private CompileTimeMethodResult Generic(
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
-    {
-        if (arguments is not
-            [CompileTimeValue.Type { Value: TypeRef.Named named }, CompileTimeValue.List typeArguments]
-            || !TryGetTypes(typeArguments, out var types))
-        {
-            return InvalidArguments(
-                context,
-                "Type.generic",
-                "a named type and a list containing only types");
-        }
-
-        return Type(new TypeRef.Named(named.Name, types, named.ModuleName));
-    }
+    private TypeRef.Named Generic(
+        CompileTimeMethodContext context,
+        TypeRef.Named type,
+        IReadOnlyList<TypeRef> typeArguments) =>
+        new(type.Name, typeArguments, type.ModuleName);
 
     [CompileTimeMethod("function")]
-    private CompileTimeMethodResult Function(
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
-    {
-        if (arguments is not
-            [CompileTimeValue.List parameters, CompileTimeValue.Type returnType]
-            || !TryGetTypes(parameters, out var parameterTypes))
-        {
-            return InvalidArguments(
-                context,
-                "Type.function",
-                "a list containing only parameter types and a return type");
-        }
-
-        return Type(new TypeRef.Function(parameterTypes, returnType.Value));
-    }
+    private TypeRef.Function Function(
+        CompileTimeMethodContext context,
+        IReadOnlyList<TypeRef> parameters,
+        TypeRef returnType) =>
+        new(parameters, returnType);
 
     [CompileTimeProperty("name")]
     private CompileTimePropertyResult Name(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) =>
         CompileTimeTypeFacts.Name(type.Value) is { } name
             ? CompileTimePropertyResult.From(new CompileTimeValue.String(name))
             : new CompileTimePropertyResult.Missing();
 
     [CompileTimeProperty("display_name")]
-    private CompileTimePropertyResult DisplayName(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(
-            new CompileTimeValue.String(TypeRefFormatter.ToCxString(type.Value)));
+    private string DisplayName(
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) => TypeRefFormatter.ToCxString(type.Value);
 
     [CompileTimeProperty("kind")]
-    private CompileTimePropertyResult Kind(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
-        CompileTimePropertyResult.From(
-            new CompileTimeValue.String(CompileTimeTypeFacts.Kind(type.Value)));
+    private string Kind(
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) => CompileTimeTypeFacts.Kind(type.Value);
 
     [CompileTimeProperty("is_pointer")]
-    private CompileTimePropertyResult IsPointer(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
-        Boolean(type.Value is TypeRef.Pointer);
+    private bool IsPointer(
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) => type.Value is TypeRef.Pointer;
 
     [CompileTimeProperty("is_array")]
-    private CompileTimePropertyResult IsArray(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
-        Boolean(type.Value is TypeRef.FixedArray);
+    private bool IsArray(
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) => type.Value is TypeRef.FixedArray;
 
     [CompileTimeProperty("is_named")]
-    private CompileTimePropertyResult IsNamed(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
-        Boolean(type.Value is TypeRef.Named);
+    private bool IsNamed(
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) => type.Value is TypeRef.Named;
 
     [CompileTimeProperty("is_function")]
-    private CompileTimePropertyResult IsFunction(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
-        Boolean(type.Value is TypeRef.Function);
+    private bool IsFunction(
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) => type.Value is TypeRef.Function;
 
     [CompileTimeProperty("is_const")]
-    private CompileTimePropertyResult IsConst(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
-        Boolean(type.Value is TypeRef.Const);
+    private bool IsConst(
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) => type.Value is TypeRef.Const;
 
     [CompileTimeProperty("element_type")]
     private CompileTimePropertyResult ElementType(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) =>
         CompileTimeTypeFacts.ElementType(type.Value) is { } element
             ? CompileTimePropertyResult.From(new CompileTimeValue.Type(element))
             : new CompileTimePropertyResult.Missing();
 
     [CompileTimeProperty("type_arguments")]
     private CompileTimePropertyResult TypeArguments(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context) =>
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type) =>
         CompileTimeTypeFacts.TypeArguments(type.Value) is { } arguments
             ? CompileTimePropertyResult.From(new CompileTimeValue.List(
                 arguments.Select(argument => new CompileTimeValue.Type(argument)).ToList()))
@@ -177,8 +121,8 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeProperty("is_struct")]
     private CompileTimePropertyResult IsStruct(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type)
     {
         if (!EnsureReflection(context))
         {
@@ -191,8 +135,8 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeProperty("fields")]
     private CompileTimePropertyResult Fields(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type)
     {
         if (!EnsureReflection(context))
         {
@@ -213,8 +157,8 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeProperty("methods")]
     private CompileTimePropertyResult Methods(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type)
     {
         if (!EnsureReflection(context))
         {
@@ -235,8 +179,8 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeProperty("members")]
     private CompileTimePropertyResult Members(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type)
     {
         if (!EnsureReflection(context))
         {
@@ -257,8 +201,8 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeProperty("is_enum")]
     private CompileTimePropertyResult IsEnum(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type)
     {
         if (!EnsureReflection(context))
         {
@@ -270,8 +214,8 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeProperty("is_data_enum")]
     private CompileTimePropertyResult IsDataEnum(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type)
     {
         if (!EnsureReflection(context))
         {
@@ -283,8 +227,8 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeProperty("data_fields")]
     private CompileTimePropertyResult DataFields(
-        CompileTimeValue.Type type,
-        CompileTimePropertyContext context)
+        CompileTimePropertyContext context,
+        CompileTimeValue.Type type)
     {
         if (!EnsureReflection(context))
         {
@@ -327,19 +271,10 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     [CompileTimeMethod("match")]
     private CompileTimeMethodResult Match(
+        CompileTimeMethodContext context,
         CompileTimeValue.Type type,
-        IReadOnlyList<CompileTimeValue> arguments,
-        CompileTimeMethodContext context)
+        RequirementNode requirement)
     {
-        if (arguments is not
-            [CompileTimeValue.Syntax { Value: RequirementNode requirement }])
-        {
-            context.Diagnostics.Report(
-                context.Location,
-                "Compile-time method 'type.match' expects exactly one requirement argument.");
-            return new CompileTimeMethodResult.Failed();
-        }
-
         if (!context.Reflection.TryMatchRequirement(type.Value, requirement, out var match))
         {
             context.Diagnostics.Report(
@@ -354,40 +289,6 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
 
     private static CompileTimePropertyResult Boolean(bool value) =>
         CompileTimePropertyResult.From(new CompileTimeValue.Boolean(value));
-
-    private static CompileTimeMethodResult Type(TypeRef type) =>
-        CompileTimeMethodResult.From(new CompileTimeValue.Type(type));
-
-    private static bool TryGetTypes(
-        CompileTimeValue.List values,
-        out IReadOnlyList<TypeRef> types)
-    {
-        var result = new List<TypeRef>(values.Values.Count);
-        foreach (var value in values.Values)
-        {
-            if (value is not CompileTimeValue.Type type)
-            {
-                types = [];
-                return false;
-            }
-
-            result.Add(type.Value);
-        }
-
-        types = result;
-        return true;
-    }
-
-    private static CompileTimeMethodResult InvalidArguments(
-        CompileTimeMethodContext context,
-        string method,
-        string expected)
-    {
-        context.Diagnostics.Report(
-            context.Location,
-            $"Compile-time method '{method}' expects {expected}.");
-        return new CompileTimeMethodResult.Failed();
-    }
 
     private static bool EnsureReflection(CompileTimePropertyContext context)
     {
