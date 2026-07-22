@@ -200,7 +200,13 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
             .Select(completion => new
             {
                 label = completion.Label,
-                kind = completion.Kind == MemberCompletionKind.Field ? 5 : 2,
+                kind = completion.Kind switch
+                {
+                    MemberCompletionKind.Field => 5,
+                    MemberCompletionKind.Method => 2,
+                    MemberCompletionKind.EnumMember => 20,
+                    _ => 1,
+                },
                 detail = completion.Detail,
             })
             .Cast<object>()

@@ -2,7 +2,7 @@
   "name": "cx-language",
   "displayName": "CX Language Support",
   "description": "Syntax highlighting and compiler diagnostics for CX.",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "publisher": "cx-language",
   "license": "MIT",
   "engines": {

@@ -8,6 +8,8 @@ public sealed record CompilationResult(
     IReadOnlyList<Diagnostic> Diagnostics,
     IReadOnlyList<string> LinkerArguments)
 {
+    public IReadOnlyList<CompilationTiming> Timings { get; init; } = [];
+
     public static CompilationResult Succeeded(string output, IReadOnlyList<Diagnostic> diagnostics) =>
         new(true, output, diagnostics, []);
 

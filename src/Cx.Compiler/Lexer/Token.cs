@@ -7,7 +7,7 @@ public sealed record Token(
     SourceSpan Span,
     IReadOnlyList<TokenTrivia> LeadingTrivia)
 {
-    private readonly string? _valueOverride;
+    private string? _valueOverride;
 
     public Token(TokenType type, Location location, int length)
         : this(type, new SourceSpan(location, length), [])
@@ -20,7 +20,7 @@ public sealed record Token(
         _valueOverride = value;
     }
 
-    public string Value => _valueOverride ?? Span.Text;
+    public string Value => _valueOverride ??= Span.Text;
 
     public Location Location => Span.Location;
 

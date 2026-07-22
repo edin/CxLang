@@ -11,6 +11,7 @@ using Cx.Compiler.Syntax.Nodes;
 using CxParser = Cx.Compiler.Parser.Parser;
 using Cx.Compiler.Semantic.Analyzers;
 using Cx.Compiler.Source;
+using CxLexer = Cx.Compiler.Lexer.Lexer;
 
 public sealed class CxCompiler
 {
@@ -63,12 +64,44 @@ public sealed class CxCompiler
             .LastOrDefault(member =>
                 SourcePathsEqual(member.DotSpan.File.Path, path)
                 && member.DotSpan.Position == position - 1);
-        if (hole?.Target.Semantic.Type is not { } receiverType)
+        if (hole is null)
         {
             return [];
         }
 
+        if (hole.Target.Semantic.Type is not { } receiverType)
+        {
+            return CollectStaticMemberCompletions(program, hole.Target, hole.Prefix);
+        }
+
         return CollectMemberCompletions(program, receiverType, hole.Prefix);
+    }
+
+    private static IReadOnlyList<MemberCompletion> CollectStaticMemberCompletions(
+        ProgramNode program,
+        ExpressionNode target,
+        string prefix)
+    {
+        var targetName = ExpressionNameFacts.GetQualifiedName(target);
+        if (targetName is null)
+        {
+            return [];
+        }
+
+        var enumNode = program.Enums.FirstOrDefault(candidate => candidate.Name == targetName);
+        if (enumNode is null)
+        {
+            return [];
+        }
+
+        return enumNode.Members
+            .Where(member => member.Name.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(member => new MemberCompletion(
+                member.Name,
+                MemberCompletionKind.EnumMember,
+                enumNode.Name))
+            .OrderBy(completion => completion.Label, StringComparer.Ordinal)
+            .ToList();
     }
 
     private static IReadOnlyList<MemberCompletion> CollectMemberCompletions(
@@ -170,28 +203,51 @@ public sealed class CxCompiler
         CNameManglerOptions? nameManglerOptions,
         CEmissionOptions? emissionOptions = null)
     {
-        var (program, diagnostics) = CompileProgram(sources, BuildTests: false);
+        var profiler = new CompilationProfiler();
+        var stripUnused = emissionOptions?.StripUnused ?? true;
+        var (program, diagnostics) = CompileProgram(
+            sources,
+            BuildTests: false,
+            PruneUnused: stripUnused,
+            EntryPoints: emissionOptions?.EntryPoints,
+            compilationProfiler: profiler);
         if (program is null)
         {
-            return CompilationResult.Failed(diagnostics.Diagnostics);
+            return CompilationResult.Failed(diagnostics.Diagnostics) with { Timings = profiler.Timings };
         }
 
-        var cUnit = new CxToCTranslationUnitLowerer(nameManglerOptions, emissionOptions).Lower(program);
-        var c = new CTranslationUnitEmitter().Emit(cUnit);
-        return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));
+        var cUnit = profiler.Measure(
+            "C AST lowering",
+            () => new CxToCTranslationUnitLowerer(nameManglerOptions, emissionOptions).Lower(program));
+        var c = profiler.Measure("C emission", () => new CTranslationUnitEmitter().Emit(cUnit));
+        var linkerArguments = profiler.Measure("Linker argument collection", () => GetLinkerArguments(program));
+        return CompilationResult.Succeeded(c, diagnostics.Diagnostics, linkerArguments) with
+        {
+            Timings = profiler.Timings,
+        };
     }
 
     public CompilationResult CompileTestsToC(IEnumerable<SourceFile> sources, string? moduleName = null)
     {
-        var (program, diagnostics) = CompileProgram(sources, BuildTests: true, TestModuleName: moduleName);
+        var profiler = new CompilationProfiler();
+        var (program, diagnostics) = CompileProgram(
+            sources,
+            BuildTests: true,
+            TestModuleName: moduleName,
+            PruneUnused: true,
+            compilationProfiler: profiler);
         if (program is null)
         {
-            return CompilationResult.Failed(diagnostics.Diagnostics);
+            return CompilationResult.Failed(diagnostics.Diagnostics) with { Timings = profiler.Timings };
         }
 
-        var cUnit = new CxToCTranslationUnitLowerer().Lower(program);
-        var c = new CTranslationUnitEmitter().Emit(cUnit);
-        return CompilationResult.Succeeded(c, diagnostics.Diagnostics, GetLinkerArguments(program));
+        var cUnit = profiler.Measure("C AST lowering", () => new CxToCTranslationUnitLowerer().Lower(program));
+        var c = profiler.Measure("C emission", () => new CTranslationUnitEmitter().Emit(cUnit));
+        var linkerArguments = profiler.Measure("Linker argument collection", () => GetLinkerArguments(program));
+        return CompilationResult.Succeeded(c, diagnostics.Diagnostics, linkerArguments) with
+        {
+            Timings = profiler.Timings,
+        };
     }
 
     public CompilationResult AuditRawGenericUses(IEnumerable<SourceFile> sources)
@@ -209,20 +265,37 @@ public sealed class CxCompiler
         IEnumerable<SourceFile> sources,
         bool BuildTests,
         string? TestModuleName = null,
-        bool ApplyPostSemanticLowering = true)
+        bool ApplyPostSemanticLowering = true,
+        bool PruneUnused = false,
+        IReadOnlyList<string>? EntryPoints = null,
+        CompilationProfiler? compilationProfiler = null)
     {
+        var profiler = compilationProfiler ?? new CompilationProfiler();
         var sourceFiles = sources.ToList();
         var diagnostics = new DiagnosticBag();
         var parser = new CxParser(diagnostics);
-        var corePrograms = StandardLibrary.LoadCoreFiles()
-            .Select(parser.Parse)
-            .ToList();
-        var userPrograms = sourceFiles
-            .Select(parser.Parse)
-            .ToList();
+        var coreFiles = profiler.Measure("Standard library load", StandardLibrary.LoadCoreFiles);
+        var coreTokens = profiler.Measure(
+            "Standard library lexing",
+            () => coreFiles
+                .Select(source => (Source: source, Tokens: new CxLexer(source, diagnostics).Tokenize()))
+                .ToList());
+        var corePrograms = profiler.Measure(
+            "Standard library parsing",
+            () => coreTokens.Select(input => parser.Parse(input.Source, input.Tokens)).ToList());
+        var userTokens = profiler.Measure(
+            "User source lexing",
+            () => sourceFiles
+                .Select(source => (Source: source, Tokens: new CxLexer(source, diagnostics).Tokenize()))
+                .ToList());
+        var userPrograms = profiler.Measure(
+            "User source parsing",
+            () => userTokens.Select(input => parser.Parse(input.Source, input.Tokens)).ToList());
 
-        new CompileTimePlaceholderUsageAnalyzer(diagnostics)
-            .Analyze(corePrograms.Concat(userPrograms));
+        profiler.Measure(
+            "Compile-time placeholder validation",
+            () => new CompileTimePlaceholderUsageAnalyzer(diagnostics)
+                .Analyze(corePrograms.Concat(userPrograms)));
 
         if (diagnostics.HasErrors)
         {
@@ -235,13 +308,15 @@ public sealed class CxCompiler
                 .Select(program => program.Location.File.Path)
                 .ToHashSet(StringComparer.Ordinal);
             var allPrograms = corePrograms.Concat(userPrograms).ToList();
-            userPrograms = BuildTestPrograms(
-                allPrograms,
-                program => TestModuleName is null
-                    ? userProgramPaths.Contains(program.Location.File.Path)
-                    : string.Equals(GetModuleName(program), TestModuleName, StringComparison.Ordinal),
-                diagnostics,
-                TestModuleName).ToList();
+            userPrograms = profiler.Measure(
+                "Test program generation",
+                () => BuildTestPrograms(
+                    allPrograms,
+                    program => TestModuleName is null
+                        ? userProgramPaths.Contains(program.Location.File.Path)
+                        : string.Equals(GetModuleName(program), TestModuleName, StringComparison.Ordinal),
+                    diagnostics,
+                    TestModuleName).ToList());
             corePrograms = [];
             if (diagnostics.HasErrors)
             {
@@ -251,7 +326,9 @@ public sealed class CxCompiler
 
         var inputPrograms = corePrograms.Concat(userPrograms).ToList();
         var rootProgram = GetRootProgram(userPrograms);
-        new ModuleVisibilityAnalyzer(diagnostics, inputPrograms).Analyze(userPrograms);
+        profiler.Measure(
+            "Module visibility analysis",
+            () => new ModuleVisibilityAnalyzer(diagnostics, inputPrograms).Analyze(userPrograms));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -259,16 +336,22 @@ public sealed class CxCompiler
 
         var preSemanticLowering = new CxPreSemanticLoweringPipeline(diagnostics);
         var postSemanticLowering = new CxPostSemanticLoweringPipeline(diagnostics);
-        var moduleNamesByPath = inputPrograms
-            .GroupBy(program => program.Location.File.Path, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => GetModuleName(group.Last()), StringComparer.Ordinal);
-        var mergedInputProgram = MergePrograms(inputPrograms, rootProgram);
+        var moduleNamesByPath = profiler.Measure(
+            "Module index construction",
+            () => inputPrograms
+                .GroupBy(program => program.Location.File.Path, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => GetModuleName(group.Last()), StringComparer.Ordinal));
+        var mergedInputProgram = profiler.Measure(
+            "Program merge",
+            () => MergePrograms(inputPrograms, rootProgram));
         var macroExpansion = new MacroExpansionPass(
             diagnostics,
             mergedInputProgram,
             new ProgramCompileTimeReflection(mergedInputProgram, moduleNamesByPath),
             moduleNamesByPath);
-        mergedInputProgram = macroExpansion.RewriteProgram(mergedInputProgram);
+        mergedInputProgram = profiler.Measure(
+            "Macro expansion",
+            () => macroExpansion.RewriteProgram(mergedInputProgram));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -277,52 +360,71 @@ public sealed class CxCompiler
         var compileTimeExpansion = new CompileTimeDirectiveExpansionPass(
             diagnostics,
             new ProgramCompileTimeReflection(mergedInputProgram, moduleNamesByPath));
-        mergedInputProgram = compileTimeExpansion.ExpandProgram(mergedInputProgram);
+        mergedInputProgram = profiler.Measure(
+            "Compile-time directive expansion",
+            () => compileTimeExpansion.ExpandProgram(mergedInputProgram));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
         }
 
-        foreach (var list in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<ListExpressionNode>())
+        profiler.Measure("Compile-time residue validation", () =>
         {
-            diagnostics.Report(
-                list.Location,
-                "List expressions are only valid during compile-time evaluation.");
-        }
-        foreach (var typeLiteral in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<TypeLiteralExpressionNode>())
-        {
-            diagnostics.Report(
-                typeLiteral.Location,
-                "Type literals are only valid during compile-time evaluation.");
-        }
-        if (ApplyPostSemanticLowering)
-        {
-            foreach (var incompleteMember in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<IncompleteMemberExpressionNode>())
+            foreach (var list in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<ListExpressionNode>())
             {
-                diagnostics.Report(incompleteMember.DotSpan, "Expected member name after '.'.");
+                diagnostics.Report(
+                    list.Location,
+                    "List expressions are only valid during compile-time evaluation.");
             }
-        }
+            foreach (var typeLiteral in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<TypeLiteralExpressionNode>())
+            {
+                diagnostics.Report(
+                    typeLiteral.Location,
+                    "Type literals are only valid during compile-time evaluation.");
+            }
+            if (ApplyPostSemanticLowering)
+            {
+                foreach (var incompleteMember in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<IncompleteMemberExpressionNode>())
+                {
+                    diagnostics.Report(incompleteMember.DotSpan, "Expected member name after '.'.");
+                }
+            }
+        });
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
         }
 
-        var mergedProgram = preSemanticLowering.Lower(mergedInputProgram);
-        AnnotateModuleNames(mergedProgram, moduleNamesByPath);
+        var mergedProgram = profiler.Measure(
+            "Pre-semantic lowering",
+            () => preSemanticLowering.Lower(mergedInputProgram));
+        if (PruneUnused)
+        {
+            mergedProgram = profiler.Measure(
+                "CX reachability pruning",
+                () => CxFunctionReachabilityPruner.Prune(mergedProgram, EntryPoints));
+        }
+        profiler.Measure("Module annotation", () => AnnotateModuleNames(mergedProgram, moduleNamesByPath));
         var semanticModel = new SemanticModel();
-        new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram);
+        profiler.Measure(
+            "Scope resolution",
+            () => new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
         }
 
-        new TypeResolutionPass(diagnostics).Resolve(mergedProgram);
+        profiler.Measure(
+            "Type resolution",
+            () => new TypeResolutionPass(diagnostics).Resolve(mergedProgram));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
         }
 
-        mergedProgram = new TypeInferencePass(diagnostics).Apply(mergedProgram);
+        mergedProgram = profiler.Measure(
+            "Type inference",
+            () => new TypeInferencePass(diagnostics).Apply(mergedProgram));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -332,34 +434,44 @@ public sealed class CxCompiler
             .OfType<TryExpressionNode>()
             .Any(attempt => attempt.Fallback is TryExpressionNode))
         {
-            mergedProgram = TryFallbackChainLowerer.Lower(mergedProgram, diagnostics);
+            mergedProgram = profiler.Measure(
+                "Try fallback chain lowering",
+                () => TryFallbackChainLowerer.Lower(mergedProgram, diagnostics));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
             }
 
-            AnnotateModuleNames(mergedProgram, moduleNamesByPath);
+            profiler.Measure("Try fallback module annotation", () => AnnotateModuleNames(mergedProgram, moduleNamesByPath));
             semanticModel = new SemanticModel();
-            new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram);
+            profiler.Measure(
+                "Try fallback scope resolution",
+                () => new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
             }
 
-            new TypeResolutionPass(diagnostics).Resolve(mergedProgram);
+            profiler.Measure(
+                "Try fallback type resolution",
+                () => new TypeResolutionPass(diagnostics).Resolve(mergedProgram));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
             }
 
-            mergedProgram = new TypeInferencePass(diagnostics).Apply(mergedProgram);
+            mergedProgram = profiler.Measure(
+                "Try fallback type inference",
+                () => new TypeInferencePass(diagnostics).Apply(mergedProgram));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
             }
         }
 
-        new SemanticAnalyzer(diagnostics, inputPrograms).Analyze(mergedProgram);
+        profiler.Measure(
+            "Semantic analysis",
+            () => new SemanticAnalyzer(diagnostics, inputPrograms).Analyze(mergedProgram));
 
         if (diagnostics.HasErrors)
         {
@@ -368,7 +480,9 @@ public sealed class CxCompiler
 
         if (ApplyPostSemanticLowering)
         {
-            mergedProgram = postSemanticLowering.Lower(mergedProgram);
+            mergedProgram = profiler.Measure(
+                "Post-semantic lowering",
+                () => postSemanticLowering.Lower(mergedProgram));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);

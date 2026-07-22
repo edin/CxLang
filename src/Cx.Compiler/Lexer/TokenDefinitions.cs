@@ -17,10 +17,7 @@ public static class TokenDefinitions
             yield return CreateMatcher(metadata.MatcherType!);
         }
 
-        foreach (var metadata in TokenMetadataProvider.SymbolsByLength)
-        {
-            yield return new TextTokenMatcher(metadata.Type, metadata.Text!);
-        }
+        yield return new SymbolTokenMatcher(TokenMetadataProvider.SymbolsByLength);
 
         yield return new IdentifierTokenMatcher(TokenMetadataProvider.KeywordTypes);
     }

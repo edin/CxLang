@@ -23,6 +23,24 @@ internal sealed class CallResolver(
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
     private readonly MethodCallResolver _methodCallResolver = new(program, new TypeSystem(program, currentTypeParameters));
+    private readonly Dictionary<string, List<FunctionNode>> _functionsByName = program.Functions
+        .GroupBy(function => function.Name, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
+    private readonly Dictionary<string, List<ExternFunctionNode>> _externFunctionsByName = program.ExternFunctions
+        .GroupBy(function => function.Name, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
+    private readonly Dictionary<string, InterfaceNode> _interfacesByName = program.Interfaces
+        .GroupBy(node => node.Name, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+    private readonly Dictionary<string, RequirementNode> _requirementsByName = program.Requirements
+        .GroupBy(node => node.Name, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+    private readonly Dictionary<string, TypeAdapterNode> _adaptersByName = program.TypeAdapters
+        .GroupBy(node => node.Name, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+    private readonly Dictionary<string, StructNode> _structsByName = program.Structs
+        .GroupBy(node => node.Name, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
     public CallResolution? ResolveTypeRefs(
         ExpressionNode callee,
@@ -95,7 +113,7 @@ internal sealed class CallResolver(
                 return BuildMethodResolution(staticMethodCall, typeArguments, BuildStaticReceiverTypeRef(targetName, typeArguments));
             }
 
-            var staticFunction = program.Functions.FirstOrDefault(function =>
+            var staticFunction = FunctionCandidates(member.MemberName).FirstOrDefault(function =>
                 function.IsStatic
                 && OwnerType(function) is not null
                 && string.Equals(targetName, OwnerType(function), StringComparison.Ordinal)
@@ -140,7 +158,7 @@ internal sealed class CallResolver(
         var receiverArguments = TypeRefFacts.TryGetGenericArguments(receiverTypeRef, out var parsedReceiverArguments)
             ? parsedReceiverArguments
             : [];
-        var instanceFunction = program.Functions.FirstOrDefault(function =>
+        var instanceFunction = FunctionCandidates(member.MemberName).FirstOrDefault(function =>
             OwnerType(function) is not null
             && !function.IsStatic
             && string.Equals(function.Name, member.MemberName, StringComparison.Ordinal)
@@ -172,8 +190,7 @@ internal sealed class CallResolver(
             };
         }
 
-        var interfaceNode = program.Interfaces.FirstOrDefault(interfaceNode =>
-            string.Equals(interfaceNode.Name, receiverType, StringComparison.Ordinal));
+        _interfacesByName.TryGetValue(receiverType, out var interfaceNode);
         var interfaceMethod = interfaceNode?.Methods.FirstOrDefault(method =>
             string.Equals(method.Name, member.MemberName, StringComparison.Ordinal));
         if (interfaceMethod is null)
@@ -197,7 +214,7 @@ internal sealed class CallResolver(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables)
     {
-        var function = program.Functions.FirstOrDefault(function =>
+        var function = FunctionCandidates(name).FirstOrDefault(function =>
             OwnerType(function) is null
             && string.Equals(function.Name, name, StringComparison.Ordinal)
             && (MatchesGenericArguments(function.TypeParameters, typeArguments)
@@ -229,12 +246,11 @@ internal sealed class CallResolver(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables)
     {
-        var function = program.ExternFunctions.FirstOrDefault(function =>
-            string.Equals(function.Name, name, StringComparison.Ordinal)
-            && (MatchesGenericArguments(function.TypeParameters, typeArguments)
+        var function = ExternFunctionCandidates(name).FirstOrDefault(function =>
+            MatchesGenericArguments(function.TypeParameters, typeArguments)
                 || typeArguments.Count == 0
                     && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
+                    && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null);
         if (function is null)
         {
             return null;
@@ -266,8 +282,7 @@ internal sealed class CallResolver(
         {
             foreach (var reference in constraint.Requirements)
             {
-                var requirement = program.Requirements.FirstOrDefault(requirement =>
-                    string.Equals(requirement.Name, reference.Name, StringComparison.Ordinal));
+                _requirementsByName.TryGetValue(reference.Name, out var requirement);
                 if (requirement is null)
                 {
                     continue;
@@ -408,8 +423,7 @@ internal sealed class CallResolver(
                 return currentArguments;
             }
 
-            var adapter = program.TypeAdapters.FirstOrDefault(adapter =>
-                string.Equals(adapter.Name, currentName, StringComparison.Ordinal));
+            _adaptersByName.TryGetValue(currentName, out var adapter);
             if (adapter is null)
             {
                 return null;
@@ -436,13 +450,11 @@ internal sealed class CallResolver(
 
     private TypeRef BuildStaticReceiverTypeRef(string targetName, IReadOnlyList<TypeRef> typeArguments)
     {
-        var typeParameterCount = program.Structs
-            .FirstOrDefault(structNode => string.Equals(structNode.Name, targetName, StringComparison.Ordinal))
-            ?.TypeParameters.Count
-            ?? program.TypeAdapters
-                .FirstOrDefault(adapter => string.Equals(adapter.Name, targetName, StringComparison.Ordinal))
-                ?.TypeParameters.Count
-            ?? 0;
+        var typeParameterCount = _structsByName.TryGetValue(targetName, out var structNode)
+            ? structNode.TypeParameters.Count
+            : _adaptersByName.TryGetValue(targetName, out var adapter)
+                ? adapter.TypeParameters.Count
+                : 0;
         return typeParameterCount == typeArguments.Count && typeArguments.Count > 0
             ? new TypeRef.Named(targetName, typeArguments)
             : new TypeRef.Named(targetName, []);
@@ -635,6 +647,12 @@ internal sealed class CallResolver(
 
     private string? OwnerType(FunctionNode function) =>
         TypeRefFacts.GetBaseName(ResolveType(function.OwnerTypeNode));
+
+    private IReadOnlyList<FunctionNode> FunctionCandidates(string name) =>
+        _functionsByName.TryGetValue(name, out var functions) ? functions : [];
+
+    private IReadOnlyList<ExternFunctionNode> ExternFunctionCandidates(string name) =>
+        _externFunctionsByName.TryGetValue(name, out var functions) ? functions : [];
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(ResolveType).ToList();

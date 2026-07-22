@@ -9,15 +9,14 @@ namespace Cx.Compiler.Semantic;
 internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel model)
 {
     private IReadOnlyList<FunctionNode> _functions = [];
-    private ProgramNode? _program;
-    private ExpressionTypeResolver? _expressionTypeResolver;
+    private CallResolver? _callResolver;
     private TypeRefParser? _typeRefParser;
 
     public void Resolve(ProgramNode program)
     {
-        _program = program;
         _functions = GetAllFunctions(program);
-        _expressionTypeResolver = new ExpressionTypeResolver(program);
+        var expressionTypeResolver = new ExpressionTypeResolver(program);
+        _callResolver = new CallResolver(program, expressionTypeResolver.ResolveTypeRef);
         _typeRefParser = new TypeRefParser(program);
         DeclareTopLevelSymbols(program);
 
@@ -331,7 +330,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 ResolveExpression(assignment.Value, scope);
                 break;
             case CallExpressionNode call:
-                ResolveExpression(call.Callee, scope);
+                ResolveCallCallee(call.Callee, scope);
                 foreach (var argument in call.Arguments)
                 {
                     ResolveExpression(argument, scope);
@@ -340,7 +339,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 BindCall(call, scope);
                 break;
             case GenericCallExpressionNode call:
-                ResolveExpression(call.Callee, scope);
+                ResolveCallCallee(call.Callee, scope);
                 foreach (var argument in call.Arguments)
                 {
                     ResolveExpression(argument, scope);
@@ -360,6 +359,17 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 ResolveExpression(index.Index, scope);
                 break;
         }
+    }
+
+    private void ResolveCallCallee(ExpressionNode callee, Scope scope)
+    {
+        if (callee is MemberExpressionNode member)
+        {
+            ResolveExpression(member.Target, scope);
+            return;
+        }
+
+        ResolveExpression(callee, scope);
     }
 
     private Symbol? Declare(Scope scope, string name, SymbolKind kind, TypeNode? typeNode, Location location, SyntaxNode? node = null) =>
@@ -460,14 +470,13 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         IReadOnlyList<ExpressionNode> arguments,
         Scope scope)
     {
-        if (_program is null || _expressionTypeResolver is null)
+        if (_callResolver is null)
         {
             return false;
         }
 
-        var resolver = new CallResolver(_program, _expressionTypeResolver.ResolveTypeRef);
         var variables = BuildTypeEnvironment(scope);
-        var resolved = resolver.ResolveTypeRefs(callee, typeArguments, arguments, variables);
+        var resolved = _callResolver.ResolveTypeRefs(callee, typeArguments, arguments, variables);
         if (resolved?.Function is null)
         {
             return false;

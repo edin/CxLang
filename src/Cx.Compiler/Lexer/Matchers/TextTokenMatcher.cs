@@ -13,13 +13,13 @@ public sealed class TextTokenMatcher : ITokenMatcher
 
     public Token? Match(Lexer lexer)
     {
-        var location = lexer.Location;
-
-        if (!lexer.TryTake(_text))
+        if (!lexer.IsAt(_text))
         {
             return null;
         }
 
+        var location = lexer.Location;
+        lexer.TryTake(_text);
         return new Token(_type, location, _text.Length);
     }
 }

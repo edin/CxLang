@@ -10,7 +10,9 @@ internal static class CDeclarationBuilder
         new(
             enumNode.Name,
             enumNode.Members
-                .Select(member => new CEnumMember(member.Name, member.Value))
+                .Select(member => new CEnumMember(
+                    CEnumNames.Member(enumNode.Name, member.Name),
+                    member.Value))
                 .ToList());
 
     public static CDataEnumDeclaration BuildDataEnum(
@@ -28,7 +30,7 @@ internal static class CDeclarationBuilder
             .ToList();
         var rows = enumNode.Members.Select(member =>
             new CDataEnumRow(
-                member.Name,
+                CEnumNames.Member(enumNode.Name, member.Name),
                 fields.Select(field =>
                 {
                     var value = member.DataValues?.FirstOrDefault(candidate => candidate.Name == field.Name)?.Value

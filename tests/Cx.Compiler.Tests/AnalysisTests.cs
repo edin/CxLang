@@ -78,4 +78,35 @@ public sealed class AnalysisTests
         Assert.Contains(result.Diagnostics, diagnostic =>
             diagnostic.Message == "Expected member name after '.'.");
     }
+
+    [Fact]
+    public void GetMemberCompletions_ReturnsStaticEnumMembers()
+    {
+        const string source = """
+            enum TokenKind {
+                Identifier,
+                Number,
+            }
+
+            fn main() -> int {
+                let kind = TokenKind.
+                return 0;
+            }
+            """;
+        var position = source.IndexOf("TokenKind.", StringComparison.Ordinal) + "TokenKind.".Length;
+
+        var completions = new CxCompiler().GetMemberCompletions(
+            [CompilerTestHelpers.Source(source)],
+            "main.cx",
+            position);
+
+        Assert.Collection(
+            completions,
+            completion =>
+            {
+                Assert.Equal("Identifier", completion.Label);
+                Assert.Equal(MemberCompletionKind.EnumMember, completion.Kind);
+            },
+            completion => Assert.Equal("Number", completion.Label));
+    }
 }

@@ -33,7 +33,7 @@ public sealed class DataEnumTests
         Assert.Contains("TokenKind_COUNT", result.Output);
         Assert.Contains("typedef struct TokenKind_Data", result.Output);
         Assert.Contains("static const TokenKind_Data TokenKind_data[TokenKind_COUNT]", result.Output);
-        Assert.Contains("[Plus] = { .text = \"+\", .precedence = 90, .associativity = Left }", result.Output);
+        Assert.Contains("[TokenKind_Plus] = { .text = \"+\", .precedence = 90, .associativity = Associativity_Left }", result.Output);
         Assert.Contains("return TokenKind_data[kind].precedence;", result.Output);
     }
 
@@ -151,8 +151,8 @@ public sealed class DataEnumTests
             """);
 
         CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("consume(Identifier)", result.Output);
-        Assert.Contains("consume(Plus)", result.Output);
+        Assert.Contains("consume(TokenKind_Identifier)", result.Output);
+        Assert.Contains("consume(TokenKind_Plus)", result.Output);
     }
 
     [Fact]

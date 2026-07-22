@@ -87,6 +87,22 @@ public sealed class Lexer
         return _input[start.._position];
     }
 
+    public void SkipWhile(Func<char, bool> predicate)
+    {
+        while (!IsAtEnd && predicate(Current))
+        {
+            Advance();
+        }
+    }
+
+    public void SkipUntil(string text)
+    {
+        while (!IsAtEnd && !IsAt(text))
+        {
+            Advance();
+        }
+    }
+
     public void Advance()
     {
         if (Current == '\n')
@@ -117,10 +133,6 @@ public sealed class Lexer
 
             foreach (var definition in TokenDefinitions.All)
             {
-                var savedPosition = _position;
-                var savedLine = _line;
-                var savedColumn = _column;
-
                 var match = definition.Match(this);
                 if (match is not null)
                 {
@@ -137,9 +149,6 @@ public sealed class Lexer
                     goto NextToken;
                 }
 
-                _position = savedPosition;
-                _line = savedLine;
-                _column = savedColumn;
             }
 
             Diagnostics.Report(Location, $"Unexpected character '{Current}'.");

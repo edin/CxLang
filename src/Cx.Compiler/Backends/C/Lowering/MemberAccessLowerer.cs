@@ -126,10 +126,16 @@ internal sealed class MemberAccessLowerer(
             return null;
         }
 
+        var index = lowerExpression(member.Target);
+        if (TypeRefFacts.TryGetPointerElement(targetType, out _))
+        {
+            index = new CUnaryExpression("*", index);
+        }
+
         return new CMemberExpression(
             new CIndexExpression(
                 new CNameExpression(enumNode.Name + "_data"),
-                lowerExpression(member.Target)),
+                index),
             ".",
             member.MemberName);
     }

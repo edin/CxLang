@@ -23,6 +23,7 @@ public sealed class CompilerSmokeTests
         Assert.DoesNotContain("int unused()", result.Output);
         Assert.DoesNotContain("TestRunner", result.Output);
         Assert.DoesNotContain("Vec_", result.Output);
+        Assert.DoesNotContain(result.Timings, timing => timing.Name == "Try fallback chain lowering");
         var lineCount = result.Output!.Split('\n').Length;
         Assert.True(lineCount < 50, $"Expected compact hello-world output, but emitted {lineCount} lines.");
     }
@@ -45,6 +46,7 @@ public sealed class CompilerSmokeTests
 
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("int unused()", result.Output);
+        Assert.Contains(result.Timings, timing => timing.Name == "Try fallback chain lowering");
     }
 
     [Fact]

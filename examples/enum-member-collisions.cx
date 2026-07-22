@@ -1,0 +1,25 @@
+enum Color { None, Value }
+enum State { None, Value }
+
+enum TokenKind(text: const char* = null) {
+    None {},
+    Value { text: "token" },
+}
+
+enum NodeKind(text: const char* = null) {
+    None {},
+    Value { text: "node" },
+}
+
+fn main() -> int {
+    let color = Color.Value;
+    let state = State.Value;
+    let token = TokenKind.Value;
+    let node = NodeKind.Value;
+
+    if ((int)color != (int)state) {
+        return 1;
+    }
+
+    return token.text[0] == 't' && node.text[0] == 'n' ? 0 : 1;
+}

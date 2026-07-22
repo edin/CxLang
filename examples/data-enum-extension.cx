@@ -1,0 +1,16 @@
+enum TokenKind(text: const char* = null) {
+    Identifier {},
+    Plus { text: "+" },
+}
+
+extension TokenKind {
+    fn token_text() -> const char* {
+        return self.text;
+    }
+}
+
+fn main() -> int {
+    let kind = TokenKind.Plus;
+    let text = kind.token_text();
+    return text[0] == '+' ? 0 : 1;
+}

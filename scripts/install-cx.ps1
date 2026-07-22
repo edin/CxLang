@@ -2,10 +2,21 @@
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "cx\bin"),
     [string]$Configuration = "Release",
+    [string]$RuntimeIdentifier,
+    [switch]$DisableReadyToRun,
     [switch]$SkipPath
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($RuntimeIdentifier)) {
+    $ridLine = dotnet --info | Where-Object { $_ -match '^\s*RID:\s+(.+?)\s*$' } | Select-Object -First 1
+    if ($ridLine -notmatch '^\s*RID:\s+(.+?)\s*$') {
+        throw "Could not determine the .NET runtime identifier. Pass -RuntimeIdentifier explicitly."
+    }
+
+    $RuntimeIdentifier = $Matches[1]
+}
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $projectPath = Join-Path $repoRoot "src\Cx.Cli\Cx.Cli.csproj"
@@ -18,11 +29,23 @@ $installPath = [System.IO.Path]::GetFullPath($InstallDir)
 New-Item -ItemType Directory -Force -Path $installPath | Out-Null
 
 Write-Host "Publishing CX CLI to $installPath"
-dotnet publish $projectPath `
-    --configuration $Configuration `
-    --output $installPath `
-    --self-contained false `
-    --nologo
+$publishArguments = @(
+    "publish",
+    $projectPath,
+    "--configuration", $Configuration,
+    "--output", $installPath,
+    "--runtime", $RuntimeIdentifier,
+    "--self-contained", "false",
+    "--nologo"
+)
+
+if (-not $DisableReadyToRun) {
+    $publishArguments += "-p:PublishReadyToRun=true"
+    $publishArguments += "-p:PublishReadyToRunComposite=true"
+    Write-Host "ReadyToRun enabled for $RuntimeIdentifier"
+}
+
+& dotnet @publishArguments
 
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE."

@@ -19,9 +19,12 @@ public sealed partial class Parser
 
     public DiagnosticBag Diagnostics => _diagnostics;
 
-    public ProgramNode Parse(SourceFile sourceFile)
+    public ProgramNode Parse(SourceFile sourceFile) =>
+        Parse(sourceFile, new Lexer.Lexer(sourceFile, _diagnostics).Tokenize());
+
+    public ProgramNode Parse(SourceFile sourceFile, IReadOnlyList<Token> tokens)
     {
-        _tokens = new TokenStream(new Lexer.Lexer(sourceFile, _diagnostics).Tokenize());
+        _tokens = new TokenStream(tokens);
         _pendingTypeCloseAngles = 0;
 
         var declarations = new List<TopLevelNode>();

@@ -60,6 +60,10 @@ Install the CLI as `cx` for the current Windows user:
 powershell -ExecutionPolicy Bypass -File scripts\install-cx.ps1
 ```
 
+The installer publishes a framework-dependent composite ReadyToRun executable
+for the current platform. Pass `-DisableReadyToRun` to install the regular IL
+build instead.
+
 Open a new terminal after install:
 
 ```powershell

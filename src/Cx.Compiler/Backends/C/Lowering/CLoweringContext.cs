@@ -295,7 +295,7 @@ internal sealed record CLoweringContext(
                 .SelectMany(enumNode => enumNode.Members.Select(member => new
                 {
                     Source = $"{enumNode.Name}.{member.Name}",
-                    Target = member.Name,
+                    Target = CEnumNames.Member(enumNode.Name, member.Name),
                 }))
                 .ToDictionary(item => item.Source, item => item.Target, StringComparer.Ordinal),
             program.TypeAdapters

@@ -8,6 +8,9 @@ internal sealed class TypeSystem
     private readonly TypeResolver _resolver;
     private readonly ResolvedTypeMemberResolver _memberResolver;
     private readonly Lazy<RequirementMatcher> _requirementMatcher;
+    private readonly Dictionary<string, ResolvedType> _definitionCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<ResolvedField>> _fieldCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<ResolvedMethod>> _methodCache = new(StringComparer.Ordinal);
 
     public TypeSystem(
         ProgramNode program,
@@ -23,20 +26,47 @@ internal sealed class TypeSystem
     public ResolvedType Resolve(TypeRef type) =>
         _resolver.Resolve(type);
 
-    public ResolvedType ResolveDefinition(TypeRef type) =>
-        _resolver.ResolveDefinition(type);
+    public ResolvedType ResolveDefinition(TypeRef type)
+    {
+        var key = TypeRefFormatter.ToIdentityString(type);
+        if (!_definitionCache.TryGetValue(key, out var resolved))
+        {
+            resolved = _resolver.ResolveDefinition(type);
+            _definitionCache.Add(key, resolved);
+        }
+
+        return resolved;
+    }
 
     public IReadOnlyList<ResolvedField> GetFields(TypeRef type) =>
         GetFields(ResolveDefinition(type));
 
-    public IReadOnlyList<ResolvedField> GetFields(ResolvedType type) =>
-        _memberResolver.GetFields(type);
+    public IReadOnlyList<ResolvedField> GetFields(ResolvedType type)
+    {
+        var key = TypeRefFormatter.ToIdentityString(type.Type);
+        if (!_fieldCache.TryGetValue(key, out var fields))
+        {
+            fields = _memberResolver.GetFields(type);
+            _fieldCache.Add(key, fields);
+        }
+
+        return fields;
+    }
 
     public IReadOnlyList<ResolvedMethod> GetMethods(TypeRef type) =>
         GetMethods(ResolveDefinition(type));
 
-    public IReadOnlyList<ResolvedMethod> GetMethods(ResolvedType type) =>
-        _memberResolver.GetMethods(type);
+    public IReadOnlyList<ResolvedMethod> GetMethods(ResolvedType type)
+    {
+        var key = TypeRefFormatter.ToIdentityString(type.Type);
+        if (!_methodCache.TryGetValue(key, out var methods))
+        {
+            methods = _memberResolver.GetMethods(type);
+            _methodCache.Add(key, methods);
+        }
+
+        return methods;
+    }
 
     public ResolvedMethod? FindMethod(
         TypeRef receiverType,

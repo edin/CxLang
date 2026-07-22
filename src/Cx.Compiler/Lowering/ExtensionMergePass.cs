@@ -24,6 +24,8 @@ internal static class ExtensionMergePass
             .ToList();
         var knownTargets = program.Structs
             .Select(structNode => structNode.Name)
+            .Concat(program.Enums.Select(enumNode => enumNode.Name))
+            .Concat(program.TaggedUnions.Select(union => union.Name))
             .Concat(program.TypeAdapters.Select(adapter => adapter.Name))
             .Concat(program.Interfaces.Select(interfaceNode => interfaceNode.Name))
             .ToHashSet(StringComparer.Ordinal);
