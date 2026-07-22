@@ -10,7 +10,7 @@ public sealed class LexerTests
     [Fact]
     public void Tokenize_UsesLongestSymbolMatchFromMetadata()
     {
-        var tokens = Tokenize("... .. . <=> <= < => -> -");
+        var tokens = Tokenize("... .. . <=> <= < => -> - ?? ?");
 
         Assert.Equal(
             [
@@ -23,6 +23,8 @@ public sealed class LexerTests
                 TokenType.FatArrow,
                 TokenType.Arrow,
                 TokenType.Minus,
+                TokenType.QuestionQuestion,
+                TokenType.QuestionMark,
                 TokenType.Eof
             ],
             tokens.Select(token => token.Type));

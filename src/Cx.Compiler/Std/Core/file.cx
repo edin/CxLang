@@ -113,7 +113,7 @@ extension File {
     }
 
     static fn read_all_with_allocator(path: const char*, allocator: Allocator*) -> Option<ByteBuffer> {
-        let result: Result<ByteBuffer, FileError> = File.read_all_result_with_allocator(path, allocator);
+        let result: Result<ByteBuffer, Error> = File.read_all_result_with_allocator(path, allocator);
         if (result.is_error()) {
             return Option.none<ByteBuffer>();
         }
@@ -121,28 +121,28 @@ extension File {
         return Option.some<ByteBuffer>(result.value);
     }
 
-    static fn read_all_result(path: const char*) -> Result<ByteBuffer, FileError> {
+    static fn read_all_result(path: const char*) -> Result<ByteBuffer, Error> {
         return File.read_all_result_with_allocator(path, Allocator.default());
     }
 
-    static fn read_all_result_with_allocator(path: const char*, allocator: Allocator*) -> Result<ByteBuffer, FileError> {
+    static fn read_all_result_with_allocator(path: const char*, allocator: Allocator*) -> Result<ByteBuffer, Error> {
         let opened: Option<File> = File.open(path, "rb");
         if (!opened.has_value) {
-            return Result.err<ByteBuffer, FileError>(FileError.OpenFailed);
+            return Result.err<ByteBuffer, Error>(Error.create("file", (int)FileError.OpenFailed, "open failed"));
         }
 
         let file: File = opened.value;
         let size_result: Option<usize> = file.size();
         if (!size_result.has_value) {
             file.close();
-            return Result.err<ByteBuffer, FileError>(FileError.SizeFailed);
+            return Result.err<ByteBuffer, Error>(Error.create("file", (int)FileError.SizeFailed, "size query failed"));
         }
 
         let size: usize = size_result.value;
         let buffer: ByteBuffer = ByteBuffer.with_allocator(allocator, size);
         if (size > 0 && buffer.data == null) {
             file.close();
-            return Result.err<ByteBuffer, FileError>(FileError.OutOfMemory);
+            return Result.err<ByteBuffer, Error>(Error.create("file", (int)FileError.OutOfMemory, "out of memory"));
         }
 
         buffer.length = size;
@@ -154,10 +154,10 @@ extension File {
         file.close();
         if (read_count != size) {
             buffer.free();
-            return Result.err<ByteBuffer, FileError>(FileError.ReadFailed);
+            return Result.err<ByteBuffer, Error>(Error.create("file", (int)FileError.ReadFailed, "read failed"));
         }
 
-        return Result.ok<ByteBuffer, FileError>(buffer);
+        return Result.ok<ByteBuffer, Error>(buffer);
     }
 
     static fn write_all(path: const char*, data: u8*, length: usize) -> bool {

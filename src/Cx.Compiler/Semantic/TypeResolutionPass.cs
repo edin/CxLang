@@ -288,6 +288,10 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
                 ResolveExpression(conditional.WhenTrue);
                 ResolveExpression(conditional.WhenFalse);
                 break;
+            case TryExpressionNode attempt:
+                ResolveExpression(attempt.Expression);
+                ResolveExpression(attempt.Fallback);
+                break;
             case ScalarRangeExpressionNode range:
                 ResolveExpression(range.Start);
                 ResolveExpression(range.End);

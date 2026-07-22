@@ -1,5 +1,21 @@
 module std.core;
 
+public struct Error {
+    domain: const char*;
+    code: int;
+    message: const char*;
+}
+
+extension Error {
+    static fn create(domain: const char*, code: int, message: const char*) -> Error {
+        return Error {
+            domain: domain,
+            code: code,
+            message: message,
+        };
+    }
+}
+
 public struct Result<T, E> {
     has_value: bool;
     ok: bool;
@@ -93,6 +109,75 @@ test "result ok and error" {
     expect(!err.is_ok());
     expect(err.unwrap_or(3) == 3);
     expect(err.error_or(0) == 9);
+}
+
+test "common error stores domain code and message" {
+    let error: Error = Error.create("file", 7, "read failed");
+    expect(error.code == 7);
+    expect(error.domain != null);
+    expect(error.message != null);
+}
+
+fn result_try_source(success: bool) -> Result<int, Error> {
+    if (success) {
+        return Result.ok<int, Error>(12);
+    }
+
+    return Result.err<int, Error>(Error.create("test", 9, "try failed"));
+}
+
+fn result_try_propagate(success: bool) -> Result<int, Error> {
+    let value: int = try result_try_source(success);
+    return Result.ok<int, Error>(value + 1);
+}
+
+fn result_try_default(success: bool) -> int {
+    let value: int = try result_try_source(success) ?? 27;
+    return value;
+}
+
+let result_try_chain_calls: int = 0;
+
+fn result_try_chain_source(value: int, success: bool) -> Result<int, Error> {
+    result_try_chain_calls += 1;
+    if (success) {
+        return Result.ok<int, Error>(value);
+    }
+
+    return Result.err<int, Error>(Error.create("test", value, "chain failed"));
+}
+
+fn result_try_chain(first: bool, second: bool, third: bool) -> int {
+    let value = try result_try_chain_source(10, first)
+        ?? try result_try_chain_source(20, second)
+        ?? try result_try_chain_source(30, third)
+        ?? 42;
+    return value;
+}
+
+test "try propagates common error" {
+    let ok: Result<int, Error> = result_try_propagate(true);
+    expect(ok.is_ok());
+    expect(ok.value == 13);
+
+    let error: Result<int, Error> = result_try_propagate(false);
+    expect(error.is_error());
+    expect(error.error.code == 9);
+}
+
+test "try fallback consumes common error" {
+    expect(result_try_default(true) == 12);
+    expect(result_try_default(false) == 27);
+}
+
+test "nested try fallback is lazy and uses first success" {
+    result_try_chain_calls = 0;
+    expect(result_try_chain(false, true, true) == 20);
+    expect(result_try_chain_calls == 2);
+
+    result_try_chain_calls = 0;
+    expect(result_try_chain(false, false, false) == 42);
+    expect(result_try_chain_calls == 3);
 }
 
 test "result pointer access" {

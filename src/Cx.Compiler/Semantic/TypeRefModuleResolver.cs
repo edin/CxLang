@@ -401,6 +401,10 @@ internal sealed class TypeRefModuleResolver
                 ResolveExpression(conditional.WhenTrue, typeParameters);
                 ResolveExpression(conditional.WhenFalse, typeParameters);
                 break;
+            case TryExpressionNode attempt:
+                ResolveExpression(attempt.Expression, typeParameters);
+                ResolveExpression(attempt.Fallback, typeParameters);
+                break;
             case ScalarRangeExpressionNode range:
                 ResolveExpression(range.Start, typeParameters);
                 ResolveExpression(range.End, typeParameters);

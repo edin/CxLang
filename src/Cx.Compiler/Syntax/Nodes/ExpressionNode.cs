@@ -125,6 +125,11 @@ public sealed record ConditionalExpressionNode(
     ExpressionNode WhenTrue,
     ExpressionNode WhenFalse) : ExpressionNode(Location);
 
+public sealed record TryExpressionNode(
+    Location Location,
+    ExpressionNode Expression,
+    ExpressionNode? Fallback = null) : ExpressionNode(Location);
+
 public sealed record ScalarRangeExpressionNode(
     Location Location,
     ExpressionNode Start,
@@ -204,6 +209,9 @@ public static class ExpressionNodeExtensions
         BinaryExpressionNode binary => $"{binary.Left.ToSourceText()} {binary.Operator.ToSourceText()} {binary.Right.ToSourceText()}",
         ConditionalExpressionNode conditional =>
             $"{conditional.Condition.ToSourceText()} ? {conditional.WhenTrue.ToSourceText()} : {conditional.WhenFalse.ToSourceText()}",
+        TryExpressionNode attempt => attempt.Fallback is null
+            ? $"try {attempt.Expression.ToSourceText()}"
+            : $"try {attempt.Expression.ToSourceText()} ?? {attempt.Fallback.ToSourceText()}",
         ScalarRangeExpressionNode range =>
             $"{range.Start.ToSourceText()}{(range.IsInclusive ? "..." : "..")}{range.End.ToSourceText()}",
         ListExpressionNode list => $"[{FormatArguments(list.Elements)}]",

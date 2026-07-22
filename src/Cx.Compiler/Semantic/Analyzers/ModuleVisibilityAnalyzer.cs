@@ -277,6 +277,13 @@ internal sealed class ModuleVisibilityAnalyzer(
                 AnalyzeExpression(conditional.WhenTrue, visibility, locals);
                 AnalyzeExpression(conditional.WhenFalse, visibility, locals);
                 break;
+            case TryExpressionNode attempt:
+                AnalyzeExpression(attempt.Expression, visibility, locals);
+                if (attempt.Fallback is not null)
+                {
+                    AnalyzeExpression(attempt.Fallback, visibility, locals);
+                }
+                break;
             case InitializerExpressionNode initializer:
                 if (initializer.TypeNameNode is not null)
                 {

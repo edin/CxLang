@@ -592,6 +592,11 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
                 WhenTrue = InferExpression(conditional.WhenTrue, typeEnvironment, expectedType)!,
                 WhenFalse = InferExpression(conditional.WhenFalse, typeEnvironment, expectedType)!,
             },
+            TryExpressionNode attempt => attempt with
+            {
+                Expression = InferExpression(attempt.Expression, typeEnvironment)!,
+                Fallback = InferExpression(attempt.Fallback, typeEnvironment, expectedType),
+            },
             InitializerExpressionNode initializer => initializer with
             {
                 TypeNameNode = PreserveTypeNode(initializer.TypeNameNode),

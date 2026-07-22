@@ -185,6 +185,37 @@ public sealed class CxCompiler
             return (null, diagnostics);
         }
 
+        if (AstExpressionTraversal.Enumerate(mergedProgram)
+            .OfType<TryExpressionNode>()
+            .Any(attempt => attempt.Fallback is TryExpressionNode))
+        {
+            mergedProgram = TryFallbackChainLowerer.Lower(mergedProgram, diagnostics);
+            if (diagnostics.HasErrors)
+            {
+                return (null, diagnostics);
+            }
+
+            AnnotateModuleNames(mergedProgram, moduleNamesByPath);
+            semanticModel = new SemanticModel();
+            new ScopeResolver(diagnostics, semanticModel).Resolve(mergedProgram);
+            if (diagnostics.HasErrors)
+            {
+                return (null, diagnostics);
+            }
+
+            new TypeResolutionPass(diagnostics).Resolve(mergedProgram);
+            if (diagnostics.HasErrors)
+            {
+                return (null, diagnostics);
+            }
+
+            mergedProgram = new TypeInferencePass(diagnostics).Apply(mergedProgram);
+            if (diagnostics.HasErrors)
+            {
+                return (null, diagnostics);
+            }
+        }
+
         new SemanticAnalyzer(diagnostics, inputPrograms).Analyze(mergedProgram);
 
         if (diagnostics.HasErrors)

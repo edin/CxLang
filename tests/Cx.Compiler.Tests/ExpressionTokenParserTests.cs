@@ -151,6 +151,26 @@ public sealed class ExpressionTokenParserTests
     }
 
     [Fact]
+    public void ParseExpression_ParsesTryPropagation()
+    {
+        var expression = CompilerTestHelpers.ParseTokenExpression("try load(path)");
+
+        var attempt = Assert.IsType<TryExpressionNode>(expression);
+        Assert.IsType<CallExpressionNode>(attempt.Expression);
+        Assert.Null(attempt.Fallback);
+    }
+
+    [Fact]
+    public void ParseExpression_ParsesTryFallback()
+    {
+        var expression = CompilerTestHelpers.ParseTokenExpression("try load(path) ?? fallback");
+
+        var attempt = Assert.IsType<TryExpressionNode>(expression);
+        Assert.IsType<CallExpressionNode>(attempt.Expression);
+        Assert.IsType<NameExpressionNode>(attempt.Fallback);
+    }
+
+    [Fact]
     public void ParseExpression_ParsesSizeOfPrimitiveType()
     {
         var expression = ParseReturnedExpression("sizeof(int)");

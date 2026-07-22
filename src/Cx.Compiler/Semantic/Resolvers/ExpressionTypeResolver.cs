@@ -52,6 +52,7 @@ internal sealed class ExpressionTypeResolver(
             BinaryExpressionNode binary => ResolveBinaryTypeRef(binary, variables),
             ScalarRangeExpressionNode range => ResolveRangeTypeRef(range, variables),
             ConditionalExpressionNode conditional => ResolveConditionalTypeRef(conditional, variables),
+            TryExpressionNode attempt => ResolveTryTypeRef(attempt, variables),
             InitializerExpressionNode initializer => ResolveInitializerTypeRef(initializer, variables),
             FunctionExpressionNode functionExpression => ResolveFunctionExpressionTypeRef(functionExpression),
             AssignmentExpressionNode assignment => ResolveTypeRef(assignment.Target, variables),
@@ -74,6 +75,26 @@ internal sealed class ExpressionTypeResolver(
         LiteralKind.FloatingPoint => ResolveKnownType(TypeRef.Double),
         _ => null,
     };
+
+    private TypeRef? ResolveTryTypeRef(
+        TryExpressionNode attempt,
+        TypeEnvironment variables)
+    {
+        var resultType = ResolveTypeRef(attempt.Expression, variables);
+        resultType = resultType is null ? null : TypeRefFacts.UnwrapConst(TypeRefFacts.UnwrapAlias(resultType));
+        if (resultType is TypeRef.Named
+            {
+                Name: "Result",
+                Arguments: [var valueType, _],
+            })
+        {
+            return valueType;
+        }
+
+        return attempt.Fallback is null
+            ? null
+            : ResolveTypeRef(attempt.Fallback, variables);
+    }
 
     private TypeRef? ResolveNameTypeRef(string name, TypeEnvironment variables)
     {

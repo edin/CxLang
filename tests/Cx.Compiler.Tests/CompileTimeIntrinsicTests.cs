@@ -666,7 +666,77 @@ public sealed class CompileTimeIntrinsicTests
 
         Assert.Null(value);
         Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("module 'missing' is not visible", StringComparison.Ordinal));
+                diagnostic.Message.Contains("module 'missing' is not visible", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ModuleTypeLookup_ConstructsModuleQualifiedTypes()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            module sample;
+
+            public struct User {}
+            public struct Box<T> {}
+            """);
+        var reflection = new ProgramCompileTimeReflection(program);
+
+        var (user, userDiagnostics) = Evaluate(
+            "module(\"sample\").public_type(\"User\")",
+            reflection: reflection);
+        var (pointer, pointerDiagnostics) = Evaluate(
+            "Type.pointer(module(\"sample\").type(\"User\"))",
+            reflection: reflection);
+        var (box, boxDiagnostics) = Evaluate(
+            "Type.generic(module(\"sample\").type(\"Box\"), [int])",
+            reflection: reflection);
+
+        var userType = Assert.IsType<TypeRef.Named>(
+            Assert.IsType<CompileTimeValue.Type>(user).Value);
+        Assert.Equal("User", userType.Name);
+        Assert.Equal("sample", userType.ModuleName);
+
+        var pointerType = Assert.IsType<TypeRef.Pointer>(
+            Assert.IsType<CompileTimeValue.Type>(pointer).Value);
+        Assert.Equal(
+            "sample",
+            Assert.IsType<TypeRef.Named>(pointerType.Element).ModuleName);
+
+        var boxType = Assert.IsType<TypeRef.Named>(
+            Assert.IsType<CompileTimeValue.Type>(box).Value);
+        Assert.Equal("Box", boxType.Name);
+        Assert.Equal("sample", boxType.ModuleName);
+        Assert.Equal(TypeRef.Int, Assert.Single(boxType.Arguments));
+        CompilerTestHelpers.AssertNoErrors(userDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(pointerDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(boxDiagnostics);
+    }
+
+    [Fact]
+    public void ModulePublicTypeLookup_RejectsPrivateAndMissingTypes()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            module sample;
+
+            struct Hidden {}
+            """);
+        var reflection = new ProgramCompileTimeReflection(program);
+
+        var (privateType, privateDiagnostics) = Evaluate(
+            "module(\"sample\").public_type(\"Hidden\")",
+            reflection: reflection);
+        var (missingType, missingDiagnostics) = Evaluate(
+            "module(\"sample\").type(\"Missing\")",
+            reflection: reflection);
+
+        Assert.Null(privateType);
+        Assert.Null(missingType);
+        Assert.Contains(privateDiagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("sample.Hidden", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("not public", StringComparison.Ordinal));
+        Assert.Contains(missingDiagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("does not contain type 'Missing'", StringComparison.Ordinal));
     }
 
     [Fact]

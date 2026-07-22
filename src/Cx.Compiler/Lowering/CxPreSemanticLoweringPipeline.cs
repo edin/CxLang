@@ -9,6 +9,7 @@ internal sealed class CxPreSemanticLoweringPipeline(DiagnosticBag diagnostics)
     {
         var lowered = TypeAdapterLoweringPass.Apply(program, diagnostics);
         lowered = ExtensionMergePass.Apply(lowered, diagnostics);
+        lowered = TryExpressionLowerer.Lower(lowered, diagnostics);
         return ScopeCleanupLowerer.Lower(lowered);
     }
 }

@@ -7,6 +7,7 @@ namespace Cx.Compiler.Parser;
 internal sealed class ExpressionTokenParser
 {
     private const int ConditionalPrecedence = 12;
+    private const int TryPrecedence = 110;
 
     private readonly IReadOnlyList<Token> _tokens;
     private int _position;
@@ -97,6 +98,24 @@ internal sealed class ExpressionTokenParser
 
     private ExpressionNode? ParsePrefix()
     {
+        if (Match(TokenType.Try) is { } tryToken)
+        {
+            var expression = ParseExpression(TryPrecedence);
+            if (expression is null)
+            {
+                return null;
+            }
+
+            var coalesce = Match(TokenType.QuestionQuestion);
+            var fallback = coalesce is null ? null : ParseExpression();
+            if (coalesce is not null && fallback is null)
+            {
+                return null;
+            }
+
+            return new TryExpressionNode(tryToken.Location, expression, fallback);
+        }
+
         if (!IsAtEnd && OperatorFacts.GetPrefix(Current.Type) is not null)
         {
             var operatorToken = Advance();

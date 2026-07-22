@@ -106,6 +106,8 @@ public enum TokenType
     Attribute,
     [Keyword("on")]
     On,
+    [Keyword("try")]
+    Try,
 
     [Symbol("->")]
     Arrow,
@@ -195,6 +197,8 @@ public enum TokenType
     GreaterThan,
     [Symbol("?")]
     QuestionMark,
+    [Symbol("??")]
+    QuestionQuestion,
     [Symbol("@")]
     At,
 

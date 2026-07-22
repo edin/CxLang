@@ -387,6 +387,7 @@ internal abstract class AstRewriter
             SizeOfExpressionNode sizeOf => RewriteSizeOfExpression(sizeOf),
             BinaryExpressionNode binary => RewriteBinaryExpression(binary),
             ConditionalExpressionNode conditional => RewriteConditionalExpression(conditional),
+            TryExpressionNode attempt => RewriteTryExpression(attempt),
             ScalarRangeExpressionNode range => RewriteScalarRangeExpression(range),
             ListExpressionNode list => RewriteListExpression(list),
             TypeLiteralExpressionNode typeLiteral => RewriteTypeLiteralExpression(typeLiteral),
@@ -445,6 +446,13 @@ internal abstract class AstRewriter
             Condition = RewriteRequiredExpression(conditional.Condition),
             WhenTrue = RewriteRequiredExpression(conditional.WhenTrue),
             WhenFalse = RewriteRequiredExpression(conditional.WhenFalse),
+        };
+
+    protected virtual ExpressionNode RewriteTryExpression(TryExpressionNode attempt) =>
+        attempt with
+        {
+            Expression = RewriteRequiredExpression(attempt.Expression),
+            Fallback = RewriteExpression(attempt.Fallback),
         };
 
     protected virtual ExpressionNode RewriteScalarRangeExpression(ScalarRangeExpressionNode range) =>

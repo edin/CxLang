@@ -191,6 +191,13 @@ internal static class AstExpressionTraversal
                 foreach (var child in Enumerate(conditional.WhenTrue)) yield return child;
                 foreach (var child in Enumerate(conditional.WhenFalse)) yield return child;
                 break;
+            case TryExpressionNode attempt:
+                foreach (var child in Enumerate(attempt.Expression)) yield return child;
+                if (attempt.Fallback is not null)
+                {
+                    foreach (var child in Enumerate(attempt.Fallback)) yield return child;
+                }
+                break;
             case ListExpressionNode list:
                 foreach (var element in list.Elements)
                 {

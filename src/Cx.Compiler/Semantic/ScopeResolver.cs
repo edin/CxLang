@@ -292,6 +292,10 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 ResolveExpression(conditional.WhenTrue, scope);
                 ResolveExpression(conditional.WhenFalse, scope);
                 break;
+            case TryExpressionNode attempt:
+                ResolveExpression(attempt.Expression, scope);
+                ResolveExpression(attempt.Fallback, scope);
+                break;
             case ScalarRangeExpressionNode range:
                 ResolveExpression(range.Start, scope);
                 ResolveExpression(range.End, scope);

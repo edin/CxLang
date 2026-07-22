@@ -392,7 +392,7 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             .ToList();
         var types = _program.Declarations
             .Where(declaration => IsInModule(declaration, name))
-            .Select(ToReflectedType)
+            .Select(declaration => ToReflectedType(declaration, name))
             .OfType<ReflectedModuleType>()
             .ToList();
         return new ReflectedModule(name, functions, types);
@@ -402,7 +402,9 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         _moduleNamesByPath.TryGetValue(syntax.Location.File.Path, out var declaredModule)
         && string.Equals(declaredModule, moduleName, StringComparison.Ordinal);
 
-    private ReflectedModuleType? ToReflectedType(TopLevelNode declaration)
+    private static ReflectedModuleType? ToReflectedType(
+        TopLevelNode declaration,
+        string moduleName)
     {
         var (name, typeParameters) = declaration switch
         {
@@ -422,7 +424,9 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         var arguments = typeParameters
             .Select(parameter => (TypeRef)new TypeRef.Named(parameter, []))
             .ToList();
-        return new ReflectedModuleType(new TypeRef.Named(name, arguments), declaration);
+        return new ReflectedModuleType(
+            new TypeRef.Named(name, arguments, moduleName),
+            declaration);
     }
 
     private static IReadOnlyDictionary<string, string> BuildFallbackModuleMap(ProgramNode program)
