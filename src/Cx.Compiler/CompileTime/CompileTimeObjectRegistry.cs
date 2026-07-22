@@ -11,6 +11,7 @@ internal static class CompileTimeBuiltIns
     [
         new AttributeArgumentCompileTimeObject(),
         new AttributeCompileTimeObject(),
+        new CompileTimeDiagnosticObject(),
         new ParameterCompileTimeObject(),
         new ListCompileTimeObject(),
         new ModuleCompileTimeObject(),
@@ -19,6 +20,9 @@ internal static class CompileTimeBuiltIns
         new FunctionCompileTimeObject(),
         new ExternFunctionCompileTimeObject(),
         new StructCompileTimeObject(),
+        new EnumMemberCompileTimeObject(),
+        new EnumMemberDataCompileTimeObject(),
+        new EnumDataFieldCompileTimeObject(),
         new RequirementMatchCompileTimeObject(),
         new ResolvedFieldCompileTimeObject(),
         new ResolvedMethodCompileTimeObject(),

@@ -1,0 +1,51 @@
+{
+  "name": "cx-language",
+  "displayName": "CX Language Support",
+  "description": "Syntax highlighting and compiler diagnostics for CX.",
+  "version": "0.1.4",
+  "publisher": "cx-language",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:cx"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "cx",
+        "aliases": ["CX", "cx"],
+        "extensions": [".cx"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cx",
+        "scopeName": "source.cx",
+        "path": "./syntaxes/cx.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "CX",
+      "properties": {
+        "cx.languageServer.path": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to the CX CLI executable. When empty, the extension discovers the standard installation or uses `cx` from PATH."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check": "node --check extension.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

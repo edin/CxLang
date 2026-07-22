@@ -233,6 +233,98 @@ internal sealed class TypeCompileTimeObject : CompileTimeScriptObject
             methods.Select(method => new CompileTimeValue.ResolvedMethod(method)).ToList()));
     }
 
+    [CompileTimeProperty("members")]
+    private CompileTimePropertyResult Members(
+        CompileTimeValue.Type type,
+        CompileTimePropertyContext context)
+    {
+        if (!EnsureReflection(context))
+        {
+            return new CompileTimePropertyResult.Failed();
+        }
+
+        if (!context.Reflection.TryGetEnumMembers(type.Value, out var members))
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                "Compile-time type property 'members' requires a known enum type.");
+            return new CompileTimePropertyResult.Failed();
+        }
+
+        return CompileTimePropertyResult.From(new CompileTimeValue.List(
+            members.Select(member => new CompileTimeValue.EnumMember(member)).ToList()));
+    }
+
+    [CompileTimeProperty("is_enum")]
+    private CompileTimePropertyResult IsEnum(
+        CompileTimeValue.Type type,
+        CompileTimePropertyContext context)
+    {
+        if (!EnsureReflection(context))
+        {
+            return new CompileTimePropertyResult.Failed();
+        }
+
+        return Boolean(context.Reflection.TryGetEnumMembers(type.Value, out _));
+    }
+
+    [CompileTimeProperty("is_data_enum")]
+    private CompileTimePropertyResult IsDataEnum(
+        CompileTimeValue.Type type,
+        CompileTimePropertyContext context)
+    {
+        if (!EnsureReflection(context))
+        {
+            return new CompileTimePropertyResult.Failed();
+        }
+
+        return Boolean(context.Reflection.TryGetEnumDataFields(type.Value, out _));
+    }
+
+    [CompileTimeProperty("data_fields")]
+    private CompileTimePropertyResult DataFields(
+        CompileTimeValue.Type type,
+        CompileTimePropertyContext context)
+    {
+        if (!EnsureReflection(context))
+        {
+            return new CompileTimePropertyResult.Failed();
+        }
+
+        if (context.Reflection.TryGetEnumDataFields(type.Value, out var fields))
+        {
+            return CompileTimePropertyResult.From(new CompileTimeValue.List(
+                fields.Select(field => new CompileTimeValue.EnumDataField(field)).ToList()));
+        }
+
+        if (context.Reflection.TryGetEnumMembers(type.Value, out _))
+        {
+            return CompileTimePropertyResult.From(new CompileTimeValue.List([]));
+        }
+
+        context.Diagnostics.Report(
+            context.Location,
+            "Compile-time type property 'data_fields' requires a known enum type.");
+        return new CompileTimePropertyResult.Failed();
+    }
+
+    public override CompileTimePropertyResult GetDynamicProperty(
+        object receiver,
+        string propertyName,
+        CompileTimePropertyContext context)
+    {
+        var type = (CompileTimeValue.Type)receiver;
+        if (!context.Reflection.TryGetEnumMembers(type.Value, out var members))
+        {
+            return new CompileTimePropertyResult.Missing();
+        }
+
+        var member = members.FirstOrDefault(candidate => candidate.Declaration.Name == propertyName);
+        return member is null
+            ? new CompileTimePropertyResult.Missing()
+            : CompileTimePropertyResult.From(new CompileTimeValue.EnumMember(member));
+    }
+
     [CompileTimeMethod("match")]
     private CompileTimeMethodResult Match(
         CompileTimeValue.Type type,

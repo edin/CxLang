@@ -1,0 +1,104 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CX",
+  "scopeName": "source.cx",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#compile-time" },
+    { "include": "#attributes" },
+    { "include": "#declarations" },
+    { "include": "#keywords" },
+    { "include": "#builtins" },
+    { "include": "#constants" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.cx", "match": "//.*$" },
+        {
+          "name": "comment.block.cx",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.cx",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.cx", "match": "\\\\(?:[0abfnrtv\\\"'\\\\]|x[0-9A-Fa-f]+|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})" }
+          ]
+        },
+        {
+          "name": "string.quoted.single.cx",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.cx", "match": "\\\\." }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.cx", "match": "\\b(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|(?:\\d+\\.\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?|\\d+(?:[eE][+-]?\\d+)?)\\b" }
+      ]
+    },
+    "compile-time": {
+      "patterns": [
+        { "name": "keyword.control.directive.cx", "match": "@(if|foreach|let)\\b" },
+        { "name": "punctuation.definition.placeholder.begin.cx", "match": "@\\{" }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "meta.attribute.cx",
+          "begin": "@\\[",
+          "beginCaptures": { "0": { "name": "punctuation.definition.attribute.begin.cx" } },
+          "end": "\\]",
+          "endCaptures": { "0": { "name": "punctuation.definition.attribute.end.cx" } },
+          "patterns": [
+            { "include": "#strings" },
+            { "include": "#numbers" },
+            { "name": "entity.name.type.attribute.cx", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" }
+          ]
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(fn|struct|enum|union|interface|type|macro|requirement|requires|attribute|module)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.cx" },
+            "2": { "name": "entity.name.type.cx" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.cx", "match": "\\b(if|else|for|foreach|while|switch|case|default|return|break|continue|try|in|match)\\b" },
+        { "name": "keyword.declaration.cx", "match": "\\b(let|fn|struct|enum|union|interface|extension|type|over|macro|requirement|requires|where|attribute|on|module|import|from|as|include|declare|extern|link|test)\\b" },
+        { "name": "storage.modifier.cx", "match": "\\b(public|static|const|raw|using|use|expose|opaque)\\b" },
+        { "name": "keyword.operator.word.cx", "match": "\\b(and|or|not)\\b" }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        { "name": "support.type.builtin.cx", "match": "\\b(void|bool|char|string|int|uint|i8|u8|i16|u16|i32|u32|i64|u64|isize|usize|float|double|Self)\\b" }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        { "name": "constant.language.cx", "match": "\\b(true|false|null)\\b" }
+      ]
+    }
+  }
+}

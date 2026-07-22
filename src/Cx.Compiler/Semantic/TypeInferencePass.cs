@@ -287,6 +287,12 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             elementType = iterableTypeRef;
             AddForeachBindings(foreachStatement, foreachTypeEnvironment, elementType);
         }
+        else if (iterableTypeRef is null
+            && TryResolveDataEnumElementType(iterableExpression, typeEnvironment, out var dataEnumType))
+        {
+            elementType = dataEnumType;
+            AddForeachBindings(foreachStatement, foreachTypeEnvironment, elementType);
+        }
         else if (iterableTypeRef is not null
             && TryResolveForeachTypes(foreachStatement, iterableTypeRef, out elementType, out keyType))
         {
@@ -313,6 +319,28 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             ValueBinding = typedForeachStatement.ValueBinding,
             Body = InferStatements(foreachStatement.Body, foreachTypeEnvironment, functionReturnType),
         };
+    }
+
+    private bool TryResolveDataEnumElementType(
+        ExpressionNode? expression,
+        TypeEnvironment typeEnvironment,
+        out TypeRef elementType)
+    {
+        elementType = new TypeRef.Unknown();
+        var name = expression is null ? null : ExpressionNameFacts.GetQualifiedName(expression);
+        if (name is null || typeEnvironment.TryGet(name, out _))
+        {
+            return false;
+        }
+
+        var enumNode = _program?.Enums.FirstOrDefault(candidate => candidate.IsDataEnum && candidate.Name == name);
+        if (enumNode is null)
+        {
+            return false;
+        }
+
+        elementType = new TypeRef.Named(enumNode.Name, [], enumNode.Semantic.ModuleName);
+        return true;
     }
 
     private ForeachStatement ApplyForeachBindingTypes(

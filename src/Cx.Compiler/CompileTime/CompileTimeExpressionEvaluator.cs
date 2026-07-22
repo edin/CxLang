@@ -47,8 +47,11 @@ internal sealed class CompileTimeExpressionEvaluator
             InitializerExpressionNode initializer => EvaluateInitializer(initializer, context),
             CallExpressionNode call => EvaluateCall(call, context),
             MemberExpressionNode member => EvaluateMember(member, context),
+            ComputedMemberExpressionNode member => EvaluateComputedMember(member, context),
             _ => Unsupported(expression),
         };
+
+    public bool IsKnownObject(string name) => _objects.TryGet(name, out _);
 
     private CompileTimeValue? EvaluateTypeLiteral(TypeLiteralExpressionNode typeLiteral)
     {
@@ -81,22 +84,60 @@ internal sealed class CompileTimeExpressionEvaluator
             return null;
         }
 
+        return EvaluateProperty(target, member.MemberName, member.Location, context);
+    }
+
+    private CompileTimeValue? EvaluateComputedMember(
+        ComputedMemberExpressionNode member,
+        CompileTimeEvaluationContext context)
+    {
+        var target = Evaluate(member.Target, context);
+        var propertyValue = Evaluate(member.MemberName.Expression, context);
+        if (target is null || propertyValue is null)
+        {
+            return null;
+        }
+
+        var propertyName = propertyValue switch
+        {
+            CompileTimeValue.Name name => name.Value,
+            CompileTimeValue.String text => text.Value,
+            _ => null,
+        };
+        if (propertyName is null)
+        {
+            _diagnostics.Report(
+                member.MemberName.Location,
+                $"Computed compile-time property name must be a name or string, but received {CompileTimeValueFacts.Describe(propertyValue)}.");
+            return null;
+        }
+
+        return EvaluateProperty(target, propertyName, member.Location, context);
+    }
+
+    private CompileTimeValue? EvaluateProperty(
+        CompileTimeValue target,
+        string propertyName,
+        Cx.Compiler.Source.Location location,
+        CompileTimeEvaluationContext context)
+    {
+
         if (target is not CompileTimeObjectValue objectValue)
         {
             _diagnostics.Report(
-                member.Location,
-                $"Compile-time {CompileTimeValueFacts.Describe(target)} value is not object-like and does not have property '{member.MemberName}'.");
+                location,
+                $"Compile-time {CompileTimeValueFacts.Describe(target)} value is not object-like and does not have property '{propertyName}'.");
             return null;
         }
 
         var propertyContext = new CompileTimePropertyContext(
-            member.Location,
+            location,
             _reflection,
             _diagnostics,
             expression => Evaluate(expression, context));
         var property = _properties.Get(
             objectValue,
-            member.MemberName,
+            propertyName,
             propertyContext);
         if (property is CompileTimePropertyResult.Found found)
         {
@@ -106,8 +147,8 @@ internal sealed class CompileTimeExpressionEvaluator
         if (property is CompileTimePropertyResult.Missing)
         {
             _diagnostics.Report(
-                member.Location,
-                $"Compile-time {objectValue.DisplayType} value does not have property '{member.MemberName}'.");
+                location,
+                $"Compile-time {objectValue.DisplayType} value does not have property '{propertyName}'.");
         }
 
         return null;
@@ -209,6 +250,12 @@ internal sealed class CompileTimeExpressionEvaluator
         if (CompileTimeTypeFacts.TryGetKnownType(name.Name, out var knownType))
         {
             return new CompileTimeValue.Type(knownType);
+        }
+
+        if (_reflection.IsAvailable
+            && _reflection.TryGetEnumType(name.Name, out var enumType))
+        {
+            return new CompileTimeValue.Type(enumType);
         }
 
         if (_reflection.IsAvailable

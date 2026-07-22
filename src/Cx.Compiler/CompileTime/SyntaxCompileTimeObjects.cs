@@ -94,6 +94,7 @@ internal sealed class SyntaxCompileTimeObject : CompileTimeScriptObject
         ParameterNode parameter => parameter.Name,
         EnumNode enumNode => enumNode.Name,
         EnumMemberNode enumMember => enumMember.Name,
+        EnumDataFieldNode enumDataField => enumDataField.Name,
         TaggedUnionNode union => union.Name,
         TaggedUnionVariantNode variant => variant.Name,
         AttributeApplicationNode attribute => attribute.Name,

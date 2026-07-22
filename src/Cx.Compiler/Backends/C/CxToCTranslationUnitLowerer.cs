@@ -56,9 +56,12 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(new CBlankLine());
         }
 
+        var enumNameLowerer = new ImportedNameLowerer(emitProgram, structsToEmit, backend);
         foreach (var enumNode in emitProgram.Enums.Where(enumNode => !enumNode.IsHeaderDeclaration))
         {
-            items.Add(CDeclarationBuilder.BuildEnum(enumNode));
+            items.Add(enumNode.IsDataEnum
+                ? CDeclarationBuilder.BuildDataEnum(backend, enumNode, enumNameLowerer)
+                : CDeclarationBuilder.BuildEnum(enumNode));
             items.Add(new CBlankLine());
         }
 

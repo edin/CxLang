@@ -46,7 +46,7 @@ internal sealed class ExpressionSemanticAnalyzer(
             case PostfixExpressionNode postfix:
                 if (postfix.Operator is PostfixOperator.Increment or PostfixOperator.Decrement)
                 {
-                    assignmentAnalyzer?.AnalyzeMutationTarget(postfix.Operand, postfix.Location, mutability);
+                    assignmentAnalyzer?.AnalyzeMutationTarget(postfix.Operand, postfix.Location, typeEnvironment, mutability);
                 }
 
                 Analyze(postfix.Operand, location, typeEnvironment, mutability);

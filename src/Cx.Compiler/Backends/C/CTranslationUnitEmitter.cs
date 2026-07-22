@@ -29,6 +29,9 @@ internal sealed class CTranslationUnitEmitter
                 case CEnumDeclaration enumDeclaration:
                     EmitEnum(builder, enumDeclaration);
                     break;
+                case CDataEnumDeclaration dataEnumDeclaration:
+                    EmitDataEnum(builder, dataEnumDeclaration);
+                    break;
                 case CStructDeclaration structDeclaration:
                     EmitStruct(builder, structDeclaration);
                     break;
@@ -70,6 +73,40 @@ internal sealed class CTranslationUnitEmitter
         }
 
         builder.AppendLine($"}} {enumDeclaration.Name};");
+    }
+
+    private void EmitDataEnum(StringBuilder builder, CDataEnumDeclaration declaration)
+    {
+        builder.AppendLine("typedef enum");
+        builder.AppendLine("{");
+        foreach (var member in declaration.Enum.Members)
+        {
+            builder.AppendLine($"    {member.Name},");
+        }
+
+        builder.AppendLine($"    {declaration.CountName}");
+        builder.AppendLine($"}} {declaration.Enum.Name};");
+        builder.AppendLine();
+        builder.AppendLine($"typedef struct {declaration.DataTypeName}");
+        builder.AppendLine("{");
+        foreach (var field in declaration.Fields)
+        {
+            builder.Append("    ");
+            builder.Append(EmitFieldDeclaration(field));
+            builder.AppendLine(";");
+        }
+
+        builder.AppendLine($"}} {declaration.DataTypeName};");
+        builder.AppendLine();
+        builder.AppendLine($"static const {declaration.DataTypeName} {declaration.TableName}[{declaration.CountName}] =");
+        builder.AppendLine("{");
+        foreach (var row in declaration.Rows)
+        {
+            var values = string.Join(", ", row.Values.Select(value => $".{value.Name} = {_expressionEmitter.Emit(value.Value)}"));
+            builder.AppendLine($"    [{row.EnumMemberName}] = {{ {values} }},");
+        }
+
+        builder.AppendLine("};");
     }
 
     private static void EmitStruct(StringBuilder builder, CStructDeclaration structDeclaration)

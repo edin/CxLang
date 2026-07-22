@@ -13,6 +13,41 @@ internal static class CDeclarationBuilder
                 .Select(member => new CEnumMember(member.Name, member.Value))
                 .ToList());
 
+    public static CDataEnumDeclaration BuildDataEnum(
+        CBackendContext backend,
+        EnumNode enumNode,
+        ImportedNameLowerer nameLowerer)
+    {
+        var fields = enumNode.DataFields
+            ?? throw new InvalidOperationException($"Enum '{enumNode.Name}' has no data fields.");
+        var loweredFields = fields
+            .Select(field => CDeclarationLowerer.LowerField(
+                backend,
+                CDeclarationLowerer.ResolveDeclarationType(field.TypeNode, field.Name),
+                field.Name))
+            .ToList();
+        var rows = enumNode.Members.Select(member =>
+            new CDataEnumRow(
+                member.Name,
+                fields.Select(field =>
+                {
+                    var value = member.DataValues?.FirstOrDefault(candidate => candidate.Name == field.Name)?.Value
+                        ?? field.DefaultValue
+                        ?? throw new InvalidOperationException($"Enum member '{member.Name}' has no value for data field '{field.Name}'.");
+                    var targetType = CDeclarationLowerer.ResolveDeclarationType(field.TypeNode, field.Name);
+                    return new CInitializerField(field.Name, nameLowerer.LowerInitializerExpression(targetType, value));
+                }).ToList()))
+            .ToList();
+
+        return new CDataEnumDeclaration(
+            BuildEnum(enumNode),
+            enumNode.Name + "_COUNT",
+            enumNode.Name + "_Data",
+            enumNode.Name + "_data",
+            loweredFields,
+            rows);
+    }
+
     public static CStructDeclaration BuildStruct(CBackendContext backend, StructNode structNode) =>
         new(
             structNode.Name,

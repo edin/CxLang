@@ -18,7 +18,7 @@ internal sealed class AssignmentSemanticAnalyzer(
         TypeEnvironment typeEnvironment,
         IReadOnlyDictionary<string, LocalMutability>? mutability)
     {
-        AnalyzeAssignmentMutability(assignment, mutability);
+        AnalyzeAssignmentMutability(assignment, typeEnvironment, mutability);
 
         var targetTypeRef = expressionTypeResolver.ResolveTypeRef(assignment.Target, typeEnvironment);
         if (targetTypeRef is null)
@@ -43,8 +43,15 @@ internal sealed class AssignmentSemanticAnalyzer(
     public void AnalyzeMutationTarget(
         ExpressionNode target,
         Location location,
+        TypeEnvironment typeEnvironment,
         IReadOnlyDictionary<string, LocalMutability>? mutability)
     {
+        if (IsDataEnumField(target, typeEnvironment, out var fieldName))
+        {
+            diagnostics.Report(location, $"Cannot assign to data enum field '{fieldName}'; enum metadata is immutable.");
+            return;
+        }
+
         if (mutability is null || GetAssignmentRootName(target) is not { } name)
         {
             return;
@@ -112,9 +119,31 @@ internal sealed class AssignmentSemanticAnalyzer(
 
     private void AnalyzeAssignmentMutability(
         AssignmentExpressionNode assignment,
+        TypeEnvironment typeEnvironment,
         IReadOnlyDictionary<string, LocalMutability>? mutability)
     {
-        AnalyzeMutationTarget(assignment.Target, assignment.Location, mutability);
+        AnalyzeMutationTarget(assignment.Target, assignment.Location, typeEnvironment, mutability);
+    }
+
+    private bool IsDataEnumField(ExpressionNode target, TypeEnvironment typeEnvironment, out string fieldName)
+    {
+        if (target is ParenthesizedExpressionNode parenthesized)
+        {
+            return IsDataEnumField(parenthesized.Expression, typeEnvironment, out fieldName);
+        }
+
+        if (target is MemberExpressionNode member
+            && expressionTypeResolver.ResolveTypeRef(member.Target, typeEnvironment) is { } targetType
+            && TypeRefFacts.GetBaseName(TypeRefFacts.StripPointersAndAliases(targetType)) is { } enumName
+            && program.Enums.FirstOrDefault(candidate => candidate.Name == enumName && candidate.IsDataEnum) is { } enumNode
+            && enumNode.DataFields?.Any(field => field.Name == member.MemberName) == true)
+        {
+            fieldName = member.MemberName;
+            return true;
+        }
+
+        fieldName = string.Empty;
+        return false;
     }
 
     private void CheckCompoundAssignmentCompatibility(

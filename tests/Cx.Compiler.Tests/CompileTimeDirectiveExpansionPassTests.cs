@@ -51,12 +51,12 @@ public sealed class CompileTimeDirectiveExpansionPassTests
 
         var (expanded, diagnostics) = Expand(program);
 
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
         var body = Assert.Single(expanded.Functions).Body;
         Assert.Equal(3, body.Count);
         Assert.IsType<CStatement>(body[0]);
         Assert.IsType<CStatement>(body[1]);
         Assert.IsType<ReturnStatement>(body[2]);
-        CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 
     [Fact]
@@ -369,6 +369,71 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
         Assert.IsType<ReturnStatement>(body[1]);
         CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_IteratesDataEnumMembersAndReadsMetadata()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            enum TokenKind(precedence: int = 0) {
+                Identifier {},
+                Plus { precedence: 90 },
+            }
+
+            fn generated() -> int {
+                @foreach(member in TokenKind.members) {
+                    @if(member.data.precedence == 90) {
+                        emit_operator(@{member.value});
+                    }
+                }
+
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(2, body.Count);
+        Assert.Equal("emit_operator(TokenKind.Plus)", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[1]);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_IteratesDataEnumSchemaWithComputedMetadataAccess()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            enum TokenKind(label: const char* = null, code: int) {
+                Identifier { code: 1 },
+                Plus { label: "+", code: 2 },
+            }
+
+            fn generated() -> int {
+                @foreach(field in TokenKind.data_fields) {
+                    @if(field.name == "code") {
+                        @foreach(member in TokenKind.members) {
+                            @let value = member.data.@{field.name};
+                            @if(value == 2) {
+                                emit_code();
+                            }
+                        }
+                    }
+                }
+
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(2, body.Count);
+        Assert.Equal("emit_code()", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[1]);
     }
 
     private static (ProgramNode Program, DiagnosticBag Diagnostics) Expand(

@@ -277,7 +277,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private bool IsCompileTimeBoundExpression(ExpressionNode expression) => expression switch
     {
-        NameExpressionNode name => _context.TryGet(name.Name, out _),
+        NameExpressionNode name => _context.TryGet(name.Name, out _) || _evaluator.IsKnownObject(name.Name),
         ParenthesizedExpressionNode parenthesized => IsCompileTimeBoundExpression(parenthesized.Expression),
         MemberExpressionNode member => IsCompileTimeBoundExpression(member.Target),
         CallExpressionNode { Callee: MemberExpressionNode member } =>

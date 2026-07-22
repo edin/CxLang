@@ -53,6 +53,20 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             }
         }
 
+        foreach (var enumNode in program.Enums.Where(node => node.IsDataEnum))
+        {
+            foreach (var field in enumNode.DataFields ?? [])
+            {
+                ResolveType(field, field.TypeNode);
+                ResolveExpression(field.DefaultValue);
+            }
+
+            foreach (var value in enumNode.Members.SelectMany(member => member.DataValues ?? []))
+            {
+                ResolveExpression(value.Value);
+            }
+        }
+
         foreach (var structNode in program.Structs)
         {
             ResolveGenericConstraints(structNode.GenericConstraints);

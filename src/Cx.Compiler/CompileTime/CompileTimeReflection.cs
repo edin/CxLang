@@ -12,6 +12,12 @@ internal interface ICompileTimeReflection
 
     bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods);
 
+    bool TryGetEnumType(string name, out TypeRef type);
+
+    bool TryGetEnumMembers(TypeRef type, out IReadOnlyList<ReflectedEnumMember> members);
+
+    bool TryGetEnumDataFields(TypeRef type, out IReadOnlyList<ReflectedEnumDataField> fields);
+
     bool TryGetModule(string name, out ReflectedModule module);
 
     bool TryGetModuleForFile(string path, out ReflectedModule module);
@@ -50,6 +56,20 @@ internal sealed record ReflectedModuleType(
     TypeRef Type,
     TopLevelNode Declaration);
 
+internal sealed record ReflectedEnumMember(
+    TypeRef EnumType,
+    EnumNode Enum,
+    EnumMemberNode Declaration,
+    int Index,
+    IReadOnlyDictionary<string, ExpressionNode> Metadata);
+
+internal sealed record ReflectedEnumDataField(
+    TypeRef EnumType,
+    EnumNode Enum,
+    EnumDataFieldNode Declaration,
+    int Index,
+    TypeRef Type);
+
 internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
 {
     public static UnavailableCompileTimeReflection Instance { get; } = new();
@@ -69,6 +89,24 @@ internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
     public bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods)
     {
         methods = [];
+        return false;
+    }
+
+    public bool TryGetEnumType(string name, out TypeRef type)
+    {
+        type = new TypeRef.Unknown();
+        return false;
+    }
+
+    public bool TryGetEnumMembers(TypeRef type, out IReadOnlyList<ReflectedEnumMember> members)
+    {
+        members = [];
+        return false;
+    }
+
+    public bool TryGetEnumDataFields(TypeRef type, out IReadOnlyList<ReflectedEnumDataField> fields)
+    {
+        fields = [];
         return false;
     }
 
@@ -209,6 +247,93 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         return true;
     }
 
+    public bool TryGetEnumType(string name, out TypeRef type)
+    {
+        var enumNode = _program.Enums.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, name, StringComparison.Ordinal));
+        if (enumNode is null)
+        {
+            type = new TypeRef.Unknown();
+            return false;
+        }
+
+        type = new TypeRef.Named(enumNode.Name, [], enumNode.Semantic.ModuleName);
+        return true;
+    }
+
+    public bool TryGetEnumMembers(TypeRef type, out IReadOnlyList<ReflectedEnumMember> members)
+    {
+        var enumNode = ResolveEnum(type);
+        if (enumNode is null)
+        {
+            members = [];
+            return false;
+        }
+
+        var fields = enumNode.DataFields ?? [];
+        members = enumNode.Members
+            .Select((member, index) => new ReflectedEnumMember(
+                type,
+                enumNode,
+                member,
+                index,
+                BuildEnumMetadata(fields, member)))
+            .ToList();
+        return true;
+    }
+
+    public bool TryGetEnumDataFields(TypeRef type, out IReadOnlyList<ReflectedEnumDataField> fields)
+    {
+        var enumNode = ResolveEnum(type);
+        if (enumNode?.DataFields is null)
+        {
+            fields = [];
+            return false;
+        }
+
+        fields = enumNode.DataFields
+            .Select((field, index) => new ReflectedEnumDataField(
+                type,
+                enumNode,
+                field,
+                index,
+                _typeRefParser.Parse(field.TypeNode)))
+            .ToList();
+        return true;
+    }
+
+    private EnumNode? ResolveEnum(TypeRef type)
+    {
+        var named = TypeRefFacts.UnwrapConst(TypeRefFacts.UnwrapAlias(type)) as TypeRef.Named;
+        if (named is null)
+        {
+            return null;
+        }
+
+        var qualifiedName = named.ModuleName is null ? null : $"{named.ModuleName}.{named.Name}";
+        return _program.Enums.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, named.Name, StringComparison.Ordinal)
+            || qualifiedName is not null && string.Equals(candidate.Name, qualifiedName, StringComparison.Ordinal));
+    }
+
+    private static IReadOnlyDictionary<string, ExpressionNode> BuildEnumMetadata(
+        IReadOnlyList<EnumDataFieldNode> fields,
+        EnumMemberNode member)
+    {
+        var metadata = new Dictionary<string, ExpressionNode>(StringComparer.Ordinal);
+        foreach (var field in fields)
+        {
+            var value = member.DataValues?.FirstOrDefault(candidate => candidate.Name == field.Name)?.Value
+                ?? field.DefaultValue;
+            if (value is not null)
+            {
+                metadata[field.Name] = value;
+            }
+        }
+
+        return metadata;
+    }
+
     public bool TryGetOwnerType(FunctionNode function, out TypeRef ownerType)
     {
         if (function.OwnerTypeNode is null)
@@ -227,6 +352,7 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         {
             TypeNode node => node,
             StructFieldNode field => field.TypeNode,
+            EnumDataFieldNode field => field.TypeNode,
             TaggedUnionVariantNode variant => variant.TypeNode,
             ParameterNode parameter => parameter.TypeNode,
             GlobalVariableNode global => global.TypeNode,

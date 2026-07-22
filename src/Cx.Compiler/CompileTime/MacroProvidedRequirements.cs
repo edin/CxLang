@@ -164,6 +164,15 @@ internal sealed class ProspectiveCompileTimeReflection(
     public bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods) =>
         inner.TryGetMethods(type, out methods);
 
+    public bool TryGetEnumType(string name, out TypeRef type) =>
+        inner.TryGetEnumType(name, out type);
+
+    public bool TryGetEnumMembers(TypeRef type, out IReadOnlyList<ReflectedEnumMember> members) =>
+        inner.TryGetEnumMembers(type, out members);
+
+    public bool TryGetEnumDataFields(TypeRef type, out IReadOnlyList<ReflectedEnumDataField> fields) =>
+        inner.TryGetEnumDataFields(type, out fields);
+
     public bool TryGetModule(string name, out ReflectedModule module) =>
         inner.TryGetModule(name, out module);
 

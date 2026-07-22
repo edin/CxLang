@@ -90,6 +90,14 @@ internal sealed class TypeRefModuleResolver
             }
         }
 
+        foreach (var enumNode in program.Enums.Where(node => node.IsDataEnum))
+        {
+            foreach (var field in enumNode.DataFields ?? [])
+            {
+                ResolveType(field, field.TypeNode, EmptyTypeParameters);
+            }
+        }
+
         foreach (var structNode in program.Structs)
         {
             ResolveStruct(structNode);

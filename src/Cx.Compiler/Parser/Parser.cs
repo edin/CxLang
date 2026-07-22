@@ -1621,6 +1621,9 @@ public sealed partial class Parser
     {
         var enumToken = Expect(TokenType.Enum, "Expected 'enum'.");
         var nameToken = Expect(TokenType.Identifier, "Expected enum name.");
+        var dataFields = Check(TokenType.LParen)
+            ? ParseEnumDataFields()
+            : null;
         Expect(TokenType.LBrace, "Expected '{' before enum body.");
 
         var members = new List<EnumMemberNode>();
@@ -1629,7 +1632,12 @@ public sealed partial class Parser
             var memberAttributes = ParseAttributeApplications();
             var memberToken = Expect(TokenType.Identifier, "Expected enum member name.");
             string? value = null;
-            if (ConsumeOptional(TokenType.Equals))
+            IReadOnlyList<EnumDataValueNode>? dataValues = null;
+            if (dataFields is not null)
+            {
+                dataValues = ParseEnumDataValues();
+            }
+            else if (ConsumeOptional(TokenType.Equals))
             {
                 value = ReadBalancedSliceUntilAny(memberToken?.Location ?? Current.Location, TokenType.Comma, TokenType.RBrace)
                     .ToSourceText();
@@ -1637,7 +1645,7 @@ public sealed partial class Parser
 
             if (memberToken is not null)
             {
-                members.Add(new EnumMemberNode(memberToken.Location, memberToken.Value, value, memberAttributes));
+                members.Add(new EnumMemberNode(memberToken.Location, memberToken.Value, value, memberAttributes, dataValues));
             }
 
             ConsumeOptional(TokenType.Comma);
@@ -1648,7 +1656,67 @@ public sealed partial class Parser
 
         return enumToken is null
             ? null
-            : new EnumNode(enumToken.Location, nameToken?.Value ?? string.Empty, members, attributes, IsHeaderDeclaration: isHeaderDeclaration);
+            : new EnumNode(
+                enumToken.Location,
+                nameToken?.Value ?? string.Empty,
+                members,
+                attributes,
+                IsHeaderDeclaration: isHeaderDeclaration,
+                DataFields: dataFields);
+    }
+
+    private IReadOnlyList<EnumDataFieldNode> ParseEnumDataFields()
+    {
+        Expect(TokenType.LParen, "Expected '(' before enum data fields.");
+        var fields = new List<EnumDataFieldNode>();
+        if (!Check(TokenType.RParen))
+        {
+            do
+            {
+                var name = Expect(TokenType.Identifier, "Expected enum data field name.");
+                Expect(TokenType.Colon, "Expected ':' after enum data field name.");
+                var typeNode = ParseTypeNode();
+                ExpressionNode? defaultValue = null;
+                if (ConsumeOptional(TokenType.Equals))
+                {
+                    defaultValue = ParseExpression(
+                        ReadBalancedSliceUntilAny(name?.Location ?? Current.Location, TokenType.Comma, TokenType.RParen));
+                }
+
+                if (name is not null)
+                {
+                    fields.Add(new EnumDataFieldNode(name.Location, name.Value, typeNode, defaultValue));
+                }
+            }
+            while (ConsumeOptional(TokenType.Comma) && !Check(TokenType.RParen));
+        }
+
+        Expect(TokenType.RParen, "Expected ')' after enum data fields.");
+        return fields;
+    }
+
+    private IReadOnlyList<EnumDataValueNode> ParseEnumDataValues()
+    {
+        Expect(TokenType.LBrace, "Expected '{' after data enum member name.");
+        var values = new List<EnumDataValueNode>();
+        if (!Check(TokenType.RBrace))
+        {
+            do
+            {
+                var name = Expect(TokenType.Identifier, "Expected enum data field name.");
+                Expect(TokenType.Colon, "Expected ':' after enum data field name.");
+                var value = ParseExpression(
+                    ReadBalancedSliceUntilAny(name?.Location ?? Current.Location, TokenType.Comma, TokenType.RBrace));
+                if (name is not null)
+                {
+                    values.Add(new EnumDataValueNode(name.Location, name.Value, value));
+                }
+            }
+            while (ConsumeOptional(TokenType.Comma) && !Check(TokenType.RBrace));
+        }
+
+        Expect(TokenType.RBrace, "Expected '}' after enum member data.");
+        return values;
     }
 
     private IReadOnlyList<StructRequirementNode> ParseOptionalStructRequirements()

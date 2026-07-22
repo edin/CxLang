@@ -14,6 +14,18 @@ using Cx.Compiler.Source;
 
 public sealed class CxCompiler
 {
+    public AnalysisResult Analyze(string source, string path = "<memory>") =>
+        Analyze([new SourceFile(path, source)]);
+
+    public AnalysisResult Analyze(IEnumerable<SourceFile> sources)
+    {
+        var (program, diagnostics) = CompileProgram(
+            sources,
+            BuildTests: false,
+            ApplyPostSemanticLowering: false);
+        return new AnalysisResult(program, diagnostics.Diagnostics);
+    }
+
     public CompilationResult CompileToC(string source, string path = "<memory>")
     {
         var sourceFile = new SourceFile(path, source);
@@ -73,7 +85,8 @@ public sealed class CxCompiler
     private static (ProgramNode? Program, DiagnosticBag Diagnostics) CompileProgram(
         IEnumerable<SourceFile> sources,
         bool BuildTests,
-        string? TestModuleName = null)
+        string? TestModuleName = null,
+        bool ApplyPostSemanticLowering = true)
     {
         var sourceFiles = sources.ToList();
         var diagnostics = new DiagnosticBag();
@@ -223,10 +236,13 @@ public sealed class CxCompiler
             return (null, diagnostics);
         }
 
-        mergedProgram = postSemanticLowering.Lower(mergedProgram);
-        if (diagnostics.HasErrors)
+        if (ApplyPostSemanticLowering)
         {
-            return (null, diagnostics);
+            mergedProgram = postSemanticLowering.Lower(mergedProgram);
+            if (diagnostics.HasErrors)
+            {
+                return (null, diagnostics);
+            }
         }
 
         return (mergedProgram, diagnostics);
@@ -778,6 +794,9 @@ public sealed class CxCompiler
             {
                 Name = QualifyName(alias, enumNode.Name),
                 Members = enumNode.Members.Select(member => member with { Name = QualifyName(alias, member.Name) }).ToList(),
+                DataFields = enumNode.DataFields?
+                    .Select(field => field with { TypeNode = QualifyTypeNode(field.TypeNode, alias, typeNames) })
+                    .ToList(),
             }).ToList(),
             Interfaces = program.Interfaces.Select(interfaceNode => interfaceNode with
             {
@@ -861,6 +880,12 @@ public sealed class CxCompiler
                 .Select(enumNode => enumNode with
                 {
                     Name = symbols.GetValueOrDefault(enumNode.Name, enumNode.Name),
+                    DataFields = enumNode.DataFields?
+                        .Select(field => field with
+                        {
+                            TypeNode = ProjectSymbolImportTypeNode(field.TypeNode, symbols, typeNames),
+                        })
+                        .ToList(),
                     Members = enumNode.Members
                         .Where(member => symbols.ContainsKey(member.Name))
                         .Select(member => member with { Name = symbols[member.Name] })
@@ -950,6 +975,12 @@ public sealed class CxCompiler
                 .Select(enumNode => enumNode with
                 {
                     Name = symbols.GetValueOrDefault(enumNode.Name, enumNode.Name),
+                    DataFields = enumNode.DataFields?
+                        .Select(field => field with
+                        {
+                            TypeNode = ProjectSymbolImportTypeNode(field.TypeNode, symbols, typeNames),
+                        })
+                        .ToList(),
                     Members = enumNode.Members
                         .Where(member => symbols.ContainsKey(member.Name))
                         .Select(member => member with { Name = symbols[member.Name] })
@@ -1021,6 +1052,9 @@ public sealed class CxCompiler
             {
                 Name = QualifyName(alias, enumNode.Name),
                 Members = enumNode.Members.Select(member => member with { Name = QualifyName(alias, member.Name) }).ToList(),
+                DataFields = enumNode.DataFields?
+                    .Select(field => field with { TypeNode = QualifyTypeNode(field.TypeNode, alias, typeNames) })
+                    .ToList(),
             }).ToList(),
             Structs = declaration.Structs.Select(structNode => structNode with
             {

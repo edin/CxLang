@@ -58,6 +58,24 @@ internal abstract record CompileTimeValue
         public override string DisplayType => "resolved parameter";
     }
 
+    public sealed record EnumMember(
+        ReflectedEnumMember Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "enum member";
+    }
+
+    public sealed record EnumMemberData(
+        ReflectedEnumMember Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "enum member data";
+    }
+
+    public sealed record EnumDataField(
+        ReflectedEnumDataField Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "enum data field";
+    }
+
     public sealed record List : CompileTimeObjectValue
     {
         private readonly System.Collections.Generic.List<CompileTimeValue> _values;

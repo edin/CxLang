@@ -10,6 +10,7 @@ internal sealed record ForeachAnalysisResult(
 
 internal sealed class ForeachSemanticAnalyzer(
     DiagnosticBag diagnostics,
+    ProgramNode program,
     TypeSystem typeSystem,
     TypeCompatibility typeCompatibility,
     ExpressionTypeResolver expressionTypeResolver,
@@ -37,6 +38,24 @@ internal sealed class ForeachSemanticAnalyzer(
                 foreachTypeEnvironment,
                 foreachMutability,
                 rangeType);
+        }
+        else if (TryResolveDataEnum(foreachStatement.IterableExpression, variables, out var dataEnumType))
+        {
+            if (foreachStatement.KeyBinding is not null)
+            {
+                diagnostics.Report(foreachStatement.Location, "Key/value foreach is not supported for data enums.");
+            }
+
+            if (foreachStatement.ValueBinding.IsReference)
+            {
+                diagnostics.Report(foreachStatement.ValueBinding.Location, "Data enum foreach values cannot be bound by reference.");
+            }
+
+            AddForeachValueBindings(
+                foreachStatement,
+                foreachTypeEnvironment,
+                foreachMutability,
+                dataEnumType);
         }
         else if (iterableName is null || !variables.TryGet(iterableName, out var iterableTypeRef))
         {
@@ -118,6 +137,28 @@ internal sealed class ForeachSemanticAnalyzer(
         }
 
         return new ForeachAnalysisResult(foreachTypeEnvironment, foreachMutability);
+    }
+
+    private bool TryResolveDataEnum(
+        ExpressionNode expression,
+        TypeEnvironment variables,
+        out TypeRef enumType)
+    {
+        enumType = new TypeRef.Unknown();
+        var name = ExpressionNameFacts.GetQualifiedName(expression);
+        if (name is null || variables.TryGet(name, out _))
+        {
+            return false;
+        }
+
+        var enumNode = program.Enums.FirstOrDefault(candidate => candidate.IsDataEnum && candidate.Name == name);
+        if (enumNode is null)
+        {
+            return false;
+        }
+
+        enumType = new TypeRef.Named(enumNode.Name, [], enumNode.Semantic.ModuleName);
+        return true;
     }
 
     private void AddForeachValueBindings(

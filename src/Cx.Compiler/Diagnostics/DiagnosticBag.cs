@@ -13,6 +13,12 @@ public sealed class DiagnosticBag
     public void Report(Location location, string message) =>
         _diagnostics.Add(new Diagnostic(location, message, DiagnosticSeverity.Error));
 
+    public void Report(SourceSpan span, string message) =>
+        _diagnostics.Add(new Diagnostic(span.Location, message, DiagnosticSeverity.Error, span));
+
     public void Warn(Location location, string message) =>
         _diagnostics.Add(new Diagnostic(location, message, DiagnosticSeverity.Warning));
+
+    public void Warn(SourceSpan span, string message) =>
+        _diagnostics.Add(new Diagnostic(span.Location, message, DiagnosticSeverity.Warning, span));
 }

@@ -67,6 +67,7 @@ public sealed class SemanticAnalyzer(
 
         var typeRefParser = _typeRefParser ?? throw new InvalidOperationException("Semantic analyzer has no TypeRef parser.");
         var globalTypeEnvironment = BuildGlobalTypeEnvironment(program.GlobalVariables);
+        AnalyzeDataEnums(program, globalTypeEnvironment);
         var returnFlow = new ReturnFlowAnalyzer(program, _expressionTypeResolver);
         var definiteAssignment = new DefiniteAssignmentAnalyzer(diagnostics, program, _expressionTypeResolver, returnFlow);
         foreach (var global in program.GlobalVariables)
@@ -198,10 +199,11 @@ public sealed class SemanticAnalyzer(
                 IsKnownTypeName);
 
     private ForeachSemanticAnalyzer? CreateForeachAnalyzer() =>
-        _typeSystem is null || _typeCompatibility is null || _expressionTypeResolver is null || _typeRefParser is null
+        _program is null || _typeSystem is null || _typeCompatibility is null || _expressionTypeResolver is null || _typeRefParser is null
             ? null
             : new ForeachSemanticAnalyzer(
                 diagnostics,
+                _program,
                 _typeSystem,
                 _typeCompatibility,
                 _expressionTypeResolver,
@@ -234,6 +236,104 @@ public sealed class SemanticAnalyzer(
             AnalyzeStatement(statement, returnType, typeEnvironment, mutability, program, inScopeTypeParameters);
         }
     }
+
+    private void AnalyzeDataEnums(ProgramNode program, TypeEnvironment typeEnvironment)
+    {
+        foreach (var enumNode in program.Enums.Where(node => node.IsDataEnum))
+        {
+            var fields = enumNode.DataFields ?? [];
+            if (fields.Count == 0)
+            {
+                diagnostics.Report(enumNode.Location, $"Data enum '{enumNode.Name}' must declare at least one data field.");
+            }
+
+            var generatedCountName = enumNode.Name + "_COUNT";
+            if (enumNode.Members.Any(member => member.Name == generatedCountName))
+            {
+                diagnostics.Report(enumNode.Location, $"Data enum '{enumNode.Name}' cannot declare reserved member '{generatedCountName}'.");
+            }
+
+            foreach (var duplicate in fields.GroupBy(field => field.Name, StringComparer.Ordinal).Where(group => group.Count() > 1))
+            {
+                diagnostics.Report(duplicate.Skip(1).First().Location, $"Duplicate data field '{duplicate.Key}' in enum '{enumNode.Name}'.");
+            }
+
+            foreach (var field in fields)
+            {
+                AnalyzeType(field.TypeNode, field.Location, program, []);
+                AnalyzeEnumDataExpression(field.DefaultValue, field.TypeNode, field.Location, typeEnvironment, $"default for enum data field '{field.Name}'");
+            }
+
+            foreach (var member in enumNode.Members)
+            {
+                var values = member.DataValues ?? [];
+                foreach (var duplicate in values.GroupBy(value => value.Name, StringComparer.Ordinal).Where(group => group.Count() > 1))
+                {
+                    diagnostics.Report(duplicate.Skip(1).First().Location, $"Duplicate value for enum data field '{duplicate.Key}' on member '{member.Name}'.");
+                }
+
+                foreach (var value in values)
+                {
+                    var field = fields.FirstOrDefault(candidate => candidate.Name == value.Name);
+                    if (field is null)
+                    {
+                        diagnostics.Report(value.Location, $"Unknown data field '{value.Name}' on enum member '{member.Name}'.");
+                        continue;
+                    }
+
+                    AnalyzeEnumDataExpression(value.Value, field.TypeNode, value.Location, typeEnvironment, $"enum data field '{value.Name}'");
+                }
+
+                foreach (var missing in fields.Where(field => field.DefaultValue is null && values.All(value => value.Name != field.Name)))
+                {
+                    diagnostics.Report(member.Location, $"Enum member '{member.Name}' must provide data field '{missing.Name}'.");
+                }
+            }
+        }
+    }
+
+    private void AnalyzeEnumDataExpression(
+        ExpressionNode? expression,
+        TypeNode targetTypeNode,
+        Location location,
+        TypeEnvironment typeEnvironment,
+        string subject)
+    {
+        if (expression is null)
+        {
+            return;
+        }
+
+        AnalyzeExpression(expression, location, typeEnvironment, null);
+        if (!IsStaticEnumDataExpression(expression))
+        {
+            diagnostics.Report(expression.Location, $"The {subject} must be a static constant expression.");
+            return;
+        }
+
+        _assignmentAnalyzer?.CheckAssignmentCompatibility(
+            location,
+            TypeRefOrUnknown(targetTypeNode),
+            expression,
+            typeEnvironment,
+            subject);
+    }
+
+    private static bool IsStaticEnumDataExpression(ExpressionNode expression) => expression switch
+    {
+        LiteralExpressionNode => true,
+        ParenthesizedExpressionNode parenthesized => IsStaticEnumDataExpression(parenthesized.Expression),
+        CastExpressionNode cast => IsStaticEnumDataExpression(cast.Expression),
+        UnaryExpressionNode unary => IsStaticEnumDataExpression(unary.Operand),
+        BinaryExpressionNode binary => IsStaticEnumDataExpression(binary.Left) && IsStaticEnumDataExpression(binary.Right),
+        ConditionalExpressionNode conditional =>
+            IsStaticEnumDataExpression(conditional.Condition)
+            && IsStaticEnumDataExpression(conditional.WhenTrue)
+            && IsStaticEnumDataExpression(conditional.WhenFalse),
+        SizeOfExpressionNode => true,
+        MemberExpressionNode member => ExpressionNameFacts.GetQualifiedName(member) is not null,
+        _ => false,
+    };
 
     private void AnalyzeStatement(
         StatementNode statement,

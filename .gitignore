@@ -9,5 +9,7 @@ site/node_modules/
 site/dist/
 site/.astro/
 
+editors/vscode/node_modules/
+
 /examples/*.c
 /examples/*.c

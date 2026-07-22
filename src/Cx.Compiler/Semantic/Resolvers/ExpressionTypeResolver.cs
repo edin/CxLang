@@ -248,6 +248,12 @@ internal sealed class ExpressionTypeResolver(
         var targetType = ResolveTypeRef(member.Target, variables);
         if (targetType is null)
         {
+            var enumMemberType = ResolveEnumMemberReference(member);
+            if (enumMemberType is not null)
+            {
+                return enumMemberType;
+            }
+
             var staticFunctionType = ResolveStaticFunctionReference(member);
             if (staticFunctionType is not null)
             {
@@ -263,6 +269,15 @@ internal sealed class ExpressionTypeResolver(
         var normalizedType = TypeRefFacts.StripPointersAndAliases(targetType);
         var normalizedTypeText = TypeRefFormatter.ToCxString(normalizedType);
         var normalizedTypeName = TypeRefFacts.GetBaseName(normalizedType);
+
+        var dataEnum = program.Enums.FirstOrDefault(enumNode =>
+            enumNode.IsDataEnum
+            && string.Equals(enumNode.Name, normalizedTypeName, StringComparison.Ordinal));
+        var dataField = dataEnum?.DataFields?.FirstOrDefault(field => field.Name == member.MemberName);
+        if (dataField is not null)
+        {
+            return ResolveTypeNode(dataField.TypeNode);
+        }
 
         var structNode = ResolveStruct(normalizedType);
         var field = structNode?.Fields.FirstOrDefault(field => field.Name == member.MemberName);
@@ -299,6 +314,22 @@ internal sealed class ExpressionTypeResolver(
         }
 
         return null;
+    }
+
+    private TypeRef? ResolveEnumMemberReference(MemberExpressionNode member)
+    {
+        var enumName = ExpressionNameFacts.GetQualifiedName(member.Target);
+        if (enumName is null)
+        {
+            return null;
+        }
+
+        var enumNode = program.Enums.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, enumName, StringComparison.Ordinal)
+            && candidate.Members.Any(enumMember => enumMember.Name == member.MemberName));
+        return enumNode is null
+            ? null
+            : new TypeRef.Named(enumNode.Name, [], enumNode.Semantic.ModuleName);
     }
 
     private TypeRef? ResolveStaticFunctionReference(MemberExpressionNode member)

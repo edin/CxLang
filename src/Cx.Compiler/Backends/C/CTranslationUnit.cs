@@ -16,6 +16,18 @@ internal sealed record CEnumDeclaration(
 
 internal sealed record CEnumMember(string Name, string? Value);
 
+internal sealed record CDataEnumDeclaration(
+    CEnumDeclaration Enum,
+    string CountName,
+    string DataTypeName,
+    string TableName,
+    IReadOnlyList<CFieldDeclaration> Fields,
+    IReadOnlyList<CDataEnumRow> Rows) : CTranslationUnitItem;
+
+internal sealed record CDataEnumRow(
+    string EnumMemberName,
+    IReadOnlyList<CInitializerField> Values);
+
 internal abstract record CTypeRef;
 
 internal sealed record CNamedTypeRef(string Name) : CTypeRef;

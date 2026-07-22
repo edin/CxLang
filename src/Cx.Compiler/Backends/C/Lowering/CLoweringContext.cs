@@ -17,6 +17,7 @@ internal sealed record CLoweringContext(
     IReadOnlyDictionary<string, InterfaceNode> Interfaces,
     IReadOnlyDictionary<(string StructName, string InterfaceName), InterfaceImplementation> InterfaceImplementations,
     IReadOnlyDictionary<string, TaggedUnionNode> TaggedUnions,
+    IReadOnlyDictionary<string, EnumNode> Enums,
     IReadOnlyDictionary<string, string> TagAliases,
     IReadOnlyDictionary<string, string> EnumMemberAliases,
     IReadOnlyDictionary<string, AdapterExposeInfo> AdapterExposes,
@@ -92,6 +93,19 @@ internal sealed record CLoweringContext(
 
     public IEnumerable<TaggedUnionNode> GetTaggedUnions() =>
         TaggedUnions.Values;
+
+    public bool TryGetDataEnum(TypeRef type, out EnumNode enumNode)
+    {
+        if (TypeRefFacts.GetBaseName(type) is { } name
+            && Enums.TryGetValue(name, out enumNode!)
+            && enumNode.IsDataEnum)
+        {
+            return true;
+        }
+
+        enumNode = null!;
+        return false;
+    }
 
     public bool TryGetTaggedUnionTagAlias(string source, out string target) =>
         TagAliases.TryGetValue(source, out target!);
@@ -268,6 +282,7 @@ internal sealed record CLoweringContext(
                     implementation => (implementation.Struct.Name, implementation.Interface.Name),
                     implementation => implementation),
             program.TaggedUnions.ToDictionary(taggedUnion => taggedUnion.Name, StringComparer.Ordinal),
+            program.Enums.ToDictionary(enumNode => enumNode.Name, StringComparer.Ordinal),
             program.TaggedUnions
                 .Where(union => !union.IsRaw)
                 .SelectMany(taggedUnion => taggedUnion.Variants.Select(variant => new

@@ -13,6 +13,11 @@ internal sealed class MemberAccessLowerer(
 {
     public string LowerText(MemberExpressionNode member)
     {
+        if (TryLowerDataEnumMember(member) is { } dataEnumMember)
+        {
+            return new CExpressionEmitter().Emit(dataEnumMember);
+        }
+
         if (TryLowerFunctionReferenceMember(member) is { } functionReference)
         {
             return functionReference;
@@ -59,6 +64,11 @@ internal sealed class MemberAccessLowerer(
 
     public CExpression LowerExpression(MemberExpressionNode member)
     {
+        if (TryLowerDataEnumMember(member) is { } dataEnumMember)
+        {
+            return dataEnumMember;
+        }
+
         if (TryLowerFunctionReferenceMember(member) is { } functionReference)
         {
             return new CNameExpression(functionReference);
@@ -104,6 +114,24 @@ internal sealed class MemberAccessLowerer(
         }
 
         return new CMemberExpression(lowerExpression(member.Target), ".", member.MemberName);
+    }
+
+    private CExpression? TryLowerDataEnumMember(MemberExpressionNode member)
+    {
+        var targetType = ResolveExpressionTypeRef(member.Target);
+        if (targetType is null
+            || !context.TryGetDataEnum(targetType, out var enumNode)
+            || enumNode.DataFields?.Any(field => field.Name == member.MemberName) != true)
+        {
+            return null;
+        }
+
+        return new CMemberExpression(
+            new CIndexExpression(
+                new CNameExpression(enumNode.Name + "_data"),
+                lowerExpression(member.Target)),
+            ".",
+            member.MemberName);
     }
 
     private string? TryLowerInterfaceVTableTypeIdText(MemberExpressionNode member)

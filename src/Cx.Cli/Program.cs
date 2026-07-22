@@ -19,6 +19,9 @@ app.Configure(config =>
     config.AddCommand<CheckCommand>("check")
         .WithDescription("Parse and analyze a project or input without writing generated C.");
 
+    config.AddCommand<LspCommand>("lsp")
+        .WithDescription("Run the CX language server over standard input and output.");
+
     config.AddCommand<TestCommand>("test")
         .WithDescription("Collect CX test blocks, compile a test runner, and run it.");
 

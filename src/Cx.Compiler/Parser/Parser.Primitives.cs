@@ -15,7 +15,7 @@ public sealed partial class Parser
             return match;
         }
 
-        _diagnostics.Report(Current.Location, message);
+        _diagnostics.Report(Current.Span, message);
         return null;
     }
 
@@ -30,7 +30,7 @@ public sealed partial class Parser
             return Advance();
         }
 
-        _diagnostics.Report(Current.Location, message);
+        _diagnostics.Report(Current.Span, message);
         return null;
     }
 
@@ -70,7 +70,7 @@ public sealed partial class Parser
         node.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
         if (visibility == DeclarationVisibility.Public && !SupportsPublicVisibility(node))
         {
-            _diagnostics.Report(first.Location, $"'{DeclarationKind(node)}' cannot be declared public.");
+            _diagnostics.Report(first.Span, $"'{DeclarationKind(node)}' cannot be declared public.");
         }
         else
         {

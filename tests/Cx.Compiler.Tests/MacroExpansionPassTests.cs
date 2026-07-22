@@ -69,6 +69,39 @@ public sealed class MacroExpansionPassTests
     }
 
     [Fact]
+    public void ExpandProgram_MacroCanReportErrorAtReflectedDeclaration()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct User {
+                unsupported: int;
+            }
+
+            macro Validate(target: type) -> statements {
+                @foreach(field in target.fields) {
+                    @if(field.name == "unsupported") {
+                        Diagnostic.error(field, "Field is not supported by this macro.");
+                    }
+                }
+            }
+
+            fn main() -> int {
+                use Validate(User);
+                return 0;
+            }
+            """);
+        var field = Assert.Single(Assert.Single(program.Structs).Fields);
+        var diagnostics = new DiagnosticBag();
+
+        _ = new MacroExpansionPass(diagnostics, program).RewriteProgram(program);
+
+        var diagnostic = Assert.Single(diagnostics.Diagnostics, candidate =>
+            candidate.Message == "Field is not supported by this macro.");
+        Assert.Equal(field.Location, diagnostic.Location);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [Fact]
     public void ExpandProgram_StopsRecursiveExpansionAtDepthLimit()
     {
         var program = CompilerTestHelpers.Parse(

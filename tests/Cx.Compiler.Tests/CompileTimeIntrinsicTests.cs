@@ -407,6 +407,93 @@ public sealed class CompileTimeIntrinsicTests
     }
 
     [Fact]
+    public void EnumReflection_ExposesMembersIndexesAndEffectiveData()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            enum Associativity { None, Left }
+
+            enum TokenKind(
+                text: const char* = null,
+                precedence: int = 0,
+                associativity: Associativity = Associativity.None,
+                code: int
+            ) {
+                Identifier { code: 1 },
+                Plus { text: "+", precedence: 90, associativity: Associativity.Left, code: 2 },
+            }
+            """);
+        var reflection = new ProgramCompileTimeReflection(program);
+        var context = new CompileTimeEvaluationContext();
+
+        var (membersValue, membersDiagnostics) = Evaluate("TokenKind.members", context, reflection);
+        var (ordinaryMemberCount, ordinaryMemberDiagnostics) = Evaluate("Associativity.members.count", context, reflection);
+        var (isEnum, isEnumDiagnostics) = Evaluate("TokenKind.is_enum", context, reflection);
+        var (isDataEnum, isDataEnumDiagnostics) = Evaluate("TokenKind.is_data_enum", context, reflection);
+        var (ordinaryIsDataEnum, ordinaryIsDataEnumDiagnostics) = Evaluate("Associativity.is_data_enum", context, reflection);
+        var (dataFieldsValue, dataFieldsDiagnostics) = Evaluate("TokenKind.data_fields", context, reflection);
+        var members = Assert.IsType<CompileTimeValue.List>(membersValue).Values
+            .Select(Assert.IsType<CompileTimeValue.EnumMember>)
+            .ToList();
+        var dataFields = Assert.IsType<CompileTimeValue.List>(dataFieldsValue).Values
+            .Select(Assert.IsType<CompileTimeValue.EnumDataField>)
+            .ToList();
+        Assert.Equal(2, members.Count);
+        Assert.Equal(2, Assert.IsType<CompileTimeValue.Integer>(ordinaryMemberCount).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(isEnum).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(isDataEnum).Value);
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(ordinaryIsDataEnum).Value);
+        Assert.Equal(4, dataFields.Count);
+        context.Define("member", members[1]);
+        context.Define("field", dataFields[1]);
+        context.Define("required_field", dataFields[3]);
+
+        var (name, nameDiagnostics) = Evaluate("member.name", context, reflection);
+        var (index, indexDiagnostics) = Evaluate("member.index", context, reflection);
+        var (precedence, precedenceDiagnostics) = Evaluate("member.precedence", context, reflection);
+        var (text, textDiagnostics) = Evaluate("member.data.text", context, reflection);
+        var (associativity, associativityDiagnostics) = Evaluate("member.associativity.name", context, reflection);
+        var (fieldName, fieldNameDiagnostics) = Evaluate("field.name", context, reflection);
+        var (fieldType, fieldTypeDiagnostics) = Evaluate("field.type.name", context, reflection);
+        var (fieldIndex, fieldIndexDiagnostics) = Evaluate("field.index", context, reflection);
+        var (hasDefault, hasDefaultDiagnostics) = Evaluate("field.has_default", context, reflection);
+        var (defaultValue, defaultValueDiagnostics) = Evaluate("field.default_value", context, reflection);
+        var (requiredHasDefault, requiredHasDefaultDiagnostics) = Evaluate("required_field.has_default", context, reflection);
+        var (requiredDefault, requiredDefaultDiagnostics) = Evaluate("required_field.default_value", context, reflection);
+
+        Assert.Equal("Plus", Assert.IsType<CompileTimeValue.String>(name).Value);
+        Assert.Equal(1, Assert.IsType<CompileTimeValue.Integer>(index).Value);
+        Assert.Equal(90, Assert.IsType<CompileTimeValue.Integer>(precedence).Value);
+        Assert.Equal("+", Assert.IsType<CompileTimeValue.String>(text).Value);
+        Assert.Equal("Left", Assert.IsType<CompileTimeValue.String>(associativity).Value);
+        Assert.Equal("precedence", Assert.IsType<CompileTimeValue.String>(fieldName).Value);
+        Assert.Equal("int", Assert.IsType<CompileTimeValue.String>(fieldType).Value);
+        Assert.Equal(1, Assert.IsType<CompileTimeValue.Integer>(fieldIndex).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(hasDefault).Value);
+        Assert.Equal(0, Assert.IsType<CompileTimeValue.Integer>(defaultValue).Value);
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(requiredHasDefault).Value);
+        Assert.IsType<CompileTimeValue.Null>(requiredDefault);
+        CompilerTestHelpers.AssertNoErrors(membersDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(ordinaryMemberDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(isEnumDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(isDataEnumDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(ordinaryIsDataEnumDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(dataFieldsDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(nameDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(indexDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(precedenceDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(textDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(associativityDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(fieldNameDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(fieldTypeDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(fieldIndexDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(hasDefaultDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(defaultValueDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(requiredHasDefaultDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(requiredDefaultDiagnostics);
+    }
+
+    [Fact]
     public void FunctionProperties_ExposeSignatureAndDeclarationFlags()
     {
         var program = CompilerTestHelpers.Parse(

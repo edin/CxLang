@@ -6,6 +6,27 @@ internal static class AstExpressionTraversal
 {
     public static IEnumerable<ExpressionNode> Enumerate(ProgramNode program)
     {
+        foreach (var enumNode in program.Enums.Where(node => node.IsDataEnum))
+        {
+            foreach (var expression in (enumNode.DataFields ?? [])
+                .Select(field => field.DefaultValue)
+                .Where(expression => expression is not null))
+            {
+                foreach (var nested in Enumerate(expression!))
+                {
+                    yield return nested;
+                }
+            }
+
+            foreach (var value in enumNode.Members.SelectMany(member => member.DataValues ?? []))
+            {
+                foreach (var expression in Enumerate(value.Value))
+                {
+                    yield return expression;
+                }
+            }
+        }
+
         foreach (var global in program.GlobalVariables.Where(global => global.Initializer is not null))
         {
             foreach (var expression in Enumerate(global.Initializer!))

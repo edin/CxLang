@@ -239,6 +239,16 @@ internal abstract class AstRewriter
                 .Select(member => member with
                 {
                     Attributes = RewriteAttributeApplications(member.Attributes),
+                    DataValues = member.DataValues?
+                        .Select(value => value with { Value = RewriteRequiredExpression(value.Value) })
+                        .ToList(),
+                })
+                .ToList(),
+            DataFields = enumNode.DataFields?
+                .Select(field => field with
+                {
+                    TypeNode = RewriteType(field.TypeNode) ?? field.TypeNode,
+                    DefaultValue = RewriteExpression(field.DefaultValue),
                 })
                 .ToList(),
             Attributes = RewriteAttributeApplications(enumNode.Attributes),

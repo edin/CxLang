@@ -72,6 +72,23 @@ You can also run the CLI directly from the repo:
 dotnet run --project src/Cx.Cli -- --help
 ```
 
+## VS Code
+
+The development extension under `editors/vscode` provides CX syntax highlighting
+and live compiler diagnostics. Reinstall the CLI after compiler changes so the
+extension can start `cx lsp`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-cx.ps1
+cd editors\vscode
+npm install
+code .
+```
+
+Press `F5` in that VS Code window to launch an Extension Development Host, then
+open a CX project or `.cx` file. If `cx` is not on `PATH`, set
+`cx.languageServer.path` to the installed executable.
+
 ## Quick Start
 
 Create and run a new project:
@@ -156,6 +173,7 @@ src/Cx.Cli/               command-line tool
 src/Cx.Compiler/Std/      embedded CX standard library files
 examples/                 CX example programs
 tests/                    .NET compiler tests
+editors/vscode/           VS Code syntax and language-server client
 site/                     Astro website for cxlang.dev
 scripts/install-cx.ps1    local CLI install script
 ```
