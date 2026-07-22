@@ -342,6 +342,9 @@ internal sealed class DefiniteAssignmentAnalyzer(
             case MemberExpressionNode member:
                 AnalyzeExpression(member.Target, variables, assigned);
                 break;
+            case IncompleteMemberExpressionNode member:
+                AnalyzeExpression(member.Target, variables, assigned);
+                break;
             case IndexExpressionNode index:
                 AnalyzeExpression(index.Target, variables, assigned);
                 AnalyzeExpression(index.Index, variables, assigned);

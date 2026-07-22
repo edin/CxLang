@@ -370,6 +370,9 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
             case MemberExpressionNode member:
                 ResolveExpression(member.Target);
                 break;
+            case IncompleteMemberExpressionNode member:
+                ResolveExpression(member.Target);
+                break;
             case IndexExpressionNode index:
                 ResolveExpression(index.Target);
                 ResolveExpression(index.Index);

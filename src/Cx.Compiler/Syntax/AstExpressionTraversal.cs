@@ -268,6 +268,9 @@ internal static class AstExpressionTraversal
             case MemberExpressionNode member:
                 foreach (var child in Enumerate(member.Target)) yield return child;
                 break;
+            case IncompleteMemberExpressionNode member:
+                foreach (var child in Enumerate(member.Target)) yield return child;
+                break;
             case ComputedMemberExpressionNode member:
                 foreach (var child in Enumerate(member.Target)) yield return child;
                 foreach (var child in Enumerate(member.MemberName)) yield return child;

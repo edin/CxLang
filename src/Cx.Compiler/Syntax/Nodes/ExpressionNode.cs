@@ -183,6 +183,12 @@ public sealed record MemberExpressionNode(
     ExpressionNode Target,
     string MemberName) : ExpressionNode(Location);
 
+public sealed record IncompleteMemberExpressionNode(
+    Location Location,
+    ExpressionNode Target,
+    string Prefix,
+    SourceSpan DotSpan) : ExpressionNode(Location);
+
 public sealed record ComputedMemberExpressionNode(
     Location Location,
     ExpressionNode Target,
@@ -223,6 +229,7 @@ public static class ExpressionNodeExtensions
         GenericCallExpressionNode call => FormatGenericCall(call),
         CallExpressionNode call => FormatCall(call),
         MemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.MemberName}",
+        IncompleteMemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.Prefix}",
         ComputedMemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.MemberName.ToSourceText()}",
         IndexExpressionNode index => $"{index.Target.ToSourceText()}[{index.Index.ToSourceText()}]",
         _ => throw new InvalidOperationException(

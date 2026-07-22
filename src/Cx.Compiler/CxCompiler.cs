@@ -26,6 +26,129 @@ public sealed class CxCompiler
         return new AnalysisResult(program, diagnostics.Diagnostics);
     }
 
+    public IReadOnlyList<MemberCompletion> GetMemberCompletions(
+        IEnumerable<SourceFile> sources,
+        string path,
+        int position)
+    {
+        var sourceFiles = sources.ToList();
+        var targetIndex = sourceFiles.FindIndex(source => SourcePathsEqual(source.Path, path));
+        if (targetIndex < 0)
+        {
+            return [];
+        }
+
+        var target = sourceFiles[targetIndex];
+        if (position <= 0 || position > target.Text.Length || target.Text[position - 1] != '.')
+        {
+            return [];
+        }
+
+        if (position == target.Text.Length || target.Text[position] != ';')
+        {
+            sourceFiles[targetIndex] = target with { Text = target.Text.Insert(position, ";") };
+        }
+
+        var (program, _) = CompileProgram(
+            sourceFiles,
+            BuildTests: false,
+            ApplyPostSemanticLowering: false);
+        if (program is null)
+        {
+            return [];
+        }
+
+        var hole = AstExpressionTraversal.Enumerate(program)
+            .OfType<IncompleteMemberExpressionNode>()
+            .LastOrDefault(member =>
+                SourcePathsEqual(member.DotSpan.File.Path, path)
+                && member.DotSpan.Position == position - 1);
+        if (hole?.Target.Semantic.Type is not { } receiverType)
+        {
+            return [];
+        }
+
+        return CollectMemberCompletions(program, receiverType, hole.Prefix);
+    }
+
+    private static IReadOnlyList<MemberCompletion> CollectMemberCompletions(
+        ProgramNode program,
+        TypeRef receiverType,
+        string prefix)
+    {
+        var typeName = TypeRefFacts.GetBaseName(receiverType);
+        if (typeName is null)
+        {
+            return [];
+        }
+
+        var completions = new List<MemberCompletion>();
+        var structNode = program.Structs.FirstOrDefault(node => node.Name == typeName);
+        if (structNode is not null)
+        {
+            completions.AddRange(structNode.Fields.Select(field => new MemberCompletion(
+                field.Name,
+                MemberCompletionKind.Field,
+                field.TypeNode?.ToSourceText() ?? "<unknown>")));
+            completions.AddRange(structNode.Methods
+                .Where(method => !method.IsStatic)
+                .Select(MethodCompletion));
+        }
+
+        var dataEnum = program.Enums.FirstOrDefault(node => node.IsDataEnum && node.Name == typeName);
+        if (dataEnum?.DataFields is not null)
+        {
+            completions.AddRange(dataEnum.DataFields.Select(field => new MemberCompletion(
+                field.Name,
+                MemberCompletionKind.Field,
+                field.TypeNode?.ToSourceText() ?? "<unknown>")));
+        }
+
+        var union = program.TaggedUnions.FirstOrDefault(node => node.Name == typeName);
+        if (union is not null)
+        {
+            completions.AddRange(union.Variants.Select(variant => new MemberCompletion(
+                variant.Name,
+                MemberCompletionKind.Field,
+                variant.TypeNode?.ToSourceText() ?? "<unknown>")));
+            completions.AddRange(union.Methods
+                .Where(method => !method.IsStatic)
+                .Select(MethodCompletion));
+        }
+
+        completions.AddRange(program.Functions
+            .Where(method => !method.IsStatic
+                && method.OwnerTypeNode is not null
+                && TypeRefFacts.GetBaseName(method.OwnerTypeNode.Semantic.Type) == typeName)
+            .Select(MethodCompletion));
+
+        return completions
+            .Where(completion => completion.Label.StartsWith(prefix, StringComparison.Ordinal))
+            .DistinctBy(completion => (completion.Label, completion.Kind))
+            .OrderBy(completion => completion.Kind)
+            .ThenBy(completion => completion.Label, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static MemberCompletion MethodCompletion(FunctionNode method)
+    {
+        var parameters = method.Parameters
+            .Where(parameter => parameter.Name != "self")
+            .Select(parameter => $"{parameter.Name}: {parameter.TypeNode?.ToSourceText() ?? "<unknown>"}");
+        var detail = $"fn {method.Name}({string.Join(", ", parameters)}) -> {method.ReturnTypeNode?.ToSourceText() ?? "void"}";
+        return new MemberCompletion(method.Name, MemberCompletionKind.Method, detail);
+    }
+
+    private static bool SourcePathsEqual(string left, string right)
+    {
+        if (left.StartsWith('<') || right.StartsWith('<'))
+        {
+            return string.Equals(left, right, StringComparison.Ordinal);
+        }
+
+        return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+    }
+
     public CompilationResult CompileToC(string source, string path = "<memory>")
     {
         var sourceFile = new SourceFile(path, source);
@@ -171,6 +294,13 @@ public sealed class CxCompiler
             diagnostics.Report(
                 typeLiteral.Location,
                 "Type literals are only valid during compile-time evaluation.");
+        }
+        if (ApplyPostSemanticLowering)
+        {
+            foreach (var incompleteMember in AstExpressionTraversal.Enumerate(mergedInputProgram).OfType<IncompleteMemberExpressionNode>())
+            {
+                diagnostics.Report(incompleteMember.DotSpan, "Expected member name after '.'.");
+            }
         }
         if (diagnostics.HasErrors)
         {

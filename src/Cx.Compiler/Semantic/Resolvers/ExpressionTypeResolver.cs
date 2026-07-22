@@ -57,6 +57,7 @@ internal sealed class ExpressionTypeResolver(
             FunctionExpressionNode functionExpression => ResolveFunctionExpressionTypeRef(functionExpression),
             AssignmentExpressionNode assignment => ResolveTypeRef(assignment.Target, variables),
             MemberExpressionNode member => ResolveMemberTypeRef(member, variables),
+            IncompleteMemberExpressionNode => null,
             CallExpressionNode call => ResolveCallTypeRef(call, variables),
             GenericCallExpressionNode call => ResolveGenericCallTypeRef(call, variables),
             IndexExpressionNode index => ResolveIndexTypeRef(index, variables),

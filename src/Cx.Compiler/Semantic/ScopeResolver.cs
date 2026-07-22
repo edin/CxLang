@@ -352,6 +352,9 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 ResolveExpression(member.Target, scope);
                 BindMemberReference(member, scope);
                 break;
+            case IncompleteMemberExpressionNode member:
+                ResolveExpression(member.Target, scope);
+                break;
             case IndexExpressionNode index:
                 ResolveExpression(index.Target, scope);
                 ResolveExpression(index.Index, scope);

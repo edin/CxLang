@@ -10,6 +10,7 @@ site/dist/
 site/.astro/
 
 editors/vscode/node_modules/
+editors/vscode/server/
 
 /examples/*.c
 /examples/*.c

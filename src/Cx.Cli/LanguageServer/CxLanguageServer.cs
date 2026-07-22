@@ -44,6 +44,10 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
                             capabilities = new
                             {
                                 textDocumentSync = 1,
+                                completionProvider = new
+                                {
+                                    triggerCharacters = new[] { "." },
+                                },
                             },
                             serverInfo = new { name = "cx-language-server", version = "0.1.0" },
                         }, cancellationToken);
@@ -61,6 +65,9 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
                     case "textDocument/didClose":
                         await CloseDocumentAsync(parameters, cancellationToken);
                         await PublishDiagnosticsAsync(cancellationToken);
+                        break;
+                    case "textDocument/completion":
+                        await RespondAsync(id, GetMemberCompletions(parameters), cancellationToken);
                         break;
                     case "shutdown":
                         _shutdownRequested = true;
@@ -175,6 +182,31 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
         }
     }
 
+    private object[] GetMemberCompletions(JsonElement parameters)
+    {
+        var uri = parameters.GetProperty("textDocument").GetProperty("uri").GetString()!;
+        if (!_documents.TryGetValue(uri, out var document))
+        {
+            return [];
+        }
+
+        var position = parameters.GetProperty("position");
+        var offset = OffsetAt(
+            document.Text,
+            position.GetProperty("line").GetInt32(),
+            position.GetProperty("character").GetInt32());
+        return new CxCompiler()
+            .GetMemberCompletions(BuildSources(), document.Path, offset)
+            .Select(completion => new
+            {
+                label = completion.Label,
+                kind = completion.Kind == MemberCompletionKind.Field ? 5 : 2,
+                detail = completion.Detail,
+            })
+            .Cast<object>()
+            .ToArray();
+    }
+
     private IReadOnlyList<SourceFile> BuildSources()
     {
         var sources = new Dictionary<string, SourceFile>(StringComparer.OrdinalIgnoreCase);
@@ -256,6 +288,34 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
         }
 
         return new { line, character = offset - lineStart };
+    }
+
+    private static int OffsetAt(string text, int requestedLine, int requestedCharacter)
+    {
+        var line = Math.Max(0, requestedLine);
+        var lineStart = 0;
+        for (var currentLine = 0; currentLine < line; currentLine++)
+        {
+            var newline = text.IndexOf('\n', lineStart);
+            if (newline < 0)
+            {
+                return text.Length;
+            }
+
+            lineStart = newline + 1;
+        }
+
+        var lineEnd = text.IndexOf('\n', lineStart);
+        if (lineEnd < 0)
+        {
+            lineEnd = text.Length;
+        }
+        if (lineEnd > lineStart && text[lineEnd - 1] == '\r')
+        {
+            lineEnd--;
+        }
+
+        return Math.Clamp(lineStart + Math.Max(0, requestedCharacter), lineStart, lineEnd);
     }
 
     private async Task<JsonDocument?> ReadMessageAsync(CancellationToken cancellationToken)

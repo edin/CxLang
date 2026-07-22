@@ -6,7 +6,7 @@ const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 let client;
 
 async function activate(context) {
-  const executable = resolveLanguageServerExecutable();
+  const executable = resolveLanguageServerExecutable(context);
   const serverOptions = {
     run: { command: executable, args: ['lsp'], transport: TransportKind.stdio },
     debug: { command: executable, args: ['lsp'], transport: TransportKind.stdio }
@@ -22,10 +22,18 @@ async function activate(context) {
   await client.start();
 }
 
-function resolveLanguageServerExecutable() {
+function resolveLanguageServerExecutable(context) {
   const configured = vscode.workspace.getConfiguration('cx.languageServer').get('path', '').trim();
   if (configured && configured.toLowerCase() !== 'cx') {
     return configured;
+  }
+
+  const bundledExecutable = path.join(
+    context.extensionPath,
+    'server',
+    process.platform === 'win32' ? 'Cx.Cli.exe' : 'Cx.Cli');
+  if (fs.existsSync(bundledExecutable)) {
+    return bundledExecutable;
   }
 
   if (process.platform === 'win32' && process.env.LOCALAPPDATA) {

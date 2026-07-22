@@ -74,20 +74,20 @@ dotnet run --project src/Cx.Cli -- --help
 
 ## VS Code
 
-The development extension under `editors/vscode` provides CX syntax highlighting
-and live compiler diagnostics. Reinstall the CLI after compiler changes so the
-extension can start `cx lsp`:
+The development extension under `editors/vscode` provides CX syntax highlighting,
+live compiler diagnostics, and member completion. Build its bundled language
+server after compiler changes:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-cx.ps1
+dotnet publish src\Cx.Cli\Cx.Cli.csproj -c Release --no-self-contained --output editors\vscode\server
 cd editors\vscode
 npm install
 code .
 ```
 
 Press `F5` in that VS Code window to launch an Extension Development Host, then
-open a CX project or `.cx` file. If `cx` is not on `PATH`, set
-`cx.languageServer.path` to the installed executable.
+open a CX project or `.cx` file. Packaged `.vsix` builds include this server;
+`cx.languageServer.path` is only needed to override it.
 
 ## Quick Start
 

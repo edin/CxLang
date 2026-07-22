@@ -407,12 +407,16 @@ internal abstract class AstRewriter
             CallExpressionNode call => RewriteCallExpression(call),
             GenericCallExpressionNode call => RewriteGenericCallExpression(call),
             MemberExpressionNode member => RewriteMemberExpression(member),
+            IncompleteMemberExpressionNode member => RewriteIncompleteMemberExpression(member),
             ComputedMemberExpressionNode member => RewriteComputedMemberExpression(member),
             IndexExpressionNode index => RewriteIndexExpression(index),
             _ => expression,
         };
 
     protected virtual ExpressionNode RewriteErrorExpression(ErrorExpressionNode error) => error;
+
+    protected virtual ExpressionNode RewriteIncompleteMemberExpression(IncompleteMemberExpressionNode member) =>
+        member with { Target = RewriteRequiredExpression(member.Target) };
 
     protected virtual ExpressionNode RewritePlaceholderExpression(PlaceholderExpressionNode placeholder) =>
         placeholder with { Expression = RewriteRequiredExpression(placeholder.Expression) };

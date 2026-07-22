@@ -145,6 +145,10 @@ internal sealed class AstCompletenessAnalyzer(DiagnosticBag diagnostics)
             case ErrorExpressionNode error:
                 diagnostics.Report(error.Location, "Parser error expression remains in AST.");
                 break;
+            case IncompleteMemberExpressionNode member:
+                diagnostics.Report(member.DotSpan, "Incomplete member expression remains in AST.");
+                AnalyzeExpression(member.Target);
+                break;
             case PlaceholderExpressionNode placeholder:
                 diagnostics.Report(
                     placeholder.Location,

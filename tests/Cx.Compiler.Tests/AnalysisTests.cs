@@ -27,4 +27,55 @@ public sealed class AnalysisTests
         Assert.Equal(source.IndexOf(']'), diagnostic.Span.Position);
         Assert.Equal(1, diagnostic.Span.Length);
     }
+
+    [Fact]
+    public void GetMemberCompletions_ResolvesFieldsFromTrailingDotWithMissingSemicolon()
+    {
+        const string source = """
+            struct Point {
+                x: int;
+                y: int;
+
+                fn sum(self: Point*) -> int {
+                    return self.x + self.y;
+                }
+            }
+
+            fn main() -> int {
+                let p = Point { x: 10, y: 20 };
+                let value = p.
+                return 0;
+            }
+            """;
+        var position = source.IndexOf("p.", StringComparison.Ordinal) + 2;
+
+        var completions = new CxCompiler().GetMemberCompletions(
+            [CompilerTestHelpers.Source(source)],
+            "main.cx",
+            position);
+
+        Assert.Collection(
+            completions.Where(completion => completion.Kind == MemberCompletionKind.Field),
+            completion => Assert.Equal("x", completion.Label),
+            completion => Assert.Equal("y", completion.Label));
+        var method = Assert.Single(completions, completion => completion.Kind == MemberCompletionKind.Method);
+        Assert.Equal("sum", method.Label);
+        Assert.Equal("fn sum() -> int", method.Detail);
+    }
+
+    [Fact]
+    public void CompileToC_RejectsIncompleteMemberExpression()
+    {
+        var result = new CxCompiler().CompileToC("""
+            struct Point { x: int; }
+            fn main() -> int {
+                let p = Point { x: 10 };
+                let value = p.;
+                return 0;
+            }
+            """);
+
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message == "Expected member name after '.'.");
+    }
 }

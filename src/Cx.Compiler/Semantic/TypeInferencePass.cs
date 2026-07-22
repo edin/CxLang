@@ -409,6 +409,11 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             return declaredType;
         }
 
+        if (initializer is IncompleteMemberExpressionNode)
+        {
+            return new TypeRef.Unknown();
+        }
+
         if (initializer is null)
         {
             diagnostics.Report(location, $"Cannot infer type for {subject} '{name}' without an initializer.");
@@ -657,6 +662,10 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
                     .ToList(),
             },
             MemberExpressionNode member => member with
+            {
+                Target = InferExpression(member.Target, typeEnvironment)!,
+            },
+            IncompleteMemberExpressionNode member => member with
             {
                 Target = InferExpression(member.Target, typeEnvironment)!,
             },

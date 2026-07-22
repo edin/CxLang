@@ -467,6 +467,9 @@ internal sealed class TypeRefModuleResolver
             case MemberExpressionNode member:
                 ResolveExpression(member.Target, typeParameters);
                 break;
+            case IncompleteMemberExpressionNode member:
+                ResolveExpression(member.Target, typeParameters);
+                break;
             case IndexExpressionNode index:
                 ResolveExpression(index.Target, typeParameters);
                 ResolveExpression(index.Index, typeParameters);

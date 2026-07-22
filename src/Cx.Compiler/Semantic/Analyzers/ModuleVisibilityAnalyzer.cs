@@ -371,6 +371,9 @@ internal sealed class ModuleVisibilityAnalyzer(
                 }
 
                 break;
+            case IncompleteMemberExpressionNode member:
+                AnalyzeExpression(member.Target, visibility, locals);
+                break;
             case IndexExpressionNode index:
                 AnalyzeExpression(index.Target, visibility, locals);
                 AnalyzeExpression(index.Index, visibility, locals);

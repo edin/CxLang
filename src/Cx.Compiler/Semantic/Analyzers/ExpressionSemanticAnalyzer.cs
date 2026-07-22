@@ -122,6 +122,9 @@ internal sealed class ExpressionSemanticAnalyzer(
             case MemberExpressionNode member:
                 Analyze(member.Target, location, typeEnvironment, mutability);
                 break;
+            case IncompleteMemberExpressionNode member:
+                Analyze(member.Target, location, typeEnvironment, mutability);
+                break;
             case IndexExpressionNode index:
                 Analyze(index.Target, location, typeEnvironment, mutability);
                 Analyze(index.Index, location, typeEnvironment, mutability);

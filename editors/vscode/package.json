@@ -2,7 +2,7 @@
   "name": "cx-language",
   "displayName": "CX Language Support",
   "description": "Syntax highlighting and compiler diagnostics for CX.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "cx-language",
   "license": "MIT",
   "engines": {
@@ -37,7 +37,7 @@
         "cx.languageServer.path": {
           "type": "string",
           "default": "",
-          "description": "Optional path to the CX CLI executable. When empty, the extension discovers the standard installation or uses `cx` from PATH."
+          "description": "Optional path to a CX CLI executable. When empty, the extension uses its bundled language server."
         }
       }
     }

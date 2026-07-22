@@ -179,8 +179,17 @@ internal sealed class ExpressionTokenParser
 
         while (!IsAtEnd)
         {
-            if (Match(TokenType.Dot) is { })
+            if (Match(TokenType.Dot) is { } dot)
             {
+                if (IsAtEnd)
+                {
+                    return new IncompleteMemberExpressionNode(
+                        dot.Location,
+                        expression,
+                        Prefix: string.Empty,
+                        dot.Span);
+                }
+
                 if (TryParsePlaceholderExpression(out var computedMember)
                     && computedMember is PlaceholderExpressionNode placeholder)
                 {

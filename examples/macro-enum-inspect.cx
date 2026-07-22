@@ -1,0 +1,57 @@
+import c.stdio;
+
+enum TokenType(token: char*) {
+    Identifier { token: null },
+    Number { token: null },
+    Plus { token: "+" },
+    Minus { token: "-" },
+    Asterisk { token: "*" },
+    Slash { token: "/" },
+    LeftParen { token: "(" },
+    RightParen { token: ")" },
+    EndOfFile { token: null },
+}
+
+macro InspectTokenEnum(target: type) -> statements {
+    @if(!target.is_data_enum) {
+        Diagnostic.error(concat(
+            "InspectTokenEnum expects a data-backed enum, but received '",
+            target.display_name,
+            "'."));
+    }
+
+    @if(target.is_data_enum) {
+        printf("enum %s metadata:\n", @{target.name});
+
+        @foreach(field in target.data_fields) {
+            printf("  field[%d]: %s : %s\n",
+                @{field.index},
+                @{field.name},
+                @{field.type.display_name});
+        }
+
+        printf("enum %s members:\n", @{target.name});
+
+        @foreach(member in target.members) {
+            @let token = member.data.token;
+
+            @if(token == null) {
+                printf("  [%d] %s -> <no token>\n",
+                    @{member.index},
+                    @{member.name});
+            }
+
+            @if(token != null) {
+                printf("  [%d] %s -> '%s'\n",
+                    @{member.index},
+                    @{member.name},
+                    @{token});
+            }
+        }
+    }
+}
+
+fn main() -> int {
+    use InspectTokenEnum(TokenType);
+    return 0;
+}
