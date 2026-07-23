@@ -38,7 +38,7 @@ public sealed class CompileTimeIntrinsicTests
         Assert.Null(value);
         Assert.Contains(diagnostics.Diagnostics, diagnostic =>
             diagnostic.Message.Contains(
-                "'concat' expects string arguments, but argument 2 is integer",
+                "intrinsic 'concat' has no overload matching (string, integer)",
                 StringComparison.Ordinal));
     }
 
@@ -732,10 +732,11 @@ public sealed class CompileTimeIntrinsicTests
     public void Registry_DoesNotReplaceExistingIntrinsic()
     {
         var registry = CompileTimeIntrinsicRegistry.CreateDefault();
+        Assert.True(registry.TryGet("concat", out var existing));
 
-        Assert.False(registry.Register(new ConcatCompileTimeIntrinsic()));
+        Assert.False(registry.Register(new LegacyConcatIntrinsic()));
         Assert.True(registry.TryGet("concat", out var intrinsic));
-        Assert.IsType<ConcatCompileTimeIntrinsic>(intrinsic);
+        Assert.Same(existing, intrinsic);
     }
 
     [Fact]
@@ -1046,4 +1047,12 @@ public sealed class CompileTimeIntrinsicTests
             length: usize;
         }
         """);
+
+    private sealed class LegacyConcatIntrinsic : ICompileTimeIntrinsic
+    {
+        public string Name => "concat";
+
+        public CompileTimeValue? Invoke(CompileTimeIntrinsicContext context) =>
+            new CompileTimeValue.String(string.Empty);
+    }
 }

@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Reflection;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
@@ -141,7 +140,7 @@ internal sealed class CompileTimeMethodRegistry
             {
                 var failedIndex = 0;
                 while (failedIndex < arguments.Count
-                    && TryConvert(
+                    && CompileTimeValueConverter.TryConvertArgument(
                         arguments[failedIndex],
                         candidate.ScriptParameters[failedIndex].ParameterType,
                         out _,
@@ -343,7 +342,11 @@ internal sealed class CompileTimeMethodRegistry
         var score = 0;
         for (var index = 0; index < arguments.Count; index++)
         {
-            if (!TryConvert(arguments[index], registered.ScriptParameters[index].ParameterType, out var converted, out var conversionScore))
+            if (!CompileTimeValueConverter.TryConvertArgument(
+                    arguments[index],
+                    registered.ScriptParameters[index].ParameterType,
+                    out var converted,
+                    out var conversionScore))
             {
                 return null;
             }
@@ -353,146 +356,6 @@ internal sealed class CompileTimeMethodRegistry
         }
 
         return new BoundMethod(registered, invocationArguments, score);
-    }
-
-    private static bool TryConvert(
-        CompileTimeValue value,
-        Type targetType,
-        out object? converted,
-        out int score)
-    {
-        if (targetType == value.GetType())
-        {
-            converted = value;
-            score = 0;
-            return true;
-        }
-
-        if (typeof(CompileTimeValue).IsAssignableFrom(targetType) && targetType.IsInstanceOfType(value))
-        {
-            converted = value;
-            score = targetType == typeof(CompileTimeValue) ? 20 : 2;
-            return true;
-        }
-
-        if (value is CompileTimeValue.Syntax syntax && targetType.IsInstanceOfType(syntax.Value))
-        {
-            converted = syntax.Value;
-            score = targetType == syntax.Value.GetType() ? 1 : 3;
-            return true;
-        }
-
-        if (value is CompileTimeValue.Type type && targetType.IsInstanceOfType(type.Value))
-        {
-            converted = type.Value;
-            score = targetType == type.Value.GetType() ? 1 : 2;
-            return true;
-        }
-
-        if (value is CompileTimeValue.String text && targetType == typeof(string))
-        {
-            converted = text.Value;
-            score = 1;
-            return true;
-        }
-
-        if (value is CompileTimeValue.Name name && targetType == typeof(string))
-        {
-            converted = name.Value;
-            score = 2;
-            return true;
-        }
-
-        if (value is CompileTimeValue.Boolean boolean && targetType == typeof(bool))
-        {
-            converted = boolean.Value;
-            score = 1;
-            return true;
-        }
-
-        if (value is CompileTimeValue.Integer integer)
-        {
-            if (targetType == typeof(long))
-            {
-                converted = integer.Value;
-                score = 1;
-                return true;
-            }
-
-            if (targetType == typeof(int) && integer.Value is >= int.MinValue and <= int.MaxValue)
-            {
-                converted = (int)integer.Value;
-                score = 2;
-                return true;
-            }
-        }
-
-        if (value is CompileTimeValue.List list
-            && TryConvertList(list, targetType, out converted, out score))
-        {
-            return true;
-        }
-
-        if (value is CompileTimeValue.Null
-            && (!targetType.IsValueType || Nullable.GetUnderlyingType(targetType) is not null))
-        {
-            converted = null;
-            score = 10;
-            return true;
-        }
-
-        converted = null;
-        score = 0;
-        return false;
-    }
-
-    private static bool TryConvertList(
-        CompileTimeValue.List list,
-        Type targetType,
-        out object? converted,
-        out int score)
-    {
-        var elementType = CompileTimeValueConverter.GetEnumerableElementType(targetType);
-        if (elementType is null)
-        {
-            converted = null;
-            score = 0;
-            return false;
-        }
-
-        var convertedItems = (IList)Activator.CreateInstance(
-            typeof(List<>).MakeGenericType(elementType))!;
-        score = 2;
-        foreach (var item in list.Values)
-        {
-            if (!TryConvert(item, elementType, out var convertedItem, out var itemScore))
-            {
-                converted = null;
-                score = 0;
-                return false;
-            }
-
-            convertedItems.Add(convertedItem);
-            score += itemScore;
-        }
-
-        if (targetType.IsArray)
-        {
-            var array = Array.CreateInstance(elementType, convertedItems.Count);
-            convertedItems.CopyTo(array, 0);
-            converted = array;
-            return true;
-        }
-
-        if (!targetType.IsInstanceOfType(convertedItems))
-        {
-            converted = null;
-            score = 0;
-            return false;
-        }
-
-        converted = convertedItems;
-        return true;
     }
 
     private static RegisteredMethod ValidateHandler(

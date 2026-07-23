@@ -6,6 +6,146 @@ namespace Cx.Compiler.CompileTime;
 
 internal static class CompileTimeValueConverter
 {
+    public static bool TryConvertArgument(
+        CompileTimeValue value,
+        Type targetType,
+        out object? converted,
+        out int score)
+    {
+        if (targetType == value.GetType())
+        {
+            converted = value;
+            score = 0;
+            return true;
+        }
+
+        if (typeof(CompileTimeValue).IsAssignableFrom(targetType) && targetType.IsInstanceOfType(value))
+        {
+            converted = value;
+            score = targetType == typeof(CompileTimeValue) ? 20 : 2;
+            return true;
+        }
+
+        if (value is CompileTimeValue.Syntax syntax && targetType.IsInstanceOfType(syntax.Value))
+        {
+            converted = syntax.Value;
+            score = targetType == syntax.Value.GetType() ? 1 : 3;
+            return true;
+        }
+
+        if (value is CompileTimeValue.Type type && targetType.IsInstanceOfType(type.Value))
+        {
+            converted = type.Value;
+            score = targetType == type.Value.GetType() ? 1 : 2;
+            return true;
+        }
+
+        if (value is CompileTimeValue.String text && targetType == typeof(string))
+        {
+            converted = text.Value;
+            score = 1;
+            return true;
+        }
+
+        if (value is CompileTimeValue.Name name && targetType == typeof(string))
+        {
+            converted = name.Value;
+            score = 2;
+            return true;
+        }
+
+        if (value is CompileTimeValue.Boolean boolean && targetType == typeof(bool))
+        {
+            converted = boolean.Value;
+            score = 1;
+            return true;
+        }
+
+        if (value is CompileTimeValue.Integer integer)
+        {
+            if (targetType == typeof(long))
+            {
+                converted = integer.Value;
+                score = 1;
+                return true;
+            }
+
+            if (targetType == typeof(int) && integer.Value is >= int.MinValue and <= int.MaxValue)
+            {
+                converted = (int)integer.Value;
+                score = 2;
+                return true;
+            }
+        }
+
+        if (value is CompileTimeValue.List list
+            && TryConvertList(list, targetType, out converted, out score))
+        {
+            return true;
+        }
+
+        if (value is CompileTimeValue.Null
+            && (!targetType.IsValueType || Nullable.GetUnderlyingType(targetType) is not null))
+        {
+            converted = null;
+            score = 10;
+            return true;
+        }
+
+        converted = null;
+        score = 0;
+        return false;
+    }
+
+    private static bool TryConvertList(
+        CompileTimeValue.List list,
+        Type targetType,
+        out object? converted,
+        out int score)
+    {
+        var elementType = GetEnumerableElementType(targetType);
+        if (elementType is null)
+        {
+            converted = null;
+            score = 0;
+            return false;
+        }
+
+        var convertedItems = (IList)Activator.CreateInstance(
+            typeof(List<>).MakeGenericType(elementType))!;
+        score = 2;
+        foreach (var item in list.Values)
+        {
+            if (!TryConvertArgument(item, elementType, out var convertedItem, out var itemScore))
+            {
+                converted = null;
+                score = 0;
+                return false;
+            }
+
+            convertedItems.Add(convertedItem);
+            score += itemScore;
+        }
+
+        if (targetType.IsArray)
+        {
+            var array = Array.CreateInstance(elementType, convertedItems.Count);
+            convertedItems.CopyTo(array, 0);
+            converted = array;
+            return true;
+        }
+
+        if (!targetType.IsInstanceOfType(convertedItems))
+        {
+            converted = null;
+            score = 0;
+            return false;
+        }
+
+        converted = convertedItems;
+        return true;
+    }
+
     public static bool TryConvertReturnValue(object? result, out CompileTimeValue value)
     {
         switch (result)
@@ -52,7 +192,7 @@ internal static class CompileTimeValueConverter
         }
     }
 
-    public static bool IsSupportedReturnType(Type type, Type explicitResultType)
+    public static bool IsSupportedReturnType(Type type, Type? explicitResultType)
     {
         var nullableType = Nullable.GetUnderlyingType(type);
         if (nullableType is not null)
@@ -60,7 +200,7 @@ internal static class CompileTimeValueConverter
             return IsSupportedReturnType(nullableType, explicitResultType);
         }
 
-        if (explicitResultType.IsAssignableFrom(type)
+        if ((explicitResultType?.IsAssignableFrom(type) ?? false)
             || typeof(CompileTimeValue).IsAssignableFrom(type)
             || type == typeof(string)
             || type == typeof(bool)
@@ -79,7 +219,7 @@ internal static class CompileTimeValueConverter
 
         var elementType = GetEnumerableElementType(type);
         return elementType is not null
-            && !explicitResultType.IsAssignableFrom(elementType)
+            && !(explicitResultType?.IsAssignableFrom(elementType) ?? false)
             && IsSupportedReturnType(elementType, explicitResultType);
     }
 
