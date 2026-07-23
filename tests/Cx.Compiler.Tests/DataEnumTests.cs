@@ -183,6 +183,71 @@ public sealed class DataEnumTests
     }
 
     [Fact]
+    public void CompileTimeDiagnostic_FormatsVariadicValues()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                Diagnostic.error(
+                    "Value {0}, type {1}, enabled {2}, missing {3}, braces {{ok}}.",
+                    42,
+                    int,
+                    true,
+                    null);
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Value 42, type int, enabled true, missing null, braces {ok}.");
+    }
+
+    [Fact]
+    public void CompileTimeDiagnostic_FormatsAnchoredWarningAtReflectedLocation()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            enum TokenKind(value: int = 10) {
+                Identifier {},
+            }
+
+            fn main() -> int {
+                @foreach(member in TokenKind.members) {
+                    Diagnostic.warning(
+                        member,
+                        "Member '{0}' has value {1}.",
+                        member.name,
+                        member.data.value);
+                }
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        var warning = Assert.Single(result.Diagnostics, diagnostic =>
+            diagnostic.Message == "Member 'Identifier' has value 10.");
+        Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+        Assert.Equal(2, warning.Location.Line);
+    }
+
+    [Fact]
+    public void CompileTimeDiagnostic_ReportsMalformedFormatString()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                Diagnostic.error("Missing argument {1}.", 42);
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Invalid compile-time diagnostic format string");
+    }
+
+    [Fact]
     public void CompileTimeDiagnosticError_StopsCompilation()
     {
         var result = CompilerTestHelpers.Compile(

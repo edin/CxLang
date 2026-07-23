@@ -15,6 +15,17 @@ internal sealed class CompileTimeEvaluationContext
     public bool Define(string name, CompileTimeValue value) =>
         _bindings.TryAdd(name, value);
 
+    public bool Assign(string name, CompileTimeValue value)
+    {
+        if (_bindings.ContainsKey(name))
+        {
+            _bindings[name] = value;
+            return true;
+        }
+
+        return _parent?.Assign(name, value) ?? false;
+    }
+
     public bool TryGet(string name, out CompileTimeValue value)
     {
         if (_bindings.TryGetValue(name, out value!))

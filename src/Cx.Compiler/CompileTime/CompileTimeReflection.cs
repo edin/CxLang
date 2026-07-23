@@ -70,6 +70,12 @@ internal sealed record ReflectedEnumDataField(
     int Index,
     TypeRef Type);
 
+internal sealed record ReflectedEnumDataEntry(
+    ReflectedEnumMember Member,
+    ReflectedEnumDataField Field,
+    ExpressionNode? Value,
+    bool IsExplicit);
+
 internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
 {
     public static UnavailableCompileTimeReflection Instance { get; } = new();

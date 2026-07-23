@@ -494,6 +494,71 @@ public sealed class CompileTimeIntrinsicTests
     }
 
     [Fact]
+    public void EnumReflection_ExposesIterableDataEntriesWithSchemaAndValueOrigin()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            enum TokenKind(token: char* = null, value: int = 10) {
+                Identifier {},
+                Plus { token: "+" },
+            }
+            """);
+        var reflection = new ProgramCompileTimeReflection(program);
+        var context = new CompileTimeEvaluationContext();
+
+        var (membersValue, memberDiagnostics) = Evaluate("TokenKind.members", context, reflection);
+        var members = Assert.IsType<CompileTimeValue.List>(membersValue).Values
+            .Select(Assert.IsType<CompileTimeValue.EnumMember>)
+            .ToList();
+        context.Define("data", new CompileTimeValue.EnumMemberData(members[1].Value));
+
+        var (entriesValue, entriesDiagnostics) = Evaluate("data.entries", context, reflection);
+        var entries = Assert.IsType<CompileTimeValue.List>(entriesValue).Values
+            .Select(Assert.IsType<CompileTimeValue.EnumDataEntry>)
+            .ToList();
+        Assert.Equal(2, entries.Count);
+        context.Define("token_entry", entries[0]);
+        context.Define("value_entry", entries[1]);
+
+        var (name, nameDiagnostics) = Evaluate("token_entry.name", context, reflection);
+        var (fieldName, fieldDiagnostics) = Evaluate("token_entry.field.name", context, reflection);
+        var (memberName, memberNameDiagnostics) = Evaluate("token_entry.member.name", context, reflection);
+        var (typeName, typeDiagnostics) = Evaluate("token_entry.type.element_type.name", context, reflection);
+        var (tokenValue, tokenDiagnostics) = Evaluate("token_entry.value", context, reflection);
+        var (tokenIsNull, tokenNullDiagnostics) = Evaluate("token_entry.is_null", context, reflection);
+        var (tokenIsExplicit, tokenExplicitDiagnostics) = Evaluate("token_entry.is_explicit", context, reflection);
+        var (tokenIsDefault, tokenDefaultDiagnostics) = Evaluate("token_entry.is_default", context, reflection);
+        var (defaultValue, defaultValueDiagnostics) = Evaluate("value_entry.value", context, reflection);
+        var (valueIsExplicit, valueExplicitDiagnostics) = Evaluate("value_entry.is_explicit", context, reflection);
+        var (valueIsDefault, valueDefaultDiagnostics) = Evaluate("value_entry.is_default", context, reflection);
+
+        Assert.Equal("token", Assert.IsType<CompileTimeValue.String>(name).Value);
+        Assert.Equal("token", Assert.IsType<CompileTimeValue.String>(fieldName).Value);
+        Assert.Equal("Plus", Assert.IsType<CompileTimeValue.String>(memberName).Value);
+        Assert.Equal("char", Assert.IsType<CompileTimeValue.String>(typeName).Value);
+        Assert.Equal("+", Assert.IsType<CompileTimeValue.String>(tokenValue).Value);
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(tokenIsNull).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(tokenIsExplicit).Value);
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(tokenIsDefault).Value);
+        Assert.Equal(10, Assert.IsType<CompileTimeValue.Integer>(defaultValue).Value);
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(valueIsExplicit).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(valueIsDefault).Value);
+        CompilerTestHelpers.AssertNoErrors(memberDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(entriesDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(nameDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(fieldDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(memberNameDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(typeDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(tokenDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(tokenNullDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(tokenExplicitDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(tokenDefaultDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(defaultValueDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(valueExplicitDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(valueDefaultDiagnostics);
+    }
+
+    [Fact]
     public void FunctionProperties_ExposeSignatureAndDeclarationFlags()
     {
         var program = CompilerTestHelpers.Parse(

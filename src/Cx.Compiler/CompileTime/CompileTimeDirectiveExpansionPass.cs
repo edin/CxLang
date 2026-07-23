@@ -260,10 +260,56 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             CompileTimeLetStatementNode compileTimeLet => ExpandLet(compileTimeLet),
             CompileTimeIfStatementNode conditional => ExpandIf(conditional),
             CompileTimeForeachStatementNode foreachNode => ExpandForeach(foreachNode),
+            CStatement { Expression: AssignmentExpressionNode assignment }
+                when IsCompileTimeAssignment(assignment) =>
+                EvaluateCompileTimeAssignment(assignment),
             CStatement expressionStatement when IsCompileTimeMethodCall(expressionStatement.Expression) =>
                 EvaluateCompileTimeMethodCall(expressionStatement),
             _ => base.RewriteStatement(statement),
         };
+
+    private bool IsCompileTimeAssignment(AssignmentExpressionNode assignment) =>
+        TryGetAssignedName(assignment.Target, out var name)
+        && _context.TryGet(name, out _);
+
+    private IReadOnlyList<StatementNode> EvaluateCompileTimeAssignment(
+        AssignmentExpressionNode assignment)
+    {
+        TryGetAssignedName(assignment.Target, out var name);
+
+        if (assignment.Operator != AssignmentOperator.Assign)
+        {
+            _diagnostics.Report(
+                assignment.Location,
+                $"Compile-time compound assignment '{assignment.Operator.ToSourceText()}' is not supported yet.");
+            return [];
+        }
+
+        var value = _evaluator.Evaluate(assignment.Value, _context);
+        if (value is not null && !_context.Assign(name, value))
+        {
+            _diagnostics.Report(
+                assignment.Location,
+                $"Unknown compile-time binding '{name}'.");
+        }
+
+        return [];
+    }
+
+    private static bool TryGetAssignedName(ExpressionNode expression, out string name)
+    {
+        switch (expression)
+        {
+            case NameExpressionNode identifier:
+                name = identifier.Name;
+                return true;
+            case ParenthesizedExpressionNode parenthesized:
+                return TryGetAssignedName(parenthesized.Expression, out name);
+            default:
+                name = string.Empty;
+                return false;
+        }
+    }
 
     private IReadOnlyList<StatementNode> EvaluateCompileTimeMethodCall(CStatement statement)
     {

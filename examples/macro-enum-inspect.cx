@@ -1,52 +1,47 @@
 import c.stdio;
 
-enum TokenType(token: char*) {
-    Identifier { token: null },
-    Number { token: null },
+enum TokenType(token: char* = null, value: int = 10) {
+    Identifier {},
+    Number {},
     Plus { token: "+" },
     Minus { token: "-" },
     Asterisk { token: "*" },
     Slash { token: "/" },
     LeftParen { token: "(" },
     RightParen { token: ")" },
-    EndOfFile { token: null },
+    EndOfFile {},
 }
 
 macro InspectTokenEnum(target: type) -> statements {
     @if(!target.is_data_enum) {
-        Diagnostic.error(concat(
-            "InspectTokenEnum expects a data-backed enum, but received '",
-            target.display_name,
-            "'."));
+        Diagnostic.error(
+            "InspectTokenEnum expects a data-backed enum, but received '{0}'.",
+            target);
     }
 
     @if(target.is_data_enum) {
         printf("enum %s metadata:\n", @{target.name});
 
-        @foreach(field in target.data_fields) {
-            printf("  field[%d]: %s : %s\n",
-                @{field.index},
-                @{field.name},
-                @{field.type.display_name});
-        }
-
         printf("enum %s members:\n", @{target.name});
 
         @foreach(member in target.members) {
-            @let token = member.data.token;
+            printf("  %s: {\n", @{member.name});
 
-            @if(token == null) {
-                printf("  [%d] %s -> <no token>\n",
-                    @{member.index},
-                    @{member.name});
+            @foreach(entry in member.data.entries) {
+                @if(entry.is_null) {
+                    printf("    %s: <null>\n", @{entry.name});
+                }
+
+                @if(!entry.is_null && entry.type == int) {
+                    printf("    %s: %d\n", @{entry.name}, @{entry.value});
+                }
+
+                @if(!entry.is_null && entry.type == Type.pointer(char)) {
+                    printf("    %s: '%s'\n", @{entry.name}, @{entry.value});
+                }
             }
 
-            @if(token != null) {
-                printf("  [%d] %s -> '%s'\n",
-                    @{member.index},
-                    @{member.name},
-                    @{token});
-            }
+            printf("  }\n");
         }
     }
 }

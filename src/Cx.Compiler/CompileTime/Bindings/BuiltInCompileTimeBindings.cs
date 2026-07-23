@@ -18,6 +18,7 @@ internal static class BuiltInCompileTimeBindings
         new EnumMemberCompileTimeBinding(),
         new EnumMemberDataCompileTimeBinding(),
         new EnumDataFieldCompileTimeBinding(),
+        new EnumDataEntryCompileTimeBinding(),
         new RequirementMatchCompileTimeBinding(),
         new ResolvedFieldCompileTimeBinding(),
         new ResolvedMethodCompileTimeBinding(),

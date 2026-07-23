@@ -183,6 +183,53 @@ public sealed class CompileTimeMethodRegistryTests
         CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 
+    [Fact]
+    public void Invoke_BindsVariadicTypedMethodParameters()
+    {
+        var definition = new VariadicBinding();
+        var registry = CompileTimeMethodRegistry.CreateFromBindings(definition);
+        var diagnostics = new DiagnosticBag();
+
+        var result = registry.Invoke(
+            new CompileTimeGlobalObjectValue(definition),
+            "join",
+            [
+                new CompileTimeValue.String("values:"),
+                new CompileTimeValue.String("one"),
+                new CompileTimeValue.String("two"),
+            ],
+            CreateContext(diagnostics));
+
+        Assert.Equal(
+            "values:one,two",
+            Assert.IsType<CompileTimeValue.String>(
+                Assert.IsType<CompileTimeMethodResult.Invoked>(result).Value).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void Invoke_UsesArgumentSpecificityToDisambiguateVariadicOverload()
+    {
+        var definition = new VariadicBinding();
+        var registry = CompileTimeMethodRegistry.CreateFromBindings(definition);
+        var diagnostics = new DiagnosticBag();
+
+        var result = registry.Invoke(
+            new CompileTimeGlobalObjectValue(definition),
+            "select",
+            [
+                new CompileTimeValue.String("format"),
+                new CompileTimeValue.String("value"),
+            ],
+            CreateContext(diagnostics));
+
+        Assert.Equal(
+            "formatted",
+            Assert.IsType<CompileTimeValue.String>(
+                Assert.IsType<CompileTimeMethodResult.Invoked>(result).Value).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
     private static CompileTimeMethodContext CreateContext(DiagnosticBag diagnostics) =>
         new(
             Location.Synthetic("<test>"),
@@ -300,5 +347,32 @@ public sealed class CompileTimeMethodRegistryTests
         private TypeRef AcceptType(
             CompileTimeMethodContext context,
             TypeRef value) => value;
+    }
+
+    private sealed class VariadicBinding : CompileTimeTypeBinding
+    {
+        public override string GlobalName => "Variadic";
+
+        public override Type ReceiverType => typeof(CompileTimeValue.List);
+
+        [CompileTimeMethod("join")]
+        private string Join(
+            CompileTimeMethodContext context,
+            string prefix,
+            params CompileTimeValue.String[] values) =>
+            $"{prefix}{string.Join(",", values.Select(value => value.Value))}";
+
+        [CompileTimeMethod("select")]
+        private string SelectFormatted(
+            CompileTimeMethodContext context,
+            string format,
+            params CompileTimeValue[] arguments) => "formatted";
+
+        [CompileTimeMethod("select")]
+        private string SelectAnchored(
+            CompileTimeMethodContext context,
+            CompileTimeValue anchor,
+            string message,
+            params CompileTimeValue[] arguments) => "anchored";
     }
 }

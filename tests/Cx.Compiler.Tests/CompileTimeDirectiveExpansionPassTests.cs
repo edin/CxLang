@@ -129,6 +129,107 @@ public sealed class CompileTimeDirectiveExpansionPassTests
     }
 
     [Fact]
+    public void ExpandProgram_ReassignsCompileTimeBindingWithoutEmittingAssignment()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn generated() -> int {
+                @let comma = false;
+                comma = true;
+
+                @if(comma) {
+                    emit();
+                }
+
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(2, body.Count);
+        Assert.Equal("emit()", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[1]);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_ReassignsOuterCompileTimeBindingInsideForeach()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn generated() -> int {
+                @let visited = false;
+
+                @foreach(item in [1]) {
+                    visited = true;
+                }
+
+                @if(visited) {
+                    emit();
+                }
+
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(2, body.Count);
+        Assert.Equal("emit()", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[1]);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_LeavesRuntimeAssignmentUntouched()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn generated() -> int {
+                let value = false;
+                value = true;
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(3, body.Count);
+        Assert.IsType<LetStatement>(body[0]);
+        Assert.IsType<AssignmentExpressionNode>(
+            Assert.IsType<CStatement>(body[1]).Expression);
+        Assert.IsType<ReturnStatement>(body[2]);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_ReportsUnsupportedCompileTimeCompoundAssignment()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn generated() -> int {
+                @let count = 0;
+                count += 1;
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Single(body);
+        Assert.IsType<ReturnStatement>(body[0]);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "Compile-time compound assignment '+=' is not supported yet",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ExpandProgram_DoesNotLeakCompileTimeLetOutOfBranchScope()
     {
         var program = CompilerTestHelpers.Parse(
@@ -434,6 +535,57 @@ public sealed class CompileTimeDirectiveExpansionPassTests
         Assert.Equal(2, body.Count);
         Assert.Equal("emit_code()", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
         Assert.IsType<ReturnStatement>(body[1]);
+    }
+
+    [Fact]
+    public void ExpandProgram_IteratesDataEnumEntries()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            enum TokenKind(token: char* = null, value: int = 10) {
+                Identifier {},
+                Plus { token: "+" },
+            }
+
+            fn generated() -> int {
+                @foreach(member in TokenKind.members) {
+                    @foreach(entry in member.data.entries) {
+                        @if(member.name == "Identifier"
+                            && entry.name == "token"
+                            && entry.is_null
+                            && entry.is_default) {
+                            emit_default_null();
+                        }
+
+                        @if(member.name == "Plus"
+                            && entry.name == "token"
+                            && entry.value == "+"
+                            && entry.is_explicit) {
+                            emit_explicit_token();
+                        }
+
+                        @if(member.name == "Plus"
+                            && entry.name == "value"
+                            && entry.value == 10
+                            && entry.is_default) {
+                            emit_default_value();
+                        }
+                    }
+                }
+
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(4, body.Count);
+        Assert.Equal("emit_default_null()", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.Equal("emit_explicit_token()", Assert.IsType<CStatement>(body[1]).Expression.ToSourceText());
+        Assert.Equal("emit_default_value()", Assert.IsType<CStatement>(body[2]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[3]);
     }
 
     private static (ProgramNode Program, DiagnosticBag Diagnostics) Expand(

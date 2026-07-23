@@ -76,6 +76,12 @@ internal abstract record CompileTimeValue
         public override string DisplayType => "enum data field";
     }
 
+    public sealed record EnumDataEntry(
+        ReflectedEnumDataEntry Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "enum data entry";
+    }
+
     public sealed record List : CompileTimeObjectValue
     {
         private readonly System.Collections.Generic.List<CompileTimeValue> _values;

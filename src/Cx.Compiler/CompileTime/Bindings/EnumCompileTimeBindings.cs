@@ -70,6 +70,30 @@ internal sealed class EnumMemberDataCompileTimeBinding : CompileTimeTypeBinding
 {
     public override Type ReceiverType => typeof(CompileTimeValue.EnumMemberData);
 
+    [CompileTimeProperty("entries")]
+    private CompileTimeValue.List Entries(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumMemberData data)
+    {
+        if (!context.Reflection.TryGetEnumDataFields(data.Value.EnumType, out var fields))
+        {
+            return new CompileTimeValue.List([]);
+        }
+
+        var explicitNames = (data.Value.Declaration.DataValues ?? [])
+            .Select(value => value.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        return new CompileTimeValue.List(fields.Select(field =>
+        {
+            data.Value.Metadata.TryGetValue(field.Declaration.Name, out var value);
+            return new CompileTimeValue.EnumDataEntry(new ReflectedEnumDataEntry(
+                data.Value,
+                field,
+                value,
+                explicitNames.Contains(field.Declaration.Name)));
+        }));
+    }
+
     public override CompileTimePropertyResult GetDynamicProperty(
         object receiver,
         string propertyName,
@@ -147,4 +171,88 @@ internal sealed class EnumDataFieldCompileTimeBinding : CompileTimeTypeBinding
     private EnumDataFieldNode Declaration(
         CompileTimePropertyContext context,
         CompileTimeValue.EnumDataField field) => field.Value.Declaration;
+}
+
+internal sealed class EnumDataEntryCompileTimeBinding : CompileTimeTypeBinding
+{
+    public override Type ReceiverType => typeof(CompileTimeValue.EnumDataEntry);
+
+    [CompileTimeProperty("field")]
+    private CompileTimeValue.EnumDataField Field(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) => new(entry.Value.Field);
+
+    [CompileTimeProperty("member")]
+    private CompileTimeValue.EnumMember Member(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) => new(entry.Value.Member);
+
+    [CompileTimeProperty("name")]
+    private string Name(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) => entry.Value.Field.Declaration.Name;
+
+    [CompileTimeProperty("index")]
+    private long Index(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) => entry.Value.Field.Index;
+
+    [CompileTimeProperty("type")]
+    private Cx.Compiler.Semantic.TypeRef Type(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) => entry.Value.Field.Type;
+
+    [CompileTimeProperty("enum_type")]
+    private Cx.Compiler.Semantic.TypeRef EnumType(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) => entry.Value.Field.EnumType;
+
+    [CompileTimeProperty("value")]
+    private CompileTimePropertyResult Value(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) =>
+        EvaluateValue(context, entry.Value);
+
+    [CompileTimeProperty("is_null")]
+    private CompileTimePropertyResult IsNull(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry)
+    {
+        var value = EvaluateValue(context, entry.Value);
+        return value switch
+        {
+            CompileTimePropertyResult.Found found =>
+                CompileTimePropertyResult.From(
+                    new CompileTimeValue.Boolean(found.Value is CompileTimeValue.Null)),
+            CompileTimePropertyResult.Failed => new CompileTimePropertyResult.Failed(),
+            _ => new CompileTimePropertyResult.Failed(),
+        };
+    }
+
+    [CompileTimeProperty("is_explicit")]
+    private bool IsExplicit(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) => entry.Value.IsExplicit;
+
+    [CompileTimeProperty("is_default")]
+    private bool IsDefault(
+        CompileTimePropertyContext context,
+        CompileTimeValue.EnumDataEntry entry) =>
+        !entry.Value.IsExplicit
+        && entry.Value.Field.Declaration.DefaultValue is not null;
+
+    private static CompileTimePropertyResult EvaluateValue(
+        CompileTimePropertyContext context,
+        ReflectedEnumDataEntry entry)
+    {
+        if (entry.Value is null)
+        {
+            return CompileTimePropertyResult.From(new CompileTimeValue.Null());
+        }
+
+        var value = context.Evaluate(entry.Value);
+        return value is null
+            ? new CompileTimePropertyResult.Failed()
+            : CompileTimePropertyResult.From(value);
+    }
 }

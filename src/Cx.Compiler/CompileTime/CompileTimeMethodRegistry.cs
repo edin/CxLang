@@ -102,12 +102,14 @@ internal sealed class CompileTimeMethodRegistry
             .Select(candidate => TryBind(candidate, syntaxReceiver, arguments, context))
             .Where(match => match is not null)
             .Cast<BoundMethod>()
-            .OrderBy(match => match.Score)
             .ToList();
+        matches.Sort(CompareBoundMethods);
 
         if (matches.Count > 0)
         {
-            var bestMatches = matches.TakeWhile(match => match.Score == matches[0].Score).ToList();
+            var bestMatches = matches
+                .TakeWhile(match => CompareBoundMethods(match, matches[0]) == 0)
+                .ToList();
             if (bestMatches.Count > 1)
             {
                 context.Diagnostics.Report(
@@ -135,14 +137,14 @@ internal sealed class CompileTimeMethodRegistry
         CompileTimeMethodContext context)
     {
         var arityMatches = candidates
-            .Where(candidate => !candidate.IsLegacy && candidate.ScriptParameters.Count == arguments.Count)
+            .Where(candidate => !candidate.IsLegacy && HasCompatibleArity(candidate, arguments.Count))
             .Select(candidate =>
             {
                 var failedIndex = 0;
                 while (failedIndex < arguments.Count
                     && CompileTimeValueConverter.TryConvertArgument(
                         arguments[failedIndex],
-                        candidate.ScriptParameters[failedIndex].ParameterType,
+                        GetScriptParameterType(candidate, failedIndex),
                         out _,
                         out _))
                 {
@@ -158,7 +160,7 @@ internal sealed class CompileTimeMethodRegistry
             && arityMatches[0] is { } closest
             && closest.FailedIndex < arguments.Count)
         {
-            var expectedType = closest.Candidate.ScriptParameters[closest.FailedIndex].ParameterType;
+            var expectedType = GetScriptParameterType(closest.Candidate, closest.FailedIndex);
             context.Diagnostics.Report(
                 context.Location,
                 $"Compile-time method '{FormatQualifiedName(closest.Candidate)}' expects {DescribeExpectedArgument(expectedType)} as argument {closest.FailedIndex + 1}, " +
@@ -167,17 +169,42 @@ internal sealed class CompileTimeMethodRegistry
         }
 
         var method = candidates[0];
-        var expectedArities = candidates
-            .Where(candidate => !candidate.IsLegacy)
-            .Select(candidate => candidate.ScriptParameters.Count)
-            .Distinct()
-            .Order()
-            .ToList();
-        context.Diagnostics.Report(
-            context.Location,
-            $"Compile-time method '{FormatQualifiedName(method)}' expects {FormatExpectedArities(expectedArities)}, but received {arguments.Count}. " +
-            $"Available overloads: {string.Join(", ", candidates.Select(FormatSignature))}.");
+        if (candidates.Any(candidate => !candidate.IsLegacy && candidate.IsVariadic))
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                $"Compile-time method '{FormatQualifiedName(method)}' could not match {arguments.Count} argument(s). " +
+                $"Available overloads: {string.Join(", ", candidates.Select(FormatSignature))}.");
+        }
+        else
+        {
+            var expectedArities = candidates
+                .Where(candidate => !candidate.IsLegacy)
+                .Select(candidate => candidate.ScriptParameters.Count)
+                .Distinct()
+                .Order()
+                .ToList();
+            context.Diagnostics.Report(
+                context.Location,
+                $"Compile-time method '{FormatQualifiedName(method)}' expects {FormatExpectedArities(expectedArities)}, but received {arguments.Count}. " +
+                $"Available overloads: {string.Join(", ", candidates.Select(FormatSignature))}.");
+        }
     }
+
+    private static bool HasCompatibleArity(RegisteredMethod method, int argumentCount)
+    {
+        var fixedCount = method.IsVariadic
+            ? method.ScriptParameters.Count - 1
+            : method.ScriptParameters.Count;
+        return method.IsVariadic
+            ? argumentCount >= fixedCount
+            : argumentCount == fixedCount;
+    }
+
+    private static Type GetScriptParameterType(RegisteredMethod method, int argumentIndex) =>
+        method.IsVariadic && argumentIndex >= method.ScriptParameters.Count - 1
+            ? method.ScriptParameters[^1].ParameterType.GetElementType()!
+            : method.ScriptParameters[argumentIndex].ParameterType;
 
     private static string DescribeExpectedArgument(Type type)
     {
@@ -326,7 +353,7 @@ internal sealed class CompileTimeMethodRegistry
         IReadOnlyList<CompileTimeValue> arguments,
         CompileTimeMethodContext context)
     {
-        if (registered.ScriptParameters.Count != arguments.Count)
+        if (!HasCompatibleArity(registered, arguments.Count))
         {
             return null;
         }
@@ -339,8 +366,11 @@ internal sealed class CompileTimeMethodRegistry
             invocationArguments[offset++] = receiver;
         }
 
-        var score = 0;
-        for (var index = 0; index < arguments.Count; index++)
+        var scores = new int[arguments.Count];
+        var fixedCount = registered.IsVariadic
+            ? registered.ScriptParameters.Count - 1
+            : registered.ScriptParameters.Count;
+        for (var index = 0; index < fixedCount; index++)
         {
             if (!CompileTimeValueConverter.TryConvertArgument(
                     arguments[index],
@@ -352,10 +382,56 @@ internal sealed class CompileTimeMethodRegistry
             }
 
             invocationArguments[offset + index] = converted;
-            score += conversionScore;
+            scores[index] = conversionScore;
         }
 
-        return new BoundMethod(registered, invocationArguments, score);
+        if (registered.IsVariadic)
+        {
+            var elementType = registered.ScriptParameters[^1].ParameterType.GetElementType()!;
+            var values = Array.CreateInstance(elementType, arguments.Count - fixedCount);
+            for (var index = fixedCount; index < arguments.Count; index++)
+            {
+                if (!CompileTimeValueConverter.TryConvertArgument(
+                        arguments[index],
+                        elementType,
+                        out var converted,
+                        out var conversionScore))
+                {
+                    return null;
+                }
+
+                values.SetValue(converted, index - fixedCount);
+                scores[index] = conversionScore;
+            }
+
+            invocationArguments[offset + fixedCount] = values;
+        }
+
+        return new BoundMethod(
+            registered,
+            invocationArguments,
+            scores.Sum(),
+            scores);
+    }
+
+    private static int CompareBoundMethods(BoundMethod left, BoundMethod right)
+    {
+        var total = left.Score.CompareTo(right.Score);
+        if (total != 0)
+        {
+            return total;
+        }
+
+        for (var index = 0; index < left.ArgumentScores.Count; index++)
+        {
+            var argument = left.ArgumentScores[index].CompareTo(right.ArgumentScores[index]);
+            if (argument != 0)
+            {
+                return argument;
+            }
+        }
+
+        return 0;
     }
 
     private static RegisteredMethod ValidateHandler(
@@ -384,7 +460,7 @@ internal sealed class CompileTimeMethodRegistry
                 throw InvalidHandler(method, "declares an object method, but its script object has no global name");
             }
 
-            return new RegisteredMethod(binding, method, HandlerKind.Object, true, []);
+            return new RegisteredMethod(binding, method, HandlerKind.Object, true, false, []);
         }
 
         if (parameters.Length == 3
@@ -393,7 +469,7 @@ internal sealed class CompileTimeMethodRegistry
             && parameters[2].ParameterType == typeof(CompileTimeMethodContext))
         {
             ValidateLegacyReturnType(method);
-            return new RegisteredMethod(binding, method, HandlerKind.Receiver, true, []);
+            return new RegisteredMethod(binding, method, HandlerKind.Receiver, true, false, []);
         }
 
         if (parameters.Length == 0 || parameters[0].ParameterType != typeof(CompileTimeMethodContext))
@@ -427,7 +503,25 @@ internal sealed class CompileTimeMethodRegistry
             throw InvalidHandler(method, "cannot currently use ref, out, or optional script parameters");
         }
 
-        return new RegisteredMethod(binding, method, kind, false, scriptParameters);
+        var variadicParameters = scriptParameters
+            .Select((parameter, index) => (parameter, index))
+            .Where(item => item.parameter.GetCustomAttribute<ParamArrayAttribute>() is not null)
+            .ToList();
+        if (variadicParameters.Count > 1
+            || variadicParameters.Count == 1
+                && (variadicParameters[0].index != scriptParameters.Length - 1
+                    || !variadicParameters[0].parameter.ParameterType.IsArray))
+        {
+            throw InvalidHandler(method, "may only use params on its final array parameter");
+        }
+
+        return new RegisteredMethod(
+            binding,
+            method,
+            kind,
+            false,
+            variadicParameters.Count == 1,
+            scriptParameters);
     }
 
     private static void ValidateLegacyReturnType(MethodInfo method)
@@ -466,9 +560,11 @@ internal sealed class CompileTimeMethodRegistry
 
     private static bool HaveSameSignature(RegisteredMethod left, RegisteredMethod right) =>
         left.IsLegacy == right.IsLegacy
-        && (left.IsLegacy || left.ScriptParameters
-            .Select(parameter => parameter.ParameterType)
-            .SequenceEqual(right.ScriptParameters.Select(parameter => parameter.ParameterType)));
+        && left.IsVariadic == right.IsVariadic
+        && (left.IsLegacy
+            || left.ScriptParameters
+                .Select(parameter => parameter.ParameterType)
+                .SequenceEqual(right.ScriptParameters.Select(parameter => parameter.ParameterType)));
 
     private static IReadOnlyDictionary<TKey, IReadOnlyList<RegisteredMethod>> Freeze<TKey>(
         Dictionary<TKey, List<RegisteredMethod>> methods)
@@ -479,7 +575,10 @@ internal sealed class CompileTimeMethodRegistry
 
     private static string FormatSignature(RegisteredMethod method) =>
         $"{method.Method.GetCustomAttribute<CompileTimeMethodAttribute>()!.MethodName}" +
-        $"({string.Join(", ", method.ScriptParameters.Select(parameter => parameter.ParameterType.Name))})";
+        $"({string.Join(", ", method.ScriptParameters.Select(parameter =>
+            method.IsVariadic && parameter == method.ScriptParameters[^1]
+                ? $"params {parameter.ParameterType.GetElementType()!.Name}[]"
+                : parameter.ParameterType.Name))})";
 
     private enum HandlerKind
     {
@@ -492,10 +591,12 @@ internal sealed class CompileTimeMethodRegistry
         MethodInfo Method,
         HandlerKind Kind,
         bool IsLegacy,
+        bool IsVariadic,
         IReadOnlyList<ParameterInfo> ScriptParameters);
 
     private sealed record BoundMethod(
         RegisteredMethod Method,
         object?[] InvocationArguments,
-        int Score);
+        int Score,
+        IReadOnlyList<int> ArgumentScores);
 }
