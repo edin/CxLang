@@ -204,7 +204,7 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
 
         if (source is TypeRef.Null)
         {
-            return target is TypeRef.Pointer;
+            return target is TypeRef.Pointer or TypeRef.Function;
         }
 
         if (target is TypeRef.Pointer targetPointer && source is TypeRef.Pointer sourcePointer)

@@ -1,4 +1,5 @@
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Lowering;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -283,7 +284,7 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
                 enumNode,
                 member,
                 index,
-                BuildEnumMetadata(fields, member)))
+                BuildEnumMetadata(fields, member, index)))
             .ToList();
         return true;
     }
@@ -324,13 +325,22 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
 
     private static IReadOnlyDictionary<string, ExpressionNode> BuildEnumMetadata(
         IReadOnlyList<EnumDataFieldNode> fields,
-        EnumMemberNode member)
+        EnumMemberNode member,
+        int memberIndex)
     {
         var metadata = new Dictionary<string, ExpressionNode>(StringComparer.Ordinal);
         foreach (var field in fields)
         {
-            var value = member.DataValues?.FirstOrDefault(candidate => candidate.Name == field.Name)?.Value
-                ?? field.DefaultValue;
+            var explicitValue = member.DataValues?
+                .FirstOrDefault(candidate => candidate.Name == field.Name)?
+                .Value;
+            var value = explicitValue
+                ?? (field.DefaultValue is null
+                    ? null
+                    : DataEnumDefaultExpressionSpecializer.Specialize(
+                        field.DefaultValue,
+                        member,
+                        memberIndex));
             if (value is not null)
             {
                 metadata[field.Name] = value;

@@ -25,7 +25,8 @@ public sealed partial class Parser
             or TokenType.Type
             or TokenType.Default
             or TokenType.Match
-            or TokenType.Module)
+            or TokenType.Module
+            or TokenType.From)
         {
             return Advance();
         }

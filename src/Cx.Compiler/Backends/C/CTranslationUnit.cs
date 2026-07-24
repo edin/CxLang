@@ -24,6 +24,9 @@ internal sealed record CDataEnumDeclaration(
     IReadOnlyList<CFieldDeclaration> Fields,
     IReadOnlyList<CDataEnumRow> Rows) : CTranslationUnitItem;
 
+internal sealed record CDataEnumTableDeclaration(
+    CDataEnumDeclaration DataEnum) : CTranslationUnitItem;
+
 internal sealed record CDataEnumRow(
     string EnumMemberName,
     IReadOnlyList<CInitializerField> Values);

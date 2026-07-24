@@ -45,7 +45,22 @@ public sealed class CxCompiler
             return [];
         }
 
-        if (position == target.Text.Length || target.Text[position] != ';')
+        if (TryGetDataEnumDefaultMemberCompletions(target, position, out var contextualCompletions))
+        {
+            return contextualCompletions;
+        }
+
+        var nextNonWhitespace = position;
+        while (nextNonWhitespace < target.Text.Length
+            && char.IsWhiteSpace(target.Text[nextNonWhitespace]))
+        {
+            nextNonWhitespace++;
+        }
+
+        var isDelimitedExpression = nextNonWhitespace < target.Text.Length
+            && target.Text[nextNonWhitespace] is ',' or ')';
+        if (!isDelimitedExpression
+            && (position == target.Text.Length || target.Text[position] != ';'))
         {
             sourceFiles[targetIndex] = target with { Text = target.Text.Insert(position, ";") };
         }
@@ -71,11 +86,56 @@ public sealed class CxCompiler
 
         if (hole.Target.Semantic.Type is not { } receiverType)
         {
+            if (hole.Target is NameExpressionNode { Name: "member" }
+                && IsDataEnumDefaultExpression(program, hole))
+            {
+                return CollectMemberCompletions(
+                    program,
+                    DataEnumMemberContextFacts.ContextType,
+                    hole.Prefix);
+            }
+
             return CollectStaticMemberCompletions(program, hole.Target, hole.Prefix);
         }
 
         return CollectMemberCompletions(program, receiverType, hole.Prefix);
     }
+
+    private static bool TryGetDataEnumDefaultMemberCompletions(
+        SourceFile source,
+        int position,
+        out IReadOnlyList<MemberCompletion> completions)
+    {
+        var diagnostics = new DiagnosticBag();
+        var tokens = new CxLexer(source, diagnostics).Tokenize();
+        var program = new CxParser(diagnostics).Parse(source, tokens);
+        var hole = AstExpressionTraversal.Enumerate(program)
+            .OfType<IncompleteMemberExpressionNode>()
+            .LastOrDefault(member => member.DotSpan.Position == position - 1);
+
+        if (hole?.Target is NameExpressionNode { Name: "member" }
+            && IsDataEnumDefaultExpression(program, hole))
+        {
+            completions = CollectMemberCompletions(
+                program,
+                DataEnumMemberContextFacts.ContextType,
+                hole.Prefix);
+            return true;
+        }
+
+        completions = [];
+        return false;
+    }
+
+    private static bool IsDataEnumDefaultExpression(
+        ProgramNode program,
+        IncompleteMemberExpressionNode hole) =>
+        program.Enums
+            .Where(enumNode => enumNode.IsDataEnum)
+            .SelectMany(enumNode => enumNode.DataFields ?? [])
+            .Where(field => field.DefaultValue is not null)
+            .Any(field => AstExpressionTraversal.Enumerate(field.DefaultValue!)
+                .Any(expression => ReferenceEquals(expression, hole)));
 
     private static IReadOnlyList<MemberCompletion> CollectStaticMemberCompletions(
         ProgramNode program,
@@ -109,6 +169,18 @@ public sealed class CxCompiler
         TypeRef receiverType,
         string prefix)
     {
+        if (DataEnumMemberContextFacts.IsContextType(receiverType))
+        {
+            return new[]
+            {
+                new MemberCompletion("name", MemberCompletionKind.Field, "const char*"),
+                new MemberCompletion("index", MemberCompletionKind.Field, "int"),
+            }
+            .Where(completion => completion.Label.StartsWith(prefix, StringComparison.Ordinal))
+            .OrderBy(completion => completion.Label, StringComparer.Ordinal)
+            .ToList();
+        }
+
         var typeName = TypeRefFacts.GetBaseName(receiverType);
         if (typeName is null)
         {

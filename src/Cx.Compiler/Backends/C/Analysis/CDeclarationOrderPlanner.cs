@@ -46,12 +46,15 @@ internal static class CDeclarationOrderPlanner
         ProgramNode emitProgram,
         IReadOnlyList<StructNode> structsToEmit)
     {
-        var taggedUnionNames = emitProgram.TaggedUnions
+        var lateDependencyTypeNames = emitProgram.TaggedUnions
             .Where(union => !union.IsRaw)
             .Select(taggedUnion => taggedUnion.Name)
+            .Concat(emitProgram.Enums
+                .Where(enumNode => enumNode.IsDataEnum && !enumNode.IsHeaderDeclaration)
+                .Select(enumNode => enumNode.Name))
             .ToHashSet(StringComparer.Ordinal);
         var lateStructNames = structsToEmit
-            .Where(structNode => structNode.Fields.Any(field => ReferencesCompositeType(backend, ResolveType(field), taggedUnionNames)))
+            .Where(structNode => structNode.Fields.Any(field => ReferencesCompositeType(backend, ResolveType(field), lateDependencyTypeNames)))
             .Select(structNode => structNode.Name)
             .ToHashSet(StringComparer.Ordinal);
 

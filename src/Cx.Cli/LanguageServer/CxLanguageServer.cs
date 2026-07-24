@@ -216,12 +216,18 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
     private IReadOnlyList<SourceFile> BuildSources()
     {
         var sources = new Dictionary<string, SourceFile>(StringComparer.OrdinalIgnoreCase);
+        var loadedRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (_rootPath is not null && Directory.Exists(_rootPath))
         {
-            foreach (var source in LoadWorkspaceSources(_rootPath))
+            AddWorkspaceSources(_rootPath, sources, loadedRoots);
+        }
+
+        foreach (var document in _documents.Values)
+        {
+            var projectRoot = FindProjectRoot(document.Path);
+            if (projectRoot is not null)
             {
-                var fullPath = Path.GetFullPath(source.Path);
-                sources[fullPath] = source with { Path = fullPath };
+                AddWorkspaceSources(projectRoot, sources, loadedRoots);
             }
         }
 
@@ -231,6 +237,38 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
         }
 
         return sources.Values.ToList();
+    }
+
+    private static void AddWorkspaceSources(
+        string rootPath,
+        Dictionary<string, SourceFile> sources,
+        HashSet<string> loadedRoots)
+    {
+        var fullRootPath = Path.GetFullPath(rootPath);
+        if (!loadedRoots.Add(fullRootPath))
+        {
+            return;
+        }
+
+        foreach (var source in LoadWorkspaceSources(fullRootPath))
+        {
+            var fullPath = Path.GetFullPath(source.Path);
+            sources[fullPath] = source with { Path = fullPath };
+        }
+    }
+
+    private static string? FindProjectRoot(string documentPath)
+    {
+        var directory = Directory.GetParent(Path.GetFullPath(documentPath));
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "cx.toml")))
+            {
+                return directory.FullName;
+            }
+            directory = directory.Parent;
+        }
+        return null;
     }
 
     private static IReadOnlyList<SourceFile> LoadWorkspaceSources(string rootPath)

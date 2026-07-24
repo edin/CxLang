@@ -17,4 +17,6 @@ public sealed record FunctionNode(
     PlaceholderExpressionNode? ComputedParameters = null) : TopLevelNode(Location)
 {
     public IReadOnlyList<TypeNode> TypeArgumentNodes { get; init; } = [];
+
+    public bool IsImplicit { get; init; }
 }

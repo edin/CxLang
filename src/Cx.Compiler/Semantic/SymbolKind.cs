@@ -8,5 +8,6 @@ internal enum SymbolKind
     Parameter,
     Local,
     ForeachBinding,
-    MatchBinding
+    MatchBinding,
+    DataEnumMemberContext,
 }

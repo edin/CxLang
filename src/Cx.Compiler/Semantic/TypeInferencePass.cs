@@ -11,6 +11,7 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     private ExpressionTypeResolver? _resolver;
     private TypeSystem? _typeSystem;
     private TypeRefParser? _typeRefParser;
+    private TypeCompatibility? _typeCompatibility;
     private ProgramNode? _program;
     private TypeEnvironment _globalTypeEnvironment = new();
 
@@ -18,11 +19,13 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
     {
         _program = program;
         _typeRefParser = new TypeRefParser(program);
+        _typeCompatibility = new TypeCompatibility(_typeRefParser);
         _resolver = new ExpressionTypeResolver(program);
         var globalVariables = InferGlobalVariables(program.GlobalVariables);
         var programWithGlobals = program with { GlobalVariables = globalVariables };
         _program = programWithGlobals;
         _typeRefParser = new TypeRefParser(programWithGlobals);
+        _typeCompatibility = new TypeCompatibility(_typeRefParser);
         _resolver = new ExpressionTypeResolver(programWithGlobals);
         _typeSystem = new TypeSystem(programWithGlobals);
         _globalTypeEnvironment = BuildGlobalTypeEnvironment(globalVariables);
@@ -103,7 +106,10 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
         return function with
         {
-            Body = InferStatements(function.Body, typeEnvironment, TypeRefOrUnknown(function.ReturnTypeNode)),
+            Body = InferStatements(
+                function.Body,
+                typeEnvironment,
+                SubstituteSelf(TypeRefOrUnknown(function.ReturnTypeNode), selfType)),
         };
     }
 
@@ -127,6 +133,13 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         TypeRef? functionReturnType = null) => statement switch
     {
         LetStatement let => InferLetStatement(let, typeEnvironment),
+        UsingStatement usingStatement => usingStatement with
+        {
+            Initializer = InferExpression(
+                usingStatement.Initializer,
+                typeEnvironment,
+                TypeRefOrNull(usingStatement.TypeNode))!,
+        },
         ReturnStatement ret => ret with { Expression = InferExpression(ret.Expression, typeEnvironment, functionReturnType) },
         CStatement c => c with { Expression = InferExpression(c.Expression, typeEnvironment)! },
         IfStatement ifStatement => ifStatement with
@@ -635,7 +648,10 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
                 TypeNameNode = PreserveTypeNode(initializer.TypeNameNode),
                 Fields = initializer.Fields.Select(field => field with
                 {
-                    Value = InferExpression(field.Value, typeEnvironment)!,
+                    Value = InferExpression(
+                        field.Value,
+                        typeEnvironment,
+                        ResolveInitializerFieldType(initializer, expectedType, field.Name))!,
                 }).ToList(),
                 Values = initializer.Values
                     .Select(value => InferExpression(value, typeEnvironment)!)
@@ -645,20 +661,29 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             AssignmentExpressionNode assignment => assignment with
             {
                 Target = InferExpression(assignment.Target, typeEnvironment)!,
-                Value = InferExpression(assignment.Value, typeEnvironment)!,
+                Value = InferExpression(
+                    assignment.Value,
+                    typeEnvironment,
+                    _resolver?.ResolveTypeRef(assignment.Target, typeEnvironment))!,
             },
             CallExpressionNode call => call with
             {
                 Callee = InferExpression(call.Callee, typeEnvironment)!,
                 Arguments = call.Arguments
-                    .Select(argument => InferExpression(argument, typeEnvironment)!)
+                    .Select((argument, index) => InferExpression(
+                        argument,
+                        typeEnvironment,
+                        ResolveCallParameterType(call, index))!)
                     .ToList(),
             },
             GenericCallExpressionNode call => call with
             {
                 Callee = InferExpression(call.Callee, typeEnvironment)!,
                 Arguments = call.Arguments
-                    .Select(argument => InferExpression(argument, typeEnvironment)!)
+                    .Select((argument, index) => InferExpression(
+                        argument,
+                        typeEnvironment,
+                        ResolveCallParameterType(call, index))!)
                     .ToList(),
             },
             MemberExpressionNode member => member with
@@ -678,8 +703,139 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         };
 
         inferred.Semantic.Type = _resolver?.ResolveTypeRef(inferred, typeEnvironment) ?? expectedType;
-        return inferred;
+        return ApplyImplicitConversion(inferred, expectedType);
     }
+
+    private TypeRef? ResolveInitializerFieldType(
+        InitializerExpressionNode initializer,
+        TypeRef? expectedType,
+        string fieldName)
+    {
+        var targetType = initializer.TypeNameNode is null
+            ? expectedType
+            : TypeRefOrNull(initializer.TypeNameNode);
+        var targetName = targetType is null ? null : TypeRefFacts.GetBaseName(targetType);
+        return _program?.Structs
+            .FirstOrDefault(structNode => string.Equals(structNode.Name, targetName, StringComparison.Ordinal))?
+            .Fields
+            .FirstOrDefault(field => string.Equals(field.Name, fieldName, StringComparison.Ordinal))?
+            .TypeNode
+            .ToTypeRef(_typeRefParser!);
+    }
+
+    private TypeRef? ResolveCallParameterType(ExpressionNode call, int argumentIndex)
+    {
+        var resolved = call.Semantic.ResolvedCall;
+        if (resolved is null)
+        {
+            return null;
+        }
+
+        var parameters = resolved.Function.Parameters
+            .Skip(resolved.IsInstance ? 1 : 0)
+            .Where(parameter => !parameter.IsVariadic)
+            .ToList();
+        if (argumentIndex >= parameters.Count)
+        {
+            return null;
+        }
+
+        var parameterType = _typeRefParser!.Parse(parameters[argumentIndex].TypeNode);
+        if (resolved.TypeArgumentRefs.Count == resolved.Function.TypeParameters.Count)
+        {
+            var substitutions = resolved.Function.TypeParameters
+                .Zip(resolved.TypeArgumentRefs)
+                .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
+            parameterType = TypeRefRewriter.Substitute(parameterType, substitutions);
+        }
+
+        if (resolved.Function.OwnerTypeNode is not null)
+        {
+            parameterType = TypeRefRewriter.SubstituteSelf(
+                parameterType,
+                _typeRefParser.Parse(resolved.Function.OwnerTypeNode));
+        }
+
+        return parameterType;
+    }
+
+    private ExpressionNode ApplyImplicitConversion(
+        ExpressionNode expression,
+        TypeRef? expectedType)
+    {
+        if (expectedType is null or TypeRef.Unknown
+            || expression.Semantic.Type is not { } sourceType
+            || sourceType is TypeRef.Unknown
+            || _typeCompatibility!.CanAssign(expectedType, sourceType, out _))
+        {
+            return expression;
+        }
+
+        var targetName = TypeRefFacts.GetBaseName(expectedType);
+        if (targetName is null)
+        {
+            return expression;
+        }
+
+        var candidates = GetAllFunctions(_program!)
+            .Where(function =>
+                function.IsImplicit
+                && function.IsStatic
+                && function.OwnerTypeNode is not null
+                && string.Equals(
+                    TypeRefFacts.GetBaseName(_typeRefParser!.Parse(function.OwnerTypeNode)),
+                    targetName,
+                    StringComparison.Ordinal)
+                && function.Parameters.Count == 1
+                && !function.Parameters[0].IsVariadic)
+            .Where(function =>
+            {
+                var parameterType = TypeRefRewriter.SubstituteSelf(
+                    _typeRefParser!.Parse(function.Parameters[0].TypeNode),
+                    expectedType);
+                var returnType = TypeRefRewriter.SubstituteSelf(
+                    _typeRefParser.Parse(function.ReturnTypeNode),
+                    expectedType);
+                return _typeCompatibility.CanAssign(parameterType, sourceType, out _)
+                    && _typeCompatibility.CanAssign(expectedType, returnType, out _)
+                    && _typeCompatibility.CanAssign(returnType, expectedType, out _);
+            })
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            return expression;
+        }
+
+        if (candidates.Count > 1)
+        {
+            diagnostics.Report(
+                expression.Location,
+                $"Ambiguous implicit conversion from '{TypeRefFormatter.ToCxString(sourceType)}' to '{TypeRefFormatter.ToCxString(expectedType)}': {string.Join(", ", candidates.Select(function => $"{targetName}.{function.Name}"))}.");
+            return expression;
+        }
+
+        var conversion = candidates[0];
+        var target = new NameExpressionNode(expression.Location, targetName);
+        var callee = new MemberExpressionNode(expression.Location, target, conversion.Name);
+        var call = SyntaxNode.CloneMetadata(
+            expression,
+            new CallExpressionNode(expression.Location, callee, [expression]));
+        var resolvedCall = new ResolvedCallInfo(conversion, [], IsInstance: false);
+        call.Semantic.Type = expectedType;
+        call.Semantic.ResolvedCall = resolvedCall;
+        callee.Semantic.ResolvedCall = resolvedCall;
+        return call;
+    }
+
+    private static IEnumerable<FunctionNode> GetAllFunctions(ProgramNode program) =>
+        program.Functions
+            .Concat(program.Structs.SelectMany(structNode => structNode.Methods))
+            .Concat(program.TaggedUnions.SelectMany(union => union.Methods))
+            .DistinctBy(function => (
+                function.Location.File.Path,
+                function.Location.Position,
+                function.Name));
 
     private FunctionExpressionNode InferFunctionExpression(
         FunctionExpressionNode function,

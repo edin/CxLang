@@ -29,7 +29,19 @@ internal sealed class CallLowerer(
                 return taggedUnionConstructor;
             }
 
-            return memberCallLowerer.TryLower(member, call.Arguments);
+            if (memberCallLowerer.TryLower(member, call.Arguments) is { } memberCall)
+            {
+                return memberCall;
+            }
+
+            if (IsFunctionValue(member))
+            {
+                return new CExpressionCallExpression(
+                    lowerExpression(member),
+                    call.Arguments.Select(lowerExpression).ToList());
+            }
+
+            return null;
         }
 
         if (call.Callee is NameExpressionNode name)
@@ -57,8 +69,16 @@ internal sealed class CallLowerer(
                 call.Arguments.Select(lowerExpression).ToList());
         }
 
-        return null;
+        return IsFunctionValue(call.Callee)
+            ? new CExpressionCallExpression(
+                lowerExpression(call.Callee),
+                call.Arguments.Select(lowerExpression).ToList())
+            : null;
     }
+
+    private static bool IsFunctionValue(ExpressionNode expression) =>
+        expression.Semantic.Type is { } type
+        && TypeRefFacts.UnwrapAlias(type) is TypeRef.Function;
 
     private CExpression? TryLowerTaggedUnionConstructorExpression(
         MemberExpressionNode member,

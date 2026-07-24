@@ -5,6 +5,79 @@ namespace Cx.Compiler.Tests;
 public sealed class DataEnumTests
 {
     [Fact]
+    public void CompileDataEnum_SpecializesContextualDefaultsForEachMember()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            enum TokenType(
+                name: const char* = member.name,
+                index: int = member.index
+            ) {
+                Identifier {},
+                Number {},
+                Plus { index: 10 },
+            }
+
+            fn main() -> int {
+                let kind: TokenType = TokenType.Plus;
+                return kind.index;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains(
+            "[TokenType_Identifier] = { .name = \"Identifier\", .index = 0 }",
+            result.Output);
+        Assert.Contains(
+            "[TokenType_Number] = { .name = \"Number\", .index = 1 }",
+            result.Output);
+        Assert.Contains(
+            "[TokenType_Plus] = { .name = \"Plus\", .index = 10 }",
+            result.Output);
+    }
+
+    [Fact]
+    public void CompileDataEnum_RejectsMemberContextOutsideFieldDefaults()
+    {
+        var explicitValue = CompilerTestHelpers.Compile(
+            """
+            enum TokenType(index: int = 0) {
+                Identifier { index: member.index },
+            }
+            fn main() -> int { return 0; }
+            """);
+        var functionValue = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                return member.index;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            explicitValue,
+            "'member' is only available inside data-enum field default expressions.");
+        CompilerTestHelpers.AssertDiagnosticContains(
+            functionValue,
+            "'member' is only available inside data-enum field default expressions.");
+    }
+
+    [Fact]
+    public void CompileDataEnum_RejectsUnknownContextualMemberProperty()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            enum TokenType(value: int = member.value) {
+                Identifier {},
+            }
+            fn main() -> int { return 0; }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Unknown data-enum member context property 'value'. Expected 'name' or 'index'.");
+    }
+
+    [Fact]
     public void CompileDataEnum_EmitsTypedTableAndLowersMetadataAccess()
     {
         var result = CompilerTestHelpers.Compile(
@@ -35,6 +108,89 @@ public sealed class DataEnumTests
         Assert.Contains("static const TokenKind_Data TokenKind_data[TokenKind_COUNT]", result.Output);
         Assert.Contains("[TokenKind_Plus] = { .text = \"+\", .precedence = 90, .associativity = Associativity_Left }", result.Output);
         Assert.Contains("return TokenKind_data[kind].precedence;", result.Output);
+    }
+
+    [Fact]
+    public void CompileDataEnum_StoresNullableFunctionReferencesAndInvokesThem()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn increment(value: int) -> int {
+                return value + 1;
+            }
+
+            enum Operation(handler: fn(int) -> int = null) {
+                None {},
+                Increment { handler: increment },
+            }
+
+            fn main() -> int {
+                let operation: Operation = Operation.Increment;
+                if (operation.handler == null) {
+                    return -1;
+                }
+
+                return operation.handler(41);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int (*handler)(int);", result.Output);
+        Assert.Contains("[Operation_None] = { .handler = NULL }", result.Output);
+        Assert.Contains("[Operation_Increment] = { .handler = increment }", result.Output);
+        Assert.Contains("int increment(int value)", result.Output);
+        Assert.Contains("if (Operation_data[operation].handler == NULL)", result.Output);
+        Assert.Contains("return Operation_data[operation].handler(41);", result.Output);
+    }
+
+    [Fact]
+    public void CompileDataEnum_DeclaresHandlerTypesAndFunctionsBeforeInitializedTable()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Lexer {
+                position: int;
+            }
+
+            fn match_identifier(lexer: Lexer*) -> bool {
+                lexer.position += 1;
+                return true;
+            }
+
+            enum TokenType(matcher: fn(Lexer*) -> bool = null) {
+                Identifier { matcher: match_identifier },
+                Eof {},
+            }
+
+            struct Token {
+                type: TokenType;
+            }
+
+            fn main() -> int {
+                let lexer: Lexer = Lexer { position: 0 };
+                let kind: TokenType = TokenType.Identifier;
+                if (kind.matcher != null) {
+                    kind.matcher(&lexer);
+                }
+                return lexer.position - 1;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        var output = result.Output!;
+        var lexerType = output.IndexOf("} Lexer;", StringComparison.Ordinal);
+        var dataType = output.IndexOf("} TokenType_Data;", StringComparison.Ordinal);
+        var handlerDeclaration = output.IndexOf(
+            "bool match_identifier(Lexer* lexer);",
+            StringComparison.Ordinal);
+        var initializedTable = output.IndexOf(
+            "static const TokenType_Data TokenType_data",
+            StringComparison.Ordinal);
+
+        Assert.True(lexerType >= 0);
+        Assert.True(dataType > lexerType);
+        Assert.True(handlerDeclaration > dataType);
+        Assert.True(initializedTable > handlerDeclaration);
     }
 
     [Fact]

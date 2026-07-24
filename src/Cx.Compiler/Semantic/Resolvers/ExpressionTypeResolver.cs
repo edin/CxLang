@@ -247,6 +247,11 @@ internal sealed class ExpressionTypeResolver(
     private TypeRef? ResolveMemberTypeRef(MemberExpressionNode member, TypeEnvironment variables)
     {
         var targetType = ResolveTypeRef(member.Target, variables);
+        if (DataEnumMemberContextFacts.IsContextType(targetType))
+        {
+            return DataEnumMemberContextFacts.PropertyType(member.MemberName);
+        }
+
         if (targetType is null)
         {
             var enumMemberType = ResolveEnumMemberReference(member);

@@ -1,4 +1,5 @@
 using Cx.Compiler.Syntax.Nodes;
+using Cx.Compiler.Lowering;
 
 namespace Cx.Compiler.CompileTime;
 
@@ -159,6 +160,14 @@ internal sealed class EnumDataFieldCompileTimeBinding : CompileTimeTypeBinding
         if (expression is null)
         {
             return CompileTimePropertyResult.From(new CompileTimeValue.Null());
+        }
+
+        if (DataEnumDefaultExpressionSpecializer.ContainsContextualMemberReference(expression))
+        {
+            context.Diagnostics.Report(
+                expression.Location,
+                $"Contextual default for enum data field '{field.Value.Declaration.Name}' requires an enum member; read the evaluated value through member.data.{field.Value.Declaration.Name}.");
+            return new CompileTimePropertyResult.Failed();
         }
 
         var value = context.Evaluate(expression);

@@ -70,6 +70,7 @@ public sealed class SemanticAnalyzer(
         AnalyzeDataEnums(program, globalTypeEnvironment);
         var returnFlow = new ReturnFlowAnalyzer(program, _expressionTypeResolver);
         var definiteAssignment = new DefiniteAssignmentAnalyzer(diagnostics, program, _expressionTypeResolver, returnFlow);
+        AnalyzeImplicitConversionDeclarations(program, typeRefParser);
         foreach (var global in program.GlobalVariables)
         {
             var globalTypeRef = TypeRefOrUnknown(global.TypeNode);
@@ -132,6 +133,12 @@ public sealed class SemanticAnalyzer(
             _expressionAnalyzer = CreateExpressionAnalyzer();
 
             var functionReturnType = TypeRefOrUnknown(function.ReturnTypeNode);
+            if (function.OwnerTypeNode is not null)
+            {
+                functionReturnType = TypeRefRewriter.SubstituteSelf(
+                    functionReturnType,
+                    TypeRefOrUnknown(function.OwnerTypeNode));
+            }
             AnalyzeStatements(function.Body, functionReturnType, typeEnvironment, mutability, program, function.TypeParameters);
 
             _currentTypeParameters = previousTypeParameters;
@@ -237,6 +244,56 @@ public sealed class SemanticAnalyzer(
         }
     }
 
+    private void AnalyzeImplicitConversionDeclarations(
+        ProgramNode program,
+        TypeRefParser typeRefParser)
+    {
+        var compatibility = new TypeCompatibility(typeRefParser);
+        var functions = program.Functions
+            .Concat(program.Structs.SelectMany(structNode => structNode.Methods))
+            .Concat(program.TaggedUnions.SelectMany(union => union.Methods))
+            .DistinctBy(function => (
+                function.Location.File.Path,
+                function.Location.Position,
+                function.Name));
+        foreach (var function in functions.Where(function => function.IsImplicit))
+        {
+            if (!function.IsStatic)
+            {
+                diagnostics.Report(
+                    function.Location,
+                    "Implicit conversion functions must be declared with 'static implicit fn'.");
+            }
+
+            if (function.OwnerTypeNode is null)
+            {
+                diagnostics.Report(
+                    function.Location,
+                    "Implicit conversion functions must belong to a target type.");
+                continue;
+            }
+
+            if (function.Parameters.Count != 1 || function.Parameters[0].IsVariadic)
+            {
+                diagnostics.Report(
+                    function.Location,
+                    "Implicit conversion functions must accept exactly one non-variadic parameter.");
+            }
+
+            var ownerType = typeRefParser.Parse(function.OwnerTypeNode);
+            var returnType = TypeRefRewriter.SubstituteSelf(
+                typeRefParser.Parse(function.ReturnTypeNode),
+                ownerType);
+            if (!compatibility.CanAssign(ownerType, returnType, out _)
+                || !compatibility.CanAssign(returnType, ownerType, out _))
+            {
+                diagnostics.Report(
+                    function.Location,
+                    $"Implicit conversion function must return its owner type '{TypeRefFormatter.ToCxString(ownerType)}' or Self.");
+            }
+        }
+    }
+
     private void AnalyzeDataEnums(ProgramNode program, TypeEnvironment typeEnvironment)
     {
         foreach (var enumNode in program.Enums.Where(node => node.IsDataEnum))
@@ -322,6 +379,7 @@ public sealed class SemanticAnalyzer(
     private static bool IsStaticEnumDataExpression(ExpressionNode expression) => expression switch
     {
         LiteralExpressionNode => true,
+        NameExpressionNode name when name.Semantic.Symbol is { Kind: SymbolKind.Function } => true,
         ParenthesizedExpressionNode parenthesized => IsStaticEnumDataExpression(parenthesized.Expression),
         CastExpressionNode cast => IsStaticEnumDataExpression(cast.Expression),
         UnaryExpressionNode unary => IsStaticEnumDataExpression(unary.Operand),

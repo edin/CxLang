@@ -160,6 +160,11 @@ internal sealed class FunctionCompileTimeBinding : CompileTimeTypeBinding
         CompileTimePropertyContext context,
         FunctionNode function) => function.IsStatic;
 
+    [CompileTimeProperty("is_implicit")]
+    private bool IsImplicit(
+        CompileTimePropertyContext context,
+        FunctionNode function) => function.IsImplicit;
+
     [CompileTimeProperty("is_extern")]
     private bool IsExtern(
         CompileTimePropertyContext context,

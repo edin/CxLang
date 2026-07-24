@@ -120,6 +120,15 @@ internal sealed class ExpressionSemanticAnalyzer(
 
                 break;
             case MemberExpressionNode member:
+                if (DataEnumMemberContextFacts.IsContextType(
+                        ResolveExpressionTypeRef(member.Target, typeEnvironment))
+                    && DataEnumMemberContextFacts.PropertyType(member.MemberName) is null)
+                {
+                    diagnostics.Report(
+                        member.Location,
+                        $"Unknown data-enum member context property '{member.MemberName}'. Expected 'name' or 'index'.");
+                }
+
                 Analyze(member.Target, location, typeEnvironment, mutability);
                 break;
             case IncompleteMemberExpressionNode member:
@@ -142,6 +151,14 @@ internal sealed class ExpressionSemanticAnalyzer(
             || currentTypeParameters.Contains(name.Name, StringComparer.Ordinal)
             || IsKnownConstructorOrVariantCall(name.Name))
         {
+            return;
+        }
+
+        if (string.Equals(name.Name, "member", StringComparison.Ordinal))
+        {
+            diagnostics.Report(
+                location,
+                "'member' is only available inside data-enum field default expressions.");
             return;
         }
 

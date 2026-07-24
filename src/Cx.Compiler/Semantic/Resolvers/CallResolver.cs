@@ -67,7 +67,8 @@ internal sealed class CallResolver(
             }
         }
 
-        if (resolveExpressionType(callee, variables) is TypeRef.Function functionPointer)
+        if (resolveExpressionType(callee, variables) is { } calleeType
+            && TypeRefFacts.UnwrapAlias(calleeType) is TypeRef.Function functionPointer)
         {
             return new CallResolution(
                 callee.ToSourceText(),

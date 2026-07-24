@@ -32,6 +32,9 @@ internal sealed class CTranslationUnitEmitter
                 case CDataEnumDeclaration dataEnumDeclaration:
                     EmitDataEnum(builder, dataEnumDeclaration);
                     break;
+                case CDataEnumTableDeclaration dataEnumTableDeclaration:
+                    EmitDataEnumTable(builder, dataEnumTableDeclaration.DataEnum);
+                    break;
                 case CStructDeclaration structDeclaration:
                     EmitStruct(builder, structDeclaration);
                     break;
@@ -97,7 +100,10 @@ internal sealed class CTranslationUnitEmitter
         }
 
         builder.AppendLine($"}} {declaration.DataTypeName};");
-        builder.AppendLine();
+    }
+
+    private void EmitDataEnumTable(StringBuilder builder, CDataEnumDeclaration declaration)
+    {
         builder.AppendLine($"static const {declaration.DataTypeName} {declaration.TableName}[{declaration.CountName}] =");
         builder.AppendLine("{");
         foreach (var row in declaration.Rows)

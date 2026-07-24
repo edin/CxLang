@@ -1244,12 +1244,19 @@ public sealed partial class Parser
     private FunctionNode? ParseStaticFunction(IReadOnlyList<AttributeApplicationNode> attributes)
     {
         var staticToken = Expect(TokenType.Static, "Expected 'static'.");
-        if (Expect(TokenType.Fn, "Expected 'fn' after 'static'.") is null)
+        var isImplicit = ConsumeOptional(TokenType.Implicit);
+        if (Expect(TokenType.Fn, isImplicit
+                ? "Expected 'fn' after 'static implicit'."
+                : "Expected 'fn' after 'static'.") is null)
         {
             return null;
         }
 
         var function = ParseFunctionAfterFn(staticToken?.Location ?? Current.Location, isStatic: true, attributes: attributes);
+        if (function is not null)
+        {
+            function = function with { IsImplicit = isImplicit };
+        }
         if (function?.OwnerTypeNode is null)
         {
             _diagnostics.Report(staticToken?.Location ?? Current.Location, "Static functions must be declared with an owner type, for example 'static fn Vec.empty()'.");
@@ -1540,12 +1547,19 @@ public sealed partial class Parser
         IReadOnlyList<AttributeApplicationNode> attributes)
     {
         var staticToken = Expect(TokenType.Static, "Expected 'static'.");
-        if (Expect(TokenType.Fn, "Expected 'fn' after 'static'.") is null)
+        var isImplicit = ConsumeOptional(TokenType.Implicit);
+        if (Expect(TokenType.Fn, isImplicit
+                ? "Expected 'fn' after 'static implicit'."
+                : "Expected 'fn' after 'static'.") is null)
         {
             return null;
         }
 
         var function = ParseFunctionAfterFn(staticToken?.Location ?? Current.Location, isStatic: true, ownerType, attributes);
+        if (function is not null)
+        {
+            function = function with { IsImplicit = isImplicit };
+        }
         function = InheritOwnerTypeParameters(function, ownerTypeParameters);
         if (function?.Parameters.FirstOrDefault()?.Name == "self")
         {
@@ -1988,6 +2002,31 @@ public sealed partial class Parser
             _diagnostics.Report(
                 publicToken.Location,
                 "Expected 'fn' or 'static fn' after 'public' in a type body.");
+            function = null;
+            return true;
+        }
+
+        if (Check(TokenType.Implicit))
+        {
+            var implicitToken = Advance();
+            _diagnostics.Report(
+                implicitToken.Location,
+                "Implicit conversion functions must be declared with 'static implicit fn'.");
+            if (Check(TokenType.Fn))
+            {
+                Advance();
+                var parsedFunction = ParseFunctionAfterFn(
+                    implicitToken.Location,
+                    isStatic: true,
+                    ownerType,
+                    attributes);
+                function = parsedFunction is null
+                    ? null
+                    : parsedFunction with { IsImplicit = true };
+                SetOwnedFunctionVisibility(function, publicToken);
+                return true;
+            }
+
             function = null;
             return true;
         }

@@ -57,11 +57,25 @@ internal sealed class CxToCTranslationUnitLowerer(
         }
 
         var enumNameLowerer = new ImportedNameLowerer(emitProgram, structsToEmit, backend);
-        foreach (var enumNode in emitProgram.Enums.Where(enumNode => !enumNode.IsHeaderDeclaration))
+        foreach (var enumNode in emitProgram.Enums.Where(enumNode => !enumNode.IsHeaderDeclaration && !enumNode.IsDataEnum))
         {
-            items.Add(enumNode.IsDataEnum
-                ? CDeclarationBuilder.BuildDataEnum(backend, enumNode, enumNameLowerer)
-                : CDeclarationBuilder.BuildEnum(enumNode));
+            items.Add(CDeclarationBuilder.BuildEnum(enumNode));
+            items.Add(new CBlankLine());
+        }
+
+        foreach (var structNode in declarationOrder.EarlyStructs)
+        {
+            items.Add(CDeclarationBuilder.BuildStruct(backend, structNode));
+            items.Add(new CBlankLine());
+        }
+
+        var dataEnumDeclarations = emitProgram.Enums
+            .Where(enumNode => !enumNode.IsHeaderDeclaration && enumNode.IsDataEnum)
+            .Select(enumNode => CDeclarationBuilder.BuildDataEnum(backend, enumNode, enumNameLowerer))
+            .ToList();
+        foreach (var dataEnum in dataEnumDeclarations)
+        {
+            items.Add(dataEnum);
             items.Add(new CBlankLine());
         }
 
@@ -77,12 +91,6 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(CInterfaceDeclarationBuilder.BuildVTableStruct(backend, interfaceNode));
             items.Add(new CBlankLine());
             items.Add(CInterfaceDeclarationBuilder.BuildValueStruct(backend, interfaceNode));
-            items.Add(new CBlankLine());
-        }
-
-        foreach (var structNode in declarationOrder.EarlyStructs)
-        {
-            items.Add(CDeclarationBuilder.BuildStruct(backend, structNode));
             items.Add(new CBlankLine());
         }
 
@@ -137,6 +145,12 @@ internal sealed class CxToCTranslationUnitLowerer(
 
         if (program.Functions.Count > 0)
         {
+            items.Add(new CBlankLine());
+        }
+
+        foreach (var dataEnum in dataEnumDeclarations)
+        {
+            items.Add(new CDataEnumTableDeclaration(dataEnum));
             items.Add(new CBlankLine());
         }
 

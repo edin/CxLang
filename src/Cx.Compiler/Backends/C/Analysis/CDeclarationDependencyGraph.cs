@@ -57,6 +57,14 @@ internal static class CDeclarationDependencyAnalyzer
     {
         CEnumDeclaration declaration =>
             [Type(declaration.Name), .. declaration.Members.Select(member => Value(member.Name))],
+        CDataEnumDeclaration declaration =>
+            [
+                Type(declaration.Enum.Name),
+                Type(declaration.DataTypeName),
+                Value(declaration.CountName),
+                .. declaration.Enum.Members.Select(member => Value(member.Name)),
+            ],
+        CDataEnumTableDeclaration declaration => [Value(declaration.DataEnum.TableName)],
         CStructDeclaration declaration => [Type(declaration.Name)],
         CTaggedUnionDeclaration declaration =>
             [
@@ -74,6 +82,15 @@ internal static class CDeclarationDependencyAnalyzer
 
     private static IEnumerable<CDeclarationId> DependenciesOf(CTranslationUnitItem item) => item switch
     {
+        CDataEnumDeclaration declaration =>
+            declaration.Fields.SelectMany(field => TypeDependencies(field.Type)),
+        CDataEnumTableDeclaration declaration =>
+            [
+                Type(declaration.DataEnum.DataTypeName),
+                Value(declaration.DataEnum.CountName),
+                .. declaration.DataEnum.Rows.SelectMany(row =>
+                    row.Values.SelectMany(value => ExpressionDependencies(value.Value))),
+            ],
         CStructDeclaration declaration => declaration.Fields.SelectMany(field => TypeDependencies(field.Type)),
         CTaggedUnionDeclaration declaration => declaration.Variants.SelectMany(VariantDependencies),
         CTypeAliasDeclaration declaration => TypeDependencies(declaration.TargetType),

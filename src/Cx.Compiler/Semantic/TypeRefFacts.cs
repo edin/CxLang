@@ -62,6 +62,10 @@ internal static class TypeRefFacts
     public static bool IsPointer(TypeRef? type) =>
         TryGetPointerElement(type, out _);
 
+    public static bool IsFunction(TypeRef? type) =>
+        type is not null
+        && UnwrapAlias(type) is TypeRef.Function;
+
     public static bool TryGetPointerElement(TypeRef? type, out TypeRef element)
     {
         element = null!;

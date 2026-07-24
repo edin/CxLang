@@ -58,6 +58,11 @@ internal static class CxFunctionReachabilityPruner
             Enqueue(function);
         }
 
+        foreach (var function in functions.Where(function => function.IsImplicit))
+        {
+            Enqueue(function);
+        }
+
         // These methods can be selected implicitly by operators, foreach lowering,
         // requirements, or type-adapter exposure rather than by a source-level call.
         foreach (var name in ImplicitlyReferencedMethodNames(program))

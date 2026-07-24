@@ -109,4 +109,46 @@ public sealed class AnalysisTests
             },
             completion => Assert.Equal("Number", completion.Label));
     }
+
+    [Fact]
+    public void GetMemberCompletions_ReturnsContextualDataEnumDefaultProperties()
+    {
+        const string source = """
+            enum TokenKind(
+                name: const char* = member.
+            ) {
+                Identifier {},
+            }
+
+            fn main() -> int {
+                let kind: TokenKind = TokenKind.Identifier;
+                return 0;
+            }
+            """;
+        var position = source.IndexOf("member.", StringComparison.Ordinal) + "member.".Length;
+        var parsed = CompilerTestHelpers.Parse(source);
+        var defaultValue = Assert.Single(Assert.Single(parsed.Enums).DataFields!).DefaultValue;
+        var incomplete = Assert.IsType<Cx.Compiler.Syntax.Nodes.IncompleteMemberExpressionNode>(defaultValue);
+        Assert.Equal(position - 1, incomplete.DotSpan.Position);
+
+        var completions = new CxCompiler().GetMemberCompletions(
+            [CompilerTestHelpers.Source(source)],
+            "main.cx",
+            position);
+
+        Assert.Collection(
+            completions,
+            completion =>
+            {
+                Assert.Equal("index", completion.Label);
+                Assert.Equal(MemberCompletionKind.Field, completion.Kind);
+                Assert.Equal("int", completion.Detail);
+            },
+            completion =>
+            {
+                Assert.Equal("name", completion.Label);
+                Assert.Equal(MemberCompletionKind.Field, completion.Kind);
+                Assert.Equal("const char*", completion.Detail);
+            });
+    }
 }

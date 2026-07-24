@@ -1,4 +1,5 @@
 using Cx.Compiler.C;
+using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -28,14 +29,21 @@ internal static class CDeclarationBuilder
                 CDeclarationLowerer.ResolveDeclarationType(field.TypeNode, field.Name),
                 field.Name))
             .ToList();
-        var rows = enumNode.Members.Select(member =>
+        var rows = enumNode.Members.Select((member, memberIndex) =>
             new CDataEnumRow(
                 CEnumNames.Member(enumNode.Name, member.Name),
                 fields.Select(field =>
                 {
-                    var value = member.DataValues?.FirstOrDefault(candidate => candidate.Name == field.Name)?.Value
-                        ?? field.DefaultValue
-                        ?? throw new InvalidOperationException($"Enum member '{member.Name}' has no value for data field '{field.Name}'.");
+                    var explicitValue = member.DataValues?
+                        .FirstOrDefault(candidate => candidate.Name == field.Name)?
+                        .Value;
+                    var value = explicitValue
+                        ?? (field.DefaultValue is null
+                            ? throw new InvalidOperationException($"Enum member '{member.Name}' has no value for data field '{field.Name}'.")
+                            : DataEnumDefaultExpressionSpecializer.Specialize(
+                                field.DefaultValue,
+                                member,
+                                memberIndex));
                     var targetType = CDeclarationLowerer.ResolveDeclarationType(field.TypeNode, field.Name);
                     return new CInitializerField(field.Name, nameLowerer.LowerInitializerExpression(targetType, value));
                 }).ToList()))

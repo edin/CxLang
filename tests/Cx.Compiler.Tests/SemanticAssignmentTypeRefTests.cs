@@ -19,6 +19,32 @@ public sealed class SemanticAssignmentTypeRefTests
     }
 
     [Fact]
+    public void Compile_AllowsNullAssignmentToFunctionType()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            type Handler = fn(int) -> int;
+
+            fn increment(value: int) -> int {
+                return value + 1;
+            }
+
+            fn main() -> int {
+                let handler: Handler = null;
+                handler = increment;
+                let value = handler(41);
+                handler = null;
+                return value;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Handler handler = NULL;", result.Output);
+        Assert.Contains("handler = increment;", result.Output);
+        Assert.Contains("handler = NULL;", result.Output);
+    }
+
+    [Fact]
     public void Compile_ReportsAssignmentMismatchUsingAliasTypeRef()
     {
         var result = CompilerTestHelpers.Compile(

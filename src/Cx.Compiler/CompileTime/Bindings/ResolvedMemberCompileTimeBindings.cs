@@ -97,6 +97,11 @@ internal sealed class ResolvedMethodCompileTimeBinding : CompileTimeTypeBinding
         CompileTimePropertyContext context,
         CompileTimeValue.ResolvedMethod method) => method.Value.Declaration.IsStatic;
 
+    [CompileTimeProperty("is_implicit")]
+    private bool IsImplicit(
+        CompileTimePropertyContext context,
+        CompileTimeValue.ResolvedMethod method) => method.Value.Declaration.IsImplicit;
+
     [CompileTimeProperty("is_extern")]
     private bool IsExtern(
         CompileTimePropertyContext context,

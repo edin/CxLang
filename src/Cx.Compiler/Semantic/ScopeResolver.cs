@@ -20,6 +20,31 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         _typeRefParser = new TypeRefParser(program);
         DeclareTopLevelSymbols(program);
 
+        foreach (var enumNode in program.Enums.Where(node => node.IsDataEnum))
+        {
+            foreach (var field in enumNode.DataFields ?? [])
+            {
+                if (field.DefaultValue is not null)
+                {
+                    var defaultScope = model.RootScope.CreateChild();
+                    Declare(
+                        defaultScope,
+                        Symbol.FromTypeRef(
+                            "member",
+                            SymbolKind.DataEnumMemberContext,
+                            DataEnumMemberContextFacts.ContextType,
+                            field.DefaultValue.Location),
+                        field.DefaultValue.Location);
+                    ResolveExpression(field.DefaultValue, defaultScope);
+                }
+            }
+
+            foreach (var value in enumNode.Members.SelectMany(member => member.DataValues ?? []))
+            {
+                ResolveExpression(value.Value, model.RootScope);
+            }
+        }
+
         foreach (var function in program.Functions)
         {
             ResolveFunction(function);
@@ -261,6 +286,10 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
                 if (scope.TryResolve(name.Name, out var symbol))
                 {
                     name.Semantic.Symbol = symbol;
+                    if (symbol.Kind == SymbolKind.DataEnumMemberContext)
+                    {
+                        name.Semantic.Type = symbol.TypeRef;
+                    }
                 }
 
                 break;
@@ -770,6 +799,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             SymbolKind.Local => "local",
             SymbolKind.ForeachBinding => "foreach binding",
             SymbolKind.MatchBinding => "match binding",
+            SymbolKind.DataEnumMemberContext => "data-enum member context",
             _ => "symbol"
         };
 }

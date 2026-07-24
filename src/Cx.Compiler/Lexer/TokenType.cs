@@ -18,6 +18,8 @@ public enum TokenType
     Fn,
     [Keyword("static")]
     Static,
+    [Keyword("implicit")]
+    Implicit,
     [Keyword("public")]
     Public,
     [Keyword("let")]

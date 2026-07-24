@@ -9,7 +9,8 @@ internal static class SemanticFacts
         || expression is ParenthesizedExpressionNode parenthesized && IsBareNull(parenthesized.Expression);
 
     public static bool IsNullableType(TypeRef? type) =>
-        TypeRefFacts.IsPointer(type);
+        TypeRefFacts.IsPointer(type)
+        || TypeRefFacts.IsFunction(type);
 
     public static bool IsVoidType(TypeRef? type) =>
         TypeRefFacts.IsNamed(type, "void");

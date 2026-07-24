@@ -588,6 +588,42 @@ public sealed class CompileTimeDirectiveExpansionPassTests
         Assert.IsType<ReturnStatement>(body[3]);
     }
 
+    [Fact]
+    public void ExpandProgram_ReflectsSpecializedContextualDataEnumDefaults()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            enum TokenKind(
+                name: const char* = member.name,
+                index: int = member.index
+            ) {
+                Identifier {},
+                Plus { index: 10 },
+            }
+
+            fn generated() -> int {
+                @foreach(member in TokenKind.members) {
+                    @if(member.data.name == "Identifier" && member.data.index == 0) {
+                        emit_identifier();
+                    }
+                    @if(member.data.name == "Plus" && member.data.index == 10) {
+                        emit_plus();
+                    }
+                }
+                return 0;
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var body = Assert.Single(expanded.Functions).Body;
+        Assert.Equal(3, body.Count);
+        Assert.Equal("emit_identifier()", Assert.IsType<CStatement>(body[0]).Expression.ToSourceText());
+        Assert.Equal("emit_plus()", Assert.IsType<CStatement>(body[1]).Expression.ToSourceText());
+        Assert.IsType<ReturnStatement>(body[2]);
+    }
+
     private static (ProgramNode Program, DiagnosticBag Diagnostics) Expand(
         ProgramNode program,
         CompileTimeEvaluationContext? context = null)
