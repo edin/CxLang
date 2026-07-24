@@ -24,10 +24,10 @@ macro InspectTokenEnum(target: type) -> statements {
 
         printf("enum %s members:\n", @{target.name});
 
-        @foreach(member in target.members) {
+        @foreach member in target.members {
             printf("  %s: {\n", @{member.name});
 
-            @foreach(entry in member.data.entries) {
+            @foreach entry in member.data.entries {
                 @if(entry.is_null) {
                     printf("    %s: <null>\n", @{entry.name});
                 }

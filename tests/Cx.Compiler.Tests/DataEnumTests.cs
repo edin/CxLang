@@ -299,7 +299,7 @@ public sealed class DataEnumTests
 
             fn main() -> int {
                 let total: int = 0;
-                @foreach(member in TokenKind.members) {
+                @foreach member in TokenKind.members {
                     total = total + consume(@{member.value});
                 }
                 return total;
@@ -322,7 +322,7 @@ public sealed class DataEnumTests
             }
 
             fn main() -> int {
-                @foreach(member in TokenKind.members) {
+                @foreach member in TokenKind.members {
                     @if(member.name == "Identifier") {
                         Diagnostic.warning(member, "Identifier is intentionally metadata-only.");
                     }
@@ -369,7 +369,7 @@ public sealed class DataEnumTests
             }
 
             fn main() -> int {
-                @foreach(member in TokenKind.members) {
+                @foreach member in TokenKind.members {
                     Diagnostic.warning(
                         member,
                         "Member '{0}' has value {1}.",

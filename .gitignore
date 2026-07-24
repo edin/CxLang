@@ -14,3 +14,5 @@ editors/vscode/server/
 
 /examples/*.c
 /examples/*.c
+
+/editors/vscode/cx-language-0.1.7.vsix

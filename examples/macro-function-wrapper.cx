@@ -5,7 +5,7 @@ fn add(left: int, right: int) -> int {
 macro Wrap(function: declaration) -> declarations {
     @let parameters = [];
     parameters.add(Parameter.create("context", int));
-    @foreach(parameter in function.parameters) {
+    @foreach parameter in function.parameters {
         parameters.add(parameter);
     }
 

@@ -49,7 +49,7 @@ macro Debug(target: type) -> declarations
             }
 
             let first: bool = true;
-            @foreach(field in target.fields) {
+            @foreach field in target.fields {
                 @if(!has_attribute(field, "debug_skip")) {
                     @let field_name = field.name;
                     if (!first && !output.append_cstr(", ")) {

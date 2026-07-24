@@ -39,7 +39,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
         var program = CompilerTestHelpers.Parse(
             """
             fn main() -> int {
-                @foreach(item in [1, 2, 3]) {
+                @foreach item in [1, 2, 3] {
                     @if(item > 1) {
                         emit();
                     }
@@ -70,7 +70,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn main() -> int {
-                @foreach(field in fields(target)) {
+                @foreach field in fields(target) {
                     @if(name(field) == "age") {
                         emit_age();
                     }
@@ -103,7 +103,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn generated() -> int {
-                @foreach(field in fields(target)) {
+                @foreach field in fields(target) {
                     @let field_name = field.name;
                     @let field_type = field.type;
                     @if(field_type.kind == "named") {
@@ -162,7 +162,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             fn generated() -> int {
                 @let visited = false;
 
-                @foreach(item in [1]) {
+                @foreach item in [1] {
                     visited = true;
                 }
 
@@ -300,7 +300,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn generated() -> int {
-                @foreach(field in fields(target)) {
+                @foreach field in fields(target) {
                     let copy: @{type(field)} = self.@{name(field)};
                     emit(@{as_name(name(field))});
                 }
@@ -351,7 +351,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
         var program = CompilerTestHelpers.Parse(
             """
             declare "sample.h" {
-                @foreach(library in ["first", "second"]) {
+                @foreach library in ["first", "second"] {
                     @if(library == "second") {
                         link "selected";
                     }
@@ -414,7 +414,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             fn generated() -> int {
                 @let values = [];
                 values.add(1);
-                @foreach(value in [2, 3]) {
+                @foreach value in [2, 3] {
                     values.add(value);
                 }
                 @if(values.count == 3) {
@@ -449,7 +449,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn generated() -> int {
-                @foreach(method in target.methods) {
+                @foreach method in target.methods {
                     @if(method.is_public) {
                         emit_public_method();
                     }
@@ -483,7 +483,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn generated() -> int {
-                @foreach(member in TokenKind.members) {
+                @foreach member in TokenKind.members {
                     @if(member.data.precedence == 90) {
                         emit_operator(@{member.value});
                     }
@@ -513,9 +513,9 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn generated() -> int {
-                @foreach(field in TokenKind.data_fields) {
+                @foreach field in TokenKind.data_fields {
                     @if(field.name == "code") {
-                        @foreach(member in TokenKind.members) {
+                        @foreach member in TokenKind.members {
                             @let value = member.data.@{field.name};
                             @if(value == 2) {
                                 emit_code();
@@ -548,8 +548,8 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn generated() -> int {
-                @foreach(member in TokenKind.members) {
-                    @foreach(entry in member.data.entries) {
+                @foreach member in TokenKind.members {
+                    @foreach entry in member.data.entries {
                         @if(member.name == "Identifier"
                             && entry.name == "token"
                             && entry.is_null
@@ -602,7 +602,7 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
 
             fn generated() -> int {
-                @foreach(member in TokenKind.members) {
+                @foreach member in TokenKind.members {
                     @if(member.data.name == "Identifier" && member.data.index == 0) {
                         emit_identifier();
                     }

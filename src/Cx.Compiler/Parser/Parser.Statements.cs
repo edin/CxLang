@@ -149,11 +149,9 @@ public sealed partial class Parser
     {
         var atToken = Expect(TokenType.At, "Expected '@'.");
         Expect(TokenType.Foreach, "Expected 'foreach' after '@'.");
-        Expect(TokenType.LParen, "Expected '(' after '@foreach'.");
         var bindingToken = Expect(TokenType.Identifier, "Expected compile-time foreach binding name.");
         Expect(TokenType.In, "Expected 'in' after compile-time foreach binding.");
-        var iterable = ReadExpressionUntil(atToken?.Location ?? Current.Location, TokenType.RParen);
-        Expect(TokenType.RParen, "Expected ')' after compile-time foreach expression.");
+        var iterable = ReadExpressionUntil(atToken?.Location ?? Current.Location, TokenType.LBrace);
         var body = ParseBlock();
 
         return atToken is null

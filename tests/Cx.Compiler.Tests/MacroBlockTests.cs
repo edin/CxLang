@@ -123,7 +123,7 @@ public sealed class MacroBlockTests
             macro Wrap(function: declaration) -> declarations {
                 @let parameters = [];
                 parameters.add(Parameter.create("context", int));
-                @foreach(parameter in function.parameters) {
+                @foreach parameter in function.parameters {
                     parameters.add(parameter);
                 }
 
@@ -149,7 +149,7 @@ public sealed class MacroBlockTests
         var program = CompilerTestHelpers.Parse(
             """
             macro Generate(names: expression) -> declarations {
-                @foreach(name in names) {
+                @foreach name in names {
                     @if(name == "enabled") {
                         fn @{as_name(name)}() -> int {
                             return 0;

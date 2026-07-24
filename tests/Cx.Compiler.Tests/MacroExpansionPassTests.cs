@@ -18,7 +18,7 @@ public sealed class MacroExpansionPassTests
             }
 
             macro debug(target: type, value: expression) -> statements {
-                @foreach(field in fields(target)) {
+                @foreach field in fields(target) {
                     debug_field(@{name(field)}, @{value}.@{name(field)});
                 }
             }
@@ -78,7 +78,7 @@ public sealed class MacroExpansionPassTests
             }
 
             macro Validate(target: type) -> statements {
-                @foreach(field in target.fields) {
+                @foreach field in target.fields {
                     @if(field.name == "unsupported") {
                         Diagnostic.error(field, "Field is not supported by this macro.");
                     }
@@ -137,7 +137,7 @@ public sealed class MacroExpansionPassTests
             }
 
             macro debug(target: type, value: expression) -> statements {
-                @foreach(field in fields(target)) {
+                @foreach field in fields(target) {
                     printf("%s=%d\\n", @{name(field)}, @{value}.@{name(field)});
                 }
             }
@@ -175,7 +175,7 @@ public sealed class MacroExpansionPassTests
 
             macro generate_debug(target: type) -> declarations {
                 fn debug_generated(value: @{target}) -> int {
-                    @foreach(field in fields(target)) {
+                    @foreach field in fields(target) {
                         @if(!has_attribute(field, "debug_skip")) {
                             printf("%s=%d\\n", @{name(field)}, value.@{name(field)});
                         }
@@ -251,7 +251,7 @@ public sealed class MacroExpansionPassTests
             macro Debug(target: type) -> declarations {
                 extension @{target} {
                     fn debug() -> int {
-                        @foreach(field in fields(target)) {
+                        @foreach field in fields(target) {
                             @let field_name = field.name;
                             printf("%s=%d\\n", @{field_name}, self.@{field_name});
                         }
@@ -330,7 +330,7 @@ public sealed class MacroExpansionPassTests
                         }
 
                         let first: bool = true;
-                        @foreach(field in target.fields) {
+                        @foreach field in target.fields {
                             @let field_name = field.name;
                             if (!first && !output.append_cstr(", ")) {
                                 return false;
@@ -405,7 +405,7 @@ public sealed class MacroExpansionPassTests
                 provides target: Debug {
                 extension @{target} {
                     fn write_debug() -> bool {
-                        @foreach(field in target.fields) {
+                        @foreach field in target.fields {
                             @let debug_match = requirement_match(field.type, Debug);
                             @if(!debug_match.success) {
                                 @let _ = compile_error(concat(
@@ -535,7 +535,7 @@ public sealed class MacroExpansionPassTests
             macro WrapWithContext(function: declaration) -> declarations {
                 @let parameters = [];
                 parameters.add(Parameter.create("context", int));
-                @foreach(parameter in function.parameters) {
+                @foreach parameter in function.parameters {
                     parameters.add(parameter);
                 }
 
@@ -576,7 +576,7 @@ public sealed class MacroExpansionPassTests
             }
 
             macro WrapPublic(target: type) -> declarations {
-                @foreach(method in target.methods) {
+                @foreach method in target.methods {
                     @if(method.is_public) {
                         fn @{as_name(concat("wrap_", method.name))}() -> int {
                             return 0;
@@ -604,7 +604,7 @@ public sealed class MacroExpansionPassTests
         var result = CompilerTestHelpers.Compile(
             """
             macro Generate() -> declarations {
-                @foreach(name in ["same", "same"]) {
+                @foreach name in ["same", "same"] {
                     fn @{as_name(name)}() -> int {
                         return 0;
                     }
@@ -725,14 +725,14 @@ public sealed class MacroExpansionPassTests
             struct Hidden {}
 
             macro GenerateBindings() -> declarations {
-                @foreach(function in module.public_functions) {
+                @foreach function in module.public_functions {
                     fn @{as_name(concat("wrap_", function.name))}() -> int {
                         return 0;
                     }
                 }
 
                 @let reflected_module = module("sample");
-                @foreach(target in reflected_module.public_types) {
+                @foreach target in reflected_module.public_types {
                     @if(target.is_struct) {
                         fn @{as_name(concat("bind_", target.name))}() -> int {
                             return 0;
@@ -784,7 +784,7 @@ public sealed class MacroExpansionPassTests
 
             macro RegisterRoutes() -> declarations {
                 fn register_routes() -> void {
-                    @foreach(handler in module.public_functions) {
+                    @foreach handler in module.public_functions {
                         @let route = handler.attribute("route");
                         @if(route != null) {
                             @if(!handler.match(Type.from(fn() -> int))) {
@@ -841,7 +841,7 @@ public sealed class MacroExpansionPassTests
 
             macro BuildDispatcher(target: module) -> declarations {
                 fn dispatch(route_id: int) -> int {
-                    @foreach(handler in target.public_functions) {
+                    @foreach handler in target.public_functions {
                         @let route = handler.attribute("route");
                         @if(route != null) {
                             if (route_id == @{route.id}) {
@@ -886,7 +886,7 @@ public sealed class MacroExpansionPassTests
 
                 macro BuildDispatcher(target: module) -> declarations {
                     fn dispatch(route_id: int) -> int {
-                        @foreach(handler in target.public_functions) {
+                        @foreach handler in target.public_functions {
                             @let route = handler.attribute("route");
                             @if(route != null) {
                                 if (route_id == @{route.id}) {
@@ -939,8 +939,8 @@ public sealed class MacroExpansionPassTests
 
             macro Wrap(target: type) -> declarations {
                 @let parameters = [];
-                @foreach(method in target.methods) {
-                    @foreach(parameter in method.parameters) {
+                @foreach method in target.methods {
+                    @foreach parameter in method.parameters {
                         parameters.add(parameter);
                     }
                 }
@@ -1039,7 +1039,7 @@ public sealed class MacroExpansionPassTests
 
             macro Transform(function: declaration) -> declarations {
                 @let parameters = [];
-                @foreach(parameter in function.parameters) {
+                @foreach parameter in function.parameters {
                     parameters.add(
                         parameter
                             .with_name(as_name(concat("wrapped_", parameter.name)))
@@ -1079,7 +1079,7 @@ public sealed class MacroExpansionPassTests
 
             macro Transform(function: declaration) -> declarations {
                 @let parameters = [];
-                @foreach(parameter in function.parameters) {
+                @foreach parameter in function.parameters {
                     parameters.add(
                         parameter.add_attribute(
                             Attribute.create("generated_parameter")
@@ -1238,7 +1238,7 @@ public sealed class MacroExpansionPassTests
             module sample;
 
             macro Inspect(target: module) -> declarations {
-                @foreach(function in target.public_functions) {
+                @foreach function in target.public_functions {
                 }
             }
 

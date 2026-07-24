@@ -68,7 +68,7 @@ public sealed class CompileTimeDirectiveTests
                     skip();
                 }
 
-                @foreach(item in items) {
+                @foreach item in items {
                     consume(@{item});
                 }
             }
@@ -102,7 +102,7 @@ public sealed class CompileTimeDirectiveTests
                     link "portable";
                 }
 
-                @foreach(library in libraries) {
+                @foreach library in libraries {
                     link "generated";
                 }
             }
@@ -129,7 +129,7 @@ public sealed class CompileTimeDirectiveTests
             """
             macro sample(items: expression) -> statements {
                 @if(before) {
-                    @foreach(item in before) {
+                    @foreach item in before {
                         consume(@{before});
                     }
                 }
@@ -195,7 +195,7 @@ public sealed class CompileTimeDirectiveTests
         var result = CompilerTestHelpers.Compile(
             """
             declare "sample.h" {
-                @foreach(library in ["first", "second"]) {
+                @foreach library in ["first", "second"] {
                     @if(library == "second") {
                         link "generated";
                     }
