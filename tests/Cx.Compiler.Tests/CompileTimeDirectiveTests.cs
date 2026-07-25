@@ -81,6 +81,8 @@ public sealed class CompileTimeDirectiveTests
         Assert.Equal("enabled", conditional.Condition.ToSourceText());
         Assert.Single(conditional.ThenBlock.Items);
         Assert.Single(conditional.ElseBlock.Items);
+        Assert.NotNull(conditional.ThenBlock.Span);
+        Assert.NotNull(conditional.ElseBlock.Span);
         Assert.Equal("item", foreachNode.BindingName);
         Assert.Equal("items", foreachNode.IterableExpression.ToSourceText());
         Assert.IsType<PlaceholderExpressionNode>(

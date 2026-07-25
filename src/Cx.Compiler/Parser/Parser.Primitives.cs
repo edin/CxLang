@@ -75,6 +75,24 @@ public sealed partial class Parser
         return node;
     }
 
+    private SyntaxBlockNode ParseSyntaxBlock<T>(Func<IReadOnlyList<T>> parser)
+        where T : SyntaxNode
+    {
+        var first = Current;
+        var startPosition = Tokens.Position;
+        var items = parser();
+        var block = new SyntaxBlockNode(first.Location, items);
+        if (Tokens.Position > startPosition)
+        {
+            block.Span = SourceSpan.FromBounds(first.Span, Tokens.Previous.Span);
+        }
+
+        return block;
+    }
+
+    private static SyntaxBlockNode EmptySyntaxBlock(Location location) =>
+        new(location, []);
+
     private void AddSpannedNode<T>(
         ICollection<T> nodes,
         T node,

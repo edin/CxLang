@@ -134,6 +134,11 @@ internal sealed class CallResolver(
             skipSelf: true,
             isInstance: true,
             seedTypeArguments: receiverArguments);
+        resolution ??= ResolveOperatorRequirement(
+            operatorKind,
+            normalizedReceiver,
+            right,
+            variables);
         return resolution is null
             ? null
             : resolution with
@@ -142,6 +147,87 @@ internal sealed class CallResolver(
                     resolution.ReturnType,
                     normalizedReceiver),
             };
+    }
+
+    private CallResolution? ResolveOperatorRequirement(
+        OperatorKind operatorKind,
+        TypeRef receiverType,
+        ExpressionNode right,
+        TypeEnvironment variables)
+    {
+        var receiverName = TypeRefFacts.GetBaseName(receiverType);
+        if (receiverName is null
+            || !_currentTypeParameters.Contains(receiverName, StringComparer.Ordinal))
+        {
+            return null;
+        }
+
+        var rightType = resolveExpressionType(right, variables);
+        if (rightType is null)
+        {
+            return null;
+        }
+
+        foreach (var constraint in _currentGenericConstraints.Where(constraint =>
+            string.Equals(constraint.TypeParameter, receiverName, StringComparison.Ordinal)))
+        {
+            foreach (var reference in constraint.Requirements)
+            {
+                if (!_requirementsByName.TryGetValue(reference.Name, out var requirement))
+                {
+                    continue;
+                }
+
+                var function = requirement.Members
+                    .OfType<RequirementFunctionNode>()
+                    .FirstOrDefault(candidate =>
+                        !candidate.IsStatic
+                        && candidate.OperatorKind == operatorKind);
+                if (function is null)
+                {
+                    continue;
+                }
+
+                var argumentRefs = TypeArgumentRefs(reference.TypeArgumentNodes);
+                if (argumentRefs.Count != requirement.TypeParameters.Count)
+                {
+                    continue;
+                }
+
+                var substitutions = BuildTypeSubstitutionsFromRefs(
+                    requirement.TypeParameters,
+                    argumentRefs);
+                var parameterTypes = function.Parameters
+                    .Skip(1)
+                    .Select(parameter => TypeRefRewriter.SubstituteSelf(
+                        SubstituteType(ResolveType(parameter.TypeNode), substitutions),
+                        receiverType))
+                    .ToList();
+                if (parameterTypes.Count != 1
+                    || !_typeCompatibility.CanAssign(
+                        parameterTypes[0],
+                        rightType,
+                        out _))
+                {
+                    continue;
+                }
+
+                var returnType = TypeRefRewriter.SubstituteSelf(
+                    SubstituteType(
+                        ResolveType(function.ReturnTypeNode),
+                        substitutions),
+                    receiverType);
+                return new CallResolution(
+                    $"{receiverName}.operator {operatorKind.ToSourceText()}",
+                    returnType,
+                    parameterTypes,
+                    IsVariadic: false,
+                    Function: null,
+                    IsInstance: true);
+            }
+        }
+
+        return null;
     }
 
     private CallResolution? ResolveMemberCallTypeRefs(

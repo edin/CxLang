@@ -18,6 +18,20 @@ internal sealed class ExpressionSemanticAnalyzer(
     FunctionCatalog? functionCatalog = null)
 {
     private readonly TypeRefParser _typeRefParser = new(program);
+    private CallResolver? _callResolver;
+    private BinaryOperatorResolver? _binaryOperatorResolver;
+
+    private CallResolver CallResolver => _callResolver ??= new CallResolver(
+        program,
+        expressionTypeResolver.ResolveTypeRef,
+        currentTypeParameters,
+        currentGenericConstraints,
+        functionCatalog);
+
+    private BinaryOperatorResolver BinaryOperatorResolver =>
+        _binaryOperatorResolver ??= new BinaryOperatorResolver(
+            expressionTypeResolver.ResolveTypeRef,
+            CallResolver);
 
     public void Analyze(
         ExpressionNode? expression,
@@ -182,62 +196,33 @@ internal sealed class ExpressionSemanticAnalyzer(
         BinaryExpressionNode binary,
         TypeEnvironment typeEnvironment)
     {
-        var operatorKind = binary.Operator.ToOverloadableOperator();
-        if (operatorKind is null)
+        var resolution = BinaryOperatorResolver.Resolve(binary, typeEnvironment);
+        if (resolution is null || resolution.IsIntrinsic)
         {
             return;
         }
 
-        var leftType = ResolveExpressionTypeRef(binary.Left, typeEnvironment);
-        var rightType = ResolveExpressionTypeRef(binary.Right, typeEnvironment);
-        if (leftType is null
-            || rightType is null
-            || IsCurrentTypeParameter(leftType)
-            || IsCurrentTypeParameter(rightType)
-            || UsesBuiltinMathOperation(leftType, rightType))
-        {
-            return;
-        }
-
-        var resolver = new CallResolver(
-            program,
-            expressionTypeResolver.ResolveTypeRef,
-            currentTypeParameters,
-            currentGenericConstraints,
-            functionCatalog);
-        var resolution = resolver.ResolveOperatorTypeRefs(
-            operatorKind.Value,
-            leftType,
-            binary.Right,
-            typeEnvironment);
-        if (resolution is null)
+        if (resolution.Call is null)
         {
             diagnostics.Report(
                 binary.Location,
-                $"Operator '{operatorKind.Value.ToSourceText()}' is not defined for operands " +
-                $"'{TypeRefFormatter.ToCxString(leftType)}' and '{TypeRefFormatter.ToCxString(rightType)}'.");
+                resolution.Failure
+                ?? $"Operator '{resolution.OperatorKind.ToSourceText()}' is not defined for operands " +
+                    $"'{TypeRefFormatter.ToCxString(resolution.LeftType)}' and '{TypeRefFormatter.ToCxString(resolution.RightType)}'.");
             return;
         }
 
-        if (!resolution.IsAmbiguous)
+        if (!resolution.Call.IsAmbiguous)
         {
             return;
         }
 
         diagnostics.Report(
             binary.Location,
-            $"Ambiguous operator '{operatorKind.Value.ToSourceText()}' for operands " +
-            $"'{TypeRefFormatter.ToCxString(leftType)}' and '{TypeRefFormatter.ToCxString(rightType)}'. " +
-            $"Candidates: {string.Join(", ", resolution.AmbiguousFunctions.Select(FormatFunctionCandidate))}.");
+            $"Ambiguous operator '{resolution.OperatorKind.ToSourceText()}' for operands " +
+            $"'{TypeRefFormatter.ToCxString(resolution.LeftType)}' and '{TypeRefFormatter.ToCxString(resolution.RightType)}'. " +
+            $"Candidates: {string.Join(", ", resolution.Call.AmbiguousFunctions.Select(FormatFunctionCandidate))}.");
     }
-
-    private static bool UsesBuiltinMathOperation(TypeRef left, TypeRef right) =>
-        BuiltinTypes.IsBuiltin(TypeRefFacts.GetBaseName(left))
-        && BuiltinTypes.IsBuiltin(TypeRefFacts.GetBaseName(right));
-
-    private bool IsCurrentTypeParameter(TypeRef type) =>
-        TypeRefFacts.GetBaseName(type) is { } name
-        && currentTypeParameters.Contains(name, StringComparer.Ordinal);
 
     private void AnalyzeCallExpression(
         CallExpressionNode call,

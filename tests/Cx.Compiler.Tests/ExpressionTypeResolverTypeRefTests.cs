@@ -191,6 +191,64 @@ public sealed class ExpressionTypeResolverTypeRefTests
         Assert.Equal("int", TypeRefFormatter.ToCxString(resolved));
     }
 
+    [Fact]
+    public void ResolveTypeRef_AppliesPrimitiveIntegerToFloatingPointRule()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn main() -> int {
+                let value = 1 + 2.5;
+                return 0;
+            }
+            """);
+        var local = Assert.IsType<LetStatement>(Assert.Single(program.Functions).Body[0]);
+        var resolver = new ExpressionTypeResolver(program);
+
+        var resolved = resolver.ResolveTypeRef(local.Initializer, new TypeEnvironment());
+
+        Assert.Equal("double", TypeRefFormatter.ToCxString(resolved!));
+    }
+
+    [Fact]
+    public void ResolveTypeRef_AdaptsRepresentableIntegerLiteralToOtherOperand()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn next(value: u16) -> u16 {
+                return value + 1;
+            }
+            """);
+        var expression = Assert.IsType<ReturnStatement>(
+            Assert.Single(program.Functions).Body.Single()).Expression;
+        var resolver = new ExpressionTypeResolver(program);
+
+        var resolved = resolver.ResolveTypeRef(
+            expression,
+            TypeEnvironment(program, ("value", "u16")));
+
+        Assert.Equal("u16", TypeRefFormatter.ToCxString(resolved!));
+    }
+
+    [Fact]
+    public void ResolveTypeRef_UsesSharedBinaryIntegerLiteralParsing()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn next(value: u8) -> u8 {
+                return value + 0b11;
+            }
+            """);
+        var expression = Assert.IsType<ReturnStatement>(
+            Assert.Single(program.Functions).Body.Single()).Expression;
+        var resolver = new ExpressionTypeResolver(program);
+
+        var resolved = resolver.ResolveTypeRef(
+            expression,
+            TypeEnvironment(program, ("value", "u8")));
+
+        Assert.Equal("u8", TypeRefFormatter.ToCxString(resolved!));
+    }
+
     private static TypeEnvironment TypeEnvironment(ProgramNode? resolverProgram, params (string Name, string Type)[] variables)
     {
         var parser = new TypeRefParser(resolverProgram ?? CompilerTestHelpers.Parse("fn main() -> int { return 0; }"));

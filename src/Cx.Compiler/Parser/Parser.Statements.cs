@@ -132,12 +132,12 @@ public sealed partial class Parser
         var atToken = Expect(TokenType.At, "Expected '@'.");
         Expect(TokenType.If, "Expected 'if' after '@'.");
         var condition = ParseParenthesizedExpression("compile-time if condition");
-        var thenBody = ParseBlock();
-        IReadOnlyList<StatementNode> elseBody = [];
+        var thenBlock = ParseSyntaxBlock(ParseBlock);
+        var elseBlock = EmptySyntaxBlock(atToken?.Location ?? Current.Location);
 
         if (ConsumeOptional(TokenType.Else))
         {
-            elseBody = ParseBlock();
+            elseBlock = ParseSyntaxBlock(ParseBlock);
         }
 
         return atToken is null
@@ -145,8 +145,8 @@ public sealed partial class Parser
             : new CompileTimeIfStatementNode(
                 atToken.Location,
                 condition,
-                new SyntaxBlockNode(atToken.Location, thenBody),
-                new SyntaxBlockNode(atToken.Location, elseBody));
+                thenBlock,
+                elseBlock);
     }
 
     private CompileTimeForeachStatementNode? ParseCompileTimeForeachStatement()
@@ -156,7 +156,7 @@ public sealed partial class Parser
         var bindingToken = Expect(TokenType.Identifier, "Expected compile-time foreach binding name.");
         Expect(TokenType.In, "Expected 'in' after compile-time foreach binding.");
         var iterable = ReadExpressionUntil(atToken?.Location ?? Current.Location, TokenType.LBrace);
-        var body = ParseBlock();
+        var body = ParseSyntaxBlock(ParseBlock);
 
         return atToken is null
             ? null
@@ -164,7 +164,7 @@ public sealed partial class Parser
                 atToken.Location,
                 bindingToken?.Value ?? string.Empty,
                 iterable,
-                new SyntaxBlockNode(atToken.Location, body));
+                body);
     }
 
     private StatementNode ParseVariableStatement(Token keywordToken, bool isConst)

@@ -16,10 +16,15 @@ internal static class GenericSpecializationPass
             return program;
         }
 
-        var result = BuildSpecializationResult(program, functionCatalog);
+        var catalog = functionCatalog ?? FunctionCatalog.Build(program);
+        var result = BuildSpecializationResult(program, catalog);
         var loweredProgram = RewriteGenericStructTypes(program, result);
         var loweredSpecializedFunctions = RewriteSpecializedFunctionTypes(result);
 
+        GenericOperatorRetargeter.Retarget(
+            loweredProgram,
+            loweredSpecializedFunctions.Values,
+            catalog);
         RetargetGenericCalls(loweredProgram, loweredSpecializedFunctions);
         return AppendSpecializations(loweredProgram, result, loweredSpecializedFunctions);
     }

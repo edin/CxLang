@@ -1,7 +1,7 @@
-using System.Globalization;
 using System.Text;
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.CompileTime;
@@ -167,21 +167,15 @@ internal sealed class CompileTimeExpressionEvaluator
 
     private CompileTimeValue? ParseInteger(LiteralExpressionNode literal)
     {
-        var text = literal.LiteralText.Replace("_", string.Empty, StringComparison.Ordinal);
-        try
+        if (IntegerLiteralParser.TryParse(literal.LiteralText, out var value)
+            && value >= long.MinValue
+            && value <= long.MaxValue)
         {
-            var value = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                ? Convert.ToInt64(text[2..], 16)
-                : text.StartsWith("0b", StringComparison.OrdinalIgnoreCase)
-                    ? Convert.ToInt64(text[2..], 2)
-                    : long.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
-            return new CompileTimeValue.Integer(value);
+            return new CompileTimeValue.Integer((long)value);
         }
-        catch (Exception exception) when (exception is FormatException or OverflowException)
-        {
-            _diagnostics.Report(literal.Location, $"Invalid compile-time integer literal '{literal.LiteralText}'.");
-            return null;
-        }
+
+        _diagnostics.Report(literal.Location, $"Invalid compile-time integer literal '{literal.LiteralText}'.");
+        return null;
     }
 
     private CompileTimeValue? ParseString(LiteralExpressionNode literal)

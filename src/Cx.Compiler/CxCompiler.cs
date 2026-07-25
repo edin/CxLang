@@ -409,6 +409,15 @@ public sealed class CxCompiler
         var mergedInputProgram = profiler.Measure(
             "Program merge",
             () => MergePrograms(inputPrograms, rootProgram));
+        profiler.Measure(
+            "Compile-time syntax block placement analysis",
+            () => new CompileTimeSyntaxBlockPlacementAnalyzer(diagnostics)
+                .Analyze(mergedInputProgram));
+        if (diagnostics.HasErrors)
+        {
+            return (null, diagnostics);
+        }
+
         var macroExpansion = new MacroExpansionPass(
             diagnostics,
             mergedInputProgram,

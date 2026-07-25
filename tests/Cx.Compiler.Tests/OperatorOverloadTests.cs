@@ -28,6 +28,24 @@ public sealed class OperatorOverloadTests
     }
 
     [Fact]
+    public void ParseOperatorRequirement_CreatesCanonicalTypedMember()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            requires Add<T> {
+                fn operator +(other: T) -> T;
+            }
+            """);
+
+        var function = Assert.IsType<RequirementFunctionNode>(
+            Assert.Single(Assert.Single(program.Requirements).Members));
+        Assert.Equal(OperatorKind.Add, function.OperatorKind);
+        Assert.Equal("operator_add", function.Name);
+        Assert.Equal(["self", "other"], function.Parameters.Select(parameter => parameter.Name));
+        Assert.Equal("Self", function.Parameters[0].TypeNode!.ToSourceText());
+    }
+
+    [Fact]
     public void ParseExplicitOperatorCall_PreservesTypedOperatorMember()
     {
         var call = Assert.IsType<CallExpressionNode>(
@@ -92,7 +110,12 @@ public sealed class OperatorOverloadTests
     {
         var result = CompilerTestHelpers.Compile(
             """
-            struct Box<T> {
+            requires Add<T> {
+                fn operator +(other: T) -> T;
+            }
+
+            struct Box<T>
+            where T: Add<T> {
                 value: T;
 
                 fn operator +(other: Box<T>) -> Box<T> {
@@ -111,6 +134,60 @@ public sealed class OperatorOverloadTests
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("operator_add", result.Output);
         Assert.Contains("(left, right)", result.Output);
+    }
+
+    [Fact]
+    public void CompileConstrainedGenericOperator_RetargetsToConcreteOperator()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            requires Add<T> {
+                fn operator +(other: T) -> T;
+            }
+
+            struct Vec2 {
+                x: int;
+
+                fn operator +(other: Vec2) -> Vec2 {
+                    return Vec2 { x: self.x + other.x };
+                }
+            }
+
+            fn sum<T>(left: T, right: T) -> T
+            where T: Add<T> {
+                return left + right;
+            }
+
+            fn main() -> int {
+                let left = Vec2 { x: 10 };
+                let right = Vec2 { x: 20 };
+                let result = sum(left, right);
+                return result.x;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Vec2_operator_add(left, right)", result.Output);
+    }
+
+    [Fact]
+    public void CompileGenericOperatorWithoutRequirement_ReportsDiagnostic()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn sum<T>(left: T, right: T) -> T {
+                return left + right;
+            }
+
+            fn main() -> int {
+                return sum(10, 20);
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '+' is not defined",
+            "'T' and 'T'");
     }
 
     [Fact]
@@ -257,6 +334,145 @@ public sealed class OperatorOverloadTests
             "Ambiguous operator '+'",
             "Number.operator_add(char)",
             "Number.operator_add(long)");
+    }
+
+    [Fact]
+    public void CompileMathExpression_ReportsMixedSignedness()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let signed: i32 = 10;
+                let unsigned: u32 = 20;
+                let value = signed + unsigned;
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "cannot implicitly combine signed type 'i32' and unsigned type 'u32'",
+            "Use an explicit cast");
+    }
+
+    [Fact]
+    public void CompileMathExpression_RejectsBooleanArithmetic()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let value = true + false;
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '+' is not defined for primitive operands 'bool' and 'bool'");
+    }
+
+    [Fact]
+    public void CompileMathExpression_RejectsFloatingPointModulo()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let value = 5.0 % 2.0;
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '%' requires integer operands",
+            "'double' and 'double'");
+    }
+
+    [Fact]
+    public void CompileMathExpression_ReportsIntegerLiteralOutsideTargetRange()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn main() -> int {
+                let value: u8 = 10;
+                let invalid = value + 300;
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Integer literal '300' cannot be represented by 'u8'",
+            "Use an explicit cast or a wider type");
+    }
+
+    [Fact]
+    public void CompileOperatorFunction_RejectsIntrinsicPrimitiveRedefinition()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            extension int {
+                fn operator +(other: int) -> int {
+                    return 42;
+                }
+            }
+
+            fn main() -> int {
+                return 1 + 2;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '+' cannot be redefined for operands 'int' and 'int'",
+            "compiler already provides 'int + int -> int'");
+    }
+
+    [Fact]
+    public void CompileOperatorFunction_ReportsIntrinsicMixedTypeResult()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            extension int {
+                fn operator +(other: float) -> int {
+                    return self;
+                }
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '+' cannot be redefined for operands 'int' and 'float'",
+            "compiler already provides 'int + float -> float'");
+    }
+
+    [Fact]
+    public void CompileOperatorFunction_AllowsPrimitiveAndUserTypeCombination()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Offset {
+                value: int;
+            }
+
+            extension int {
+                fn operator +(other: Offset) -> int {
+                    return self + other.value;
+                }
+            }
+
+            fn main() -> int {
+                let offset = Offset { value: 2 };
+                return 1 + offset;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int_operator_add(1, offset)", result.Output);
     }
 
     private static int CountOccurrences(string text, string value)

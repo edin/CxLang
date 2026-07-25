@@ -76,6 +76,9 @@ public sealed class SemanticAnalyzer(
         var returnFlow = new ReturnFlowAnalyzer(program, _expressionTypeResolver);
         var definiteAssignment = new DefiniteAssignmentAnalyzer(diagnostics, program, _expressionTypeResolver, returnFlow);
         AnalyzeImplicitConversionDeclarations(program, typeRefParser);
+        new IntrinsicOperatorDeclarationAnalyzer(
+            diagnostics,
+            typeRefParser).Analyze(program);
         foreach (var global in program.GlobalVariables)
         {
             var globalTypeRef = TypeRefOrUnknown(global.TypeNode);

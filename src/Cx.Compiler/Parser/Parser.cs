@@ -525,15 +525,15 @@ public sealed partial class Parser
         var atToken = Expect(TokenType.At, "Expected '@'.");
         Expect(TokenType.If, "Expected 'if' after '@'.");
         var condition = ParseParenthesizedExpression("compile-time if condition");
-        var thenDeclarations = ParseMacroDeclarationBlock(
+        var thenBlock = ParseSyntaxBlock(() => ParseMacroDeclarationBlock(
             "Expected '{' before compile-time declaration branch.",
-            "Expected '}' after compile-time declaration branch.");
-        IReadOnlyList<TopLevelNode> elseDeclarations = [];
+            "Expected '}' after compile-time declaration branch."));
+        var elseBlock = EmptySyntaxBlock(atToken?.Location ?? Current.Location);
         if (ConsumeOptional(TokenType.Else))
         {
-            elseDeclarations = ParseMacroDeclarationBlock(
+            elseBlock = ParseSyntaxBlock(() => ParseMacroDeclarationBlock(
                 "Expected '{' before compile-time else branch.",
-                "Expected '}' after compile-time else branch.");
+                "Expected '}' after compile-time else branch."));
         }
 
         return atToken is null
@@ -541,8 +541,8 @@ public sealed partial class Parser
             : new CompileTimeIfTopLevelNode(
                 atToken.Location,
                 condition,
-                new SyntaxBlockNode(atToken.Location, thenDeclarations),
-                new SyntaxBlockNode(atToken.Location, elseDeclarations));
+                thenBlock,
+                elseBlock);
     }
 
     private CompileTimeForeachTopLevelNode? ParseCompileTimeForeachTopLevel()
@@ -552,9 +552,9 @@ public sealed partial class Parser
         var bindingToken = Expect(TokenType.Identifier, "Expected compile-time foreach binding name.");
         Expect(TokenType.In, "Expected 'in' after compile-time foreach binding.");
         var iterable = ReadExpressionUntil(atToken?.Location ?? Current.Location, TokenType.LBrace);
-        var declarations = ParseMacroDeclarationBlock(
+        var body = ParseSyntaxBlock(() => ParseMacroDeclarationBlock(
             "Expected '{' before compile-time foreach declaration body.",
-            "Expected '}' after compile-time foreach declaration body.");
+            "Expected '}' after compile-time foreach declaration body."));
 
         return atToken is null
             ? null
@@ -562,7 +562,7 @@ public sealed partial class Parser
                 atToken.Location,
                 bindingToken?.Value ?? string.Empty,
                 iterable,
-                new SyntaxBlockNode(atToken.Location, declarations));
+                body);
     }
 
     private bool IsCompileTimeDeclarationScriptStart() =>
@@ -863,16 +863,16 @@ public sealed partial class Parser
         var atToken = Expect(TokenType.At, "Expected '@'.");
         Expect(TokenType.If, "Expected 'if' after '@'.");
         var condition = ParseParenthesizedExpression("compile-time if condition");
-        var thenMembers = ParseCDeclareMemberBlock(
+        var thenBlock = ParseSyntaxBlock(() => ParseCDeclareMemberBlock(
             "Expected '{' before compile-time declaration branch.",
-            "Expected '}' after compile-time declaration branch.");
-        IReadOnlyList<SyntaxNode> elseMembers = [];
+            "Expected '}' after compile-time declaration branch."));
+        var elseBlock = EmptySyntaxBlock(atToken?.Location ?? Current.Location);
 
         if (ConsumeOptional(TokenType.Else))
         {
-            elseMembers = ParseCDeclareMemberBlock(
+            elseBlock = ParseSyntaxBlock(() => ParseCDeclareMemberBlock(
                 "Expected '{' before compile-time else branch.",
-                "Expected '}' after compile-time else branch.");
+                "Expected '}' after compile-time else branch."));
         }
 
         return atToken is null
@@ -880,8 +880,8 @@ public sealed partial class Parser
             : new CompileTimeIfDeclarationNode(
                 atToken.Location,
                 condition,
-                new SyntaxBlockNode(atToken.Location, thenMembers),
-                new SyntaxBlockNode(atToken.Location, elseMembers));
+                thenBlock,
+                elseBlock);
     }
 
     private CompileTimeForeachDeclarationNode? ParseCompileTimeForeachDeclaration()
@@ -891,9 +891,9 @@ public sealed partial class Parser
         var bindingToken = Expect(TokenType.Identifier, "Expected compile-time foreach binding name.");
         Expect(TokenType.In, "Expected 'in' after compile-time foreach binding.");
         var iterable = ReadExpressionUntil(atToken?.Location ?? Current.Location, TokenType.LBrace);
-        var members = ParseCDeclareMemberBlock(
+        var body = ParseSyntaxBlock(() => ParseCDeclareMemberBlock(
             "Expected '{' before compile-time foreach body.",
-            "Expected '}' after compile-time foreach body.");
+            "Expected '}' after compile-time foreach body."));
 
         return atToken is null
             ? null
@@ -901,7 +901,7 @@ public sealed partial class Parser
                 atToken.Location,
                 bindingToken?.Value ?? string.Empty,
                 iterable,
-                new SyntaxBlockNode(atToken.Location, members));
+                body);
     }
 
     private CLinkNode? ParseCDeclareLink()
@@ -1936,23 +1936,65 @@ public sealed partial class Parser
         var fnToken = Expect(TokenType.Fn, !modifiers.IsStatic
             ? "Expected 'fn' before requirement function."
             : "Expected 'fn' after 'static' in requirement function.");
-        var nameToken = ExpectIdentifierLike("Expected requirement function name.");
+        OperatorKind? operatorKind = null;
+        Token? nameToken = null;
+        if (Match(TokenType.Operator) is not null)
+        {
+            operatorKind = ParseOperatorKind();
+        }
+        else
+        {
+            nameToken = ExpectIdentifierLike("Expected requirement function name.");
+        }
+
         var parameters = ParseParameterList(
             allowVariadic: false,
             openMessage: "Expected '(' after requirement function name.",
-            closeMessage: "Expected ')' after requirement function parameters.");
+            closeMessage: "Expected ')' after requirement function parameters.").ToList();
+        if (operatorKind is not null
+            && parameters.FirstOrDefault()?.Name != "self")
+        {
+            parameters.Insert(0, new ParameterNode(
+                fnToken?.Location ?? Current.Location,
+                "self",
+                [],
+                TypeNode: TypeNode.Named(
+                    fnToken?.Location ?? Current.Location,
+                    "Self")));
+        }
+
         Expect(TokenType.Arrow, "Expected '->' before requirement function return type.");
         var returnTypeNode = ParseTypeNode();
         Expect(TokenType.Semicolon, "Expected ';' after requirement function.");
+
+        if (operatorKind is not null)
+        {
+            if (modifiers.IsStatic)
+            {
+                _diagnostics.Report(
+                    modifiers.StaticToken?.Location ?? fnToken?.Location ?? Current.Location,
+                    "Operator requirements must be instance requirements.");
+            }
+
+            if (parameters.Count != 2 || parameters[0].Name != "self")
+            {
+                _diagnostics.Report(
+                    fnToken?.Location ?? Current.Location,
+                    $"Binary operator requirement '{operatorKind.Value.ToSourceText()}' expects exactly one explicit right-hand operand.");
+            }
+        }
 
         return fnToken is null
             ? null
             : new RequirementFunctionNode(
                 modifiers.StaticToken?.Location ?? fnToken.Location,
                 modifiers.IsStatic,
-                nameToken?.Value ?? string.Empty,
+                operatorKind?.ToFunctionName() ?? nameToken?.Value ?? string.Empty,
                 parameters,
-                returnTypeNode);
+                returnTypeNode)
+            {
+                OperatorKind = operatorKind,
+            };
     }
 
     private RequirementFieldNode? ParseRequirementField()

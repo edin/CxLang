@@ -12,6 +12,7 @@ internal sealed class ExpressionTypeResolver(
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
     private CallResolver? _callResolver;
+    private BinaryOperatorResolver? _binaryOperatorResolver;
 
     private CallResolver CallResolver => _callResolver ??= new CallResolver(
         program,
@@ -19,6 +20,11 @@ internal sealed class ExpressionTypeResolver(
         _currentTypeParameters,
         _currentGenericConstraints,
         functionCatalog);
+
+    private BinaryOperatorResolver BinaryOperatorResolver =>
+        _binaryOperatorResolver ??= new BinaryOperatorResolver(
+            ResolveTypeRef,
+            CallResolver);
 
     public TypeRef? ResolveTypeRef(ExpressionNode? expression, TypeEnvironment variables)
     {
@@ -148,25 +154,28 @@ internal sealed class ExpressionTypeResolver(
 
     private TypeRef? ResolveBinaryTypeRef(BinaryExpressionNode binary, TypeEnvironment variables)
     {
-        var left = ResolveTypeRef(binary.Left, variables);
-        var right = ResolveTypeRef(binary.Right, variables);
-        var operatorKind = binary.Operator.ToOverloadableOperator();
-        if (operatorKind is not null
-            && left is not null
-            && !UsesBuiltinMathOperation(left, right)
-            && CallResolver.ResolveOperatorTypeRefs(
-                operatorKind.Value,
-                left,
-                binary.Right,
-                variables) is { Function: not null } operatorResolution)
+        var operatorResolution = BinaryOperatorResolver.Resolve(binary, variables);
+        if (operatorResolution is
+            {
+                IsResolved: true,
+                ResultType: { } resultType,
+            })
         {
-            binary.Semantic.ResolvedCall = new ResolvedCallInfo(
-                operatorResolution.Function,
-                operatorResolution.TypeArgumentRefs,
-                IsInstance: true);
-            return operatorResolution.ReturnType;
+            if (operatorResolution.Call?.Function is { } function)
+            {
+                binary.Semantic.ResolvedCall = new ResolvedCallInfo(
+                    function,
+                    operatorResolution.Call.TypeArgumentRefs,
+                    IsInstance: true);
+            }
+
+            return resultType;
         }
 
+        var left = operatorResolution?.LeftType
+            ?? ResolveTypeRef(binary.Left, variables);
+        var right = operatorResolution?.RightType
+            ?? ResolveTypeRef(binary.Right, variables);
         if (binary.Operator is BinaryOperator.Equal
             or BinaryOperator.NotEqual
             or BinaryOperator.LessThan
@@ -186,10 +195,6 @@ internal sealed class ExpressionTypeResolver(
 
         return SameType(left, right) ? left : left ?? right;
     }
-
-    private static bool UsesBuiltinMathOperation(TypeRef left, TypeRef? right) =>
-        BuiltinTypes.IsBuiltin(TypeRefFacts.GetBaseName(left))
-        && BuiltinTypes.IsBuiltin(TypeRefFacts.GetBaseName(right));
 
     private TypeRef? ResolveConditionalTypeRef(ConditionalExpressionNode conditional, TypeEnvironment variables)
     {
@@ -400,13 +405,49 @@ internal sealed class ExpressionTypeResolver(
         _ => null,
     };
 
-    private TypeRef? ResolveCallTypeRef(CallExpressionNode call, TypeEnvironment variables) =>
-        CallResolver.ResolveTypeRefs(call.Callee, [], call.Arguments, variables)?.ReturnType;
+    private TypeRef? ResolveCallTypeRef(
+        CallExpressionNode call,
+        TypeEnvironment variables)
+    {
+        var resolution = CallResolver.ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            variables);
+        AttachResolvedCall(call, call.Callee, resolution);
+        return resolution?.ReturnType;
+    }
 
-    private TypeRef? ResolveGenericCallTypeRef(GenericCallExpressionNode call, TypeEnvironment variables) =>
-        CallResolver.ResolveTypeRefs(call.Callee, TypeArgumentRefs(call.TypeArgumentNodes), call.Arguments, variables) is { } resolvedCall
-            ? resolvedCall.ReturnType
-            : null;
+    private TypeRef? ResolveGenericCallTypeRef(
+        GenericCallExpressionNode call,
+        TypeEnvironment variables)
+    {
+        var resolution = CallResolver.ResolveTypeRefs(
+            call.Callee,
+            TypeArgumentRefs(call.TypeArgumentNodes),
+            call.Arguments,
+            variables);
+        AttachResolvedCall(call, call.Callee, resolution);
+        return resolution?.ReturnType;
+    }
+
+    private static void AttachResolvedCall(
+        ExpressionNode call,
+        ExpressionNode callee,
+        CallResolution? resolution)
+    {
+        if (resolution?.Function is null)
+        {
+            return;
+        }
+
+        var resolvedCall = new ResolvedCallInfo(
+            resolution.Function,
+            resolution.TypeArgumentRefs,
+            resolution.IsInstance);
+        call.Semantic.ResolvedCall = resolvedCall;
+        callee.Semantic.ResolvedCall = resolvedCall;
+    }
 
     internal IReadOnlyList<TypeRef>? InferFunctionTypeArgumentRefs(
         IReadOnlyList<string> typeParameters,

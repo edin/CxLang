@@ -255,7 +255,7 @@ public sealed class DataEnumTests
             fn main() -> int {
                 let total: int = 0;
                 foreach index, kind in TokenKind {
-                    total = total + kind.precedence + index;
+                    total = total + kind.precedence + (int)index;
                 }
                 return total;
             }

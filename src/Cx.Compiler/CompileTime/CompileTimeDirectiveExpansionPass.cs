@@ -79,46 +79,33 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     private IReadOnlyList<TopLevelNode> ExpandTopLevelIf(
         CompileTimeIfTopLevelNode conditional)
     {
-        var value = _evaluator.Evaluate(conditional.Condition, _context);
-        if (value is not CompileTimeValue.Boolean boolean)
+        if (!TrySelectBranch(
+            conditional.Condition,
+            conditional.ThenBlock,
+            conditional.ElseBlock,
+            out var selectedBlock))
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    conditional.Condition.Location,
-                    "Compile-time @if condition must evaluate to a boolean value.");
-            }
-
             return [];
         }
 
         var branchContext = _context.CreateChild();
         return WithContext(
             branchContext,
-            () => ExpandTopLevelBlock(
-                boolean.Value
-                    ? conditional.ThenBlock
-                    : conditional.ElseBlock));
+            () => ExpandTopLevelBlock(selectedBlock));
     }
 
     private IReadOnlyList<TopLevelNode> ExpandTopLevelForeach(
         CompileTimeForeachTopLevelNode foreachNode)
     {
-        var value = _evaluator.Evaluate(foreachNode.IterableExpression, _context);
-        if (value is not CompileTimeValue.List list)
+        if (!TryEvaluateForeach(
+            foreachNode.IterableExpression,
+            out var values))
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    foreachNode.IterableExpression.Location,
-                    "Compile-time @foreach expression must evaluate to a list value.");
-            }
-
             return [];
         }
 
         var result = new List<TopLevelNode>();
-        foreach (var item in list.Values)
+        foreach (var item in values)
         {
             var iterationContext = _context.CreateChild();
             iterationContext.Define(foreachNode.BindingName, item);
@@ -552,39 +539,29 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private IReadOnlyList<StatementNode> ExpandIf(CompileTimeIfStatementNode conditional)
     {
-        var value = _evaluator.Evaluate(conditional.Condition, _context);
-        if (value is not CompileTimeValue.Boolean boolean)
+        if (!TrySelectBranch(
+            conditional.Condition,
+            conditional.ThenBlock,
+            conditional.ElseBlock,
+            out var selectedBlock))
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    conditional.Condition.Location,
-                    "Compile-time @if condition must evaluate to a boolean value.");
-            }
-
             return [];
         }
 
-        return ExpandStatementBlock(boolean.Value ? conditional.ThenBlock : conditional.ElseBlock);
+        return ExpandStatementBlock(selectedBlock);
     }
 
     private IReadOnlyList<StatementNode> ExpandForeach(CompileTimeForeachStatementNode foreachNode)
     {
-        var value = _evaluator.Evaluate(foreachNode.IterableExpression, _context);
-        if (value is not CompileTimeValue.List list)
+        if (!TryEvaluateForeach(
+            foreachNode.IterableExpression,
+            out var values))
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    foreachNode.IterableExpression.Location,
-                    "Compile-time @foreach expression must evaluate to a list value.");
-            }
-
             return [];
         }
 
         var result = new List<StatementNode>();
-        foreach (var item in list.Values)
+        foreach (var item in values)
         {
             var iterationContext = _context.CreateChild();
             iterationContext.Define(foreachNode.BindingName, item);
@@ -620,40 +597,30 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private IReadOnlyList<SyntaxNode> ExpandCDeclareIf(CompileTimeIfDeclarationNode conditional)
     {
-        var value = _evaluator.Evaluate(conditional.Condition, _context);
-        if (value is not CompileTimeValue.Boolean boolean)
+        if (!TrySelectBranch(
+            conditional.Condition,
+            conditional.ThenBlock,
+            conditional.ElseBlock,
+            out var selectedBlock))
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    conditional.Condition.Location,
-                    "Compile-time @if condition must evaluate to a boolean value.");
-            }
-
             return [];
         }
 
-        return ExpandCDeclareBlock(boolean.Value ? conditional.ThenBlock : conditional.ElseBlock);
+        return ExpandCDeclareBlock(selectedBlock);
     }
 
     private IReadOnlyList<SyntaxNode> ExpandCDeclareForeach(
         CompileTimeForeachDeclarationNode foreachNode)
     {
-        var value = _evaluator.Evaluate(foreachNode.IterableExpression, _context);
-        if (value is not CompileTimeValue.List list)
+        if (!TryEvaluateForeach(
+            foreachNode.IterableExpression,
+            out var values))
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    foreachNode.IterableExpression.Location,
-                    "Compile-time @foreach expression must evaluate to a list value.");
-            }
-
             return [];
         }
 
         var result = new List<SyntaxNode>();
-        foreach (var item in list.Values)
+        foreach (var item in values)
         {
             var iterationContext = _context.CreateChild();
             iterationContext.Define(foreachNode.BindingName, item);
@@ -690,6 +657,52 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         _diagnostics.Report(
             item.Location,
             $"Compile-time syntax block item '{item.GetType().Name}' cannot be expanded as a {expectedKind}.");
+
+    private bool TrySelectBranch(
+        ExpressionNode condition,
+        SyntaxBlockNode thenBlock,
+        SyntaxBlockNode elseBlock,
+        out SyntaxBlockNode selectedBlock)
+    {
+        selectedBlock = thenBlock;
+        var value = _evaluator.Evaluate(condition, _context);
+        if (value is CompileTimeValue.Boolean boolean)
+        {
+            selectedBlock = boolean.Value ? thenBlock : elseBlock;
+            return true;
+        }
+
+        if (value is not null)
+        {
+            _diagnostics.Report(
+                condition.Location,
+                "Compile-time @if condition must evaluate to a boolean value.");
+        }
+
+        return false;
+    }
+
+    private bool TryEvaluateForeach(
+        ExpressionNode iterableExpression,
+        out IReadOnlyList<CompileTimeValue> values)
+    {
+        values = [];
+        var value = _evaluator.Evaluate(iterableExpression, _context);
+        if (value is CompileTimeValue.List list)
+        {
+            values = list.Values;
+            return true;
+        }
+
+        if (value is not null)
+        {
+            _diagnostics.Report(
+                iterableExpression.Location,
+                "Compile-time @foreach expression must evaluate to a list value.");
+        }
+
+        return false;
+    }
 
     private T WithContext<T>(CompileTimeEvaluationContext context, Func<T> action)
     {

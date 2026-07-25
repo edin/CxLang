@@ -21,4 +21,7 @@ public sealed record RequirementFunctionNode(
     bool IsStatic,
     string Name,
     IReadOnlyList<ParameterNode> Parameters,
-    TypeNode? ReturnTypeNode = null) : RequirementMemberNode(Location);
+    TypeNode? ReturnTypeNode = null) : RequirementMemberNode(Location)
+{
+    public OperatorKind? OperatorKind { get; init; }
+}

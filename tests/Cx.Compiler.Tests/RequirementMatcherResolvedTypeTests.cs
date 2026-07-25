@@ -6,6 +6,92 @@ namespace Cx.Compiler.Tests;
 public sealed class RequirementMatcherResolvedTypeTests
 {
     [Fact]
+    public void Match_OperatorRequirement_UsesTypedOperatorIdentity()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            requires Add<T> {
+                fn operator +(other: T) -> T;
+            }
+
+            struct Vec2 {
+                x: int;
+
+                fn operator +(other: Vec2) -> Vec2 {
+                    return Vec2 { x: self.x + other.x };
+                }
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var match = new RequirementMatcher(program).Match("Vec2", "Add", ["Vec2"]);
+
+        Assert.True(match.Success, string.Join(Environment.NewLine, match.Failures));
+    }
+
+    [Fact]
+    public void Match_OperatorRequirement_AcceptsBuiltinNumericType()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            requires Add<T> {
+                fn operator +(other: T) -> T;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var match = new RequirementMatcher(program).Match("int", "Add", ["int"]);
+
+        Assert.True(match.Success, string.Join(Environment.NewLine, match.Failures));
+    }
+
+    [Fact]
+    public void Match_OperatorRequirement_UsesPrimitiveMixedTypeResult()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            requires Add<T> {
+                fn operator +(other: T) -> T;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var match = new RequirementMatcher(program).Match("int", "Add", ["float"]);
+
+        Assert.True(match.Success, string.Join(Environment.NewLine, match.Failures));
+    }
+
+    [Theory]
+    [InlineData("bool", "bool")]
+    [InlineData("i32", "u32")]
+    public void Match_OperatorRequirement_RejectsUnsupportedPrimitiveCombination(
+        string ownerType,
+        string argumentType)
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            requires Add<T> {
+                fn operator +(other: T) -> T;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var match = new RequirementMatcher(program).Match(ownerType, "Add", [argumentType]);
+
+        Assert.False(match.Success);
+        Assert.Contains(match.Failures, failure =>
+            failure.Contains("Missing function 'operator_add'", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Match_FieldRequirement_UsesResolvedGenericStructFields()
     {
         var program = CompilerTestHelpers.Parse(

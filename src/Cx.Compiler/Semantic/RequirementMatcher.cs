@@ -295,10 +295,17 @@ public sealed class RequirementMatcher
         }
 
         var ownerType = GetBinding(bindings, "Self");
+        if (function.OperatorKind is not null
+            && MatchesIntrinsicOperator(function, ownerType, bindings))
+        {
+            return;
+        }
+
         var method = ResolveMethods(ownerType)
             .FirstOrDefault(candidate =>
                 !candidate.Declaration.IsStatic
                 && candidate.Name == function.Name
+                && candidate.Declaration.OperatorKind == function.OperatorKind
                 && candidate.ParameterTypes.Count == function.Parameters.Count);
 
         if (method is null)
@@ -398,6 +405,34 @@ public sealed class RequirementMatcher
         {
             target.Set(name, value);
         }
+    }
+
+    private bool MatchesIntrinsicOperator(
+        RequirementFunctionNode function,
+        TypeRef ownerType,
+        TypeBindings bindings)
+    {
+        if (function.OperatorKind is null
+            || function.Parameters.Count != 2)
+        {
+            return false;
+        }
+
+        var receiverType = TypeRefRewriter.Substitute(
+            TypeRefOrUnknown(function.Parameters[0].TypeNode),
+            bindings.Bindings);
+        var rightType = TypeRefRewriter.Substitute(
+            TypeRefOrUnknown(function.Parameters[1].TypeNode),
+            bindings.Bindings);
+        var returnType = TypeRefRewriter.Substitute(
+            TypeRefOrUnknown(function.ReturnTypeNode),
+            bindings.Bindings);
+        return TypeIdentity.ResolvedEquals(receiverType, ownerType)
+            && PrimitiveSemantics.ResolveBinary(
+                function.OperatorKind.Value.ToBinaryOperator(),
+                receiverType,
+                rightType).ResultType is { } resultType
+            && TypeIdentity.ResolvedEquals(returnType, resultType);
     }
 
     private bool FunctionMatches(

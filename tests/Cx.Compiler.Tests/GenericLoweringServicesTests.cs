@@ -9,6 +9,72 @@ namespace Cx.Compiler.Tests;
 public sealed class GenericLoweringServicesTests
 {
     [Fact]
+    public void GenericUseCollector_UsesInferredLocalTypesForConstrainedCall()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            requires Add<T> {
+                fn operator +(other: T) -> T;
+            }
+
+            struct Vec2 {
+                x: int;
+
+                fn operator +(other: Vec2) -> Vec2 {
+                    return Vec2 { x: self.x + other.x };
+                }
+            }
+
+            fn sum<T>(left: T, right: T) -> T
+            where T: Add<T> {
+                return left + right;
+            }
+
+            fn main() -> int {
+                let left = Vec2 { x: 10 };
+                let right = Vec2 { x: 20 };
+                let result = sum(left, right);
+                return result.x;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        var model = new SemanticModel();
+        new ScopeResolver(diagnostics, model).Resolve(program);
+        new TypeResolutionPass(diagnostics, model).Resolve(program);
+        program = new TypeInferencePass(diagnostics, model).Apply(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var main = program.Functions.Single(function => function.Name == "main");
+        Assert.Equal(
+            ["Vec2", "Vec2"],
+            main.Body
+                .OfType<LetStatement>()
+                .Take(2)
+                .Select(let => let.TypeNode!.ToSourceText()));
+        var resultInitializer = Assert.IsType<CallExpressionNode>(
+            main.Body
+                .OfType<LetStatement>()
+                .Single(let => let.Name == "result")
+                .Initializer);
+        Assert.NotNull(resultInitializer.Semantic.ResolvedCall);
+        Assert.Equal(
+            ["Vec2"],
+            resultInitializer.Semantic.ResolvedCall!.TypeArgumentRefs
+                .Select(TypeRefFormatter.ToCxString));
+
+        var uses = new GenericUseCollector(program, model.FunctionCatalog)
+            .Collect(program)
+            .Where(use => use.Function.Name == "sum")
+            .ToList();
+
+        Assert.NotEmpty(uses);
+        Assert.All(uses, use => Assert.Equal(["Vec2"], TypeArguments(use)));
+        Assert.Single(uses
+            .Select(use => string.Join(",", TypeArguments(use)))
+            .Distinct(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void GenericUseCollector_FindsExplicitAndInferredGenericCalls()
     {
         var program = CompilerTestHelpers.Parse(

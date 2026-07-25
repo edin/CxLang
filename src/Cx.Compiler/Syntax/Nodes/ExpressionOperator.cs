@@ -92,6 +92,16 @@ public static class ExpressionOperatorFacts
         _ => null,
     };
 
+    public static BinaryOperator ToBinaryOperator(this OperatorKind op) => op switch
+    {
+        OperatorKind.Add => BinaryOperator.Add,
+        OperatorKind.Subtract => BinaryOperator.Subtract,
+        OperatorKind.Multiply => BinaryOperator.Multiply,
+        OperatorKind.Divide => BinaryOperator.Divide,
+        OperatorKind.Modulo => BinaryOperator.Modulo,
+        _ => throw Unsupported(op),
+    };
+
     public static string ToSourceText(this UnaryOperator op) => op switch
     {
         UnaryOperator.Plus => "+",
