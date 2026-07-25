@@ -48,6 +48,7 @@ public enum OperatorKind
     Multiply,
     Divide,
     Modulo,
+    Compare,
 }
 
 public enum AssignmentOperator
@@ -69,6 +70,7 @@ public static class ExpressionOperatorFacts
         OperatorKind.Multiply => "*",
         OperatorKind.Divide => "/",
         OperatorKind.Modulo => "%",
+        OperatorKind.Compare => "<=>",
         _ => throw Unsupported(op),
     };
 
@@ -79,6 +81,7 @@ public static class ExpressionOperatorFacts
         OperatorKind.Multiply => "operator_multiply",
         OperatorKind.Divide => "operator_divide",
         OperatorKind.Modulo => "operator_modulo",
+        OperatorKind.Compare => "operator_compare",
         _ => throw Unsupported(op),
     };
 
@@ -89,6 +92,7 @@ public static class ExpressionOperatorFacts
         BinaryOperator.Multiply => OperatorKind.Multiply,
         BinaryOperator.Divide => OperatorKind.Divide,
         BinaryOperator.Modulo => OperatorKind.Modulo,
+        BinaryOperator.Compare => OperatorKind.Compare,
         _ => null,
     };
 
@@ -99,6 +103,7 @@ public static class ExpressionOperatorFacts
         OperatorKind.Multiply => BinaryOperator.Multiply,
         OperatorKind.Divide => BinaryOperator.Divide,
         OperatorKind.Modulo => BinaryOperator.Modulo,
+        OperatorKind.Compare => BinaryOperator.Compare,
         _ => throw Unsupported(op),
     };
 

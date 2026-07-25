@@ -1387,6 +1387,7 @@ public sealed partial class Parser
             TokenType.Star => OperatorKind.Multiply,
             TokenType.Slash => OperatorKind.Divide,
             TokenType.Percent => OperatorKind.Modulo,
+            TokenType.Spaceship => OperatorKind.Compare,
             _ => (OperatorKind?)null,
         };
         if (operatorKind is not null)
@@ -1397,7 +1398,7 @@ public sealed partial class Parser
 
         _diagnostics.Report(
             Current.Location,
-            "Expected a mathematical operator after 'operator'. Supported operators: '+', '-', '*', '/', '%'.");
+            "Expected an overloadable operator after 'operator'. Supported operators: '+', '-', '*', '/', '%', '<=>'.");
         return null;
     }
 

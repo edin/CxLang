@@ -3,7 +3,7 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Analyzers;
 
-internal sealed class IntrinsicOperatorDeclarationAnalyzer(
+internal sealed class OperatorDeclarationAnalyzer(
     DiagnosticBag diagnostics,
     TypeRefParser typeRefParser)
 {
@@ -33,6 +33,7 @@ internal sealed class IntrinsicOperatorDeclarationAnalyzer(
         var rightType = TypeRefRewriter.SubstituteSelf(
             TypeRefOrUnknown(function.Parameters[1].TypeNode),
             receiverType);
+        ValidateReturnType(function);
         var intrinsic = PrimitiveSemantics.ResolveBinary(
             function.OperatorKind.Value.ToBinaryOperator(),
             receiverType,
@@ -50,6 +51,26 @@ internal sealed class IntrinsicOperatorDeclarationAnalyzer(
             $"because the compiler already provides " +
             $"'{TypeRefFormatter.ToCxString(receiverType)} {symbol} {TypeRefFormatter.ToCxString(rightType)} -> " +
             $"{TypeRefFormatter.ToCxString(resultType)}'.");
+    }
+
+    private void ValidateReturnType(FunctionNode function)
+    {
+        if (function.OperatorKind != OperatorKind.Compare)
+        {
+            return;
+        }
+
+        var returnType = TypeRefRewriter.SubstituteSelf(
+            TypeRefOrUnknown(function.ReturnTypeNode),
+            TypeRefOrUnknown(function.OwnerTypeNode));
+        var isBoolean = PrimitiveTypeRegistry.TryGet(returnType, out var descriptor)
+            && descriptor.Category == PrimitiveTypeCategory.Boolean;
+        if (isBoolean || !TypeIdentity.ResolvedEquals(returnType, TypeRef.Int))
+        {
+            diagnostics.Report(
+                function.Location,
+                $"Operator '<=>' must return 'int', but returns '{TypeRefFormatter.ToCxString(returnType)}'.");
+        }
     }
 
     private TypeRef TypeRefOrUnknown(TypeNode? typeNode) =>

@@ -9,7 +9,7 @@ public requires Hash<T> {
 }
 
 public requires Compare<T> {
-    static fn compare(left: T, right: T) -> int;
+    fn operator <=>(other: T) -> int;
 }
 
 public requires Disposable<T> {
@@ -34,6 +34,12 @@ static fn int.compare(left: int, right: int) -> int {
     }
 
     return 0;
+}
+
+extension int {
+    fn operator <=>(other: int) -> int {
+        return int.compare(self, other);
+    }
 }
 
 public fn equals(left: int, right: int) -> bool {

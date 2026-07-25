@@ -209,6 +209,7 @@ internal sealed class ExpressionTokenParser
                         TokenType.Star => OperatorKind.Multiply,
                         TokenType.Slash => OperatorKind.Divide,
                         TokenType.Percent => OperatorKind.Modulo,
+                        TokenType.Spaceship => OperatorKind.Compare,
                         _ => (OperatorKind?)null,
                     };
                     if (operatorKind is null)

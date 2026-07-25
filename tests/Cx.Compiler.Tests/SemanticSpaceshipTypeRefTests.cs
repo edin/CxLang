@@ -9,22 +9,6 @@ public sealed class SemanticSpaceshipTypeRefTests
             """
             type Count = int;
 
-            requires Compare<T> {
-                static fn compare(left: T, right: T) -> int;
-            }
-
-            static fn Count.compare(left: Count, right: Count) -> int {
-                if (left < right) {
-                    return -1;
-                }
-
-                if (left > right) {
-                    return 1;
-                }
-
-                return 0;
-            }
-
             fn main() -> int {
                 let left: Count = 1;
                 let right: Count = 2;
@@ -51,7 +35,9 @@ public sealed class SemanticSpaceshipTypeRefTests
             }
             """);
 
-        CompilerTestHelpers.AssertDiagnosticContains(result, "does not satisfy requirement 'Compare'", "Missing static function 'compare'");
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '<=>' is not defined for operands 'Point' and 'Point'");
     }
 
     [Fact]
@@ -68,7 +54,9 @@ public sealed class SemanticSpaceshipTypeRefTests
             }
             """);
 
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Cannot compare 'Count' and 'char*' with '<=>'");
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '<=>' is not defined for operands 'Count' and 'char*'");
     }
 
     [Fact]

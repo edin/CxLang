@@ -62,6 +62,7 @@ public sealed class OperatorOverloadTests
     [InlineData("*", OperatorKind.Multiply, "operator_multiply")]
     [InlineData("/", OperatorKind.Divide, "operator_divide")]
     [InlineData("%", OperatorKind.Modulo, "operator_modulo")]
+    [InlineData("<=>", OperatorKind.Compare, "operator_compare")]
     public void ParseExplicitMathOperatorCall_PreservesTypedOperatorMember(
         string symbol,
         OperatorKind expectedKind,
@@ -168,6 +169,39 @@ public sealed class OperatorOverloadTests
 
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("Vec2_operator_add(left, right)", result.Output);
+    }
+
+    [Fact]
+    public void CompileConstrainedGenericSpaceship_RetargetsToConcreteOperator()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            requires Compare<T> {
+                fn operator <=>(other: T) -> int;
+            }
+
+            struct Score {
+                value: int;
+
+                fn operator <=>(other: Score) -> int {
+                    return self.value <=> other.value;
+                }
+            }
+
+            fn compare_values<T>(left: T, right: T) -> int
+            where T: Compare<T> {
+                return left <=> right;
+            }
+
+            fn main() -> int {
+                let left = Score { value: 10 };
+                let right = Score { value: 20 };
+                return compare_values(left, right);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Score_operator_compare(left, right)", result.Output);
     }
 
     [Fact]
@@ -473,6 +507,54 @@ public sealed class OperatorOverloadTests
 
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("int_operator_add(1, offset)", result.Output);
+    }
+
+    [Fact]
+    public void CompileOperatorFunction_LowersExplicitSpaceshipOperator()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Score {
+                value: int;
+
+                fn operator <=>(other: Score) -> int {
+                    return self.value <=> other.value;
+                }
+            }
+
+            fn main() -> int {
+                let left = Score { value: 10 };
+                let right = Score { value: 20 };
+                return left <=> right;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Score_operator_compare(left, right)", result.Output);
+    }
+
+    [Fact]
+    public void CompileOperatorFunction_RequiresSpaceshipToReturnInt()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Score {
+                value: int;
+
+                fn operator <=>(other: Score) -> bool {
+                    return self.value == other.value;
+                }
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '<=>' must return 'int'",
+            "returns 'bool'");
     }
 
     private static int CountOccurrences(string text, string value)

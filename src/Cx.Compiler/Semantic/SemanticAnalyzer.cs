@@ -76,7 +76,7 @@ public sealed class SemanticAnalyzer(
         var returnFlow = new ReturnFlowAnalyzer(program, _expressionTypeResolver);
         var definiteAssignment = new DefiniteAssignmentAnalyzer(diagnostics, program, _expressionTypeResolver, returnFlow);
         AnalyzeImplicitConversionDeclarations(program, typeRefParser);
-        new IntrinsicOperatorDeclarationAnalyzer(
+        new OperatorDeclarationAnalyzer(
             diagnostics,
             typeRefParser).Analyze(program);
         foreach (var global in program.GlobalVariables)
@@ -598,13 +598,6 @@ public sealed class SemanticAnalyzer(
         }
     }
 
-    private RequirementMatch SatisfiesRequirement(
-        TypeRef concreteType,
-        string requirementName,
-        IReadOnlyList<TypeRef>? requirementArguments = null) =>
-        _typeSystem?.SatisfiesRequirement(concreteType, requirementName, requirementArguments)
-        ?? RequirementMatch.Failed(concreteType, requirementName, []);
-
     private string GetFunctionDisplayName(FunctionNode function) =>
         OwnerType(function) is null
             ? function.Name
@@ -620,30 +613,6 @@ public sealed class SemanticAnalyzer(
     {
         _ = program;
         _typeUsageAnalyzer?.Analyze(typeNode, location, inScopeTypeParameters);
-    }
-
-    private void AnalyzeSpaceshipTypes(
-        TypeRef leftType,
-        TypeRef rightType,
-        Location location)
-    {
-        var leftTypeText = SemanticFacts.FormatTypeRef(leftType)!;
-        var rightTypeText = SemanticFacts.FormatTypeRef(rightType)!;
-        if (_typeCompatibility is not null
-            && (!_typeCompatibility.CanAssign(leftType, rightType, out _)
-                || !_typeCompatibility.CanAssign(rightType, leftType, out _)))
-        {
-            diagnostics.Report(location, $"Cannot compare '{leftTypeText}' and '{rightTypeText}' with '<=>'.");
-            return;
-        }
-
-        var match = SatisfiesRequirement(leftType, "Compare", [leftType]);
-        if (match is { Success: false })
-        {
-            diagnostics.Report(
-                location,
-                $"Type '{leftTypeText}' does not satisfy requirement 'Compare': {string.Join(" ", match.Failures)}");
-        }
     }
 
     private void AnalyzeForInitializer(
@@ -895,19 +864,6 @@ public sealed class SemanticAnalyzer(
         if (ContainsNullArithmetic(expression))
         {
             diagnostics.Report(location, "Cannot use null in arithmetic expressions.");
-        }
-
-        if (expression is not BinaryExpressionNode { Operator: BinaryOperator.Compare } binary
-            || _expressionTypeResolver is null)
-        {
-            return;
-        }
-
-        var leftType = _expressionTypeResolver.ResolveTypeRef(binary.Left, typeEnvironment);
-        var rightType = _expressionTypeResolver.ResolveTypeRef(binary.Right, typeEnvironment);
-        if (leftType is not null && rightType is not null)
-        {
-            AnalyzeSpaceshipTypes(leftType, rightType, location);
         }
     }
 
