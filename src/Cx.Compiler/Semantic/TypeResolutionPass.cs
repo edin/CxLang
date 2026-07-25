@@ -5,7 +5,9 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
 
-internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
+internal sealed class TypeResolutionPass(
+    DiagnosticBag diagnostics,
+    SemanticModel? semanticModel = null)
 {
     private TypeSyntaxTypeRefConverter? _typeSyntaxConverter;
 
@@ -118,6 +120,7 @@ internal sealed class TypeResolutionPass(DiagnosticBag diagnostics)
         }
 
         new TypeRefModuleResolver().Resolve(program);
+        semanticModel?.FunctionCatalog?.RefreshResolvedTypes(program);
     }
 
     private void ResolveFunction(FunctionNode function)

@@ -159,6 +159,8 @@ public sealed class CExpressionLowererTests
 
         public CExpression? TryWrapAssignmentValue(AssignmentExpressionNode assignment, CExpression value) => null;
 
+        public CExpression? TryLowerBinaryOperator(BinaryExpressionNode binary) => null;
+
         public CExpression? TryLowerMemberExpression(MemberExpressionNode member) => memberOverride;
     }
 }

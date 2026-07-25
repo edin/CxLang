@@ -23,6 +23,7 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
     private readonly ReceiverExpressionBuilder _receiverExpressionBuilder;
     private readonly MemberAccessLowerer _memberAccessLowerer;
     private readonly MemberCallLowerer _memberCallLowerer;
+    private readonly ResolvedCallLowerer _resolvedCallLowerer;
     private readonly NameExpressionLowerer _nameExpressionLowerer;
     public CBackendContext Backend => _backend;
     public TypeRef? SelfTypeRef { get; }
@@ -95,6 +96,7 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
         _expressionLoweringPipeline = expressionLoweringServices.Pipeline;
         _memberAccessLowerer = expressionLoweringServices.MemberAccessLowerer;
         _memberCallLowerer = expressionLoweringServices.MemberCallLowerer;
+        _resolvedCallLowerer = expressionLoweringServices.ResolvedCallLowerer;
     }
 
     private ExpressionLoweringServices CreateExpressionLoweringServices()
@@ -154,7 +156,8 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
         return new ExpressionLoweringServices(
             new CExpressionLoweringPipeline(this, callExpressionLowerer),
             memberAccessLowerer,
-            memberCallLowerer);
+            memberCallLowerer,
+            resolvedCallLowerer);
     }
 
     public ImportedNameLowerer ForFunction(FunctionNode function)
@@ -272,6 +275,11 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
             ? TryWrapTaggedUnionValueExpression(targetTypeRef, assignment.Value, value)
             : null;
     }
+
+    CExpression? ICExpressionLoweringContext.TryLowerBinaryOperator(BinaryExpressionNode binary) =>
+        _resolvedCallLowerer.TryLowerOperator(
+            binary.Semantic.ResolvedCall,
+            [binary.Left, binary.Right]);
 
     CExpression? ICExpressionLoweringContext.TryLowerMemberExpression(MemberExpressionNode member) =>
         LowerMemberExpression(member);

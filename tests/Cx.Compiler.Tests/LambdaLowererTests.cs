@@ -42,7 +42,6 @@ public sealed class LambdaLowererTests
             [
                 new FunctionNode(
                     location,
-                    IsStatic: false,
                     "main",
                     TypeParameters: [],
                     GenericConstraints: [],

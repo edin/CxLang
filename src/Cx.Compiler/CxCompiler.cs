@@ -195,9 +195,6 @@ public sealed class CxCompiler
                 field.Name,
                 MemberCompletionKind.Field,
                 field.TypeNode?.ToSourceText() ?? "<unknown>")));
-            completions.AddRange(structNode.Methods
-                .Where(method => !method.IsStatic)
-                .Select(MethodCompletion));
         }
 
         var dataEnum = program.Enums.FirstOrDefault(node => node.IsDataEnum && node.Name == typeName);
@@ -216,16 +213,12 @@ public sealed class CxCompiler
                 variant.Name,
                 MemberCompletionKind.Field,
                 variant.TypeNode?.ToSourceText() ?? "<unknown>")));
-            completions.AddRange(union.Methods
-                .Where(method => !method.IsStatic)
-                .Select(MethodCompletion));
         }
 
-        completions.AddRange(program.Functions
-            .Where(method => !method.IsStatic
-                && method.OwnerTypeNode is not null
-                && TypeRefFacts.GetBaseName(method.OwnerTypeNode.Semantic.Type) == typeName)
-            .Select(MethodCompletion));
+        completions.AddRange(new TypeSystem(program)
+            .GetMethods(receiverType)
+            .Where(method => !method.Declaration.IsStatic)
+            .Select(method => MethodCompletion(method.Declaration)));
 
         return completions
             .Where(completion => completion.Label.StartsWith(prefix, StringComparison.Ordinal))
@@ -488,7 +481,7 @@ public sealed class CxCompiler
 
         profiler.Measure(
             "Type resolution",
-            () => new TypeResolutionPass(diagnostics).Resolve(mergedProgram));
+            () => new TypeResolutionPass(diagnostics, semanticModel).Resolve(mergedProgram));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -496,7 +489,7 @@ public sealed class CxCompiler
 
         mergedProgram = profiler.Measure(
             "Type inference",
-            () => new TypeInferencePass(diagnostics).Apply(mergedProgram));
+            () => new TypeInferencePass(diagnostics, semanticModel).Apply(mergedProgram));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -526,7 +519,7 @@ public sealed class CxCompiler
 
             profiler.Measure(
                 "Try fallback type resolution",
-                () => new TypeResolutionPass(diagnostics).Resolve(mergedProgram));
+                () => new TypeResolutionPass(diagnostics, semanticModel).Resolve(mergedProgram));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
@@ -534,7 +527,7 @@ public sealed class CxCompiler
 
             mergedProgram = profiler.Measure(
                 "Try fallback type inference",
-                () => new TypeInferencePass(diagnostics).Apply(mergedProgram));
+                () => new TypeInferencePass(diagnostics, semanticModel).Apply(mergedProgram));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
@@ -543,7 +536,10 @@ public sealed class CxCompiler
 
         profiler.Measure(
             "Semantic analysis",
-            () => new SemanticAnalyzer(diagnostics, inputPrograms).Analyze(mergedProgram));
+            () => new SemanticAnalyzer(diagnostics, inputPrograms)
+            {
+                FunctionCatalog = semanticModel.FunctionCatalog,
+            }.Analyze(mergedProgram));
 
         if (diagnostics.HasErrors)
         {
@@ -554,7 +550,9 @@ public sealed class CxCompiler
         {
             mergedProgram = profiler.Measure(
                 "Post-semantic lowering",
-                () => postSemanticLowering.Lower(mergedProgram));
+                () => postSemanticLowering.Lower(
+                    mergedProgram,
+                    semanticModel.FunctionCatalog));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);
@@ -602,7 +600,6 @@ public sealed class CxCompiler
                         generatedNames[test] = functionName;
                         return new FunctionNode(
                             test.Location,
-                            IsStatic: false,
                             Name: functionName,
                             TypeParameters: [],
                             GenericConstraints: [],
@@ -642,7 +639,6 @@ public sealed class CxCompiler
 
         rootDeclarations.Add(new FunctionNode(
             rootLocation,
-            IsStatic: false,
             Name: "main",
             TypeParameters: [],
             GenericConstraints: [],

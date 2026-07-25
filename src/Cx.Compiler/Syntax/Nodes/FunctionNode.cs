@@ -1,10 +1,18 @@
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Syntax.Nodes;
 
+[Flags]
+public enum FunctionModifiers
+{
+    None = 0,
+    Static = 1 << 0,
+    Implicit = 1 << 1,
+}
+
 public sealed record FunctionNode(
     Location Location,
-    bool IsStatic,
     string Name,
     IReadOnlyList<string> TypeParameters,
     IReadOnlyList<GenericConstraintNode> GenericConstraints,
@@ -18,5 +26,18 @@ public sealed record FunctionNode(
 {
     public IReadOnlyList<TypeNode> TypeArgumentNodes { get; init; } = [];
 
-    public bool IsImplicit { get; init; }
+    public IReadOnlyList<string> ReceiverTypeParameters { get; init; } = [];
+
+    public IReadOnlyList<string> MethodTypeParameters =>
+        TypeParameters.Skip(ReceiverTypeParameters.Count).ToList();
+
+    public OperatorKind? OperatorKind { get; init; }
+
+    public FunctionModifiers Modifiers { get; internal set; }
+
+    internal FunctionSymbol? FunctionSymbol { get; set; }
+
+    public bool IsStatic => Modifiers.HasFlag(FunctionModifiers.Static);
+
+    public bool IsImplicit => Modifiers.HasFlag(FunctionModifiers.Implicit);
 }

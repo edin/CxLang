@@ -37,13 +37,27 @@ public sealed partial class Parser
 
     private Token? Match(TokenType type) => Tokens.Match(type);
 
+    private Token? Match(ContextualKeyword keyword) =>
+        Check(keyword) ? Advance() : null;
+
     private bool ConsumeOptional(TokenType type) => Match(type) is not null;
 
     private bool Check(TokenType type) => Tokens.Check(type);
 
-    private bool IsContextualKeyword(string value) =>
-        Current.Type == TokenType.Identifier
-        && string.Equals(Current.Value, value, StringComparison.Ordinal);
+    private bool Check(ContextualKeyword keyword) =>
+        ContextualKeywordFacts.Matches(Current, keyword);
+
+    private Token? Expect(ContextualKeyword keyword, string message)
+    {
+        var match = Match(keyword);
+        if (match is not null)
+        {
+            return match;
+        }
+
+        _diagnostics.Report(Current.Span, message);
+        return null;
+    }
 
     private Token Advance() => Tokens.Advance();
 

@@ -49,6 +49,7 @@ internal static class CDeclarationOrderPlanner
         var lateDependencyTypeNames = emitProgram.TaggedUnions
             .Where(union => !union.IsRaw)
             .Select(taggedUnion => taggedUnion.Name)
+            .Concat(emitProgram.Interfaces.Select(interfaceNode => interfaceNode.Name))
             .Concat(emitProgram.Enums
                 .Where(enumNode => enumNode.IsDataEnum && !enumNode.IsHeaderDeclaration)
                 .Select(enumNode => enumNode.Name))

@@ -99,20 +99,53 @@ public sealed class CNameManglerTests
         Assert.Equal("main", mangler.FunctionName(function));
     }
 
-    private static CNameMangler CreateMangler(CNameManglerOptions? options = null) =>
+    [Fact]
+    public void FunctionName_AddsParameterSuffixOnlyForOverloadFamilies()
+    {
+        var intOverload = Function(
+            ownerType: "Value",
+            name: "create",
+            parameterTypes: ["int"]);
+        var stringOverload = Function(
+            ownerType: "Value",
+            name: "create",
+            parameterTypes: ["char*"]);
+        var functions = new[] { intOverload, stringOverload };
+        var mangler = CreateMangler(
+            overloadKeys: CNameMangler.FindOverloadKeys(functions));
+
+        Assert.Equal("Value_create_int", mangler.FunctionName(intOverload));
+        Assert.Equal(
+            "Value_create_char_ptr",
+            mangler.FunctionName(stringOverload));
+    }
+
+    private static CNameMangler CreateMangler(
+        CNameManglerOptions? options = null,
+        IReadOnlySet<string>? overloadKeys = null) =>
         new(
             type => new CAbiNameService([]).SpecializationTypeName(type),
             type => type.Replace("*", "_ptr"),
-            options);
+            options,
+            overloadKeys: overloadKeys);
 
-    private static FunctionNode Function(string? ownerType, string name, IReadOnlyList<string>? typeArguments = null) =>
+    private static FunctionNode Function(
+        string? ownerType,
+        string name,
+        IReadOnlyList<string>? typeArguments = null,
+        IReadOnlyList<string>? parameterTypes = null) =>
         new(
             Location: Location(),
-            IsStatic: false,
             Name: name,
             TypeParameters: [],
             GenericConstraints: [],
-            Parameters: [],
+            Parameters: (parameterTypes ?? [])
+                .Select((type, index) => new ParameterNode(
+                    Location(),
+                    $"value{index}",
+                    Attributes: [],
+                    TypeNode: TypeNode.CreateFromText(Location(), type)))
+                .ToList(),
             Body: [],
             Attributes: [],
             ReturnTypeNode: TypeNode.CreateFromText(Location(), "int"),

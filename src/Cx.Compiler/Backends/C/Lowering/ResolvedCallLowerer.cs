@@ -28,6 +28,21 @@ internal sealed class ResolvedCallLowerer(
             : new CCallExpression(functionReference, arguments.Select(lowerExpression).ToList());
     }
 
+    public CExpression? TryLowerOperator(
+        ResolvedCallInfo? resolvedCall,
+        IReadOnlyList<ExpressionNode> operands)
+    {
+        if (resolvedCall is not { IsInstance: true, Function.OperatorKind: not null })
+        {
+            return null;
+        }
+
+        var functionReference = ResolveFunctionReference(resolvedCall);
+        return functionReference is null
+            ? null
+            : new CCallExpression(functionReference, operands.Select(lowerExpression).ToList());
+    }
+
     public CExpression? TryLowerInstance(
         ResolvedCallInfo? resolvedCall,
         MemberExpressionNode member,

@@ -20,6 +20,8 @@ public enum TokenType
     Static,
     [Keyword("implicit")]
     Implicit,
+    [Keyword("operator")]
+    Operator,
     [Keyword("public")]
     Public,
     [Keyword("let")]
@@ -110,6 +112,8 @@ public enum TokenType
     On,
     [Keyword("try")]
     Try,
+    [Keyword("sizeof")]
+    Sizeof,
 
     [Symbol("->")]
     Arrow,

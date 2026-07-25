@@ -121,7 +121,12 @@ internal sealed class GenericCallResolver(
     public GenericCallInfo? FindResolved(ResolvedCallInfo resolvedCall)
     {
         var ownerTypeRef = resolveFunctionOwnerType(resolvedCall.Function);
+        var definitionId = resolvedCall.Function.FunctionSymbol?.Id;
         return calls.FirstOrDefault(call =>
+            (definitionId is null
+                || call.DefinitionId is null
+                || call.DefinitionId == definitionId)
+            &&
             SameOptionalType(call.OwnerTypeRef, ownerTypeRef)
             && string.Equals(call.Name, resolvedCall.Function.Name, StringComparison.Ordinal)
             && SameTypeArguments(call, resolvedCall.TypeArgumentRefs));

@@ -19,6 +19,8 @@ internal interface ICExpressionLoweringContext
 
     CExpression? TryWrapAssignmentValue(AssignmentExpressionNode assignment, CExpression value);
 
+    CExpression? TryLowerBinaryOperator(BinaryExpressionNode binary);
+
     CExpression? TryLowerMemberExpression(MemberExpressionNode member);
 }
 

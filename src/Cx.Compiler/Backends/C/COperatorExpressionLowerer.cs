@@ -14,10 +14,17 @@ internal sealed class COperatorExpressionLowerer(ICExpressionLoweringContext con
     public CExpression LowerPostfix(PostfixExpressionNode postfix) =>
         new CPostfixExpression(context.LowerExpression(postfix.Operand), postfix.Operator.ToSourceText());
 
-    public CExpression LowerBinary(BinaryExpressionNode binary) =>
-        binary.Operator == BinaryOperator.Compare
+    public CExpression LowerBinary(BinaryExpressionNode binary)
+    {
+        if (context.TryLowerBinaryOperator(binary) is { } overloadedOperator)
+        {
+            return overloadedOperator;
+        }
+
+        return binary.Operator == BinaryOperator.Compare
             ? new CCallExpression(new CFunctionName("compare"), [context.LowerExpression(binary.Left), context.LowerExpression(binary.Right)])
             : new CBinaryExpression(context.LowerExpression(binary.Left), binary.Operator.ToSourceText(), context.LowerExpression(binary.Right));
+    }
 
     public CExpression LowerConditional(ConditionalExpressionNode conditional) =>
         new CConditionalExpression(

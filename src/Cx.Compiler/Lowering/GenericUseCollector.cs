@@ -5,15 +5,33 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Lowering;
 
-internal sealed class GenericUseCollector(ProgramNode program)
+internal sealed class GenericUseCollector
 {
-    private readonly IReadOnlyList<FunctionNode> _genericFunctions = program.Functions
-        .Where(function => function.TypeParameters.Count > 0)
-        .ToList();
-    private readonly IReadOnlyList<TypeAdapterNode> _typeAdapters = program.TypeAdapters;
-    private readonly ExpressionTypeResolver _resolver = new(program);
-    private readonly TypeRefParser _typeRefParser = new(program);
-    private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
+    private readonly ProgramNode _program;
+    private readonly FunctionCatalog _functionCatalog;
+    private readonly IReadOnlyList<TypeAdapterNode> _typeAdapters;
+    private readonly IReadOnlyDictionary<FunctionId, FunctionNode> _currentFunctionsById;
+    private readonly ExpressionTypeResolver _resolver;
+    private readonly TypeRefParser _typeRefParser;
+    private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter;
+
+    public GenericUseCollector(
+        ProgramNode program,
+        FunctionCatalog? functionCatalog = null)
+    {
+        _program = program;
+        _functionCatalog = functionCatalog ?? FunctionCatalog.Build(program);
+        _typeAdapters = program.TypeAdapters;
+        _currentFunctionsById = program.Functions
+            .Where(function => function.FunctionSymbol is not null)
+            .GroupBy(function => function.FunctionSymbol!.Id)
+            .ToDictionary(group => group.Key, group => group.First());
+        _resolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: _functionCatalog);
+        _typeRefParser = new TypeRefParser(program);
+        _typeSyntaxConverter = new TypeSyntaxTypeRefConverter(program);
+    }
 
     public IEnumerable<GenericFunctionUse> Collect(ProgramNode program)
     {
@@ -48,7 +66,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var scopeSelfTypeRef = selfApiType ?? selfType;
         var variables = BuildFunctionVariables(function, scopeSelfTypeRef);
 
-        var knownUses = new HashSet<GenericFunctionUseKey>();
+        var knownUses = new HashSet<FunctionInstanceKey>();
         foreach (var expression in AstExpressionTraversal.Enumerate(function.Body))
         {
             foreach (var use in CollectExpressionGenericUses(expression, variables, selfApiType))
@@ -81,7 +99,7 @@ internal sealed class GenericUseCollector(ProgramNode program)
             }
         }
 
-        var knownUses = new HashSet<GenericFunctionUseKey>();
+        var knownUses = new HashSet<FunctionInstanceKey>();
         foreach (var global in program.GlobalVariables.Where(global => global.Initializer is not null))
         {
             foreach (var use in CollectExpressionGenericUses(global.Initializer!, variables))
@@ -111,17 +129,22 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
-    private static IEnumerable<GenericFunctionUse> CollectResolvedUse(ExpressionNode expression)
+    private IEnumerable<GenericFunctionUse> CollectResolvedUse(ExpressionNode expression)
     {
         if (expression.Semantic.ResolvedCall is { Function.TypeParameters.Count: > 0 } resolved
             && resolved.TypeArgumentRefs.Count == resolved.Function.TypeParameters.Count)
         {
-            yield return new GenericFunctionUse(resolved.Function, resolved.TypeArgumentRefs);
+            yield return Use(resolved.Function, resolved.TypeArgumentRefs);
         }
     }
 
-    private bool TryRemember(GenericFunctionUse use, ISet<GenericFunctionUseKey> knownUses) =>
-        knownUses.Add(GenericFunctionUseKey.Create(use.Function, use.TypeArgumentRefs, _typeRefParser));
+    private static bool TryRemember(
+        GenericFunctionUse use,
+        ISet<FunctionInstanceKey> knownUses) =>
+        knownUses.Add(
+            FunctionInstanceKey.Create(
+                use.Function,
+                use.TypeArgumentRefs));
 
     private IEnumerable<GenericFunctionUse> FindForeachIteratorGenericUses(
         IEnumerable<StatementNode> statements,
@@ -137,12 +160,12 @@ internal sealed class GenericUseCollector(ProgramNode program)
                         && TypeRefFacts.TryGetNamed(iterableType, out var iterableNamed)
                         && iterableNamed.Arguments.Count > 0)
                     {
-                        foreach (var iteratorFunction in _genericFunctions.Where(function =>
-                            OwnerType(function) == iterableNamed.Name
-                            && function.Name == "iterator"
-                            && function.TypeParameters.Count == iterableNamed.Arguments.Count))
+                        foreach (var iteratorFunction in GenericMethods(
+                            iterableType,
+                            "iterator",
+                            iterableNamed.Arguments.Count))
                         {
-                            yield return new GenericFunctionUse(iteratorFunction, iterableNamed.Arguments);
+                            yield return Use(iteratorFunction, iterableNamed.Arguments);
 
                             var substitutions = iteratorFunction.TypeParameters
                                 .Zip(iterableNamed.Arguments)
@@ -151,14 +174,12 @@ internal sealed class GenericUseCollector(ProgramNode program)
                             if (TypeRefFacts.TryGetNamed(iteratorType, out var iteratorNamed)
                                 && iteratorNamed.Arguments.Count > 0)
                             {
-                                foreach (var iteratorMember in _genericFunctions.Where(function =>
-                                    OwnerType(function) == iteratorNamed.Name
-                                    && function.TypeParameters.Count == iteratorNamed.Arguments.Count
-                                    && (function.Name == "next"
-                                        || function.Name == "value"
-                                        || function.Name == "key")))
+                                foreach (var iteratorMember in GenericMethods(
+                                    iteratorType,
+                                    genericArity: iteratorNamed.Arguments.Count).Where(
+                                        function => function.Name is "next" or "value" or "key"))
                                 {
-                                    yield return new GenericFunctionUse(iteratorMember, iteratorNamed.Arguments);
+                                    yield return Use(iteratorMember, iteratorNamed.Arguments);
                                 }
                             }
                         }
@@ -285,12 +306,15 @@ internal sealed class GenericUseCollector(ProgramNode program)
             resolverVariables = mappedVariables;
         }
 
-        var resolved = new CallResolver(program, _resolver.ResolveTypeRef)
+        var resolved = new CallResolver(
+                _program,
+                _resolver.ResolveTypeRef,
+                functionCatalog: _functionCatalog)
             .ResolveTypeRefs(callee, typeArguments, arguments, resolverVariables);
         if (resolved?.Function is { TypeParameters.Count: > 0 } function
             && resolved.TypeArgumentRefs.Count == function.TypeParameters.Count)
         {
-            yield return new GenericFunctionUse(function, resolved.TypeArgumentRefs);
+            yield return Use(function, resolved.TypeArgumentRefs);
         }
     }
 
@@ -300,13 +324,11 @@ internal sealed class GenericUseCollector(ProgramNode program)
     {
         if (call.Callee is NameExpressionNode name)
         {
-            foreach (var function in _genericFunctions.Where(function =>
-                OwnerType(function) is null
-                && function.Name == name.Name))
+            foreach (var function in GenericFunctions(name.Name))
             {
                 if (_resolver.InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: false) is { } arguments)
                 {
-                    yield return new GenericFunctionUse(function, arguments);
+                    yield return Use(function, arguments);
                 }
             }
 
@@ -326,14 +348,14 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
         if (!variables.TryGet(targetName, out var targetType))
         {
-            foreach (var function in _genericFunctions.Where(function =>
-                function.IsStatic
-                && OwnerType(function) == targetName
-                && function.Name == member.MemberName))
+            foreach (var function in GenericMethods(
+                new TypeRef.Named(targetName, []),
+                member.MemberName,
+                kind: FunctionKind.Static))
             {
                 if (_resolver.InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: false) is { } arguments)
                 {
-                    yield return new GenericFunctionUse(function, arguments);
+                    yield return Use(function, arguments);
                 }
             }
 
@@ -344,23 +366,22 @@ internal sealed class GenericUseCollector(ProgramNode program)
         var receiverArguments = TypeRefFacts.TryGetGenericArguments(receiverType, out var parsedReceiverArguments)
             ? parsedReceiverArguments
             : [];
-        var ownerType = TypeRefFacts.GetBaseName(receiverType);
-        if (ownerType is null)
+        if (TypeRefFacts.GetBaseName(receiverType) is null)
         {
             yield break;
         }
 
-        foreach (var function in _genericFunctions.Where(function =>
-            !function.IsStatic
-            && OwnerType(function) == ownerType
-            && function.Name == member.MemberName))
+        foreach (var function in GenericMethods(
+            receiverType,
+            member.MemberName,
+            kind: FunctionKind.Instance))
         {
             var arguments = receiverArguments.Count == function.TypeParameters.Count
                 ? receiverArguments
                 : _resolver.InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, call.Arguments, variables, skipSelf: true, receiverArguments);
             if (arguments is not null)
             {
-                yield return new GenericFunctionUse(function, arguments);
+                yield return Use(function, arguments);
             }
         }
     }
@@ -371,13 +392,13 @@ internal sealed class GenericUseCollector(ProgramNode program)
     {
         if (call.Callee is NameExpressionNode name)
         {
-            var matchedFunction = _genericFunctions.FirstOrDefault(candidate =>
-                OwnerType(candidate) is null
-                && candidate.Name == name.Name
-                && candidate.TypeParameters.Count == TypeArgumentRefs(call.TypeArgumentNodes).Count);
+            var matchedFunction = GenericFunctions(
+                    name.Name,
+                    TypeArgumentRefs(call.TypeArgumentNodes).Count)
+                .FirstOrDefault();
             if (matchedFunction is not null)
             {
-                yield return new GenericFunctionUse(matchedFunction, TypeArgumentRefs(call.TypeArgumentNodes));
+                yield return Use(matchedFunction, TypeArgumentRefs(call.TypeArgumentNodes));
             }
 
             yield break;
@@ -396,28 +417,29 @@ internal sealed class GenericUseCollector(ProgramNode program)
 
         if (!variables.TryGet(targetName, out var targetType))
         {
-            var staticFunction = _genericFunctions.FirstOrDefault(function =>
-                function.IsStatic
-                && OwnerType(function) == targetName
-                && function.Name == member.MemberName
-                && function.TypeParameters.Count == TypeArgumentRefs(call.TypeArgumentNodes).Count);
+            var staticFunction = GenericMethods(
+                    new TypeRef.Named(targetName, []),
+                    member.MemberName,
+                    TypeArgumentRefs(call.TypeArgumentNodes).Count,
+                    FunctionKind.Static)
+                .FirstOrDefault();
             if (staticFunction is not null)
             {
-                yield return new GenericFunctionUse(staticFunction, TypeArgumentRefs(call.TypeArgumentNodes));
+                yield return Use(staticFunction, TypeArgumentRefs(call.TypeArgumentNodes));
             }
 
             yield break;
         }
 
-        var ownerType = TypeRefFacts.GetBaseName(targetType);
-        var matchedMethod = _genericFunctions.FirstOrDefault(candidate =>
-            !candidate.IsStatic
-            && OwnerType(candidate) == ownerType
-            && candidate.Name == member.MemberName
-            && candidate.TypeParameters.Count == TypeArgumentRefs(call.TypeArgumentNodes).Count);
+        var matchedMethod = GenericMethods(
+                targetType,
+                member.MemberName,
+                TypeArgumentRefs(call.TypeArgumentNodes).Count,
+                FunctionKind.Instance)
+            .FirstOrDefault();
         if (matchedMethod is not null)
         {
-            yield return new GenericFunctionUse(matchedMethod, TypeArgumentRefs(call.TypeArgumentNodes));
+            yield return Use(matchedMethod, TypeArgumentRefs(call.TypeArgumentNodes));
         }
     }
 
@@ -660,35 +682,46 @@ internal sealed class GenericUseCollector(ProgramNode program)
         }
     }
 
+    private GenericFunctionUse Use(
+        FunctionNode function,
+        IReadOnlyList<TypeRef> typeArguments) =>
+        new(CurrentDeclaration(function), typeArguments);
+
+    private FunctionNode CurrentDeclaration(FunctionNode function) =>
+        function.FunctionSymbol is { } symbol
+        && _currentFunctionsById.TryGetValue(symbol.Id, out var current)
+            ? current
+            : function;
+
+    private IEnumerable<FunctionNode> GenericFunctions(
+        string? name = null,
+        int? genericArity = null) =>
+        _functionCatalog.Query(new FunctionQuery
+            {
+                Name = name,
+                Kind = FunctionKind.Free,
+                GenericOnly = true,
+            })
+            .Where(symbol => genericArity is null
+                || symbol.Signature.TotalGenericArity == genericArity)
+            .Select(symbol => CurrentDeclaration(symbol.Declaration));
+
+    private IEnumerable<FunctionNode> GenericMethods(
+        TypeRef receiverType,
+        string? name = null,
+        int? genericArity = null,
+        FunctionKind? kind = null) =>
+        _functionCatalog.Query(new FunctionQuery
+            {
+                Name = name,
+                ReceiverType = receiverType,
+                Kind = kind,
+                GenericOnly = true,
+            })
+            .Where(symbol => genericArity is null
+                || symbol.Signature.TotalGenericArity == genericArity)
+            .Select(symbol => CurrentDeclaration(symbol.Declaration));
+
 }
 
 internal sealed record GenericFunctionUse(FunctionNode Function, IReadOnlyList<TypeRef> TypeArgumentRefs);
-
-internal readonly record struct GenericFunctionUseKey(string FunctionName, string TypeArguments)
-{
-    public static GenericFunctionUseKey Create(
-        FunctionNode function,
-        IReadOnlyList<TypeRef> typeArguments,
-        TypeRefParser? typeRefParser = null) =>
-        new(
-            FormatFunctionName(function, typeRefParser),
-            string.Join(",", typeArguments.Select(TypeIdentity.SpecializationKey)));
-
-    private static string FormatFunctionName(FunctionNode function, TypeRefParser? typeRefParser)
-    {
-        if (function.OwnerTypeNode is null)
-        {
-            return function.Name;
-        }
-
-        var ownerType = function.OwnerTypeNode.Semantic.Type
-            ?? function.OwnerTypeNode.ToTypeRef(
-                typeRefParser ?? throw new InvalidOperationException(
-                    $"Generic use collector expected resolved owner type for '{function.Name}'."));
-
-        return ownerType is TypeRef.Unknown
-            ? throw new InvalidOperationException(
-                $"Generic use collector could not resolve owner type for '{function.Name}'.")
-            : $"{TypeIdentity.SpecializationKey(ownerType)}.{function.Name}";
-    }
-}

@@ -1,6 +1,7 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
@@ -90,6 +91,110 @@ public sealed class GenericLoweringServicesTests
         Assert.Contains("Box.make<int>", uses);
         Assert.Contains("Box.replace<int>", uses);
         Assert.Contains("identity<int>", uses);
+    }
+
+    [Fact]
+    public void GenericUseCollector_RebindsCatalogResultsToTheCurrentAstDeclaration()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn identity<T>(value: T) -> T {
+                return value;
+            }
+
+            fn main() -> int {
+                return identity(10);
+            }
+            """);
+        var model = CompilerTestHelpers.Resolve(program);
+        var catalog = Assert.IsType<FunctionCatalog>(model.FunctionCatalog);
+        var originalIdentity = Assert.Single(
+            program.Functions,
+            function => function.Name == "identity");
+        var rewrittenIdentity = originalIdentity with
+        {
+            Body = originalIdentity.Body.ToList(),
+        };
+        var rewrittenProgram = program with
+        {
+            Functions = program.Functions
+                .Select(function => ReferenceEquals(function, originalIdentity)
+                    ? rewrittenIdentity
+                    : function)
+                .ToList(),
+        };
+
+        var uses = new GenericUseCollector(rewrittenProgram, catalog)
+            .Collect(rewrittenProgram)
+            .Where(use => use.Function.Name == "identity")
+            .ToList();
+
+        Assert.NotEmpty(uses);
+        Assert.All(uses, use => Assert.Same(rewrittenIdentity, use.Function));
+        Assert.NotSame(catalog.GetFunctions("identity").Single().Declaration, rewrittenIdentity);
+        Assert.Equal(
+            originalIdentity.FunctionSymbol?.Id,
+            rewrittenIdentity.FunctionSymbol?.Id);
+    }
+
+    [Fact]
+    public void GenericUseCollector_DoesNotMergeResolvedOverloadsWithTheSameTypeArguments()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn select<T>(value: T) -> T {
+                return value;
+            }
+
+            fn select<T>(value: T, fallback: T) -> T {
+                return value;
+            }
+
+            fn main() -> int {
+                let first: int = select(10);
+                return select(first, 20);
+            }
+            """);
+        var model = CompilerTestHelpers.Resolve(program);
+        var catalog = Assert.IsType<FunctionCatalog>(model.FunctionCatalog);
+        var main = Assert.Single(
+            program.Functions,
+            function => function.Name == "main");
+        var overloads = program.Functions
+            .Where(function => function.Name == "select")
+            .OrderBy(function => function.Parameters.Count)
+            .ToList();
+        var calls = AstExpressionTraversal.Enumerate(main.Body)
+            .OfType<CallExpressionNode>()
+            .OrderBy(call => call.Arguments.Count)
+            .ToList();
+        Assert.Equal(2, overloads.Count);
+        Assert.Equal(2, calls.Count);
+        for (var index = 0; index < calls.Count; index++)
+        {
+            calls[index].Semantic.ResolvedCall = new ResolvedCallInfo(
+                overloads[index],
+                [TypeRef.Int],
+                IsInstance: false);
+        }
+
+        var uses = new GenericUseCollector(program, catalog)
+            .Collect(main)
+            .Where(use => use.Function.Name == "select")
+            .ToList();
+
+        Assert.Equal(2, uses.Count);
+        Assert.Equal(
+            2,
+            uses.Select(use => use.Function.FunctionSymbol?.Id)
+                .Distinct()
+                .Count());
+        Assert.All(
+            uses,
+            use => Assert.True(
+                TypeIdentity.SpecializationEquals(
+                    TypeRef.Int,
+                    Assert.Single(use.TypeArgumentRefs))));
     }
 
     [Fact]
@@ -349,12 +454,13 @@ public sealed class GenericLoweringServicesTests
                 return identity<int>(10);
             }
             """);
-        CompilerTestHelpers.Resolve(program);
+        var model = CompilerTestHelpers.Resolve(program);
+        var catalog = Assert.IsType<FunctionCatalog>(model.FunctionCatalog);
         var generic = program.Functions.Single(function => function.Name == "identity");
         var specialized = GenericFunctionSpecializer.Specialize(generic, [Type("int")]);
-        var specializations = new Dictionary<string, FunctionNode>(StringComparer.Ordinal)
+        var specializations = new Dictionary<FunctionInstanceKey, FunctionNode>
         {
-            ["identity<int>"] = specialized,
+            [FunctionInstanceKey.Create(generic, [Type("int")])] = specialized,
         };
 
         GenericCallRetargeter.Retarget(program, specializations);

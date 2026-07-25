@@ -198,6 +198,524 @@ public sealed class CallResolverTests
         Assert.Equal(["int"], resolved.ParameterTypes.Select(TypeRefFormatter.ToCxString).ToArray());
     }
 
+    [Fact]
+    public void Resolve_UsesCanonicalCatalogDeclarationInsteadOfProgramCopy()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            fn value() -> int {
+                return 10;
+            }
+
+            fn main() -> int {
+                return value();
+            }
+            """);
+        var original = program.Functions.Single(function => function.Name == "value");
+        var catalog = FunctionCatalog.Build(program);
+        var canonical = original with { };
+        catalog.RebindDeclaration(original, canonical);
+        var expressionTypeResolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: catalog);
+        var resolver = new CallResolver(
+            program,
+            expressionTypeResolver.ResolveTypeRef,
+            functionCatalog: catalog);
+        var call = GetReturnCall(program);
+
+        var resolved = resolver.ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            new TypeEnvironment());
+
+        Assert.NotNull(resolved);
+        Assert.Same(canonical, resolved.Function);
+        Assert.Equal(catalog.GetSymbol(canonical).Id, canonical.FunctionSymbol?.Id);
+    }
+
+    [Fact]
+    public void Resolve_SelectsFreeFunctionOverloadByArity()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            fn select<T>(value: T) -> T {
+                return value;
+            }
+
+            fn select<T>(value: T, fallback: T) -> T {
+                return fallback;
+            }
+
+            fn main() -> int {
+                return select(10, 20);
+            }
+            """);
+        var call = GetReturnCall(program);
+
+        var resolved = CreateResolver(program).ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            new TypeEnvironment());
+
+        Assert.NotNull(resolved);
+        Assert.False(resolved.IsAmbiguous);
+        Assert.Equal(2, resolved.Function?.Parameters.Count);
+        Assert.Equal(["int"], TypeArgumentTexts(resolved.TypeArgumentRefs));
+    }
+
+    [Fact]
+    public void Resolve_PrefersExactTypeMatchOverCompatibleConversion()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            fn format(value: int) -> int {
+                return 1;
+            }
+
+            fn format(value: char) -> int {
+                return 2;
+            }
+
+            fn main() -> int {
+                return format(10);
+            }
+            """);
+        var call = GetReturnCall(program);
+
+        var resolved = CreateResolver(program).ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            new TypeEnvironment());
+
+        Assert.NotNull(resolved);
+        Assert.False(resolved.IsAmbiguous);
+        Assert.Equal(
+            "int",
+            Assert.Single(resolved.Function!.Parameters).TypeNode.ToSourceText());
+    }
+
+    [Fact]
+    public void Resolve_ReportsEquallyRankedCandidatesAsAmbiguous()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            fn convert(value: char) -> int {
+                return 1;
+            }
+
+            fn convert(value: long) -> int {
+                return 2;
+            }
+
+            fn main() -> int {
+                return convert(10);
+            }
+            """);
+        var call = GetReturnCall(program);
+
+        var resolved = CreateResolver(program).ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            new TypeEnvironment());
+
+        Assert.NotNull(resolved);
+        Assert.True(resolved.IsAmbiguous);
+        Assert.Null(resolved.Function);
+        Assert.Equal(2, resolved.AmbiguousFunctions.Count);
+    }
+
+    [Fact]
+    public void Resolve_SelectsStaticFactoryOverloadByArgumentType()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            struct Value {
+                static fn create(value: int) -> int {
+                    return 1;
+                }
+
+                static fn create(value: char*) -> int {
+                    return 2;
+                }
+            }
+
+            fn main() -> int {
+                return Value.create("text");
+            }
+            """);
+        var catalog = FunctionCatalog.Build(program);
+        var expressionResolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: catalog);
+        var resolver = new CallResolver(
+            program,
+            expressionResolver.ResolveTypeRef,
+            functionCatalog: catalog);
+        var call = GetReturnCall(program);
+
+        var resolved = resolver.ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            new TypeEnvironment());
+
+        Assert.NotNull(resolved);
+        Assert.False(resolved.IsAmbiguous);
+        Assert.True(resolved.Function?.IsStatic);
+        Assert.Equal(
+            "char*",
+            Assert.Single(resolved.Function!.Parameters).TypeNode.ToSourceText());
+    }
+
+    [Fact]
+    public void Resolve_SelectsInstanceMethodOverloadByArgumentType()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            struct Writer {
+                fn write(value: int) -> int {
+                    return 1;
+                }
+
+                fn write(value: char*) -> int {
+                    return 2;
+                }
+            }
+
+            fn main(writer: Writer) -> int {
+                return writer.write("text");
+            }
+            """);
+        var catalog = FunctionCatalog.Build(program);
+        var expressionResolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: catalog);
+        var resolver = new CallResolver(
+            program,
+            expressionResolver.ResolveTypeRef,
+            functionCatalog: catalog);
+        var call = GetReturnCall(program);
+
+        var resolved = resolver.ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            TypeEnvironment(("writer", "Writer"), program));
+
+        Assert.NotNull(resolved);
+        Assert.False(resolved.IsAmbiguous);
+        Assert.True(resolved.IsInstance);
+        Assert.Equal(
+            "char*",
+            resolved.Function!.Parameters
+                .Single(parameter => parameter.Name == "value")
+                .TypeNode.ToSourceText());
+    }
+
+    [Fact]
+    public void Resolve_BindsReceiverAndMethodGenericArgumentsIndependently()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            struct Box<T> {
+                value: T;
+
+                fn map<U>(value: U) -> U {
+                    return value;
+                }
+            }
+
+            fn main(box: Box<int>) -> char* {
+                return box.map("text");
+            }
+            """);
+        var call = GetReturnCall(program);
+
+        var resolved = CreateResolver(program).ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            TypeEnvironment(("box", "Box<int>"), program));
+
+        Assert.NotNull(resolved);
+        Assert.Equal("char*", TypeRefFormatter.ToCxString(resolved.ReturnType));
+        Assert.Equal(
+            ["int", "char*"],
+            TypeArgumentTexts(resolved.TypeArgumentRefs));
+    }
+
+    [Fact]
+    public void Resolve_AppliesExplicitArgumentsOnlyToMethodGenericsOnInstanceCall()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            struct Box<T> {
+                value: T;
+
+                fn map<U>(value: U) -> U {
+                    return value;
+                }
+            }
+
+            fn main(box: Box<int>) -> char* {
+                return box.map<char*>("text");
+            }
+            """);
+        var main = program.Functions.Single(function => function.Name == "main");
+        var statement = Assert.IsType<ReturnStatement>(Assert.Single(main.Body));
+        var call = Assert.IsType<GenericCallExpressionNode>(statement.Expression);
+        var parser = new TypeRefParser(program);
+
+        var resolved = CreateResolver(program).ResolveTypeRefs(
+            call.Callee,
+            call.TypeArgumentNodes.Select(type => type.ToTypeRef(parser)).ToList(),
+            call.Arguments,
+            TypeEnvironment(("box", "Box<int>"), program));
+
+        Assert.NotNull(resolved);
+        Assert.Equal("char*", TypeRefFormatter.ToCxString(resolved.ReturnType));
+        Assert.Equal(
+            ["int", "char*"],
+            TypeArgumentTexts(resolved.TypeArgumentRefs));
+    }
+
+    [Fact]
+    public void Compiler_SpecializesMethodWithReceiverAndInferredMethodGenericArguments()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Box<T> {
+                value: T;
+
+                fn map<U>(value: U) -> U {
+                    return value;
+                }
+            }
+
+            fn main() -> int {
+                let box: Box<int> = Box<int> { value: 10 };
+                let text: char* = box.map("text");
+                return text == null ? 0 : 1;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Box_map_int_char_ptr", result.Output);
+    }
+
+    [Fact]
+    public void Resolve_ExcludesConstrainedExtensionOverloadWhenReceiverDoesNotSatisfyRequirement()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            requires Disposable<T> {
+                fn dispose(self: Self*) -> void;
+            }
+
+            struct Plain {
+                value: int;
+            }
+
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T>
+            where T: Disposable<T> {
+                fn select(value: int) -> int {
+                    return 1;
+                }
+            }
+
+            extension Box<T> {
+                fn select(value: char) -> int {
+                    return 2;
+                }
+            }
+
+            fn main(box: Box<Plain>) -> int {
+                return box.select(10);
+            }
+            """);
+        var catalog = FunctionCatalog.Build(program);
+        var expressionResolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: catalog);
+        var resolver = new CallResolver(
+            program,
+            expressionResolver.ResolveTypeRef,
+            functionCatalog: catalog);
+        var call = GetReturnCall(program);
+
+        var resolved = resolver.ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            TypeEnvironment(("box", "Box<Plain>"), program));
+
+        Assert.NotNull(resolved);
+        Assert.False(resolved.IsAmbiguous);
+        Assert.Equal(
+            "char",
+            resolved.Function!.Parameters
+                .Single(parameter => parameter.Name == "value")
+                .TypeNode.ToSourceText());
+    }
+
+    [Fact]
+    public void Resolve_IncludesConstrainedExtensionOverloadWhenReceiverSatisfiesRequirement()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            requires Disposable<T> {
+                fn dispose(self: Self*) -> void;
+            }
+
+            struct File: Disposable<File> {
+                handle: void*;
+            }
+
+            extension File {
+                fn dispose() -> void {
+                }
+            }
+
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T>
+            where T: Disposable<T> {
+                fn select(value: int) -> int {
+                    return 1;
+                }
+            }
+
+            extension Box<T> {
+                fn select(value: char) -> int {
+                    return 2;
+                }
+            }
+
+            fn main(box: Box<File>) -> int {
+                return box.select(10);
+            }
+            """);
+        var catalog = FunctionCatalog.Build(program);
+        var expressionResolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: catalog);
+        var resolver = new CallResolver(
+            program,
+            expressionResolver.ResolveTypeRef,
+            functionCatalog: catalog);
+        var call = GetReturnCall(program);
+
+        var resolved = resolver.ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            TypeEnvironment(("box", "Box<File>"), program));
+
+        Assert.NotNull(resolved);
+        Assert.False(resolved.IsAmbiguous);
+        Assert.Equal(
+            "int",
+            resolved.Function!.Parameters
+                .Single(parameter => parameter.Name == "value")
+                .TypeNode.ToSourceText());
+    }
+
+    [Fact]
+    public void Compiler_RejectsConstrainedExtensionCallForUnsatisfiedReceiver()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            requires Disposable<T> {
+                fn dispose(self: Self*) -> void;
+            }
+
+            struct Plain {
+                value: int;
+            }
+
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T>
+            where T: Disposable<T> {
+                fn dispose_all() -> void {
+                }
+            }
+
+            fn main(box: Box<Plain>) -> int {
+                box.dispose_all();
+                return 0;
+            }
+            """);
+
+        Assert.False(result.Success, result.Output);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("dispose_all", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Compiler_ReportsAmbiguousOverloadDiagnostic()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn convert(value: char) -> int {
+                return 1;
+            }
+
+            fn convert(value: long) -> int {
+                return 2;
+            }
+
+            fn main() -> int {
+                return convert(10);
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Ambiguous call to 'convert'",
+            "convert(char)",
+            "convert(long)");
+    }
+
+    [Fact]
+    public void Compiler_EmitsDistinctNamesForReachableOverloads()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Value {
+                static fn create(value: int) -> int {
+                    return value;
+                }
+
+                static fn create(value: char*) -> int {
+                    return value == null ? 0 : 1;
+                }
+            }
+
+            fn main() -> int {
+                let number: int = Value.create(10);
+                return number + Value.create("text");
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Value_create_int", result.Output);
+        Assert.Contains("Value_create_char_ptr", result.Output);
+    }
+
     private static ProgramNode ParseAndResolveTypes(string source)
     {
         var program = CompilerTestHelpers.Parse(source);

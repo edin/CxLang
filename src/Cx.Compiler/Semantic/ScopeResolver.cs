@@ -8,16 +8,27 @@ namespace Cx.Compiler.Semantic;
 
 internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel model)
 {
-    private IReadOnlyList<FunctionNode> _functions = [];
+    private FunctionCatalog? _functionCatalog;
     private CallResolver? _callResolver;
     private TypeRefParser? _typeRefParser;
+    private ProgramNode? _program;
+    private GenericConstraintMatcher? _genericConstraintMatcher;
+    private string _currentModuleName = string.Empty;
 
     public void Resolve(ProgramNode program)
     {
-        _functions = GetAllFunctions(program);
-        var expressionTypeResolver = new ExpressionTypeResolver(program);
-        _callResolver = new CallResolver(program, expressionTypeResolver.ResolveTypeRef);
+        _program = program;
+        _functionCatalog = model.GetOrCreateFunctionCatalog(program);
+        var expressionTypeResolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: FunctionCatalog);
+        _callResolver = new CallResolver(
+            program,
+            expressionTypeResolver.ResolveTypeRef,
+            functionCatalog: FunctionCatalog);
         _typeRefParser = new TypeRefParser(program);
+        _genericConstraintMatcher = new GenericConstraintMatcher(program);
+        _currentModuleName = program.Module?.Name ?? string.Empty;
         DeclareTopLevelSymbols(program);
 
         foreach (var enumNode in program.Enums.Where(node => node.IsDataEnum))
@@ -45,25 +56,9 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             }
         }
 
-        foreach (var function in program.Functions)
+        foreach (var function in FunctionCatalog.Functions)
         {
-            ResolveFunction(function);
-        }
-
-        foreach (var structNode in program.Structs)
-        {
-            foreach (var method in structNode.Methods)
-            {
-                ResolveFunction(method);
-            }
-        }
-
-        foreach (var union in program.TaggedUnions)
-        {
-            foreach (var method in union.Methods)
-            {
-                ResolveFunction(method);
-            }
+            ResolveFunction(function.Declaration);
         }
     }
 
@@ -114,11 +109,17 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             DeclareTopLevel(externFunction.Name, SymbolKind.Function, externFunction.ReturnTypeNode, externFunction.Location, externFunction);
         }
 
-        foreach (var function in _functions)
+        foreach (var function in FunctionCatalog.Functions)
         {
-            var symbol = CreateSymbol(function.Name, SymbolKind.Function, function.ReturnTypeNode, function.Location, function);
-            function.Semantic.Symbol = symbol;
-            if (OwnerType(function) is null)
+            var declaration = function.Declaration;
+            var symbol = CreateSymbol(
+                declaration.Name,
+                SymbolKind.Function,
+                declaration.ReturnTypeNode,
+                declaration.Location,
+                declaration);
+            declaration.Semantic.Symbol = symbol;
+            if (function.Kind == FunctionKind.Free)
             {
                 model.RootScope.TryDeclare(symbol);
             }
@@ -127,6 +128,23 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private void ResolveFunction(FunctionNode function)
     {
+        _currentModuleName = string.IsNullOrWhiteSpace(function.Semantic.ModuleName)
+            ? Program.Module?.Name ?? string.Empty
+            : function.Semantic.ModuleName;
+        var expressionTypeResolver = new ExpressionTypeResolver(
+            Program,
+            function.TypeParameters,
+            function.GenericConstraints,
+            FunctionCatalog);
+        _callResolver = new CallResolver(
+            Program,
+            expressionTypeResolver.ResolveTypeRef,
+            function.TypeParameters,
+            function.GenericConstraints,
+            FunctionCatalog);
+        _genericConstraintMatcher = new GenericConstraintMatcher(
+            Program,
+            function.GenericConstraints);
         var functionScope = model.RootScope.CreateChild();
         var ownerType = TypeRefOrNull(function.OwnerTypeNode);
         if (!function.IsStatic
@@ -623,25 +641,48 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     }
 
     private FunctionNode? FindFreeFunction(string name, IReadOnlyList<TypeRef> typeArgumentRefs) =>
-        _functions.FirstOrDefault(function =>
-            OwnerType(function) is null
-            && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArgumentRefs));
+        FunctionCatalog.Query(new FunctionQuery
+            {
+                Name = name,
+                Kind = FunctionKind.Free,
+                VisibleFromModule = _currentModuleName,
+            })
+            .Select(function => function.Declaration)
+            .FirstOrDefault(function =>
+                MatchesTypeArguments(function, typeArgumentRefs)
+                && FunctionConstraintsSatisfied(
+                    function,
+                    ResolveFunctionTypeArgumentRefs(function, typeArgumentRefs)));
 
     private FunctionNode? FindStaticFunction(string ownerType, string name, IReadOnlyList<TypeRef> typeArgumentRefs) =>
-        _functions.FirstOrDefault(function =>
-            function.IsStatic
-            && OwnerType(function) is not null
-            && string.Equals(OwnerType(function), ownerType, StringComparison.Ordinal)
-            && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArgumentRefs));
+        FunctionCatalog.Query(new FunctionQuery
+            {
+                Name = name,
+                Kind = FunctionKind.Static,
+                ReceiverType = new TypeRef.Named(ownerType, []),
+                VisibleFromModule = _currentModuleName,
+            })
+            .Select(function => function.Declaration)
+            .FirstOrDefault(function =>
+                MatchesTypeArguments(function, typeArgumentRefs)
+                && FunctionConstraintsSatisfied(
+                    function,
+                    ResolveFunctionTypeArgumentRefs(function, typeArgumentRefs)));
 
     private FunctionNode? FindModuleFunction(string moduleName, string name, IReadOnlyList<TypeRef> typeArgumentRefs) =>
-        _functions.FirstOrDefault(function =>
-            OwnerType(function) is null
-            && string.Equals(function.Semantic.ModuleName, moduleName, StringComparison.Ordinal)
-            && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && MatchesTypeArguments(function, typeArgumentRefs));
+        FunctionCatalog.Query(new FunctionQuery
+            {
+                Name = name,
+                Kind = FunctionKind.Free,
+                DeclaredInModule = moduleName,
+                VisibleFromModule = _currentModuleName,
+            })
+            .Select(function => function.Declaration)
+            .FirstOrDefault(function =>
+                MatchesTypeArguments(function, typeArgumentRefs)
+                && FunctionConstraintsSatisfied(
+                    function,
+                    ResolveFunctionTypeArgumentRefs(function, typeArgumentRefs)));
 
     private FunctionNode? FindInstanceFunction(Symbol receiverSymbol, string name, IReadOnlyList<TypeRef> typeArgumentRefs)
     {
@@ -650,17 +691,33 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             var ownerType = TypeRefFacts.GetBaseName(receiverSymbol.TypeRef);
             if (!string.IsNullOrWhiteSpace(ownerType))
             {
-                return _functions.FirstOrDefault(function =>
-                    !function.IsStatic
-                    && OwnerType(function) is not null
-                    && string.Equals(OwnerType(function), ownerType, StringComparison.Ordinal)
-                    && string.Equals(function.Name, name, StringComparison.Ordinal)
-                    && MatchesTypeArguments(function, typeArgumentRefs, receiverSymbol.TypeRef));
+                var receiverType = TypeRefFacts.StripPointersAndAliases(receiverSymbol.TypeRef);
+                return FunctionCatalog.Query(new FunctionQuery
+                    {
+                        Name = name,
+                        Kind = FunctionKind.Instance,
+                        ReceiverType = receiverType,
+                        VisibleFromModule = _currentModuleName,
+                    })
+                    .Select(function => function.Declaration)
+                    .FirstOrDefault(function =>
+                        MatchesTypeArguments(function, typeArgumentRefs, receiverSymbol.TypeRef)
+                        && FunctionConstraintsSatisfied(
+                            function,
+                            ResolveFunctionTypeArgumentRefs(
+                                function,
+                                typeArgumentRefs,
+                                receiverSymbol)));
             }
         }
 
         return null;
     }
+
+    private bool FunctionConstraintsSatisfied(
+        FunctionNode function,
+        IReadOnlyList<TypeRef> typeArgumentRefs) =>
+        GenericConstraintMatcher.AreSatisfied(function, typeArgumentRefs);
 
     private static bool MatchesTypeArguments(
         FunctionNode function,
@@ -689,13 +746,13 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return typeArgumentRefs.Count == 0;
         }
 
-        if (typeArgumentRefs.Count > 0)
+        if (typeArgumentRefs.Count != function.MethodTypeParameters.Count)
         {
-            return typeArgumentRefs.Count == function.TypeParameters.Count;
+            return false;
         }
 
         return TypeRefFacts.TryGetGenericArguments(receiverType, out var receiverArguments)
-            && receiverArguments.Count == function.TypeParameters.Count;
+            && receiverArguments.Count == function.ReceiverTypeParameters.Count;
     }
 
     private IReadOnlyList<TypeRef> ResolveFunctionTypeArgumentRefs(
@@ -725,16 +782,12 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             return [];
         }
 
-        if (explicitTypeArgumentRefs.Count > 0)
-        {
-            return explicitTypeArgumentRefs;
-        }
-
         if (receiverSymbol.TypeRef is not null
             && TypeRefFacts.TryGetGenericArguments(receiverSymbol.TypeRef, out var receiverArguments)
-            && receiverArguments.Count == function.TypeParameters.Count)
+            && receiverArguments.Count == function.ReceiverTypeParameters.Count
+            && explicitTypeArgumentRefs.Count == function.MethodTypeParameters.Count)
         {
-            return receiverArguments;
+            return receiverArguments.Concat(explicitTypeArgumentRefs).ToList();
         }
 
         return [];
@@ -752,13 +805,6 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
         return symbol;
     }
 
-    private static IReadOnlyList<FunctionNode> GetAllFunctions(ProgramNode program) =>
-        program.Functions
-            .Concat(program.Structs.SelectMany(structNode => structNode.Methods))
-            .Concat(program.TaggedUnions.SelectMany(union => union.Methods))
-            .Distinct()
-            .ToList();
-
     private sealed record ResolvedFunction(
         FunctionNode Function,
         IReadOnlyList<TypeRef> TypeArgumentRefs,
@@ -766,6 +812,16 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private string? OwnerType(FunctionNode function) =>
         TypeRefFacts.GetBaseName(TypeRefOrNull(function.OwnerTypeNode));
+
+    private FunctionCatalog FunctionCatalog =>
+        _functionCatalog ?? throw new InvalidOperationException("Scope resolver has no function catalog.");
+
+    private ProgramNode Program =>
+        _program ?? throw new InvalidOperationException("Scope resolver has no program.");
+
+    private GenericConstraintMatcher GenericConstraintMatcher =>
+        _genericConstraintMatcher
+        ?? throw new InvalidOperationException("Scope resolver has no generic constraint matcher.");
 
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(TypeRefOrUnknown).ToList();

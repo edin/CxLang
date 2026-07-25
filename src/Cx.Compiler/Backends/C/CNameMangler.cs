@@ -9,10 +9,13 @@ internal sealed class CNameMangler(
     Func<TypeRef, string> lowerSpecializationType,
     Func<string, string> sanitizeTypeName,
     CNameManglerOptions? options = null,
-    IReadOnlySet<string>? moduleCollisionKeys = null)
+    IReadOnlySet<string>? moduleCollisionKeys = null,
+    IReadOnlySet<string>? overloadKeys = null)
 {
     private readonly CNameManglerOptions _options = options ?? new();
     private readonly IReadOnlySet<string> _moduleCollisionKeys = moduleCollisionKeys
+        ?? new HashSet<string>(StringComparer.Ordinal);
+    private readonly IReadOnlySet<string> _overloadKeys = overloadKeys
         ?? new HashSet<string>(StringComparer.Ordinal);
 
     public CNameManglerOptions Options => _options;
@@ -20,6 +23,7 @@ internal sealed class CNameMangler(
     public string FunctionName(FunctionNode function) =>
         ModulePrefix(function) +
         (TypeTextOrNull(function.OwnerTypeNode) is { } ownerType ? $"{ownerType}_{function.Name}" : function.Name) +
+        OverloadSuffix(function) +
         TypeArgumentSuffix(function.TypeArgumentNodes);
 
     public string SymbolName(Symbol symbol) =>
@@ -40,6 +44,17 @@ internal sealed class CNameMangler(
             .Select(group => group.Key)
             .ToHashSet(StringComparer.Ordinal);
 
+    public static IReadOnlySet<string> FindOverloadKeys(IEnumerable<FunctionNode> functions) =>
+        functions
+            .GroupBy(OverloadIdentity, StringComparer.Ordinal)
+            .Where(group => group
+                .Select(ParameterIdentity)
+                .Distinct(StringComparer.Ordinal)
+                .Skip(1)
+                .Any())
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
     private string TypeArgumentSuffix(IReadOnlyList<TypeNode> arguments) =>
         arguments.Count == 0
             ? string.Empty
@@ -47,6 +62,24 @@ internal sealed class CNameMangler(
 
     private string LowerTypeArgument(TypeNode typeNode) =>
         lowerSpecializationType(typeNode.Semantic.Type ?? typeNode.Syntax.ToUnresolvedTypeRef());
+
+    private string OverloadSuffix(FunctionNode function) =>
+        !_overloadKeys.Contains(OverloadIdentity(function))
+            ? string.Empty
+            : "_" + string.Join(
+                "_",
+                function.Parameters
+                    .Where(parameter => parameter.Name != "self")
+                    .Select(parameter => parameter.IsVariadic
+                        ? "variadic"
+                        : LowerParameterType(parameter.TypeNode)));
+
+    private string LowerParameterType(TypeNode? typeNode) =>
+        typeNode is null
+            ? "unknown"
+            : lowerSpecializationType(
+                typeNode.Semantic.Type
+                ?? typeNode.Syntax.ToUnresolvedTypeRef());
 
     private static string TypeText(TypeNode typeNode) =>
         typeNode.Semantic.Type is { } type
@@ -78,6 +111,25 @@ internal sealed class CNameMangler(
         var parameters = string.Join(",", function.Parameters.Select(parameter => TypeNodeIdentity(parameter.TypeNode)));
         return $"{owner}.{function.Name}<{arguments}>({parameters})";
     }
+
+    private static string OverloadIdentity(FunctionNode function)
+    {
+        var module = function.Semantic.ModuleName;
+        var owner = TypeTextOrNull(function.OwnerTypeNode) ?? string.Empty;
+        var arguments = string.Join(
+            ",",
+            function.TypeArgumentNodes.Select(TypeNodeIdentity));
+        return $"{module}:{owner}.{function.Name}<{arguments}>";
+    }
+
+    private static string ParameterIdentity(FunctionNode function) =>
+        string.Join(
+            ",",
+            function.Parameters
+                .Where(parameter => parameter.Name != "self")
+                .Select(parameter => parameter.IsVariadic
+                    ? "..."
+                    : TypeNodeIdentity(parameter.TypeNode)));
 
     private static string TypeNodeIdentity(TypeNode? typeNode) =>
         typeNode?.Semantic.Type is { } type

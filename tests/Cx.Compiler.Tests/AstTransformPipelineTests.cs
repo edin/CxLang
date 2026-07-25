@@ -85,7 +85,6 @@ public sealed class AstTransformPipelineTests
             [
                 new FunctionNode(
                     location,
-                    IsStatic: false,
                     "main",
                     TypeParameters: [],
                     GenericConstraints: [],

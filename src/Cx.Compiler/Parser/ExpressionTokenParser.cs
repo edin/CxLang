@@ -200,6 +200,33 @@ internal sealed class ExpressionTokenParser
                     continue;
                 }
 
+                if (Match(TokenType.Operator) is not null)
+                {
+                    var operatorKind = Current.Type switch
+                    {
+                        TokenType.Plus => OperatorKind.Add,
+                        TokenType.Minus => OperatorKind.Subtract,
+                        TokenType.Star => OperatorKind.Multiply,
+                        TokenType.Slash => OperatorKind.Divide,
+                        TokenType.Percent => OperatorKind.Modulo,
+                        _ => (OperatorKind?)null,
+                    };
+                    if (operatorKind is null)
+                    {
+                        return null;
+                    }
+
+                    Advance();
+                    expression = new MemberExpressionNode(
+                        expression.Location,
+                        expression,
+                        operatorKind.Value.ToFunctionName())
+                    {
+                        OperatorKind = operatorKind,
+                    };
+                    continue;
+                }
+
                 var member = ExpectIdentifierLike();
                 if (member is null)
                 {
@@ -1317,7 +1344,7 @@ internal sealed class ExpressionTokenParser
     private bool TryParseSizeOfExpression(out ExpressionNode expression)
     {
         expression = null!;
-        if (IsAtEnd || Current.Type != TokenType.Identifier || Current.Value != "sizeof")
+        if (IsAtEnd || Current.Type != TokenType.Sizeof)
         {
             return false;
         }

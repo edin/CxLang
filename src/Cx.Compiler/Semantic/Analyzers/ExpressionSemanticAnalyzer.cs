@@ -14,7 +14,8 @@ internal sealed class ExpressionSemanticAnalyzer(
     SymbolSuggestionService? symbolSuggestions,
     IReadOnlyList<string> currentTypeParameters,
     IReadOnlyList<GenericConstraintNode> currentGenericConstraints,
-    Func<string, bool> isKnownTypeName)
+    Func<string, bool> isKnownTypeName,
+    FunctionCatalog? functionCatalog = null)
 {
     private readonly TypeRefParser _typeRefParser = new(program);
 
@@ -220,12 +221,19 @@ internal sealed class ExpressionSemanticAnalyzer(
             program,
             expressionTypeResolver.ResolveTypeRef,
             currentTypeParameters,
-            currentGenericConstraints);
+            currentGenericConstraints,
+            functionCatalog);
 
         var resolution = resolvedCall.ResolveTypeRefs(callee, typeArguments, arguments, typeEnvironment);
         return resolution is null
             ? null
-            : new CallSignature(resolution.Name, resolution.ParameterTypes, resolution.IsVariadic);
+            : new CallSignature(
+                resolution.Name,
+                resolution.ParameterTypes,
+                resolution.IsVariadic,
+                resolution.AmbiguousFunctions
+                    .Select(FormatFunctionCandidate)
+                    .ToList());
     }
 
     private void CheckCallArguments(
@@ -234,6 +242,14 @@ internal sealed class ExpressionSemanticAnalyzer(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment typeEnvironment)
     {
+        if (signature.AmbiguousCandidates.Count > 0)
+        {
+            diagnostics.Report(
+                location,
+                $"Ambiguous call to '{signature.Name}'. Candidates: {string.Join(", ", signature.AmbiguousCandidates)}.");
+            return;
+        }
+
         if (arguments.Count < signature.ParameterTypes.Count)
         {
             diagnostics.Report(
@@ -278,6 +294,21 @@ internal sealed class ExpressionSemanticAnalyzer(
             return;
         }
 
+        if (callee is MemberExpressionNode member)
+        {
+            var receiverType = ResolveExpressionTypeRef(member.Target, typeEnvironment);
+            if (receiverType is not null
+                && receiverType is not TypeRef.Unknown
+                && HasRejectedConstrainedCandidate(member, receiverType))
+            {
+                diagnostics.Report(
+                    location,
+                    $"No applicable method '{member.MemberName}' was found for type '{TypeRefFormatter.ToCxString(receiverType)}' because its generic constraints are not satisfied.");
+            }
+
+            return;
+        }
+
         if (callee is not NameExpressionNode)
         {
             return;
@@ -308,6 +339,45 @@ internal sealed class ExpressionSemanticAnalyzer(
                     ? $"Unknown function '{name}'."
                     : $"Unknown function '{name}'. Did you mean to import {suggestion}?");
         }
+    }
+
+    private bool HasRejectedConstrainedCandidate(
+        MemberExpressionNode member,
+        TypeRef receiverType)
+    {
+        if (functionCatalog is null)
+        {
+            return false;
+        }
+
+        receiverType = TypeRefFacts.StripPointersAndAliases(receiverType);
+        var typeArguments = TypeRefFacts.TryGetGenericArguments(
+            receiverType,
+            out var receiverArguments)
+            ? receiverArguments
+            : [];
+        var constrainedCandidates = functionCatalog
+            .Query(new FunctionQuery
+            {
+                Name = member.MemberName,
+                ReceiverType = receiverType,
+            })
+            .Where(candidate => candidate.Declaration.GenericConstraints.Count > 0)
+            .Where(candidate =>
+                candidate.Declaration.ReceiverTypeParameters.Count == typeArguments.Count
+                && candidate.Declaration.MethodTypeParameters.Count == 0)
+            .Select(candidate => candidate.Declaration)
+            .ToList();
+        if (constrainedCandidates.Count == 0)
+        {
+            return false;
+        }
+
+        var matcher = new GenericConstraintMatcher(
+            program,
+            currentGenericConstraints);
+        return constrainedCandidates.All(candidate =>
+            !matcher.AreSatisfied(candidate, typeArguments));
     }
 
     private void ReportInvalidScopeCleanup(
@@ -350,8 +420,22 @@ internal sealed class ExpressionSemanticAnalyzer(
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(typeNode => typeNode.ToTypeRef(_typeRefParser)).ToList();
 
+    private static string FormatFunctionCandidate(FunctionNode function)
+    {
+        var owner = function.OwnerTypeNode is null
+            ? string.Empty
+            : $"{function.OwnerTypeNode.ToSourceText()}.";
+        var parameters = function.Parameters
+            .Where(parameter => parameter.Name != "self")
+            .Select(parameter => parameter.IsVariadic
+                ? "..."
+                : parameter.TypeNode?.ToSourceText() ?? "?");
+        return $"{owner}{function.Name}({string.Join(", ", parameters)})";
+    }
+
     private sealed record CallSignature(
         string Name,
         IReadOnlyList<TypeRef> ParameterTypes,
-        bool IsVariadic);
+        bool IsVariadic,
+        IReadOnlyList<string> AmbiguousCandidates);
 }

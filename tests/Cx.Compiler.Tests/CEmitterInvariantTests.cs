@@ -15,7 +15,6 @@ public sealed class CEmitterInvariantTests
             [
                 new FunctionNode(
                     location,
-                    IsStatic: false,
                     "main",
                     TypeParameters: [],
                     GenericConstraints: [],
@@ -43,7 +42,6 @@ public sealed class CEmitterInvariantTests
             [
                 new FunctionNode(
                     location,
-                    IsStatic: false,
                     "main",
                     TypeParameters: [],
                     GenericConstraints: [],

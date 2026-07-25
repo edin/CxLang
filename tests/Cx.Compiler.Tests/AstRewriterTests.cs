@@ -115,7 +115,6 @@ public sealed class AstRewriterTests
             [
                 new FunctionNode(
                     location,
-                    IsStatic: false,
                     "main",
                     TypeParameters: [],
                     GenericConstraints: [],

@@ -38,7 +38,8 @@ internal sealed class CBackendContext
             nameManglerOptions,
             nameManglerOptions is null
                 ? CNameMangler.FindModuleCollisionKeys(program.Functions)
-                : null);
+                : null,
+            CNameMangler.FindOverloadKeys(program.Functions));
         return new CBackendContext(typeAdapters, abiNames, nameMangler, typeRefParser);
     }
 

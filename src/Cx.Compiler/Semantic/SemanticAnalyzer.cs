@@ -10,6 +10,8 @@ public sealed class SemanticAnalyzer(
     DiagnosticBag diagnostics,
     IReadOnlyList<ProgramNode>? availablePrograms = null)
 {
+    internal FunctionCatalog? FunctionCatalog { get; init; }
+
     private RequirementMatcher? _requirementMatcher;
     private TypeSystem? _typeSystem;
     private ExpressionTypeResolver? _expressionTypeResolver;
@@ -31,7 +33,9 @@ public sealed class SemanticAnalyzer(
         _program = program;
         _requirementMatcher = new RequirementMatcher(program);
         _typeSystem = new TypeSystem(program);
-        _expressionTypeResolver = new ExpressionTypeResolver(program);
+        _expressionTypeResolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: FunctionCatalog);
         _typeRefParser = new TypeRefParser(program);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
         _symbolSuggestions = new SymbolSuggestionService(program, availablePrograms, OwnerType);
@@ -53,6 +57,7 @@ public sealed class SemanticAnalyzer(
             program,
             _requirementMatcher);
         new AttributeSemanticAnalyzer(diagnostics).Analyze(program);
+        AnalyzeExternFunctionDeclarations(program);
 
         foreach (var structNode in program.Structs)
         {
@@ -125,7 +130,11 @@ public sealed class SemanticAnalyzer(
             var previousGenericConstraints = _currentGenericConstraints;
             _currentTypeParameters = function.TypeParameters;
             _currentGenericConstraints = effectiveGenericConstraints;
-            _expressionTypeResolver = new ExpressionTypeResolver(program, _currentTypeParameters, _currentGenericConstraints);
+            _expressionTypeResolver = new ExpressionTypeResolver(
+                program,
+                _currentTypeParameters,
+                _currentGenericConstraints,
+                FunctionCatalog);
             _assignmentAnalyzer = CreateAssignmentAnalyzer(program);
             _returnAnalyzer = CreateReturnAnalyzer();
             _matchAnalyzer = CreateMatchAnalyzer(program);
@@ -143,7 +152,11 @@ public sealed class SemanticAnalyzer(
 
             _currentTypeParameters = previousTypeParameters;
             _currentGenericConstraints = previousGenericConstraints;
-            _expressionTypeResolver = new ExpressionTypeResolver(program, _currentTypeParameters, _currentGenericConstraints);
+            _expressionTypeResolver = new ExpressionTypeResolver(
+                program,
+                _currentTypeParameters,
+                _currentGenericConstraints,
+                FunctionCatalog);
             _assignmentAnalyzer = CreateAssignmentAnalyzer(program);
             _returnAnalyzer = CreateReturnAnalyzer();
             _matchAnalyzer = CreateMatchAnalyzer(program);
@@ -228,7 +241,8 @@ public sealed class SemanticAnalyzer(
                 _symbolSuggestions,
                 _currentTypeParameters,
                 _currentGenericConstraints,
-                IsKnownTypeName);
+                IsKnownTypeName,
+                FunctionCatalog);
 
     private void AnalyzeStatements(
         IReadOnlyList<StatementNode> statements,
@@ -243,6 +257,47 @@ public sealed class SemanticAnalyzer(
             AnalyzeStatement(statement, returnType, typeEnvironment, mutability, program, inScopeTypeParameters);
         }
     }
+
+    private void AnalyzeExternFunctionDeclarations(ProgramNode program)
+    {
+        var externFunctions = program.ExternFunctions
+            .Concat(program.CDeclarations.SelectMany(declaration => declaration.Functions))
+            .ToList();
+        foreach (var overloadSet in externFunctions
+            .GroupBy(function => function.Name, StringComparer.Ordinal))
+        {
+            var signatures = overloadSet
+                .GroupBy(ExternSignatureIdentity, StringComparer.Ordinal)
+                .ToList();
+            if (signatures.Count <= 1)
+            {
+                continue;
+            }
+
+            foreach (var conflictingDeclaration in signatures
+                .Skip(1)
+                .Select(group => group.First()))
+            {
+                diagnostics.Report(
+                    conflictingDeclaration.Location,
+                    $"Extern function '{overloadSet.Key}' cannot be overloaded because an extern name maps directly to one ABI symbol.");
+            }
+        }
+    }
+
+    private static string ExternSignatureIdentity(ExternFunctionNode function)
+    {
+        var parameters = function.Parameters.Select(parameter =>
+            parameter.IsVariadic
+                ? "..."
+                : TypeIdentity(parameter.TypeNode));
+        return $"{function.TypeParameters.Count}:({string.Join(",", parameters)})->{TypeIdentity(function.ReturnTypeNode)}";
+    }
+
+    private static string TypeIdentity(TypeNode? typeNode) =>
+        typeNode?.Semantic.Type is { } type
+            ? Cx.Compiler.Semantic.TypeIdentity.SpecializationKey(type)
+            : typeNode?.ToSourceText() ?? string.Empty;
 
     private void AnalyzeImplicitConversionDeclarations(
         ProgramNode program,

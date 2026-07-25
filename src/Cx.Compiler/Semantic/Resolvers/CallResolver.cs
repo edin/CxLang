@@ -11,21 +11,32 @@ internal sealed record CallResolution(
     bool IsInstance = false)
 {
     public IReadOnlyList<TypeRef> TypeArgumentRefs { get; init; } = [];
+
+    public IReadOnlyList<FunctionNode> AmbiguousFunctions { get; init; } = [];
+
+    public bool IsAmbiguous => AmbiguousFunctions.Count > 0;
 }
 
 internal sealed class CallResolver(
     ProgramNode program,
     Func<ExpressionNode, TypeEnvironment, TypeRef?> resolveExpressionType,
     IReadOnlyList<string>? currentTypeParameters = null,
-    IReadOnlyList<GenericConstraintNode>? currentGenericConstraints = null)
+    IReadOnlyList<GenericConstraintNode>? currentGenericConstraints = null,
+    FunctionCatalog? functionCatalog = null)
 {
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
-    private readonly MethodCallResolver _methodCallResolver = new(program, new TypeSystem(program, currentTypeParameters));
-    private readonly Dictionary<string, List<FunctionNode>> _functionsByName = program.Functions
-        .GroupBy(function => function.Name, StringComparer.Ordinal)
-        .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
+    private readonly TypeCompatibility _typeCompatibility = new(new TypeRefParser(program));
+    private readonly GenericConstraintMatcher _genericConstraintMatcher = new(
+        program,
+        currentGenericConstraints);
+    private readonly TypeSystem _typeSystem = new(program, currentTypeParameters);
+    private readonly MethodCallResolver _methodCallResolver = new(
+        program,
+        new TypeSystem(program, currentTypeParameters));
+    private readonly FunctionCatalog _functionCatalog =
+        functionCatalog ?? FunctionCatalog.Build(program);
     private readonly Dictionary<string, List<ExternFunctionNode>> _externFunctionsByName = program.ExternFunctions
         .GroupBy(function => function.Name, StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
@@ -90,6 +101,49 @@ internal sealed class CallResolver(
         return ResolveExternFunction(name, typeArguments, arguments, variables);
     }
 
+    public CallResolution? ResolveOperatorTypeRefs(
+        OperatorKind operatorKind,
+        TypeRef receiverType,
+        ExpressionNode right,
+        TypeEnvironment variables)
+    {
+        var normalizedReceiver = NormalizeReceiverType(receiverType);
+        if (normalizedReceiver is null)
+        {
+            return null;
+        }
+
+        var receiverArguments = TypeRefFacts.TryGetGenericArguments(
+            normalizedReceiver,
+            out var parsedReceiverArguments)
+            ? parsedReceiverArguments
+            : [];
+        var resolution = ResolveBestFunction(
+            $"{TypeRefFormatter.ToCxString(normalizedReceiver)}.operator {operatorKind.ToSourceText()}",
+            _functionCatalog.Query(new FunctionQuery
+                {
+                    Kind = FunctionKind.Instance,
+                    OperatorKind = operatorKind,
+                    ReceiverType = normalizedReceiver,
+                })
+                .Select(candidate => candidate.Declaration)
+                .ToList(),
+            explicitTypeArguments: [],
+            arguments: [right],
+            variables: variables,
+            skipSelf: true,
+            isInstance: true,
+            seedTypeArguments: receiverArguments);
+        return resolution is null
+            ? null
+            : resolution with
+            {
+                ReturnType = TypeRefRewriter.SubstituteSelf(
+                    resolution.ReturnType,
+                    normalizedReceiver),
+            };
+    }
+
     private CallResolution? ResolveMemberCallTypeRefs(
         MemberExpressionNode member,
         IReadOnlyList<TypeRef> typeArguments,
@@ -109,43 +163,76 @@ internal sealed class CallResolver(
                 return requirementCall;
             }
 
-            if (_methodCallResolver.ResolveTypeRefs(member, typeArguments, arguments.Count, variables) is { SkipSelf: false } staticMethodCall)
+            var staticCallTypes = BuildStaticCallTypes(
+                targetName,
+                typeArguments);
+            if (_adaptersByName.ContainsKey(targetName)
+                && ResolveBestMethod(
+                    $"{TypeRefFormatter.ToCxString(staticCallTypes.ReceiverType)}.{member.MemberName}",
+                    staticCallTypes.ReceiverType,
+                    member.MemberName,
+                    isStatic: true,
+                    staticCallTypes.MethodTypeArguments,
+                    arguments,
+                    variables) is { } adapterStaticResolution)
             {
-                return BuildMethodResolution(staticMethodCall, typeArguments, BuildStaticReceiverTypeRef(targetName, typeArguments));
+                return adapterStaticResolution;
             }
 
-            var staticFunction = FunctionCandidates(member.MemberName).FirstOrDefault(function =>
-                function.IsStatic
-                && OwnerType(function) is not null
-                && string.Equals(targetName, OwnerType(function), StringComparison.Ordinal)
-                && string.Equals(function.Name, member.MemberName, StringComparison.Ordinal)
-                && (MatchesGenericArguments(function.TypeParameters, typeArguments)
-                    || typeArguments.Count == 0
-                        && function.TypeParameters.Count > 0
-                        && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
-            if (staticFunction is null)
-            {
-                return null;
-            }
-
-            var staticArguments = typeArguments.Count > 0
-                ? typeArguments
-                : InferFunctionTypeArgumentRefs(staticFunction.TypeParameters, staticFunction.Parameters, arguments, variables, skipSelf: false) ?? [];
-            return BuildFunctionResolution(
+            var staticResolution = ResolveBestFunction(
                 $"{targetName}.{member.MemberName}",
-                staticFunction,
-                staticFunction.TypeParameters,
-                staticFunction.Parameters,
-                staticFunction.ReturnTypeNode,
-                staticArguments,
+                StaticFunctionCandidates(targetName, member.MemberName),
+                staticCallTypes.MethodTypeArguments,
+                arguments,
+                variables,
                 skipSelf: false,
-                isInstance: false);
+                isInstance: false,
+                staticCallTypes.ReceiverTypeArguments);
+            if (staticResolution is not null)
+            {
+                return staticResolution;
+            }
+
+            var exposedStaticResolution = ResolveBestMethod(
+                $"{TypeRefFormatter.ToCxString(staticCallTypes.ReceiverType)}.{member.MemberName}",
+                staticCallTypes.ReceiverType,
+                member.MemberName,
+                isStatic: true,
+                staticCallTypes.MethodTypeArguments,
+                arguments,
+                variables);
+            if (exposedStaticResolution is not null)
+            {
+                return exposedStaticResolution;
+            }
+
+            if (_methodCallResolver.ResolveTypeRefs(
+                member,
+                typeArguments,
+                arguments.Count,
+                variables) is { SkipSelf: false } staticMethodCall)
+            {
+                return BuildMethodResolution(
+                    staticMethodCall,
+                    staticCallTypes.MethodTypeArguments,
+                    staticCallTypes.ReceiverType);
+            }
+
+            return null;
         }
 
-        if (_methodCallResolver.ResolveTypeRefs(member, typeArguments, arguments.Count, variables) is { SkipSelf: true } instanceMethodCall)
+        var adapterReceiverType = AdapterReceiverType(targetType);
+        if (adapterReceiverType is not null
+            && ResolveBestMethod(
+                $"{TypeRefFormatter.ToCxString(adapterReceiverType)}.{member.MemberName}",
+                adapterReceiverType,
+                member.MemberName,
+                isStatic: false,
+                typeArguments,
+                arguments,
+                variables) is { } adapterInstanceResolution)
         {
-            var methodReceiverType = NormalizeReceiverType(targetType);
-            return BuildMethodResolution(instanceMethodCall, typeArguments, methodReceiverType);
+            return adapterInstanceResolution;
         }
 
         var receiverTypeRef = NormalizeReceiverType(targetType);
@@ -159,36 +246,48 @@ internal sealed class CallResolver(
         var receiverArguments = TypeRefFacts.TryGetGenericArguments(receiverTypeRef, out var parsedReceiverArguments)
             ? parsedReceiverArguments
             : [];
-        var instanceFunction = FunctionCandidates(member.MemberName).FirstOrDefault(function =>
-            OwnerType(function) is not null
-            && !function.IsStatic
-            && string.Equals(function.Name, member.MemberName, StringComparison.Ordinal)
-            && string.Equals(OwnerType(function), receiverBaseType, StringComparison.Ordinal)
-            && (MatchesGenericArguments(function.TypeParameters, typeArguments)
-                || typeArguments.Count == 0 && function.TypeParameters.Count == receiverArguments.Count
-                || typeArguments.Count == 0
-                    && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: true, receiverArguments) is not null));
-        if (instanceFunction is not null)
+        var instanceResolution = ResolveBestFunction(
+            $"{receiverBaseType}.{member.MemberName}",
+            InstanceFunctionCandidates(receiverTypeRef, member.MemberName),
+            typeArguments,
+            arguments,
+            variables,
+            skipSelf: true,
+            isInstance: true,
+            receiverArguments);
+        if (instanceResolution is not null)
         {
-            var instanceArguments = typeArguments.Count > 0
-                ? typeArguments
-                : receiverArguments.Count == instanceFunction.TypeParameters.Count
-                    ? receiverArguments
-                    : InferFunctionTypeArgumentRefs(instanceFunction.TypeParameters, instanceFunction.Parameters, arguments, variables, skipSelf: true, receiverArguments) ?? [];
-            var resolution = BuildFunctionResolution(
-                $"{receiverBaseType}.{member.MemberName}",
-                instanceFunction,
-                instanceFunction.TypeParameters,
-                instanceFunction.Parameters,
-                instanceFunction.ReturnTypeNode,
-                instanceArguments,
-                skipSelf: true,
-                isInstance: true);
-            return resolution with
+            return instanceResolution with
             {
-                ReturnType = TypeRefRewriter.SubstituteSelf(resolution.ReturnType, receiverTypeRef),
+                ReturnType = TypeRefRewriter.SubstituteSelf(
+                    instanceResolution.ReturnType,
+                    receiverTypeRef),
             };
+        }
+
+        var exposedInstanceResolution = ResolveBestMethod(
+            $"{TypeRefFormatter.ToCxString(receiverTypeRef)}.{member.MemberName}",
+            receiverTypeRef,
+            member.MemberName,
+            isStatic: false,
+            typeArguments,
+            arguments,
+            variables);
+        if (exposedInstanceResolution is not null)
+        {
+            return exposedInstanceResolution;
+        }
+
+        if (_methodCallResolver.ResolveTypeRefs(
+            member,
+            typeArguments,
+            arguments.Count,
+            variables) is { SkipSelf: true } instanceMethodCall)
+        {
+            return BuildMethodResolution(
+                instanceMethodCall,
+                typeArguments,
+                receiverTypeRef);
         }
 
         _interfacesByName.TryGetValue(receiverType, out var interfaceNode);
@@ -215,30 +314,221 @@ internal sealed class CallResolver(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables)
     {
-        var function = FunctionCandidates(name).FirstOrDefault(function =>
-            OwnerType(function) is null
-            && string.Equals(function.Name, name, StringComparison.Ordinal)
-            && (MatchesGenericArguments(function.TypeParameters, typeArguments)
-                || typeArguments.Count == 0
-                    && function.TypeParameters.Count > 0
-                    && InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) is not null));
-        if (function is null)
+        return ResolveBestFunction(
+            name,
+            FreeFunctionCandidates(name),
+            typeArguments,
+            arguments,
+            variables,
+            skipSelf: false,
+            isInstance: false);
+    }
+
+    private CallResolution? ResolveBestFunction(
+        string displayName,
+        IReadOnlyList<FunctionNode> functions,
+        IReadOnlyList<TypeRef> explicitTypeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables,
+        bool skipSelf,
+        bool isInstance,
+        IReadOnlyList<TypeRef>? seedTypeArguments = null)
+    {
+        var candidates = functions
+            .Select(function => BuildApplicableCandidate(
+                displayName,
+                function,
+                explicitTypeArguments,
+                arguments,
+                variables,
+                skipSelf,
+                isInstance,
+                seedTypeArguments))
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .DistinctBy(candidate =>
+                FunctionDeclarationIdentity(candidate.Function))
+            .OrderBy(candidate => candidate.Score)
+            .ToList();
+        if (candidates.Count == 0)
         {
             return null;
         }
 
-        var resolvedArguments = typeArguments.Count > 0
-            ? typeArguments
-            : InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, arguments, variables, skipSelf: false) ?? [];
-        return BuildFunctionResolution(
-            function.Name,
+        var best = candidates[0];
+        var tied = candidates
+            .TakeWhile(candidate => candidate.Score == best.Score)
+            .ToList();
+        return tied.Count == 1
+            ? best.Resolution
+            : best.Resolution with
+            {
+                Function = null,
+                AmbiguousFunctions = tied
+                    .Select(candidate => candidate.Function)
+                    .ToList(),
+            };
+    }
+
+    private ApplicableFunctionCandidate? BuildApplicableCandidate(
+        string displayName,
+        FunctionNode function,
+        IReadOnlyList<TypeRef> explicitTypeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables,
+        bool skipSelf,
+        bool isInstance,
+        IReadOnlyList<TypeRef>? seedTypeArguments)
+    {
+        var hasReceiverTypeArguments = seedTypeArguments is not null;
+        var usesLegacyFullInstanceArguments = isInstance
+            && explicitTypeArguments.Count > 0
+            && explicitTypeArguments.Count == function.TypeParameters.Count
+            && explicitTypeArguments.Count != function.MethodTypeParameters.Count;
+        var explicitParameters = usesLegacyFullInstanceArguments
+            ? function.TypeParameters
+            : isInstance || hasReceiverTypeArguments
+                ? function.MethodTypeParameters
+                : function.TypeParameters;
+        if (!MatchesGenericArguments(explicitParameters, explicitTypeArguments))
+        {
+            return null;
+        }
+
+        var seedBindings = BuildCandidateTypeBindings(
+            function,
+            explicitParameters,
+            explicitTypeArguments,
+            seedTypeArguments,
+            requireReceiverBindings: isInstance || hasReceiverTypeArguments);
+        if (seedBindings is null)
+        {
+            return null;
+        }
+
+        var typeArgumentRefs = InferFunctionTypeArgumentRefs(
+            function.TypeParameters,
+            function.Parameters,
+            arguments,
+            variables,
+            skipSelf,
+            seedBindings);
+        if (typeArgumentRefs is null
+            || typeArgumentRefs.Count != function.TypeParameters.Count)
+        {
+            return null;
+        }
+
+        if (!_genericConstraintMatcher.AreSatisfied(function, typeArgumentRefs))
+        {
+            return null;
+        }
+
+        var resolution = BuildFunctionResolution(
+            displayName,
             function,
             function.TypeParameters,
             function.Parameters,
             function.ReturnTypeNode,
-            resolvedArguments,
-            skipSelf: false,
-            isInstance: false);
+            typeArgumentRefs,
+            skipSelf,
+            isInstance);
+        var score = ScoreResolution(
+            resolution,
+            arguments,
+            variables,
+            function.TypeParameters.Count > 0);
+        return score is null
+            ? null
+            : new ApplicableFunctionCandidate(
+                function,
+                resolution,
+                score.Value);
+    }
+
+    private static IReadOnlyDictionary<string, TypeRef>? BuildCandidateTypeBindings(
+        FunctionNode function,
+        IReadOnlyList<string> explicitParameters,
+        IReadOnlyList<TypeRef> explicitTypeArguments,
+        IReadOnlyList<TypeRef>? receiverTypeArguments,
+        bool requireReceiverBindings)
+    {
+        var bindings = new Dictionary<string, TypeRef>(StringComparer.Ordinal);
+        if (receiverTypeArguments is not null)
+        {
+            if (receiverTypeArguments.Count != function.ReceiverTypeParameters.Count)
+            {
+                return null;
+            }
+
+            foreach (var (parameter, argument) in function.ReceiverTypeParameters.Zip(receiverTypeArguments))
+            {
+                bindings[parameter] = argument;
+            }
+        }
+
+        if (explicitTypeArguments.Count > 0)
+        {
+            foreach (var (parameter, argument) in explicitParameters.Zip(explicitTypeArguments))
+            {
+                if (bindings.TryGetValue(parameter, out var existing)
+                    && !TypeIdentity.SpecializationEquals(existing, argument))
+                {
+                    return null;
+                }
+
+                bindings[parameter] = argument;
+            }
+        }
+
+        if (requireReceiverBindings
+            && function.ReceiverTypeParameters.Any(parameter => !bindings.ContainsKey(parameter)))
+        {
+            return null;
+        }
+
+        return bindings;
+    }
+
+    private FunctionCandidateScore? ScoreResolution(
+        CallResolution resolution,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables,
+        bool isGeneric)
+    {
+        if (arguments.Count < resolution.ParameterTypes.Count
+            || !resolution.IsVariadic
+                && arguments.Count > resolution.ParameterTypes.Count)
+        {
+            return null;
+        }
+
+        var conversionCost = 0;
+        for (var index = 0; index < resolution.ParameterTypes.Count; index++)
+        {
+            var argumentType = ResolveArgumentType(arguments[index], variables);
+            var parameterType = resolution.ParameterTypes[index];
+            if (!_typeCompatibility.CanAssign(
+                parameterType,
+                argumentType,
+                out _))
+            {
+                return null;
+            }
+
+            if (argumentType is null
+                || !TypeIdentity.SpecializationEquals(
+                    parameterType,
+                    argumentType))
+            {
+                conversionCost++;
+            }
+        }
+
+        return new FunctionCandidateScore(
+            conversionCost,
+            resolution.IsVariadic ? 1 : 0,
+            isGeneric ? 1 : 0);
     }
 
     private CallResolution? ResolveExternFunction(
@@ -331,7 +621,11 @@ internal sealed class CallResolver(
             .Skip(methodCall.SkipSelf ? 1 : 0)
             .ToList();
         var function = methodCall.Method.Declaration;
-        var typeArgumentRefs = ResolveFunctionTypeArgumentRefs(function, explicitTypeArguments, receiverType);
+        var typeArgumentRefs = ResolveFunctionTypeArgumentRefs(
+            function,
+            explicitTypeArguments,
+            receiverType,
+            isInstance: methodCall.SkipSelf);
         return new CallResolution(
             methodCall.DisplayName,
             methodCall.Method.ReturnType,
@@ -342,6 +636,98 @@ internal sealed class CallResolver(
         {
             TypeArgumentRefs = typeArgumentRefs,
         };
+    }
+
+    private CallResolution? ResolveBestMethod(
+        string displayName,
+        TypeRef receiverType,
+        string methodName,
+        bool isStatic,
+        IReadOnlyList<TypeRef> explicitTypeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables)
+    {
+        var candidates = _typeSystem.GetMethods(receiverType)
+            .Where(method =>
+                string.Equals(
+                    method.Name,
+                    methodName,
+                    StringComparison.Ordinal)
+                && method.Declaration.IsStatic == isStatic)
+            .Select(method => BuildApplicableMethodCandidate(
+                displayName,
+                method,
+                explicitTypeArguments,
+                arguments,
+                variables,
+                receiverType,
+                skipSelf: !isStatic))
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .DistinctBy(candidate =>
+                FunctionDeclarationIdentity(
+                    candidate.Method.Declaration))
+            .OrderBy(candidate => candidate.Score)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        var best = candidates[0];
+        var tied = candidates
+            .TakeWhile(candidate => candidate.Score == best.Score)
+            .ToList();
+        return tied.Count == 1
+            ? best.Resolution
+            : best.Resolution with
+            {
+                Function = null,
+                AmbiguousFunctions = tied
+                    .Select(candidate => candidate.Method.Declaration)
+                    .ToList(),
+            };
+    }
+
+    private ApplicableMethodCandidate? BuildApplicableMethodCandidate(
+        string displayName,
+        ResolvedMethod method,
+        IReadOnlyList<TypeRef> explicitTypeArguments,
+        IReadOnlyList<ExpressionNode> arguments,
+        TypeEnvironment variables,
+        TypeRef receiverType,
+        bool skipSelf)
+    {
+        var function = method.Declaration;
+        if (!MatchesGenericArguments(
+            function.TypeParameters,
+            explicitTypeArguments))
+        {
+            return null;
+        }
+
+        var resolution = BuildMethodResolution(
+            new ResolvedMethodCall(displayName, method, skipSelf),
+            explicitTypeArguments,
+            receiverType);
+        if (function.TypeParameters.Count > 0
+            && resolution.TypeArgumentRefs.Count
+                != function.TypeParameters.Count)
+        {
+            return null;
+        }
+
+        var score = ScoreResolution(
+            resolution,
+            arguments,
+            variables,
+            function.TypeParameters.Count > 0);
+        return score is null
+            ? null
+            : new ApplicableMethodCandidate(
+                method,
+                resolution,
+                score.Value);
     }
 
     private CallResolution BuildFunctionResolution(
@@ -377,31 +763,55 @@ internal sealed class CallResolver(
     private IReadOnlyList<TypeRef> ResolveFunctionTypeArgumentRefs(
         FunctionNode function,
         IReadOnlyList<TypeRef> explicitTypeArguments,
-        TypeRef? receiverType)
+        TypeRef? receiverType,
+        bool isInstance)
     {
         if (function.TypeParameters.Count == 0)
         {
             return [];
         }
 
-        if (explicitTypeArguments.Count == function.TypeParameters.Count)
-        {
-            return explicitTypeArguments;
-        }
-
         var receiverTypeRef = receiverType is null ? null : NormalizeReceiverType(receiverType);
         if (receiverTypeRef is not null
             && TryResolveAdapterBaseArgumentRefs(function, receiverTypeRef) is { } adapterBaseArguments)
         {
-            return adapterBaseArguments;
+            return CombineInstanceTypeArguments(
+                function,
+                adapterBaseArguments,
+                explicitTypeArguments);
         }
 
-        return receiverTypeRef is not null
-            && TypeRefFacts.TryGetGenericArguments(receiverTypeRef, out var receiverArguments)
-            && receiverArguments.Count == function.TypeParameters.Count
-                ? receiverArguments
+        if (!isInstance)
+        {
+            return explicitTypeArguments.Count == function.TypeParameters.Count
+                ? explicitTypeArguments
                 : [];
+        }
+
+        if (receiverTypeRef is not null
+            && TypeRefFacts.TryGetGenericArguments(receiverTypeRef, out var parsedReceiverArguments)
+            && parsedReceiverArguments.Count == function.ReceiverTypeParameters.Count)
+        {
+            return CombineInstanceTypeArguments(
+                function,
+                parsedReceiverArguments,
+                explicitTypeArguments);
+        }
+
+        return CombineInstanceTypeArguments(
+            function,
+            [],
+            explicitTypeArguments);
     }
+
+    private static IReadOnlyList<TypeRef> CombineInstanceTypeArguments(
+        FunctionNode function,
+        IReadOnlyList<TypeRef> receiverArguments,
+        IReadOnlyList<TypeRef> methodArguments) =>
+        receiverArguments.Count == function.ReceiverTypeParameters.Count
+        && methodArguments.Count == function.MethodTypeParameters.Count
+            ? receiverArguments.Concat(methodArguments).ToList()
+            : [];
 
     private IReadOnlyList<TypeRef>? TryResolveAdapterBaseArgumentRefs(
         FunctionNode function,
@@ -419,7 +829,7 @@ internal sealed class CallResolver(
 
             if (string.Equals(OwnerType(function), currentName, StringComparison.Ordinal)
                 && TypeRefFacts.TryGetGenericArguments(currentType, out var currentArguments)
-                && currentArguments.Count == function.TypeParameters.Count)
+                && currentArguments.Count == function.ReceiverTypeParameters.Count)
             {
                 return currentArguments;
             }
@@ -449,16 +859,36 @@ internal sealed class CallResolver(
         return null;
     }
 
-    private TypeRef BuildStaticReceiverTypeRef(string targetName, IReadOnlyList<TypeRef> typeArguments)
+    private StaticCallTypes BuildStaticCallTypes(
+        string targetName,
+        IReadOnlyList<TypeRef> typeArguments)
     {
         var typeParameterCount = _structsByName.TryGetValue(targetName, out var structNode)
             ? structNode.TypeParameters.Count
             : _adaptersByName.TryGetValue(targetName, out var adapter)
                 ? adapter.TypeParameters.Count
                 : 0;
-        return typeParameterCount == typeArguments.Count && typeArguments.Count > 0
-            ? new TypeRef.Named(targetName, typeArguments)
-            : new TypeRef.Named(targetName, []);
+        if (typeParameterCount == 0)
+        {
+            return new StaticCallTypes(
+                new TypeRef.Named(targetName, []),
+                [],
+                typeArguments);
+        }
+
+        if (typeArguments.Count < typeParameterCount)
+        {
+            return new StaticCallTypes(
+                new TypeRef.Named(targetName, []),
+                null,
+                typeArguments);
+        }
+
+        var receiverArguments = typeArguments.Take(typeParameterCount).ToList();
+        return new StaticCallTypes(
+            new TypeRef.Named(targetName, receiverArguments),
+            receiverArguments,
+            typeArguments.Skip(typeParameterCount).ToList());
     }
 
     private IReadOnlyList<TypeRef>? InferFunctionTypeArgumentRefs(
@@ -467,7 +897,7 @@ internal sealed class CallResolver(
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables,
         bool skipSelf,
-        IReadOnlyList<TypeRef>? seedArguments = null)
+        IReadOnlyDictionary<string, TypeRef>? seedBindings = null)
     {
         if (typeParameters.Count == 0)
         {
@@ -484,9 +914,9 @@ internal sealed class CallResolver(
         }
 
         var bindings = new TypeBindings();
-        if (seedArguments is not null && seedArguments.Count == typeParameters.Count)
+        if (seedBindings is not null)
         {
-            foreach (var (parameter, argument) in typeParameters.Zip(seedArguments))
+            foreach (var (parameter, argument) in seedBindings)
             {
                 bindings.Set(parameter, argument);
             }
@@ -543,13 +973,33 @@ internal sealed class CallResolver(
     private static TypeRef? NormalizeReceiverType(TypeRef type) =>
         type is TypeRef.Unknown ? null : TypeRefFacts.StripPointersAndAliases(type);
 
+    private TypeRef? AdapterReceiverType(TypeRef type)
+    {
+        type = TypeRefFacts.UnwrapConst(TypeRefFacts.StripPointer(type));
+        if (type is TypeRef.Alias alias
+            && _adaptersByName.ContainsKey(alias.Name))
+        {
+            var arguments = TypeRefFacts.TryGetGenericArguments(
+                alias.Target,
+                out var targetArguments)
+                ? targetArguments
+                : [];
+            return new TypeRef.Named(alias.Name, arguments);
+        }
+
+        return type is TypeRef.Named named
+            && _adaptersByName.ContainsKey(named.Name)
+                ? named
+                : null;
+    }
+
     private static bool MatchesGenericArguments(
         IReadOnlyList<string> typeParameters,
         IReadOnlyList<TypeRef> explicitArguments)
     {
-        if (typeParameters.Count == 0)
+        if (explicitArguments.Count == 0)
         {
-            return explicitArguments.Count == 0;
+            return true;
         }
 
         return explicitArguments.Count == typeParameters.Count;
@@ -649,8 +1099,34 @@ internal sealed class CallResolver(
     private string? OwnerType(FunctionNode function) =>
         TypeRefFacts.GetBaseName(ResolveType(function.OwnerTypeNode));
 
-    private IReadOnlyList<FunctionNode> FunctionCandidates(string name) =>
-        _functionsByName.TryGetValue(name, out var functions) ? functions : [];
+    private IReadOnlyList<FunctionNode> FreeFunctionCandidates(string name) =>
+        _functionCatalog.Query(new FunctionQuery
+            {
+                Name = name,
+                Kind = FunctionKind.Free,
+            })
+            .Select(function => function.Declaration)
+            .ToList();
+
+    private IReadOnlyList<FunctionNode> StaticFunctionCandidates(string ownerType, string name) =>
+        _functionCatalog.Query(new FunctionQuery
+            {
+                Name = name,
+                Kind = FunctionKind.Static,
+                ReceiverType = new TypeRef.Named(ownerType, []),
+            })
+            .Select(function => function.Declaration)
+            .ToList();
+
+    private IReadOnlyList<FunctionNode> InstanceFunctionCandidates(TypeRef receiverType, string name) =>
+        _functionCatalog.Query(new FunctionQuery
+            {
+                Name = name,
+                Kind = FunctionKind.Instance,
+                ReceiverType = receiverType,
+            })
+            .Select(function => function.Declaration)
+            .ToList();
 
     private IReadOnlyList<ExternFunctionNode> ExternFunctionCandidates(string name) =>
         _externFunctionsByName.TryGetValue(name, out var functions) ? functions : [];
@@ -658,4 +1134,51 @@ internal sealed class CallResolver(
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(ResolveType).ToList();
 
+    private static string FunctionDeclarationIdentity(FunctionNode function)
+    {
+        var owner = function.OwnerTypeNode?.ToSourceText() ?? string.Empty;
+        var parameters = string.Join(
+            ",",
+            function.Parameters.Select(parameter =>
+                parameter.IsVariadic
+                    ? "..."
+                    : parameter.TypeNode?.ToSourceText() ?? string.Empty));
+        return $"{function.Location.File.Path}:{function.Location.Position}:{owner}.{function.Name}<{function.TypeParameters.Count}>({parameters})";
+    }
+
 }
+
+internal readonly record struct FunctionCandidateScore(
+    int ConversionCost,
+    int VariadicPenalty,
+    int GenericPenalty) : IComparable<FunctionCandidateScore>
+{
+    public int CompareTo(FunctionCandidateScore other)
+    {
+        var conversionComparison = ConversionCost.CompareTo(other.ConversionCost);
+        if (conversionComparison != 0)
+        {
+            return conversionComparison;
+        }
+
+        var variadicComparison = VariadicPenalty.CompareTo(other.VariadicPenalty);
+        return variadicComparison != 0
+            ? variadicComparison
+            : GenericPenalty.CompareTo(other.GenericPenalty);
+    }
+}
+
+internal sealed record ApplicableFunctionCandidate(
+    FunctionNode Function,
+    CallResolution Resolution,
+    FunctionCandidateScore Score);
+
+internal sealed record ApplicableMethodCandidate(
+    ResolvedMethod Method,
+    CallResolution Resolution,
+    FunctionCandidateScore Score);
+
+internal sealed record StaticCallTypes(
+    TypeRef ReceiverType,
+    IReadOnlyList<TypeRef>? ReceiverTypeArguments,
+    IReadOnlyList<TypeRef> MethodTypeArguments);

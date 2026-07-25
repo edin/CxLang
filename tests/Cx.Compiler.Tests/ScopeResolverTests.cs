@@ -6,6 +6,35 @@ namespace Cx.Compiler.Tests;
 public sealed class ScopeResolverTests
 {
     [Fact]
+    public void Resolve_UsesSemanticModelFunctionCatalogForExtensionMethods()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            module app;
+
+            struct User {}
+
+            extension User {
+                fn identity(value: int) -> int {
+                    return value;
+                }
+            }
+            """);
+
+        var model = CompilerTestHelpers.Resolve(program);
+        var method = Assert.Single(Assert.Single(program.Extensions).Methods);
+        var parameter = Assert.Single(method.Parameters, parameter => parameter.Name == "value");
+        var returnedName = Assert.IsType<NameExpressionNode>(
+            Assert.IsType<ReturnStatement>(Assert.Single(method.Body)).Expression);
+        var catalog = Assert.IsType<FunctionCatalog>(model.FunctionCatalog);
+        var function = Assert.Single(
+            catalog.GetMethods(new TypeRef.Named("User", [], "app"), "identity"));
+
+        Assert.Same(function, method.FunctionSymbol);
+        Assert.Same(parameter.Semantic.Symbol, returnedName.Semantic.Symbol);
+    }
+
+    [Fact]
     public void CompileToC_DuplicateLocalInSameScopeReportsDiagnostic()
     {
         var result = CompilerTestHelpers.Compile(

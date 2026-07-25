@@ -92,7 +92,7 @@ internal sealed record ResolvedMethod(
 internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
 {
     private readonly TypeRefParser _parser = new(program);
-    private readonly Lazy<RequirementMatcher> _requirementMatcher = new(() => new RequirementMatcher(program));
+    private readonly GenericConstraintMatcher _genericConstraintMatcher = new(program);
 
     public IReadOnlyList<ResolvedField> GetFields(ResolvedType type) =>
         type.Symbol switch
@@ -138,9 +138,12 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
                 .SelectMany(extension => extension.Methods))
             .Concat(program.Functions.Where(function =>
                 HasOwnerName(function.OwnerTypeNode, declaration.Name)))
-            .Distinct((IEqualityComparer<FunctionNode>)ReferenceEqualityComparer.Instance);
+            .Distinct((IEqualityComparer<FunctionNode>)ReferenceEqualityComparer.Instance)
+            .Where(method => FunctionConstraintsSatisfied(method, type));
         return methods
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
+            .GroupBy(ResolvedMethodIdentity, StringComparer.Ordinal)
+            .Select(group => group.First())
             .ToList();
     }
 
@@ -159,7 +162,10 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
             .SelectMany(extension => extension.Methods)
             .Concat(program.Functions.Where(function =>
                 HasOwnerName(function.OwnerTypeNode, ownerName)))
+            .Where(method => FunctionConstraintsSatisfied(method, type))
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
+            .GroupBy(ResolvedMethodIdentity, StringComparer.Ordinal)
+            .Select(group => group.First())
             .ToList();
     }
 
@@ -171,7 +177,11 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
             .ToList();
         var exposedMethods = ResolveAdapterExposedMethods(declaration, type);
-        return ownMethods.Concat(exposedMethods).ToList();
+        return ownMethods
+            .Concat(exposedMethods)
+            .GroupBy(ResolvedMethodIdentity, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
     }
 
     private IReadOnlyList<ResolvedMethod> ResolveAdapterExposedMethods(
@@ -186,35 +196,59 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
 
         foreach (var expose in declaration.ExposedMethods)
         {
-            var baseMethod = baseMethods.FirstOrDefault(method =>
+            var matchingBaseMethods = baseMethods.Where(method =>
                 method.Declaration.IsStatic == expose.IsStatic
-                && string.Equals(method.Name, expose.SourceName, StringComparison.Ordinal));
-            if (baseMethod is null)
+                && string.Equals(
+                    method.Name,
+                    expose.SourceName,
+                    StringComparison.Ordinal))
+                .GroupBy(
+                    ResolvedMethodIdentity,
+                    StringComparer.Ordinal)
+                .Select(group => group.First());
+            foreach (var baseMethod in matchingBaseMethods)
             {
-                continue;
+                var returnType = expose.ReturnTypeNode is null
+                    ? baseMethod.ReturnType
+                    : expose.ReturnTypeNode.ToTypeRef(_parser);
+                returnType = TypeRefRewriter.Substitute(
+                    returnType,
+                    type.Substitutions);
+                returnType = TypeRefRewriter.SubstituteSelf(
+                    returnType,
+                    selfType);
+
+                var parameters = baseMethod.Parameters.ToList();
+                if (!expose.IsStatic && parameters.Count > 0)
+                {
+                    parameters[0] = parameters[0] with
+                    {
+                        Type = new TypeRef.Pointer(selfType),
+                    };
+                }
+
+                exposed.Add(new ResolvedMethod(
+                    expose.ExposedName,
+                    type.Type,
+                    returnType,
+                    parameters,
+                    new ResolvedMethodTarget.Exposed(
+                        declaration,
+                        expose,
+                        baseMethod)));
             }
-
-            var returnType = expose.ReturnTypeNode is null
-                ? baseMethod.ReturnType
-                : expose.ReturnTypeNode.ToTypeRef(_parser);
-            returnType = TypeRefRewriter.Substitute(returnType, type.Substitutions);
-            returnType = TypeRefRewriter.SubstituteSelf(returnType, selfType);
-
-            var parameters = baseMethod.Parameters.ToList();
-            if (!expose.IsStatic && parameters.Count > 0)
-            {
-                parameters[0] = parameters[0] with { Type = new TypeRef.Pointer(selfType) };
-            }
-
-            exposed.Add(new ResolvedMethod(
-                expose.ExposedName,
-                type.Type,
-                returnType,
-                parameters,
-                new ResolvedMethodTarget.Exposed(declaration, expose, baseMethod)));
         }
 
         return exposed;
+    }
+
+    private static string ResolvedMethodIdentity(ResolvedMethod method)
+    {
+        var parameters = string.Join(
+            ",",
+            method.ParameterTypes.Select(
+                TypeIdentity.SpecializationKey));
+        return $"{method.Declaration.IsStatic}:{method.Name}({parameters})->{TypeIdentity.SpecializationKey(method.ReturnType)}";
     }
 
     private ResolvedMethod ResolveMethod(
@@ -257,25 +291,23 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
 
         foreach (var constraint in extension.GenericConstraints)
         {
-            if (!type.Substitutions.TryGetValue(constraint.TypeParameter, out var concreteTypeRef))
+            if (!type.Substitutions.ContainsKey(constraint.TypeParameter))
             {
                 return false;
             }
-
-            foreach (var requirement in constraint.Requirements)
-            {
-                var arguments = requirement.TypeArgumentNodes
-                    .Select(argument => TypeRefRewriter.Substitute(argument.ToTypeRef(_parser), type.Substitutions))
-                    .ToList();
-                if (!_requirementMatcher.Value.MatchTypeRefs(concreteTypeRef, requirement.Name, arguments).Success)
-                {
-                    return false;
-                }
-            }
         }
 
-        return true;
+        return _genericConstraintMatcher.AreSatisfied(
+            extension.GenericConstraints,
+            type.Substitutions);
     }
+
+    private bool FunctionConstraintsSatisfied(
+        FunctionNode function,
+        ResolvedType type) =>
+        _genericConstraintMatcher.AreSatisfiedWhenBound(
+            function.GenericConstraints,
+            type.Substitutions);
 
     private TypeRef ResolveAdapterBaseType(
         TypeAdapterNode declaration,

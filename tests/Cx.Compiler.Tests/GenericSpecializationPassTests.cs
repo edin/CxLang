@@ -72,6 +72,46 @@ public sealed class GenericSpecializationPassTests
     }
 
     [Fact]
+    public void Apply_RegistersConcreteFunctionsAsCatalogInstances()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn identity<T>(value: T) -> T {
+                return value;
+            }
+
+            fn main() -> int {
+                return identity(10);
+            }
+            """);
+        var model = CompilerTestHelpers.Resolve(program);
+        var catalog = Assert.IsType<Cx.Compiler.Semantic.FunctionCatalog>(
+            model.FunctionCatalog);
+        var diagnostics = new DiagnosticBag();
+
+        var lowered = GenericSpecializationPass.Apply(
+            program,
+            diagnostics,
+            catalog);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var instance = Assert.Single(catalog.Instances);
+        var specialized = Assert.Single(
+            lowered.Functions,
+            function => function.Name == "identity"
+                && FunctionTypeArguments(function).Count > 0);
+        Assert.Same(specialized, instance.Declaration);
+        Assert.Equal(
+            Assert.Single(
+                catalog.GetFunctions("identity")).Id,
+            instance.Definition.Id);
+        Assert.True(
+            Cx.Compiler.Semantic.TypeIdentity.SpecializationEquals(
+                Cx.Compiler.Semantic.TypeRef.Int,
+                Assert.Single(instance.TypeArguments)));
+    }
+
+    [Fact]
     public void Apply_AddsConcreteStructForUsedGenericStruct()
     {
         var program = CompilerTestHelpers.Parse(

@@ -41,6 +41,15 @@ public enum BinaryOperator
     LogicalOr,
 }
 
+public enum OperatorKind
+{
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+}
+
 public enum AssignmentOperator
 {
     Assign,
@@ -53,6 +62,36 @@ public enum AssignmentOperator
 
 public static class ExpressionOperatorFacts
 {
+    public static string ToSourceText(this OperatorKind op) => op switch
+    {
+        OperatorKind.Add => "+",
+        OperatorKind.Subtract => "-",
+        OperatorKind.Multiply => "*",
+        OperatorKind.Divide => "/",
+        OperatorKind.Modulo => "%",
+        _ => throw Unsupported(op),
+    };
+
+    public static string ToFunctionName(this OperatorKind op) => op switch
+    {
+        OperatorKind.Add => "operator_add",
+        OperatorKind.Subtract => "operator_subtract",
+        OperatorKind.Multiply => "operator_multiply",
+        OperatorKind.Divide => "operator_divide",
+        OperatorKind.Modulo => "operator_modulo",
+        _ => throw Unsupported(op),
+    };
+
+    public static OperatorKind? ToOverloadableOperator(this BinaryOperator op) => op switch
+    {
+        BinaryOperator.Add => OperatorKind.Add,
+        BinaryOperator.Subtract => OperatorKind.Subtract,
+        BinaryOperator.Multiply => OperatorKind.Multiply,
+        BinaryOperator.Divide => OperatorKind.Divide,
+        BinaryOperator.Modulo => OperatorKind.Modulo,
+        _ => null,
+    };
+
     public static string ToSourceText(this UnaryOperator op) => op switch
     {
         UnaryOperator.Plus => "+",

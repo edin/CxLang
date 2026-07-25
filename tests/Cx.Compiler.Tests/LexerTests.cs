@@ -33,7 +33,8 @@ public sealed class LexerTests
     [Fact]
     public void Tokenize_CoercesIdentifiersToKnownKeywords()
     {
-        var tokens = Tokenize("if ifx foreach foreach_value true true_value");
+        var tokens = Tokenize(
+            "if ifx foreach foreach_value true true_value sizeof sizeof_value operator operator_value test provides");
 
         Assert.Equal(
             [
@@ -42,6 +43,12 @@ public sealed class LexerTests
                 TokenType.Foreach,
                 TokenType.Identifier,
                 TokenType.True,
+                TokenType.Identifier,
+                TokenType.Sizeof,
+                TokenType.Identifier,
+                TokenType.Operator,
+                TokenType.Identifier,
+                TokenType.Identifier,
                 TokenType.Identifier,
                 TokenType.Eof
             ],

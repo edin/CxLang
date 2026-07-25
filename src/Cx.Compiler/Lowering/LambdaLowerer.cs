@@ -28,7 +28,6 @@ internal static class LambdaLowerer
 
             context.InjectTopLevelDeclaration(new FunctionNode(
                 node.Location,
-                IsStatic: false,
                 Name: functionName,
                 TypeParameters: [],
                 GenericConstraints: [],

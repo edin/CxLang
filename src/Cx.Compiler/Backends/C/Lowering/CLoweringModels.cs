@@ -21,6 +21,7 @@ internal sealed record AdapterExposeInfo(
     string ExposedName);
 
 internal sealed record GenericCallInfo(
+    FunctionId? DefinitionId,
     TypeRef? OwnerTypeRef,
     string Name,
     IReadOnlyList<TypeRef> TypeArgumentRefs,
@@ -47,7 +48,8 @@ internal sealed record CLoweringMethodInfo(
 internal sealed record ExpressionLoweringServices(
     CExpressionLoweringPipeline Pipeline,
     MemberAccessLowerer MemberAccessLowerer,
-    MemberCallLowerer MemberCallLowerer);
+    MemberCallLowerer MemberCallLowerer,
+    ResolvedCallLowerer ResolvedCallLowerer);
 
 internal sealed class ReceiverTypeInfo
 {

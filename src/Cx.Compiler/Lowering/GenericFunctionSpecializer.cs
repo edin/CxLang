@@ -23,6 +23,8 @@ internal static class GenericFunctionSpecializer
         var specialized = function with
         {
             TypeParameters = [],
+            ReceiverTypeParameters = [],
+            GenericConstraints = [],
             TypeArgumentNodes = argumentRefs
                 .Select(argumentRef => argumentRef.ToTypeNode(function.Location))
                 .ToList(),

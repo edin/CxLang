@@ -236,29 +236,41 @@ internal sealed record CLoweringContext(
                 .ToList(),
             program.Functions
                 .Where(function => function.OwnerTypeNode is not null && function.TypeArgumentNodes.Count == 0)
-                .ToDictionary(
+                .GroupBy(
                     function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
-                    function => backend.NameMangler.FunctionName(function),
+                    StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => backend.NameMangler.FunctionName(group.First()),
                     StringComparer.Ordinal),
             program.Functions
                 .Where(function => function.OwnerTypeNode is not null)
                 .Where(function => function.TypeArgumentNodes.Count == 0)
-                .ToDictionary(
+                .GroupBy(
                     function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
-                    function => TypeRefFacts.StripPointer(SubstituteSelf(
-                        function.Parameters.FirstOrDefault()?.TypeNode.ToTypeRef(typeRefParser) ?? new TypeRef.Unknown(),
-                        ResolveSelfTypeRef(function, typeRefParser, backend))),
+                    StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => TypeRefFacts.StripPointer(SubstituteSelf(
+                        group.First().Parameters.FirstOrDefault()?.TypeNode.ToTypeRef(typeRefParser) ?? new TypeRef.Unknown(),
+                        ResolveSelfTypeRef(group.First(), typeRefParser, backend))),
                     StringComparer.Ordinal),
             program.Functions
                 .Where(function => function.OwnerTypeNode is not null)
                 .Where(function => function.TypeArgumentNodes.Count == 0)
-                .ToDictionary(
+                .GroupBy(
                     function => $"{TypeText(function.OwnerTypeNode, typeRefParser)}.{function.Name}",
-                    function => IsPointer(function.Parameters.FirstOrDefault()?.TypeNode, typeRefParser),
+                    StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => IsPointer(
+                        group.First().Parameters.FirstOrDefault()?.TypeNode,
+                        typeRefParser),
                     StringComparer.Ordinal),
             program.Functions
                 .Where(function => function.TypeArgumentNodes.Count > 0)
                 .Select(function => new GenericCallInfo(
+                    function.FunctionSymbol?.Id,
                     TypeRefOrNull(function.OwnerTypeNode, typeRefParser),
                     function.Name,
                     TypeRefs(function.TypeArgumentNodes, typeRefParser),

@@ -34,9 +34,17 @@ public sealed partial class Parser
         {
             var declarationStart = Current;
             var attributes = ParseAttributeApplications();
-            var visibility = Match(TokenType.Public) is null
+            var modifiers = ParseDeclarationModifiers();
+            var visibility = !modifiers.IsPublic
                 ? DeclarationVisibility.Module
                 : DeclarationVisibility.Public;
+            if (!Check(TokenType.Fn))
+            {
+                ValidateOnlyModifiers(
+                    modifiers,
+                    DeclarationModifier.Public,
+                    "this declaration");
+            }
 
             if (Check(TokenType.Module))
             {
@@ -115,7 +123,7 @@ public sealed partial class Parser
 
             if (Check(TokenType.Fn))
             {
-                if (ParseFunction(attributes) is { } function)
+                if (ParseFunction(attributes, modifiers) is { } function)
                 {
                     AddSpannedNode(declarations, function, declarationStart, visibility);
                 }
@@ -160,16 +168,6 @@ public sealed partial class Parser
                 if (ParseGlobalVariable(constToken, isConst: true, attributes) is { } global)
                 {
                     AddSpannedNode(declarations, global, declarationStart, visibility);
-                }
-
-                continue;
-            }
-
-            if (Check(TokenType.Static))
-            {
-                if (ParseStaticFunction(attributes) is { } function)
-                {
-                    AddSpannedNode(declarations, function, declarationStart, visibility);
                 }
 
                 continue;
@@ -258,7 +256,7 @@ public sealed partial class Parser
                 continue;
             }
 
-            if (IsContextualKeyword("test"))
+            if (Check(ContextualKeyword.Test))
             {
                 if (ParseTest(attributes) is { } test)
                 {
@@ -307,9 +305,8 @@ public sealed partial class Parser
     private IReadOnlyList<MacroProvidedRequirementNode> ParseMacroProvidedRequirements()
     {
         var providedRequirements = new List<MacroProvidedRequirementNode>();
-        while (IsContextualKeyword("provides"))
+        while (Match(ContextualKeyword.Provides) is not null)
         {
-            Advance();
             do
             {
                 var target = Expect(TokenType.Identifier, "Expected macro type parameter after 'provides'.");
@@ -468,18 +465,15 @@ public sealed partial class Parser
         }
 
         var attributes = ParseAttributeApplications();
-        var visibility = Match(TokenType.Public) is null
+        var modifiers = ParseDeclarationModifiers();
+        var visibility = !modifiers.IsPublic
             ? DeclarationVisibility.Module
             : DeclarationVisibility.Public;
         TopLevelNode? declaration = null;
 
         if (Check(TokenType.Fn))
         {
-            declaration = ParseFunction(attributes);
-        }
-        else if (Check(TokenType.Static))
-        {
-            declaration = ParseStaticFunction(attributes);
+            declaration = ParseFunction(attributes, modifiers);
         }
         else if (Check(TokenType.Extern))
         {
@@ -513,6 +507,13 @@ public sealed partial class Parser
 
         if (declaration is not null)
         {
+            if (declaration is not FunctionNode)
+            {
+                ValidateOnlyModifiers(
+                    modifiers,
+                    DeclarationModifier.Public,
+                    DeclarationKind(declaration));
+            }
             declaration.Visibility = visibility;
         }
 
@@ -630,7 +631,7 @@ public sealed partial class Parser
 
     private TestNode? ParseTest(IReadOnlyList<AttributeApplicationNode> attributes)
     {
-        var testToken = Expect(TokenType.Identifier, "Expected 'test'.");
+        var testToken = Expect(ContextualKeyword.Test, "Expected 'test'.");
         var nameToken = Expect(TokenType.String, "Expected test name.");
         var body = ParseBlock();
 
@@ -1226,44 +1227,83 @@ public sealed partial class Parser
             TypeNode: declaration.TypeNode);
     }
 
-    private FunctionNode? ParseFunction(IReadOnlyList<AttributeApplicationNode> attributes)
+    private FunctionNode? ParseFunction(
+        IReadOnlyList<AttributeApplicationNode> attributes,
+        ParsedDeclarationModifiers? modifiers = null,
+        string? implicitOwnerType = null,
+        IReadOnlyList<string>? ownerTypeParameters = null)
     {
+        modifiers ??= new ParsedDeclarationModifiers();
         var fnToken = Expect(TokenType.Fn, "Expected 'fn' before function declaration.");
         if (fnToken is null)
         {
             return null;
         }
 
-        return ParseFunctionAfterFn(fnToken.Location, isStatic: false, attributes: attributes);
-    }
-
-    private FunctionNode? ParseStaticFunction(IReadOnlyList<AttributeApplicationNode> attributes)
-    {
-        var staticToken = Expect(TokenType.Static, "Expected 'static'.");
-        var isImplicit = ConsumeOptional(TokenType.Implicit);
-        if (Expect(TokenType.Fn, isImplicit
-                ? "Expected 'fn' after 'static implicit'."
-                : "Expected 'fn' after 'static'.") is null)
+        ValidateFunctionModifiers(modifiers, fnToken.Location);
+        var function = ParseFunctionAfterFn(
+            modifiers.FunctionLocation(fnToken.Location),
+            modifiers.IsStatic,
+            implicitOwnerType,
+            attributes);
+        if (function is null)
         {
             return null;
         }
 
-        var function = ParseFunctionAfterFn(staticToken?.Location ?? Current.Location, isStatic: true, attributes: attributes);
-        if (function is not null)
+        function.Modifiers = modifiers.FunctionModifiers;
+        function = InheritOwnerTypeParameters(function, ownerTypeParameters ?? []) ?? function;
+        ValidateOperatorDeclaration(function);
+        if (function.IsStatic && function.OwnerTypeNode is null)
         {
-            function = function with { IsImplicit = isImplicit };
-        }
-        if (function?.OwnerTypeNode is null)
-        {
-            _diagnostics.Report(staticToken?.Location ?? Current.Location, "Static functions must be declared with an owner type, for example 'static fn Vec.empty()'.");
+            _diagnostics.Report(
+                modifiers.StaticToken?.Location ?? function.Location,
+                "Static functions must be declared with an owner type, for example 'static fn Vec.empty()'.");
         }
 
-        if (function?.Parameters.FirstOrDefault()?.Name == "self")
+        if (function.IsStatic && function.Parameters.FirstOrDefault()?.Name == "self")
         {
             _diagnostics.Report(function.Location, "Static functions should not take 'self'; use 'fn Type.name' for instance methods.");
         }
 
         return function;
+    }
+
+    private void ValidateOperatorDeclaration(FunctionNode function)
+    {
+        if (function.OperatorKind is null)
+        {
+            return;
+        }
+
+        if (function.OwnerTypeNode is null)
+        {
+            _diagnostics.Report(
+                function.Location,
+                "Operator functions must be declared inside a type or extension.");
+        }
+
+        if (function.IsStatic)
+        {
+            _diagnostics.Report(
+                function.Location,
+                "Static operator functions are not supported yet; declare an instance operator with one right-hand operand.");
+        }
+
+        if (function.Parameters.Count != 2
+            || function.Parameters[0].Name != "self")
+        {
+            _diagnostics.Report(
+                function.Location,
+                $"Binary operator '{function.OperatorKind.Value.ToSourceText()}' expects exactly one explicit right-hand operand.");
+        }
+
+        if (function.Parameters.FirstOrDefault()?.TypeNode?.Syntax is PointerTypeSyntaxNode)
+        {
+            _diagnostics.Report(
+                function.Location,
+                "Operator receivers must be passed by value.");
+        }
     }
 
     private FunctionNode? ParseFunctionAfterFn(
@@ -1273,19 +1313,26 @@ public sealed partial class Parser
         IReadOnlyList<AttributeApplicationNode>? attributes = null)
     {
         PlaceholderExpressionNode? computedName = null;
+        OperatorKind? operatorKind = null;
         Token? firstNameToken = null;
         if (Check(TokenType.At) && PeekType() == TokenType.LBrace)
         {
             computedName = ParseComputedFunctionName();
+        }
+        else if (Match(TokenType.Operator) is not null)
+        {
+            operatorKind = ParseOperatorKind();
         }
         else
         {
             firstNameToken = ExpectIdentifierLike("Expected function name.");
         }
         string? ownerType = implicitOwnerType;
-        var functionName = firstNameToken?.Value ?? string.Empty;
+        var functionName = operatorKind?.ToFunctionName()
+            ?? firstNameToken?.Value
+            ?? string.Empty;
 
-        if (ConsumeOptional(TokenType.Dot))
+        if (operatorKind is null && ConsumeOptional(TokenType.Dot))
         {
             ownerType = functionName;
             functionName = ExpectIdentifierLike("Expected method name after '.'.")?.Value ?? string.Empty;
@@ -1298,7 +1345,9 @@ public sealed partial class Parser
             && computedParameters is null
             && !HasExplicitReceiverParameter(ownerType, parameters.FirstOrDefault()))
         {
-            var selfTypeNode = TypeNode.Pointer(fnLocation, new NamedTypeSyntaxNode("Self"));
+            var selfTypeNode = operatorKind is null
+                ? TypeNode.Pointer(fnLocation, new NamedTypeSyntaxNode("Self"))
+                : TypeNode.Named(fnLocation, "Self");
             parameters.Insert(0, new ParameterNode(fnLocation, "self", [], IsVariadic: false, TypeNode: selfTypeNode));
         }
 
@@ -1310,7 +1359,6 @@ public sealed partial class Parser
             closeMessage: "Expected '}' after function body.");
         return new FunctionNode(
             Location: fnLocation,
-            IsStatic: isStatic,
             Name: functionName,
             TypeParameters: typeParameters,
             GenericConstraints: genericConstraints,
@@ -1320,7 +1368,33 @@ public sealed partial class Parser
             ReturnTypeNode: returnTypeNode,
             OwnerTypeNode: ownerType is null ? null : TypeNode.Named(fnLocation, ownerType),
             ComputedName: computedName,
-            ComputedParameters: computedParameters);
+            ComputedParameters: computedParameters)
+        {
+            OperatorKind = operatorKind,
+        };
+    }
+
+    private OperatorKind? ParseOperatorKind()
+    {
+        var operatorKind = Current.Type switch
+        {
+            TokenType.Plus => OperatorKind.Add,
+            TokenType.Minus => OperatorKind.Subtract,
+            TokenType.Star => OperatorKind.Multiply,
+            TokenType.Slash => OperatorKind.Divide,
+            TokenType.Percent => OperatorKind.Modulo,
+            _ => (OperatorKind?)null,
+        };
+        if (operatorKind is not null)
+        {
+            Advance();
+            return operatorKind;
+        }
+
+        _diagnostics.Report(
+            Current.Location,
+            "Expected a mathematical operator after 'operator'. Supported operators: '+', '-', '*', '/', '%'.");
+        return null;
     }
 
     private (List<ParameterNode> Parameters, PlaceholderExpressionNode? ComputedParameters)
@@ -1522,49 +1596,6 @@ public sealed partial class Parser
                 TargetTypeNode: targetTypeNode);
     }
 
-    private FunctionNode? ParseStructFunction(
-        string ownerType,
-        IReadOnlyList<string> ownerTypeParameters,
-        bool isStatic,
-        IReadOnlyList<AttributeApplicationNode> attributes)
-    {
-        var fnToken = Expect(TokenType.Fn, "Expected 'fn' before struct function declaration.");
-        if (fnToken is null)
-        {
-            return null;
-        }
-
-        return InheritOwnerTypeParameters(ParseFunctionAfterFn(fnToken.Location, isStatic, ownerType, attributes), ownerTypeParameters);
-    }
-
-    private FunctionNode? ParseStructStaticFunction(
-        string ownerType,
-        IReadOnlyList<string> ownerTypeParameters,
-        IReadOnlyList<AttributeApplicationNode> attributes)
-    {
-        var staticToken = Expect(TokenType.Static, "Expected 'static'.");
-        var isImplicit = ConsumeOptional(TokenType.Implicit);
-        if (Expect(TokenType.Fn, isImplicit
-                ? "Expected 'fn' after 'static implicit'."
-                : "Expected 'fn' after 'static'.") is null)
-        {
-            return null;
-        }
-
-        var function = ParseFunctionAfterFn(staticToken?.Location ?? Current.Location, isStatic: true, ownerType, attributes);
-        if (function is not null)
-        {
-            function = function with { IsImplicit = isImplicit };
-        }
-        function = InheritOwnerTypeParameters(function, ownerTypeParameters);
-        if (function?.Parameters.FirstOrDefault()?.Name == "self")
-        {
-            _diagnostics.Report(function.Location, "Static functions should not take 'self'; use 'fn Type.name' for instance methods.");
-        }
-
-        return function;
-    }
-
     private static FunctionNode? InheritOwnerTypeParameters(
         FunctionNode? function,
         IReadOnlyList<string> ownerTypeParameters)
@@ -1579,11 +1610,15 @@ public sealed partial class Parser
             .ToList();
         if (inherited.Count == 0)
         {
-            return function;
+            return function with
+            {
+                ReceiverTypeParameters = [],
+            };
         }
 
         return function with
         {
+            ReceiverTypeParameters = inherited,
             TypeParameters = inherited.Concat(function.TypeParameters).ToList(),
         };
     }
@@ -1854,9 +1889,13 @@ public sealed partial class Parser
         var members = new List<RequirementMemberNode>();
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
-            if (Check(TokenType.Fn) || Check(TokenType.Static))
+            if (Check(TokenType.Fn)
+                || Check(TokenType.Public)
+                || Check(TokenType.Static)
+                || Check(TokenType.Implicit))
             {
-                if (ParseRequirementFunction() is { } function)
+                var modifiers = ParseDeclarationModifiers();
+                if (ParseRequirementFunction(modifiers) is { } function)
                 {
                     members.Add(function);
                 }
@@ -1883,10 +1922,14 @@ public sealed partial class Parser
                 members);
     }
 
-    private RequirementFunctionNode? ParseRequirementFunction()
+    private RequirementFunctionNode? ParseRequirementFunction(
+        ParsedDeclarationModifiers modifiers)
     {
-        var staticToken = Match(TokenType.Static);
-        var fnToken = Expect(TokenType.Fn, staticToken is null
+        ValidateOnlyModifiers(
+            modifiers,
+            DeclarationModifier.Static,
+            "requirement functions");
+        var fnToken = Expect(TokenType.Fn, !modifiers.IsStatic
             ? "Expected 'fn' before requirement function."
             : "Expected 'fn' after 'static' in requirement function.");
         var nameToken = ExpectIdentifierLike("Expected requirement function name.");
@@ -1901,8 +1944,8 @@ public sealed partial class Parser
         return fnToken is null
             ? null
             : new RequirementFunctionNode(
-                staticToken?.Location ?? fnToken.Location,
-                staticToken is not null,
+                modifiers.StaticToken?.Location ?? fnToken.Location,
+                modifiers.IsStatic,
                 nameToken?.Value ?? string.Empty,
                 parameters,
                 returnTypeNode);
@@ -1978,51 +2021,26 @@ public sealed partial class Parser
         IReadOnlyList<AttributeApplicationNode> attributes,
         out FunctionNode? function)
     {
-        var publicToken = Match(TokenType.Public);
+        var modifiers = ParseDeclarationModifiers();
         if (Check(TokenType.Fn))
         {
-            function = ParseStructFunction(ownerType, ownerTypeParameters, isStatic: false, attributes);
-            SetOwnedFunctionVisibility(function, publicToken);
+            function = ParseFunction(
+                attributes,
+                modifiers,
+                ownerType,
+                ownerTypeParameters);
+            SetOwnedFunctionVisibility(function, modifiers.PublicToken);
             return true;
         }
 
-        if (Check(TokenType.Static))
-        {
-            function = ParseStructStaticFunction(ownerType, ownerTypeParameters, attributes);
-            SetOwnedFunctionVisibility(function, publicToken);
-            return true;
-        }
-
-        if (publicToken is not null)
+        if (modifiers.Value != DeclarationModifier.None)
         {
             _diagnostics.Report(
-                publicToken.Location,
-                "Expected 'fn' or 'static fn' after 'public' in a type body.");
-            function = null;
-            return true;
-        }
-
-        if (Check(TokenType.Implicit))
-        {
-            var implicitToken = Advance();
-            _diagnostics.Report(
-                implicitToken.Location,
-                "Implicit conversion functions must be declared with 'static implicit fn'.");
-            if (Check(TokenType.Fn))
-            {
-                Advance();
-                var parsedFunction = ParseFunctionAfterFn(
-                    implicitToken.Location,
-                    isStatic: true,
-                    ownerType,
-                    attributes);
-                function = parsedFunction is null
-                    ? null
-                    : parsedFunction with { IsImplicit = true };
-                SetOwnedFunctionVisibility(function, publicToken);
-                return true;
-            }
-
+                modifiers.PublicToken?.Location
+                    ?? modifiers.StaticToken?.Location
+                    ?? modifiers.ImplicitToken?.Location
+                    ?? Current.Location,
+                "Expected 'fn' after declaration modifiers in a type body.");
             function = null;
             return true;
         }

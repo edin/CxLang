@@ -5,7 +5,8 @@ namespace Cx.Compiler.Semantic.Resolvers;
 internal sealed class ExpressionTypeResolver(
     ProgramNode program,
     IReadOnlyList<string>? currentTypeParameters = null,
-    IReadOnlyList<GenericConstraintNode>? currentGenericConstraints = null)
+    IReadOnlyList<GenericConstraintNode>? currentGenericConstraints = null,
+    FunctionCatalog? functionCatalog = null)
 {
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
@@ -16,7 +17,8 @@ internal sealed class ExpressionTypeResolver(
         program,
         ResolveTypeRef,
         _currentTypeParameters,
-        _currentGenericConstraints);
+        _currentGenericConstraints,
+        functionCatalog);
 
     public TypeRef? ResolveTypeRef(ExpressionNode? expression, TypeEnvironment variables)
     {
@@ -146,6 +148,25 @@ internal sealed class ExpressionTypeResolver(
 
     private TypeRef? ResolveBinaryTypeRef(BinaryExpressionNode binary, TypeEnvironment variables)
     {
+        var left = ResolveTypeRef(binary.Left, variables);
+        var right = ResolveTypeRef(binary.Right, variables);
+        var operatorKind = binary.Operator.ToOverloadableOperator();
+        if (operatorKind is not null
+            && left is not null
+            && !UsesBuiltinMathOperation(left, right)
+            && CallResolver.ResolveOperatorTypeRefs(
+                operatorKind.Value,
+                left,
+                binary.Right,
+                variables) is { Function: not null } operatorResolution)
+        {
+            binary.Semantic.ResolvedCall = new ResolvedCallInfo(
+                operatorResolution.Function,
+                operatorResolution.TypeArgumentRefs,
+                IsInstance: true);
+            return operatorResolution.ReturnType;
+        }
+
         if (binary.Operator is BinaryOperator.Equal
             or BinaryOperator.NotEqual
             or BinaryOperator.LessThan
@@ -163,10 +184,12 @@ internal sealed class ExpressionTypeResolver(
             return ResolveKnownType(TypeRef.Int);
         }
 
-        var left = ResolveTypeRef(binary.Left, variables);
-        var right = ResolveTypeRef(binary.Right, variables);
         return SameType(left, right) ? left : left ?? right;
     }
+
+    private static bool UsesBuiltinMathOperation(TypeRef left, TypeRef? right) =>
+        BuiltinTypes.IsBuiltin(TypeRefFacts.GetBaseName(left))
+        && BuiltinTypes.IsBuiltin(TypeRefFacts.GetBaseName(right));
 
     private TypeRef? ResolveConditionalTypeRef(ConditionalExpressionNode conditional, TypeEnvironment variables)
     {

@@ -64,6 +64,43 @@ public sealed class AnalysisTests
     }
 
     [Fact]
+    public void GetMemberCompletions_ExcludesUnsatisfiedConstrainedExtensionMethods()
+    {
+        const string source = """
+            requires Disposable<T> {
+                fn dispose(self: Self*) -> void;
+            }
+
+            struct Plain {
+                value: int;
+            }
+
+            struct Box<T> {
+                value: T;
+            }
+
+            extension Box<T>
+            where T: Disposable<T> {
+                fn dispose_all() -> void {
+                }
+            }
+
+            fn main(box: Box<Plain>) -> int {
+                let value = box.
+                return 0;
+            }
+            """;
+        var position = source.IndexOf("box.", StringComparison.Ordinal) + "box.".Length;
+
+        var completions = new CxCompiler().GetMemberCompletions(
+            [CompilerTestHelpers.Source(source)],
+            "main.cx",
+            position);
+
+        Assert.DoesNotContain(completions, completion => completion.Label == "dispose_all");
+    }
+
+    [Fact]
     public void CompileToC_RejectsIncompleteMemberExpression()
     {
         var result = new CxCompiler().CompileToC("""

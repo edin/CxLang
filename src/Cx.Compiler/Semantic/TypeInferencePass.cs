@@ -6,42 +6,98 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
 
-internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
+internal sealed class TypeInferencePass(
+    DiagnosticBag diagnostics,
+    SemanticModel? semanticModel = null)
 {
     private ExpressionTypeResolver? _resolver;
     private TypeSystem? _typeSystem;
     private TypeRefParser? _typeRefParser;
     private TypeCompatibility? _typeCompatibility;
+    private FunctionCatalog? _functionCatalog;
+    private readonly Dictionary<FunctionNode, FunctionNode> _inferredFunctions =
+        new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<FunctionId, FunctionNode> _inferredFunctionSymbols = [];
     private ProgramNode? _program;
     private TypeEnvironment _globalTypeEnvironment = new();
 
     public ProgramNode Apply(ProgramNode program)
     {
+        _inferredFunctions.Clear();
+        _inferredFunctionSymbols.Clear();
+        _functionCatalog = semanticModel?.GetOrCreateFunctionCatalog(program)
+            ?? FunctionCatalog.Build(program);
         _program = program;
         _typeRefParser = new TypeRefParser(program);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
-        _resolver = new ExpressionTypeResolver(program);
+        _resolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: FunctionCatalog);
+        _typeSystem = new TypeSystem(program);
         var globalVariables = InferGlobalVariables(program.GlobalVariables);
         var programWithGlobals = program with { GlobalVariables = globalVariables };
         _program = programWithGlobals;
         _typeRefParser = new TypeRefParser(programWithGlobals);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
-        _resolver = new ExpressionTypeResolver(programWithGlobals);
+        _resolver = new ExpressionTypeResolver(
+            programWithGlobals,
+            functionCatalog: FunctionCatalog);
         _typeSystem = new TypeSystem(programWithGlobals);
         _globalTypeEnvironment = BuildGlobalTypeEnvironment(globalVariables);
 
         return programWithGlobals with
         {
-            Functions = program.Functions.Select(InferFunction).ToList(),
+            Functions = InferCatalogFunctions(program.Functions),
             Structs = program.Structs.Select(structNode => structNode with
             {
-                Methods = structNode.Methods.Select(InferFunction).ToList(),
+                Methods = InferCatalogFunctions(structNode.Methods),
+            }).ToList(),
+            TypeAdapters = program.TypeAdapters.Select(adapter => adapter with
+            {
+                Methods = InferCatalogFunctions(adapter.Methods),
+            }).ToList(),
+            Extensions = program.Extensions.Select(extension => extension with
+            {
+                Methods = InferCatalogFunctions(extension.Methods),
             }).ToList(),
             TaggedUnions = program.TaggedUnions.Select(union => union with
             {
-                Methods = union.Methods.Select(InferFunction).ToList(),
+                Methods = InferCatalogFunctions(union.Methods),
             }).ToList(),
         };
+    }
+
+    private IReadOnlyList<FunctionNode> InferCatalogFunctions(
+        IEnumerable<FunctionNode> functions) =>
+        functions
+            .Select(InferCatalogFunction)
+            .DistinctBy(function => FunctionCatalog.GetSymbol(function).Id)
+            .ToList();
+
+    private FunctionNode InferCatalogFunction(FunctionNode function)
+    {
+        if (_inferredFunctions.TryGetValue(function, out var inferred))
+        {
+            return inferred;
+        }
+
+        var symbol = FunctionCatalog.GetSymbol(function);
+        if (_inferredFunctionSymbols.TryGetValue(symbol.Id, out inferred))
+        {
+            _inferredFunctions.Add(function, inferred);
+            return inferred;
+        }
+
+        var canonicalDeclaration = symbol.Declaration;
+        inferred = InferFunction(canonicalDeclaration);
+        if (!ReferenceEquals(canonicalDeclaration, function))
+        {
+            _inferredFunctions[canonicalDeclaration] = inferred;
+        }
+        _inferredFunctions.Add(function, inferred);
+        _inferredFunctionSymbols.Add(symbol.Id, inferred);
+        FunctionCatalog.RebindDeclaration(canonicalDeclaration, inferred);
+        return inferred;
     }
 
     private IReadOnlyList<GlobalVariableNode> InferGlobalVariables(IReadOnlyList<GlobalVariableNode> globals)
@@ -490,10 +546,13 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
         if (call.Callee is NameExpressionNode functionName)
         {
-            var function = _program.Functions.FirstOrDefault(function =>
-                OwnerTypeName(function) is null
-                && function.Name == functionName.Name
-                && function.TypeParameters.Count > 0);
+            var function = FunctionCatalog.Query(new FunctionQuery
+                {
+                    Name = functionName.Name,
+                    Kind = FunctionKind.Free,
+                })
+                .Select(function => function.Declaration)
+                .FirstOrDefault(function => function.TypeParameters.Count > 0);
             if (function is null
                 || _resolver.InferFunctionTypeArgumentRefs(function.TypeParameters, function.Parameters, call.Arguments, typeEnvironment, skipSelf: false) is not null)
             {
@@ -510,11 +569,15 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
         if (!typeEnvironment.Types.ContainsKey(targetName))
         {
-            var staticFunction = _program.Functions.FirstOrDefault(function =>
-                function.IsStatic
-                && OwnerTypeName(function) == targetName
-                && function.Name == member.MemberName
-                && function.TypeParameters.Count > 0);
+            var staticFunction = FunctionCatalog
+                .Query(new FunctionQuery
+                {
+                    Name = member.MemberName,
+                    Kind = FunctionKind.Static,
+                    ReceiverType = new TypeRef.Named(targetName, []),
+                })
+                .Select(function => function.Declaration)
+                .FirstOrDefault(function => function.TypeParameters.Count > 0);
             if (staticFunction is null
                 || _resolver.InferFunctionTypeArgumentRefs(staticFunction.TypeParameters, staticFunction.Parameters, call.Arguments, typeEnvironment, skipSelf: false) is not null)
             {
@@ -777,15 +840,11 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
             return expression;
         }
 
-        var candidates = GetAllFunctions(_program!)
+        var candidates = _typeSystem!.GetMethods(expectedType)
+            .Where(method => method.Declaration.IsStatic)
+            .Select(method => method.Declaration)
             .Where(function =>
                 function.IsImplicit
-                && function.IsStatic
-                && function.OwnerTypeNode is not null
-                && string.Equals(
-                    TypeRefFacts.GetBaseName(_typeRefParser!.Parse(function.OwnerTypeNode)),
-                    targetName,
-                    StringComparison.Ordinal)
                 && function.Parameters.Count == 1
                 && !function.Parameters[0].IsVariadic)
             .Where(function =>
@@ -828,15 +887,6 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
         return call;
     }
 
-    private static IEnumerable<FunctionNode> GetAllFunctions(ProgramNode program) =>
-        program.Functions
-            .Concat(program.Structs.SelectMany(structNode => structNode.Methods))
-            .Concat(program.TaggedUnions.SelectMany(union => union.Methods))
-            .DistinctBy(function => (
-                function.Location.File.Path,
-                function.Location.Position,
-                function.Name));
-
     private FunctionExpressionNode InferFunctionExpression(
         FunctionExpressionNode function,
         TypeEnvironment typeEnvironment,
@@ -865,6 +915,9 @@ internal sealed class TypeInferencePass(DiagnosticBag diagnostics)
 
     private string? OwnerTypeName(FunctionNode function) =>
         TypeRefOrNull(function.OwnerTypeNode) is TypeRef.Named named ? named.Name : null;
+
+    private FunctionCatalog FunctionCatalog =>
+        _functionCatalog ?? throw new InvalidOperationException("Type inference has no function catalog.");
 
     private void AddImplicitSelfBinding(FunctionNode function, TypeEnvironment typeEnvironment)
     {

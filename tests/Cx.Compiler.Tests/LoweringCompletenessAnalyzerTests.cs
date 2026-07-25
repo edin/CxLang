@@ -110,7 +110,6 @@ public sealed class LoweringCompletenessAnalyzerTests
             [
                 new Cx.Compiler.Syntax.Nodes.FunctionNode(
                     location,
-                    IsStatic: false,
                     "main",
                     TypeParameters: [],
                     GenericConstraints: [],

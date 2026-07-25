@@ -6,14 +6,17 @@ namespace Cx.Compiler.Lowering;
 
 internal static class GenericSpecializationPass
 {
-    public static ProgramNode Apply(ProgramNode program, DiagnosticBag diagnostics)
+    public static ProgramNode Apply(
+        ProgramNode program,
+        DiagnosticBag diagnostics,
+        FunctionCatalog? functionCatalog = null)
     {
         if (diagnostics.HasErrors)
         {
             return program;
         }
 
-        var result = BuildSpecializationResult(program);
+        var result = BuildSpecializationResult(program, functionCatalog);
         var loweredProgram = RewriteGenericStructTypes(program, result);
         var loweredSpecializedFunctions = RewriteSpecializedFunctionTypes(result);
 
@@ -21,12 +24,14 @@ internal static class GenericSpecializationPass
         return AppendSpecializations(loweredProgram, result, loweredSpecializedFunctions);
     }
 
-    private static GenericSpecializationResult BuildSpecializationResult(ProgramNode program)
+    private static GenericSpecializationResult BuildSpecializationResult(
+        ProgramNode program,
+        FunctionCatalog? functionCatalog)
     {
-        var specializedFunctions = new Dictionary<string, FunctionNode>(StringComparer.Ordinal);
+        var catalog = functionCatalog ?? FunctionCatalog.Build(program);
+        var instances = new Dictionary<FunctionInstanceKey, FunctionInstance>();
         var pending = new Queue<GenericFunctionUse>();
-        var collector = new GenericUseCollector(program);
-        var typeRefParser = new TypeRefParser(program);
+        var collector = new GenericUseCollector(program, catalog);
         var openTypeParameterNames = GetOpenTypeParameterNames(program);
         foreach (var use in collector.Collect(program))
         {
@@ -35,25 +40,35 @@ internal static class GenericSpecializationPass
 
         while (pending.TryDequeue(out var use))
         {
-            var key = Key(use.Function, use.TypeArgumentRefs, typeRefParser);
-            if (specializedFunctions.ContainsKey(key)
-                || use.Function.TypeParameters.Count != use.TypeArgumentRefs.Count
+            if (use.Function.TypeParameters.Count != use.TypeArgumentRefs.Count
                 || !IsClosedTypeArgumentList(use, openTypeParameterNames))
             {
                 continue;
             }
 
-            var specialized = GenericFunctionSpecializer.Specialize(use.Function, use.TypeArgumentRefs);
-            specializedFunctions.Add(key, specialized);
-            foreach (var discovered in collector.Collect(specialized))
+            var instance = catalog.GetOrAddInstance(
+                use.Function,
+                use.TypeArgumentRefs,
+                () => GenericFunctionSpecializer.Specialize(
+                    use.Function,
+                    use.TypeArgumentRefs),
+                out _);
+            if (!instances.TryAdd(instance.Key, instance))
+            {
+                continue;
+            }
+
+            foreach (var discovered in collector.Collect(instance.Declaration))
             {
                 pending.Enqueue(discovered);
             }
         }
 
         return new GenericSpecializationResult(
-            specializedFunctions,
-            GenericStructSpecializer.Specialize(program, specializedFunctions.Values));
+            instances.Values.ToList(),
+            GenericStructSpecializer.Specialize(
+                program,
+                instances.Values.Select(instance => instance.Declaration)));
     }
 
     private static ProgramNode RewriteGenericStructTypes(
@@ -63,18 +78,28 @@ internal static class GenericSpecializationPass
             ? program
             : GenericTypeRewriter.Rewrite(program, result.StructNames);
 
-    private static IReadOnlyDictionary<string, FunctionNode> RewriteSpecializedFunctionTypes(
-        GenericSpecializationResult result) =>
-        result.StructNames.Count == 0
-            ? result.FunctionsByKey
-            : result.FunctionsByKey.ToDictionary(
-                pair => pair.Key,
-                pair => GenericTypeRewriter.Rewrite(pair.Value, result.StructNames),
-                StringComparer.Ordinal);
+    private static IReadOnlyDictionary<FunctionInstanceKey, FunctionNode> RewriteSpecializedFunctionTypes(
+        GenericSpecializationResult result)
+    {
+        foreach (var instance in result.Instances)
+        {
+            if (result.StructNames.Count > 0)
+            {
+                instance.RebindDeclaration(
+                    GenericTypeRewriter.Rewrite(
+                        instance.Declaration,
+                        result.StructNames));
+            }
+        }
+
+        return result.Instances.ToDictionary(
+            instance => instance.Key,
+            instance => instance.Declaration);
+    }
 
     private static void RetargetGenericCalls(
         ProgramNode loweredProgram,
-        IReadOnlyDictionary<string, FunctionNode> loweredSpecializedFunctions)
+        IReadOnlyDictionary<FunctionInstanceKey, FunctionNode> loweredSpecializedFunctions)
     {
         GenericCallRetargeter.Retarget(loweredProgram, loweredSpecializedFunctions);
         GenericCallRetargeter.Retarget(loweredSpecializedFunctions.Values, loweredSpecializedFunctions);
@@ -83,7 +108,7 @@ internal static class GenericSpecializationPass
     private static ProgramNode AppendSpecializations(
         ProgramNode loweredProgram,
         GenericSpecializationResult result,
-        IReadOnlyDictionary<string, FunctionNode> loweredSpecializedFunctions)
+        IReadOnlyDictionary<FunctionInstanceKey, FunctionNode> loweredSpecializedFunctions)
     {
         if (result.IsEmpty)
         {
@@ -95,26 +120,6 @@ internal static class GenericSpecializationPass
             Structs = loweredProgram.Structs.Concat(result.Structs).ToList(),
             Functions = loweredProgram.Functions.Concat(loweredSpecializedFunctions.Values).ToList(),
         };
-    }
-
-    private static string Key(FunctionNode function, IReadOnlyList<TypeRef> arguments, TypeRefParser typeRefParser)
-    {
-        var ownerType = OwnerType(function, typeRefParser);
-        var ownerTypeText = ownerType is null ? string.Empty : TypeIdentity.SpecializationKey(ownerType);
-        var argumentText = arguments.Select(TypeIdentity.SpecializationKey);
-        return $"{(string.IsNullOrWhiteSpace(ownerTypeText) ? function.Name : $"{ownerTypeText}.{function.Name}")}<{string.Join(",", argumentText)}>";
-    }
-
-    private static TypeRef? OwnerType(FunctionNode function, TypeRefParser typeRefParser)
-    {
-        var typeNode = function.OwnerTypeNode;
-        if (typeNode is null)
-        {
-            return null;
-        }
-
-        var type = typeNode.Semantic.Type ?? typeNode.ToTypeRef(typeRefParser);
-        return type is TypeRef.Unknown ? null : type;
     }
 
     private static IReadOnlySet<string> GetOpenTypeParameterNames(ProgramNode program) =>

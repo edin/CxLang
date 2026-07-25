@@ -181,7 +181,10 @@ public sealed record GenericCallExpressionNode(
 public sealed record MemberExpressionNode(
     Location Location,
     ExpressionNode Target,
-    string MemberName) : ExpressionNode(Location);
+    string MemberName) : ExpressionNode(Location)
+{
+    public OperatorKind? OperatorKind { get; init; }
+}
 
 public sealed record IncompleteMemberExpressionNode(
     Location Location,
@@ -228,6 +231,8 @@ public static class ExpressionNodeExtensions
             $"{assignment.Target.ToSourceText()} {assignment.Operator.ToSourceText()} {assignment.Value.ToSourceText()}",
         GenericCallExpressionNode call => FormatGenericCall(call),
         CallExpressionNode call => FormatCall(call),
+        MemberExpressionNode { OperatorKind: { } operatorKind } member =>
+            $"{member.Target.ToSourceText()}.operator {operatorKind.ToSourceText()}",
         MemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.MemberName}",
         IncompleteMemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.Prefix}",
         ComputedMemberExpressionNode member => $"{member.Target.ToSourceText()}.{member.MemberName.ToSourceText()}",
