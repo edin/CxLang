@@ -541,8 +541,8 @@ public sealed partial class Parser
             : new CompileTimeIfTopLevelNode(
                 atToken.Location,
                 condition,
-                thenDeclarations,
-                elseDeclarations);
+                new SyntaxBlockNode(atToken.Location, thenDeclarations),
+                new SyntaxBlockNode(atToken.Location, elseDeclarations));
     }
 
     private CompileTimeForeachTopLevelNode? ParseCompileTimeForeachTopLevel()
@@ -562,7 +562,7 @@ public sealed partial class Parser
                 atToken.Location,
                 bindingToken?.Value ?? string.Empty,
                 iterable,
-                declarations);
+                new SyntaxBlockNode(atToken.Location, declarations));
     }
 
     private bool IsCompileTimeDeclarationScriptStart() =>
@@ -877,7 +877,11 @@ public sealed partial class Parser
 
         return atToken is null
             ? null
-            : new CompileTimeIfDeclarationNode(atToken.Location, condition, thenMembers, elseMembers);
+            : new CompileTimeIfDeclarationNode(
+                atToken.Location,
+                condition,
+                new SyntaxBlockNode(atToken.Location, thenMembers),
+                new SyntaxBlockNode(atToken.Location, elseMembers));
     }
 
     private CompileTimeForeachDeclarationNode? ParseCompileTimeForeachDeclaration()
@@ -897,7 +901,7 @@ public sealed partial class Parser
                 atToken.Location,
                 bindingToken?.Value ?? string.Empty,
                 iterable,
-                members);
+                new SyntaxBlockNode(atToken.Location, members));
     }
 
     private CLinkNode? ParseCDeclareLink()

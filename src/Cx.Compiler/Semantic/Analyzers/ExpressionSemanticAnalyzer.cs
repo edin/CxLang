@@ -58,6 +58,7 @@ internal sealed class ExpressionSemanticAnalyzer(
             case BinaryExpressionNode binary:
                 Analyze(binary.Left, location, typeEnvironment, mutability);
                 Analyze(binary.Right, location, typeEnvironment, mutability);
+                AnalyzeOverloadedOperator(binary, typeEnvironment);
                 break;
             case ScalarRangeExpressionNode range:
                 Analyze(range.Start, location, typeEnvironment, mutability);
@@ -176,6 +177,67 @@ internal sealed class ExpressionSemanticAnalyzer(
             diagnostics.Report(location, $"Unknown symbol '{name.Name}'. Did you mean to import {suggestion}?");
         }
     }
+
+    private void AnalyzeOverloadedOperator(
+        BinaryExpressionNode binary,
+        TypeEnvironment typeEnvironment)
+    {
+        var operatorKind = binary.Operator.ToOverloadableOperator();
+        if (operatorKind is null)
+        {
+            return;
+        }
+
+        var leftType = ResolveExpressionTypeRef(binary.Left, typeEnvironment);
+        var rightType = ResolveExpressionTypeRef(binary.Right, typeEnvironment);
+        if (leftType is null
+            || rightType is null
+            || IsCurrentTypeParameter(leftType)
+            || IsCurrentTypeParameter(rightType)
+            || UsesBuiltinMathOperation(leftType, rightType))
+        {
+            return;
+        }
+
+        var resolver = new CallResolver(
+            program,
+            expressionTypeResolver.ResolveTypeRef,
+            currentTypeParameters,
+            currentGenericConstraints,
+            functionCatalog);
+        var resolution = resolver.ResolveOperatorTypeRefs(
+            operatorKind.Value,
+            leftType,
+            binary.Right,
+            typeEnvironment);
+        if (resolution is null)
+        {
+            diagnostics.Report(
+                binary.Location,
+                $"Operator '{operatorKind.Value.ToSourceText()}' is not defined for operands " +
+                $"'{TypeRefFormatter.ToCxString(leftType)}' and '{TypeRefFormatter.ToCxString(rightType)}'.");
+            return;
+        }
+
+        if (!resolution.IsAmbiguous)
+        {
+            return;
+        }
+
+        diagnostics.Report(
+            binary.Location,
+            $"Ambiguous operator '{operatorKind.Value.ToSourceText()}' for operands " +
+            $"'{TypeRefFormatter.ToCxString(leftType)}' and '{TypeRefFormatter.ToCxString(rightType)}'. " +
+            $"Candidates: {string.Join(", ", resolution.AmbiguousFunctions.Select(FormatFunctionCandidate))}.");
+    }
+
+    private static bool UsesBuiltinMathOperation(TypeRef left, TypeRef right) =>
+        BuiltinTypes.IsBuiltin(TypeRefFacts.GetBaseName(left))
+        && BuiltinTypes.IsBuiltin(TypeRefFacts.GetBaseName(right));
+
+    private bool IsCurrentTypeParameter(TypeRef type) =>
+        TypeRefFacts.GetBaseName(type) is { } name
+        && currentTypeParameters.Contains(name, StringComparer.Ordinal);
 
     private void AnalyzeCallExpression(
         CallExpressionNode call,

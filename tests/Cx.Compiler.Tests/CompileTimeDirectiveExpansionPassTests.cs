@@ -1,12 +1,38 @@
 using Cx.Compiler.CompileTime;
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
 
 public sealed class CompileTimeDirectiveExpansionPassTests
 {
+    [Fact]
+    public void ExpandStatementList_ReportsInvalidGeneralizedSyntaxBlockItem()
+    {
+        var location = Location.Synthetic("<syntax-block-test>");
+        var conditional = new CompileTimeIfStatementNode(
+            location,
+            new LiteralExpressionNode(location, "true", LiteralKind.Boolean),
+            new SyntaxBlockNode(
+                location,
+                [new CLinkNode(location, Platform: null, Library: "invalid-in-function")]),
+            new SyntaxBlockNode(location, []));
+        var diagnostics = new DiagnosticBag();
+        var pass = new CompileTimeDirectiveExpansionPass(diagnostics);
+
+        var expanded = pass.ExpandStatementList(
+            [conditional],
+            new CompileTimeEvaluationContext());
+
+        Assert.Empty(expanded);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "cannot be expanded as a statement",
+                StringComparison.Ordinal));
+    }
+
     [Fact]
     public void ExpandProgram_SelectsCompileTimeIfBranch()
     {

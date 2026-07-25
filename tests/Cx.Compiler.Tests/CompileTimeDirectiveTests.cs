@@ -79,13 +79,13 @@ public sealed class CompileTimeDirectiveTests
         var foreachNode = Assert.IsType<CompileTimeForeachStatementNode>(statements[1]);
 
         Assert.Equal("enabled", conditional.Condition.ToSourceText());
-        Assert.Single(conditional.ThenBody);
-        Assert.Single(conditional.ElseBody);
+        Assert.Single(conditional.ThenBlock.Items);
+        Assert.Single(conditional.ElseBlock.Items);
         Assert.Equal("item", foreachNode.BindingName);
         Assert.Equal("items", foreachNode.IterableExpression.ToSourceText());
         Assert.IsType<PlaceholderExpressionNode>(
             Assert.Single(Assert.IsType<CallExpressionNode>(
-                Assert.IsType<CStatement>(Assert.Single(foreachNode.Body)).Expression).Arguments));
+                Assert.IsType<CStatement>(Assert.Single(foreachNode.Body.Items)).Expression).Arguments));
         Assert.NotNull(conditional.Span);
         Assert.NotNull(foreachNode.Span);
     }
@@ -113,11 +113,11 @@ public sealed class CompileTimeDirectiveTests
         var foreachNode = Assert.IsType<CompileTimeForeachDeclarationNode>(members[1]);
 
         Assert.Equal("target_windows", conditional.Condition.ToSourceText());
-        Assert.IsType<CLinkNode>(Assert.Single(conditional.ThenMembers));
-        Assert.IsType<CLinkNode>(Assert.Single(conditional.ElseMembers));
+        Assert.IsType<CLinkNode>(Assert.Single(conditional.ThenBlock.Items));
+        Assert.IsType<CLinkNode>(Assert.Single(conditional.ElseBlock.Items));
         Assert.Equal("library", foreachNode.BindingName);
         Assert.Equal("libraries", foreachNode.IterableExpression.ToSourceText());
-        Assert.IsType<CLinkNode>(Assert.Single(foreachNode.Members));
+        Assert.IsType<CLinkNode>(Assert.Single(foreachNode.Body.Items));
         Assert.NotNull(conditional.Span);
         Assert.NotNull(foreachNode.Span);
     }
@@ -139,12 +139,12 @@ public sealed class CompileTimeDirectiveTests
         var rewritten = new RenameRewriter().RewriteProgram(program);
         var conditional = Assert.IsType<CompileTimeIfStatementNode>(
             Assert.Single(Assert.Single(rewritten.Macros).Template.Statements));
-        var foreachNode = Assert.IsType<CompileTimeForeachStatementNode>(Assert.Single(conditional.ThenBody));
+        var foreachNode = Assert.IsType<CompileTimeForeachStatementNode>(Assert.Single(conditional.ThenBlock.Items));
 
         Assert.Equal("after", conditional.Condition.ToSourceText());
         Assert.Equal("after", foreachNode.IterableExpression.ToSourceText());
         var call = Assert.IsType<CallExpressionNode>(
-            Assert.IsType<CStatement>(Assert.Single(foreachNode.Body)).Expression);
+            Assert.IsType<CStatement>(Assert.Single(foreachNode.Body.Items)).Expression);
         Assert.Equal(
             "after",
             Assert.IsType<NameExpressionNode>(

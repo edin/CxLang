@@ -2,6 +2,10 @@ using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Syntax.Nodes;
 
+public sealed record SyntaxBlockNode(
+    Location Location,
+    IReadOnlyList<SyntaxNode> Items) : SyntaxNode(Location);
+
 public sealed record CompileTimeLetStatementNode(
     Location Location,
     string Name,
@@ -10,14 +14,14 @@ public sealed record CompileTimeLetStatementNode(
 public sealed record CompileTimeIfStatementNode(
     Location Location,
     ExpressionNode Condition,
-    IReadOnlyList<StatementNode> ThenBody,
-    IReadOnlyList<StatementNode> ElseBody) : StatementNode(Location);
+    SyntaxBlockNode ThenBlock,
+    SyntaxBlockNode ElseBlock) : StatementNode(Location);
 
 public sealed record CompileTimeForeachStatementNode(
     Location Location,
     string BindingName,
     ExpressionNode IterableExpression,
-    IReadOnlyList<StatementNode> Body) : StatementNode(Location);
+    SyntaxBlockNode Body) : StatementNode(Location);
 
 public sealed record CompileTimeScriptDeclarationNode(
     Location Location,
@@ -26,23 +30,23 @@ public sealed record CompileTimeScriptDeclarationNode(
 public sealed record CompileTimeIfTopLevelNode(
     Location Location,
     ExpressionNode Condition,
-    IReadOnlyList<TopLevelNode> ThenDeclarations,
-    IReadOnlyList<TopLevelNode> ElseDeclarations) : TopLevelNode(Location);
+    SyntaxBlockNode ThenBlock,
+    SyntaxBlockNode ElseBlock) : TopLevelNode(Location);
 
 public sealed record CompileTimeForeachTopLevelNode(
     Location Location,
     string BindingName,
     ExpressionNode IterableExpression,
-    IReadOnlyList<TopLevelNode> Declarations) : TopLevelNode(Location);
+    SyntaxBlockNode Body) : TopLevelNode(Location);
 
 public sealed record CompileTimeIfDeclarationNode(
     Location Location,
     ExpressionNode Condition,
-    IReadOnlyList<SyntaxNode> ThenMembers,
-    IReadOnlyList<SyntaxNode> ElseMembers) : SyntaxNode(Location);
+    SyntaxBlockNode ThenBlock,
+    SyntaxBlockNode ElseBlock) : SyntaxNode(Location);
 
 public sealed record CompileTimeForeachDeclarationNode(
     Location Location,
     string BindingName,
     ExpressionNode IterableExpression,
-    IReadOnlyList<SyntaxNode> Members) : SyntaxNode(Location);
+    SyntaxBlockNode Body) : SyntaxNode(Location);

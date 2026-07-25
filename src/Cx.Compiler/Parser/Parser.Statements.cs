@@ -142,7 +142,11 @@ public sealed partial class Parser
 
         return atToken is null
             ? null
-            : new CompileTimeIfStatementNode(atToken.Location, condition, thenBody, elseBody);
+            : new CompileTimeIfStatementNode(
+                atToken.Location,
+                condition,
+                new SyntaxBlockNode(atToken.Location, thenBody),
+                new SyntaxBlockNode(atToken.Location, elseBody));
     }
 
     private CompileTimeForeachStatementNode? ParseCompileTimeForeachStatement()
@@ -160,7 +164,7 @@ public sealed partial class Parser
                 atToken.Location,
                 bindingToken?.Value ?? string.Empty,
                 iterable,
-                body);
+                new SyntaxBlockNode(atToken.Location, body));
     }
 
     private StatementNode ParseVariableStatement(Token keywordToken, bool isConst)

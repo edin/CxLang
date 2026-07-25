@@ -51,15 +51,15 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                         conditional.Location,
                         "Internal lowering error: compile-time @if declaration remains after lowering.");
                     AnalyzeExpression(conditional.Condition);
-                    AnalyzeCDeclareMembers(conditional.ThenMembers);
-                    AnalyzeCDeclareMembers(conditional.ElseMembers);
+                    AnalyzeSyntaxBlock(conditional.ThenBlock);
+                    AnalyzeSyntaxBlock(conditional.ElseBlock);
                     break;
                 case CompileTimeForeachDeclarationNode foreachNode:
                     diagnostics.Report(
                         foreachNode.Location,
                         "Internal lowering error: compile-time @foreach declaration remains after lowering.");
                     AnalyzeExpression(foreachNode.IterableExpression);
-                    AnalyzeCDeclareMembers(foreachNode.Members);
+                    AnalyzeSyntaxBlock(foreachNode.Body);
                     break;
             }
         }
@@ -100,15 +100,15 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                         conditional.Location,
                         "Internal lowering error: compile-time @if statement remains after lowering.");
                     AnalyzeExpression(conditional.Condition);
-                    AnalyzeStatements(conditional.ThenBody);
-                    AnalyzeStatements(conditional.ElseBody);
+                    AnalyzeSyntaxBlock(conditional.ThenBlock);
+                    AnalyzeSyntaxBlock(conditional.ElseBlock);
                     break;
                 case CompileTimeForeachStatementNode foreachNode:
                     diagnostics.Report(
                         foreachNode.Location,
                         "Internal lowering error: compile-time @foreach statement remains after lowering.");
                     AnalyzeExpression(foreachNode.IterableExpression);
-                    AnalyzeStatements(foreachNode.Body);
+                    AnalyzeSyntaxBlock(foreachNode.Body);
                     break;
                 case CStatement c:
                     AnalyzeExpression(c.Expression);
@@ -161,6 +161,22 @@ internal sealed class LoweringCompletenessAnalyzer(DiagnosticBag diagnostics)
                         AnalyzeStatements(arm.Body);
                     }
 
+                    break;
+            }
+        }
+    }
+
+    private void AnalyzeSyntaxBlock(SyntaxBlockNode block)
+    {
+        foreach (var item in block.Items)
+        {
+            switch (item)
+            {
+                case StatementNode statement:
+                    AnalyzeStatements([statement]);
+                    break;
+                case CompileTimeIfDeclarationNode or CompileTimeForeachDeclarationNode:
+                    AnalyzeCDeclareMembers([item]);
                     break;
             }
         }

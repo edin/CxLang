@@ -58,9 +58,23 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         return [];
     }
 
-    private IReadOnlyList<TopLevelNode> ExpandTopLevelDeclarations(
-        IReadOnlyList<TopLevelNode> declarations) =>
-        declarations.SelectMany(RewriteTopLevelNode).ToList();
+    private IReadOnlyList<TopLevelNode> ExpandTopLevelBlock(SyntaxBlockNode block)
+    {
+        var result = new List<TopLevelNode>();
+        foreach (var item in block.Items)
+        {
+            if (item is TopLevelNode declaration)
+            {
+                result.AddRange(RewriteTopLevelNode(declaration));
+            }
+            else
+            {
+                ReportInvalidSyntaxBlockItem(item, "top-level declaration");
+            }
+        }
+
+        return result;
+    }
 
     private IReadOnlyList<TopLevelNode> ExpandTopLevelIf(
         CompileTimeIfTopLevelNode conditional)
@@ -81,10 +95,10 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         var branchContext = _context.CreateChild();
         return WithContext(
             branchContext,
-            () => ExpandTopLevelDeclarations(
+            () => ExpandTopLevelBlock(
                 boolean.Value
-                    ? conditional.ThenDeclarations
-                    : conditional.ElseDeclarations));
+                    ? conditional.ThenBlock
+                    : conditional.ElseBlock));
     }
 
     private IReadOnlyList<TopLevelNode> ExpandTopLevelForeach(
@@ -110,7 +124,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             iterationContext.Define(foreachNode.BindingName, item);
             result.AddRange(WithContext(
                 iterationContext,
-                () => ExpandTopLevelDeclarations(foreachNode.Declarations)));
+                () => ExpandTopLevelBlock(foreachNode.Body)));
         }
 
         return result;
@@ -551,7 +565,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             return [];
         }
 
-        return RewriteStatements(boolean.Value ? conditional.ThenBody : conditional.ElseBody);
+        return ExpandStatementBlock(boolean.Value ? conditional.ThenBlock : conditional.ElseBlock);
     }
 
     private IReadOnlyList<StatementNode> ExpandForeach(CompileTimeForeachStatementNode foreachNode)
@@ -576,7 +590,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             iterationContext.Define(foreachNode.BindingName, item);
             result.AddRange(WithContext(
                 iterationContext,
-                () => RewriteStatements(foreachNode.Body)));
+                () => ExpandStatementBlock(foreachNode.Body)));
         }
 
         return result;
@@ -619,7 +633,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             return [];
         }
 
-        return ExpandCDeclareMembers(boolean.Value ? conditional.ThenMembers : conditional.ElseMembers);
+        return ExpandCDeclareBlock(boolean.Value ? conditional.ThenBlock : conditional.ElseBlock);
     }
 
     private IReadOnlyList<SyntaxNode> ExpandCDeclareForeach(
@@ -645,11 +659,37 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             iterationContext.Define(foreachNode.BindingName, item);
             result.AddRange(WithContext(
                 iterationContext,
-                () => ExpandCDeclareMembers(foreachNode.Members)));
+                () => ExpandCDeclareBlock(foreachNode.Body)));
         }
 
         return result;
     }
+
+    private IReadOnlyList<StatementNode> ExpandStatementBlock(SyntaxBlockNode block)
+    {
+        var statements = new List<StatementNode>();
+        foreach (var item in block.Items)
+        {
+            if (item is StatementNode statement)
+            {
+                statements.Add(statement);
+            }
+            else
+            {
+                ReportInvalidSyntaxBlockItem(item, "statement");
+            }
+        }
+
+        return RewriteStatements(statements);
+    }
+
+    private IReadOnlyList<SyntaxNode> ExpandCDeclareBlock(SyntaxBlockNode block) =>
+        ExpandCDeclareMembers(block.Items);
+
+    private void ReportInvalidSyntaxBlockItem(SyntaxNode item, string expectedKind) =>
+        _diagnostics.Report(
+            item.Location,
+            $"Compile-time syntax block item '{item.GetType().Name}' cannot be expanded as a {expectedKind}.");
 
     private T WithContext<T>(CompileTimeEvaluationContext context, Func<T> action)
     {

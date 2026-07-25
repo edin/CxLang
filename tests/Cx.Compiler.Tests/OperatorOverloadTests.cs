@@ -205,6 +205,60 @@ public sealed class OperatorOverloadTests
                 StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void CompileMathExpression_ReportsMissingOperatorForOperandTypes()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Vec2 {
+                x: int;
+            }
+
+            fn main() -> int {
+                let left = Vec2 { x: 10 };
+                let right = Vec2 { x: 20 };
+                let sum = left + right;
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '+' is not defined",
+            "'Vec2' and 'Vec2'");
+    }
+
+    [Fact]
+    public void CompileMathExpression_ReportsAmbiguousOperatorCandidates()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Number {
+                value: int;
+
+                fn operator +(other: char) -> Number {
+                    return self;
+                }
+
+                fn operator +(other: long) -> Number {
+                    return self;
+                }
+            }
+
+            fn main() -> int {
+                let number = Number { value: 10 };
+                let result = number + 10;
+                return result.value;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Ambiguous operator '+'",
+            "Number.operator_add(char)",
+            "Number.operator_add(long)");
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         var count = 0;

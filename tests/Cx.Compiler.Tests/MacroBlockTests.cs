@@ -162,9 +162,9 @@ public sealed class MacroBlockTests
         var foreachNode = Assert.IsType<CompileTimeForeachTopLevelNode>(
             Assert.Single(Assert.Single(program.Macros).Template.DeclarationNodes));
         var conditional = Assert.IsType<CompileTimeIfTopLevelNode>(
-            Assert.Single(foreachNode.Declarations));
-        Assert.IsType<FunctionNode>(Assert.Single(conditional.ThenDeclarations));
-        Assert.Empty(conditional.ElseDeclarations);
+            Assert.Single(foreachNode.Body.Items));
+        Assert.IsType<FunctionNode>(Assert.Single(conditional.ThenBlock.Items));
+        Assert.Empty(conditional.ElseBlock.Items);
         Assert.NotNull(foreachNode.Span);
         Assert.NotNull(conditional.Span);
     }

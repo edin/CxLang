@@ -72,8 +72,8 @@ internal abstract class AstRewriter
         conditional with
         {
             Condition = RewriteRequiredExpression(conditional.Condition),
-            ThenDeclarations = conditional.ThenDeclarations.SelectMany(RewriteTopLevelNode).ToList(),
-            ElseDeclarations = conditional.ElseDeclarations.SelectMany(RewriteTopLevelNode).ToList(),
+            ThenBlock = RewriteTopLevelSyntaxBlock(conditional.ThenBlock),
+            ElseBlock = RewriteTopLevelSyntaxBlock(conditional.ElseBlock),
         };
 
     protected virtual CompileTimeForeachTopLevelNode RewriteCompileTimeForeachTopLevel(
@@ -81,7 +81,17 @@ internal abstract class AstRewriter
         foreachNode with
         {
             IterableExpression = RewriteRequiredExpression(foreachNode.IterableExpression),
-            Declarations = foreachNode.Declarations.SelectMany(RewriteTopLevelNode).ToList(),
+            Body = RewriteTopLevelSyntaxBlock(foreachNode.Body),
+        };
+
+    private SyntaxBlockNode RewriteTopLevelSyntaxBlock(SyntaxBlockNode block) =>
+        block with
+        {
+            Items = block.Items
+                .SelectMany(item => item is TopLevelNode topLevel
+                    ? RewriteTopLevelNode(topLevel).Cast<SyntaxNode>()
+                    : [item])
+                .ToList(),
         };
 
     protected virtual CDeclareNode RewriteCDeclare(CDeclareNode cDeclare) =>
@@ -93,15 +103,21 @@ internal abstract class AstRewriter
             CompileTimeIfDeclarationNode conditional => conditional with
             {
                 Condition = RewriteRequiredExpression(conditional.Condition),
-                ThenMembers = conditional.ThenMembers.Select(RewriteCDeclareMember).ToList(),
-                ElseMembers = conditional.ElseMembers.Select(RewriteCDeclareMember).ToList(),
+                ThenBlock = RewriteCDeclareSyntaxBlock(conditional.ThenBlock),
+                ElseBlock = RewriteCDeclareSyntaxBlock(conditional.ElseBlock),
             },
             CompileTimeForeachDeclarationNode foreachNode => foreachNode with
             {
                 IterableExpression = RewriteRequiredExpression(foreachNode.IterableExpression),
-                Members = foreachNode.Members.Select(RewriteCDeclareMember).ToList(),
+                Body = RewriteCDeclareSyntaxBlock(foreachNode.Body),
             },
             _ => member,
+        };
+
+    private SyntaxBlockNode RewriteCDeclareSyntaxBlock(SyntaxBlockNode block) =>
+        block with
+        {
+            Items = block.Items.Select(RewriteCDeclareMember).ToList(),
         };
 
     protected virtual MacroDeclarationNode RewriteMacroDeclaration(MacroDeclarationNode macro) =>
@@ -299,8 +315,8 @@ internal abstract class AstRewriter
         [conditional with
         {
             Condition = RewriteRequiredExpression(conditional.Condition),
-            ThenBody = RewriteStatements(conditional.ThenBody),
-            ElseBody = RewriteStatements(conditional.ElseBody),
+            ThenBlock = RewriteStatementSyntaxBlock(conditional.ThenBlock),
+            ElseBlock = RewriteStatementSyntaxBlock(conditional.ElseBlock),
         }];
 
     protected virtual IReadOnlyList<StatementNode> RewriteCompileTimeForeachStatement(
@@ -308,8 +324,18 @@ internal abstract class AstRewriter
         [foreachNode with
         {
             IterableExpression = RewriteRequiredExpression(foreachNode.IterableExpression),
-            Body = RewriteStatements(foreachNode.Body),
+            Body = RewriteStatementSyntaxBlock(foreachNode.Body),
         }];
+
+    private SyntaxBlockNode RewriteStatementSyntaxBlock(SyntaxBlockNode block) =>
+        block with
+        {
+            Items = block.Items
+                .SelectMany(item => item is StatementNode statement
+                    ? RewriteStatement(statement).Cast<SyntaxNode>()
+                    : [item])
+                .ToList(),
+        };
 
     protected virtual IReadOnlyList<StatementNode> RewriteLetStatement(LetStatement let) =>
         [let with { Initializer = RewriteExpression(let.Initializer), TypeNode = RewriteType(let.TypeNode) }];
