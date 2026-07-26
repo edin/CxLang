@@ -89,43 +89,24 @@ internal sealed class BinaryOperatorResolver(
         PrimitiveOperand leftOperand,
         PrimitiveOperand rightOperand)
     {
-        if (requestedOperator == OperatorKind.NotEqual
-            && ResolveExact(
-                OperatorKind.Equal,
+        foreach (var derivation in OperatorDerivationRules.For(requestedOperator))
+        {
+            var underlyingCall = ResolveExact(
+                derivation.UnderlyingOperator,
                 leftType,
                 right,
                 variables,
                 leftOperand,
-                rightOperand) is { } equality)
-        {
-            return new(OperatorDerivationKind.NegateBoolean, equality);
+                rightOperand);
+            if (underlyingCall is not null)
+            {
+                return new DerivedOperatorResolution(
+                    derivation.Kind,
+                    underlyingCall);
+            }
         }
 
-        var derivation = requestedOperator switch
-        {
-            OperatorKind.Equal => OperatorDerivationKind.CompareEqualToZero,
-            OperatorKind.NotEqual => OperatorDerivationKind.CompareNotEqualToZero,
-            OperatorKind.LessThan => OperatorDerivationKind.CompareLessThanZero,
-            OperatorKind.LessThanOrEqual => OperatorDerivationKind.CompareLessThanOrEqualToZero,
-            OperatorKind.GreaterThan => OperatorDerivationKind.CompareGreaterThanZero,
-            OperatorKind.GreaterThanOrEqual => OperatorDerivationKind.CompareGreaterThanOrEqualToZero,
-            _ => (OperatorDerivationKind?)null,
-        };
-        if (derivation is null)
-        {
-            return null;
-        }
-
-        var comparison = ResolveExact(
-            OperatorKind.Compare,
-            leftType,
-            right,
-            variables,
-            leftOperand,
-            rightOperand);
-        return comparison is null
-            ? null
-            : new DerivedOperatorResolution(derivation.Value, comparison);
+        return null;
     }
 
     private CallResolution? ResolveExact(

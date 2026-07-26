@@ -157,22 +157,13 @@ internal sealed class ExpressionTypeResolver(
     private TypeRef? ResolveBinaryTypeRef(BinaryExpressionNode binary, TypeEnvironment variables)
     {
         var operatorResolution = BinaryOperatorResolver.Resolve(binary, variables);
+        BinaryOperatorSemanticInfo.Apply(binary, operatorResolution);
         if (operatorResolution is
             {
                 IsResolved: true,
                 ResultType: { } resultType,
             })
         {
-            var effectiveCall = operatorResolution.EffectiveCall;
-            if (effectiveCall?.Function is { } function)
-            {
-                binary.Semantic.ResolvedCall = new ResolvedCallInfo(
-                    function,
-                    effectiveCall.TypeArgumentRefs,
-                    IsInstance: true);
-            }
-
-            binary.Semantic.OperatorDerivation = operatorResolution.Derived?.Kind;
             return resultType is TypeRef.Named
                 {
                     Arguments.Count: 0,

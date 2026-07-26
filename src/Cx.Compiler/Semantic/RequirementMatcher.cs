@@ -18,7 +18,10 @@ public sealed class RequirementMatcher
         _typeRefParser = new TypeRefParser(program);
         _typeResolver = new TypeResolver(program);
         _memberResolver = new ResolvedTypeMemberResolver(program);
-        _operatorCapabilities = new OperatorCapabilityResolver(program);
+        _operatorCapabilities = new OperatorCapabilityResolver(
+            new IntrinsicOperatorResolver(_typeRefParser),
+            _typeResolver,
+            _memberResolver);
         _concreteStructs = (concreteStructs ?? [])
             .Concat(program.Structs.Where(structNode => structNode.TypeParameters.Count == 0))
             .GroupBy(structNode => structNode.Name, StringComparer.Ordinal)

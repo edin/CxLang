@@ -52,25 +52,13 @@ internal static class GenericOperatorRetargeter
             .OfType<BinaryExpressionNode>())
         {
             var resolution = operatorResolver.Resolve(binary, variables);
-            binary.Semantic.ResolvedCall = null;
-            binary.Semantic.OperatorDerivation = null;
+            BinaryOperatorSemanticInfo.Apply(binary, resolution);
             if (resolution is not { IsResolved: true })
             {
                 continue;
             }
 
             binary.Semantic.Type = resolution.ResultType;
-            if (resolution.EffectiveCall?.Function is not { } operatorFunction)
-            {
-                continue;
-            }
-
-            var effectiveCall = resolution.EffectiveCall;
-            binary.Semantic.ResolvedCall = new ResolvedCallInfo(
-                operatorFunction,
-                effectiveCall.TypeArgumentRefs,
-                IsInstance: true);
-            binary.Semantic.OperatorDerivation = resolution.Derived?.Kind;
         }
     }
 

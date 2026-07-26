@@ -2,9 +2,19 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic;
 
-internal sealed class IntrinsicOperatorResolver(ProgramNode program)
+internal sealed class IntrinsicOperatorResolver
 {
-    private readonly TypeRefParser _typeRefParser = new(program);
+    private readonly TypeRefParser _typeRefParser;
+
+    public IntrinsicOperatorResolver(ProgramNode program)
+        : this(new TypeRefParser(program))
+    {
+    }
+
+    public IntrinsicOperatorResolver(TypeRefParser typeRefParser)
+    {
+        _typeRefParser = typeRefParser;
+    }
 
     public PrimitiveOperatorResult Resolve(
         BinaryOperator binaryOperator,

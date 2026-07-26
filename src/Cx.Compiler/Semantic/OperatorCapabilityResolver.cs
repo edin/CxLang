@@ -10,12 +10,11 @@ internal sealed record OperatorCapability(
     FunctionNode? Function = null,
     OperatorDerivationKind? Derivation = null);
 
-internal sealed class OperatorCapabilityResolver(ProgramNode program)
+internal sealed class OperatorCapabilityResolver(
+    IntrinsicOperatorResolver intrinsicOperators,
+    TypeResolver typeResolver,
+    ResolvedTypeMemberResolver memberResolver)
 {
-    private readonly IntrinsicOperatorResolver _intrinsicOperators = new(program);
-    private readonly TypeResolver _typeResolver = new(program);
-    private readonly ResolvedTypeMemberResolver _memberResolver = new(program);
-
     public IReadOnlyList<OperatorCapability> Resolve(
         TypeRef receiverType,
         OperatorKind operatorKind,
@@ -33,7 +32,7 @@ internal sealed class OperatorCapabilityResolver(ProgramNode program)
         OperatorKind operatorKind,
         TypeRef rightType)
     {
-        var intrinsic = _intrinsicOperators.Resolve(
+        var intrinsic = intrinsicOperators.Resolve(
             operatorKind.ToBinaryOperator(),
             receiverType,
             rightType);
@@ -49,8 +48,8 @@ internal sealed class OperatorCapabilityResolver(ProgramNode program)
             ];
         }
 
-        var resolvedType = _typeResolver.ResolveDefinition(receiverType);
-        return _memberResolver
+        var resolvedType = typeResolver.ResolveDefinition(receiverType);
+        return memberResolver
             .GetMethods(resolvedType)
             .Where(method =>
                 !method.Declaration.IsStatic
@@ -70,41 +69,11 @@ internal sealed class OperatorCapabilityResolver(ProgramNode program)
         OperatorKind requestedOperator,
         TypeRef rightType)
     {
-        IReadOnlyList<(OperatorKind Underlying, OperatorDerivationKind Kind)> derivations =
-            requestedOperator switch
-        {
-            OperatorKind.Equal =>
-            [
-                (OperatorKind.Compare, OperatorDerivationKind.CompareEqualToZero),
-            ],
-            OperatorKind.NotEqual =>
-            [
-                (OperatorKind.Equal, OperatorDerivationKind.NegateBoolean),
-                (OperatorKind.Compare, OperatorDerivationKind.CompareNotEqualToZero),
-            ],
-            OperatorKind.LessThan =>
-            [
-                (OperatorKind.Compare, OperatorDerivationKind.CompareLessThanZero),
-            ],
-            OperatorKind.LessThanOrEqual =>
-            [
-                (OperatorKind.Compare, OperatorDerivationKind.CompareLessThanOrEqualToZero),
-            ],
-            OperatorKind.GreaterThan =>
-            [
-                (OperatorKind.Compare, OperatorDerivationKind.CompareGreaterThanZero),
-            ],
-            OperatorKind.GreaterThanOrEqual =>
-            [
-                (OperatorKind.Compare, OperatorDerivationKind.CompareGreaterThanOrEqualToZero),
-            ],
-            _ => [],
-        };
-
-        return derivations
+        return OperatorDerivationRules
+            .For(requestedOperator)
             .SelectMany(derivation => ResolveExact(
                     receiverType,
-                    derivation.Underlying,
+                    derivation.UnderlyingOperator,
                     rightType)
                 .Select(capability => capability with
                 {

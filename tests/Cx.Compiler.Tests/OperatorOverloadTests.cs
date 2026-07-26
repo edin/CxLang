@@ -941,6 +941,25 @@ public sealed class OperatorOverloadTests
         Assert.Contains("StringView_operator_equal(left, right)", result.Output);
     }
 
+    [Fact]
+    public void CompileStandardCompareRequirement_UsesSpaceshipOperator()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn compare_values<T>(left: T, right: T) -> int
+            where T: Compare<T> {
+                return left <=> right;
+            }
+
+            fn main() -> int {
+                return compare_values(10, 20);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("return int_operator_compare(left, right);", result.Output);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         var count = 0;
