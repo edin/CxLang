@@ -136,7 +136,7 @@ extension HashMap<K, V> {
                     first_deleted = index;
                 }
             }
-            else if (self.hashes[index] == key_hash && K.equals(self.keys[index], key)) {
+            else if (self.hashes[index] == key_hash && self.keys[index] == key) {
                 *found = true;
                 return index;
             }

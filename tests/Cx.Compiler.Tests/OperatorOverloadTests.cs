@@ -63,6 +63,12 @@ public sealed class OperatorOverloadTests
     [InlineData("/", OperatorKind.Divide, "operator_divide")]
     [InlineData("%", OperatorKind.Modulo, "operator_modulo")]
     [InlineData("<=>", OperatorKind.Compare, "operator_compare")]
+    [InlineData("==", OperatorKind.Equal, "operator_equal")]
+    [InlineData("!=", OperatorKind.NotEqual, "operator_not_equal")]
+    [InlineData("<", OperatorKind.LessThan, "operator_less_than")]
+    [InlineData("<=", OperatorKind.LessThanOrEqual, "operator_less_than_or_equal")]
+    [InlineData(">", OperatorKind.GreaterThan, "operator_greater_than")]
+    [InlineData(">=", OperatorKind.GreaterThanOrEqual, "operator_greater_than_or_equal")]
     public void ParseExplicitMathOperatorCall_PreservesTypedOperatorMember(
         string symbol,
         OperatorKind expectedKind,
@@ -555,6 +561,384 @@ public sealed class OperatorOverloadTests
             result,
             "Operator '<=>' must return 'int'",
             "returns 'bool'");
+    }
+
+    [Fact]
+    public void CompileOperatorFunction_LowersExplicitComparisonOperators()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Value {
+                data: int;
+
+                fn operator ==(other: Value) -> bool { return false; }
+                fn operator !=(other: Value) -> bool { return true; }
+                fn operator <(other: Value) -> bool { return true; }
+                fn operator <=(other: Value) -> bool { return true; }
+                fn operator >(other: Value) -> bool { return false; }
+                fn operator >=(other: Value) -> bool { return false; }
+            }
+
+            fn main() -> int {
+                let left = Value { data: 10 };
+                let right = Value { data: 20 };
+                let equal = left == right;
+                let not_equal = left != right;
+                let less = left < right;
+                let less_or_equal = left <= right;
+                let greater = left > right;
+                let greater_or_equal = left >= right;
+                return equal || !not_equal || !less || !less_or_equal || greater || greater_or_equal;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Value_operator_equal(left, right)", result.Output);
+        Assert.Contains("Value_operator_not_equal(left, right)", result.Output);
+        Assert.Contains("Value_operator_less_than(left, right)", result.Output);
+        Assert.Contains("Value_operator_less_than_or_equal(left, right)", result.Output);
+        Assert.Contains("Value_operator_greater_than(left, right)", result.Output);
+        Assert.Contains("Value_operator_greater_than_or_equal(left, right)", result.Output);
+    }
+
+    [Fact]
+    public void CompileOperatorFunction_RequiresComparisonToReturnBool()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Value {
+                data: int;
+
+                fn operator <(other: Value) -> int {
+                    return self.data - other.data;
+                }
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '<' must return 'bool'",
+            "returns 'int'");
+    }
+
+    [Fact]
+    public void CompileOperatorFunction_RejectsIntrinsicComparisonRedefinition()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            extension int {
+                fn operator ==(other: int) -> bool {
+                    return false;
+                }
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Operator '==' cannot be redefined for operands 'int' and 'int'",
+            "compiler already provides 'int == int -> bool'");
+    }
+
+    [Fact]
+    public void CompileComparisonOperators_DerivesFromSpaceship()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Value {
+                data: int;
+
+                fn operator <=>(other: Value) -> int {
+                    return self.data <=> other.data;
+                }
+            }
+
+            fn main() -> int {
+                let left = Value { data: 10 };
+                let right = Value { data: 20 };
+                let equal = left == right;
+                let not_equal = left != right;
+                let less = left < right;
+                let less_or_equal = left <= right;
+                let greater = left > right;
+                let greater_or_equal = left >= right;
+                return equal || not_equal || less || less_or_equal || greater || greater_or_equal;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("(Value_operator_compare(left, right)) == 0", result.Output);
+        Assert.Contains("(Value_operator_compare(left, right)) != 0", result.Output);
+        Assert.Contains("(Value_operator_compare(left, right)) < 0", result.Output);
+        Assert.Contains("(Value_operator_compare(left, right)) <= 0", result.Output);
+        Assert.Contains("(Value_operator_compare(left, right)) > 0", result.Output);
+        Assert.Contains("(Value_operator_compare(left, right)) >= 0", result.Output);
+    }
+
+    [Fact]
+    public void CompileComparisonOperators_PrefersExactAndDerivesNotEqualFromEqual()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Value {
+                data: int;
+
+                fn operator ==(other: Value) -> bool { return self.data == other.data; }
+                fn operator <(other: Value) -> bool { return self.data < other.data; }
+                fn operator <=>(other: Value) -> int { return self.data <=> other.data; }
+            }
+
+            fn main() -> int {
+                let left = Value { data: 10 };
+                let right = Value { data: 20 };
+                let equal = left == right;
+                let not_equal = left != right;
+                let less = left < right;
+                let less_or_equal = left <= right;
+                return equal || not_equal || less || less_or_equal;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Value_operator_equal(left, right)", result.Output);
+        Assert.Contains("!(Value_operator_equal(left, right))", result.Output);
+        Assert.Contains("Value_operator_less_than(left, right)", result.Output);
+        Assert.Contains("(Value_operator_compare(left, right)) <= 0", result.Output);
+    }
+
+    [Fact]
+    public void CompileConstrainedGenericComparison_DerivesAndRetargetsSpaceship()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            requires Compare<T> {
+                fn operator <=>(other: T) -> int;
+            }
+
+            struct Score {
+                value: int;
+
+                fn operator <=>(other: Score) -> int {
+                    return self.value <=> other.value;
+                }
+            }
+
+            fn is_less<T>(left: T, right: T) -> bool
+            where T: Compare<T> {
+                return left < right;
+            }
+
+            fn main() -> int {
+                let left = Score { value: 10 };
+                let right = Score { value: 20 };
+                return is_less(left, right);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("(Score_operator_compare(left, right)) < 0", result.Output);
+    }
+
+    [Fact]
+    public void CompileConstrainedGenericComparison_RetargetsPrimitiveToIntrinsicOperator()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            requires Compare<T> {
+                fn operator <=>(other: T) -> int;
+            }
+
+            fn is_less<T>(left: T, right: T) -> bool
+            where T: Compare<T> {
+                return left < right;
+            }
+
+            fn main() -> int {
+                return is_less(10, 20);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("return left < right;", result.Output);
+        Assert.DoesNotContain("int_operator_compare(left, right)", result.Output);
+    }
+
+    [Fact]
+    public void CompileDerivedComparison_EvaluatesEachOperandOnce()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Value {
+                data: int;
+
+                fn operator <=>(other: Value) -> int {
+                    return self.data <=> other.data;
+                }
+            }
+
+            fn make_left() -> Value { return Value { data: 10 }; }
+            fn make_right() -> Value { return Value { data: 20 }; }
+
+            fn main() -> int {
+                return make_left() < make_right();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains(
+            "(Value_operator_compare(make_left(), make_right())) < 0",
+            result.Output);
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                result.Output!,
+                "Value_operator_compare(make_left(), make_right())"));
+    }
+
+    [Theory]
+    [InlineData("==")]
+    [InlineData("!=")]
+    [InlineData("<")]
+    [InlineData("<=")]
+    [InlineData(">")]
+    [InlineData(">=")]
+    public void CompileStructComparison_RequiresOperatorOrSpaceship(string comparison)
+    {
+        var result = CompilerTestHelpers.Compile(
+            $$"""
+            struct Value {
+                data: int;
+            }
+
+            fn main() -> int {
+                let left = Value { data: 10 };
+                let right = Value { data: 20 };
+                return left {{comparison}} right;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            $"Operator '{comparison}' is not defined for operands 'Value' and 'Value'");
+    }
+
+    [Theory]
+    [InlineData("==")]
+    [InlineData("!=")]
+    [InlineData("<")]
+    [InlineData("<=")]
+    [InlineData(">")]
+    [InlineData(">=")]
+    public void CompileEnumComparison_RemainsIntrinsic(string comparison)
+    {
+        var result = CompilerTestHelpers.Compile(
+            $$"""
+            enum Color {
+                Red,
+                Green,
+                Blue
+            }
+
+            fn main() -> int {
+                let left = Color.Red;
+                let right = Color.Green;
+                return left {{comparison}} right;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains($"return left {comparison} right;", result.Output);
+    }
+
+    [Fact]
+    public void CompileConstrainedGenericEquality_AcceptsIntrinsicEnumOperator()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            requires EqualityOperator<T> {
+                fn operator ==(other: T) -> bool;
+            }
+
+            enum Color {
+                Red,
+                Green,
+                Blue
+            }
+
+            fn are_equal<T>(left: T, right: T) -> bool
+            where T: EqualityOperator<T> {
+                return left == right;
+            }
+
+            fn main() -> int {
+                return are_equal(Color.Red, Color.Green);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("return left == right;", result.Output);
+    }
+
+    [Fact]
+    public void CompileConstrainedGenericEquality_AcceptsSpaceshipCapability()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            requires EqualityOperator<T> {
+                fn operator ==(other: T) -> bool;
+            }
+
+            struct Score {
+                value: int;
+
+                fn operator <=>(other: Score) -> int {
+                    return self.value <=> other.value;
+                }
+            }
+
+            fn are_equal<T>(left: T, right: T) -> bool
+            where T: EqualityOperator<T> {
+                return left == right;
+            }
+
+            fn main() -> int {
+                let left = Score { value: 10 };
+                let right = Score { value: 20 };
+                return are_equal(left, right);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("(Score_operator_compare(left, right)) == 0", result.Output);
+    }
+
+    [Fact]
+    public void CompileStandardEqualRequirement_UsesEqualityOperator()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn are_equal<T>(left: T, right: T) -> bool
+            where T: Equal<T> {
+                return left == right;
+            }
+
+            fn main() -> int {
+                let left = StringView.from_cstr("cx");
+                let right = StringView.from_cstr("cx");
+                return are_equal(10, 10) && are_equal(left, right);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("return left == right;", result.Output);
+        Assert.Contains("StringView_operator_equal(left, right)", result.Output);
     }
 
     private static int CountOccurrences(string text, string value)

@@ -94,7 +94,7 @@ extension Path {
 
     static fn has_extension(path: StringView, ext: StringView) -> bool {
         let actual: StringView = Path.ext(path);
-        return StringView.equals(actual, ext);
+        return actual == ext;
     }
 }
 

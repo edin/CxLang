@@ -276,10 +276,42 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
             : null;
     }
 
-    CExpression? ICExpressionLoweringContext.TryLowerBinaryOperator(BinaryExpressionNode binary) =>
-        _resolvedCallLowerer.TryLowerOperator(
+    CExpression? ICExpressionLoweringContext.TryLowerBinaryOperator(BinaryExpressionNode binary)
+    {
+        var call = _resolvedCallLowerer.TryLowerOperator(
             binary.Semantic.ResolvedCall,
             [binary.Left, binary.Right]);
+        if (call is null || binary.Semantic.OperatorDerivation is not { } derivation)
+        {
+            return call;
+        }
+
+        return derivation switch
+        {
+            OperatorDerivationKind.NegateBoolean =>
+                new CUnaryExpression("!", new CParenthesizedExpression(call)),
+            OperatorDerivationKind.CompareEqualToZero =>
+                CompareToZero(call, "=="),
+            OperatorDerivationKind.CompareNotEqualToZero =>
+                CompareToZero(call, "!="),
+            OperatorDerivationKind.CompareLessThanZero =>
+                CompareToZero(call, "<"),
+            OperatorDerivationKind.CompareLessThanOrEqualToZero =>
+                CompareToZero(call, "<="),
+            OperatorDerivationKind.CompareGreaterThanZero =>
+                CompareToZero(call, ">"),
+            OperatorDerivationKind.CompareGreaterThanOrEqualToZero =>
+                CompareToZero(call, ">="),
+            _ => throw new InvalidOperationException(
+                $"Unsupported operator derivation '{derivation}'."),
+        };
+    }
+
+    private static CExpression CompareToZero(CExpression expression, string comparisonOperator) =>
+        new CBinaryExpression(
+            new CParenthesizedExpression(expression),
+            comparisonOperator,
+            new CLiteralExpression("0"));
 
     CExpression? ICExpressionLoweringContext.TryLowerMemberExpression(MemberExpressionNode member) =>
         LowerMemberExpression(member);

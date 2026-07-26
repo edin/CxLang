@@ -8,6 +8,7 @@ public sealed class RequirementMatcher
     private readonly TypeRefParser _typeRefParser;
     private readonly TypeResolver _typeResolver;
     private readonly ResolvedTypeMemberResolver _memberResolver;
+    private readonly OperatorCapabilityResolver _operatorCapabilities;
     private readonly IReadOnlyDictionary<string, StructNode> _concreteStructs;
     private readonly IReadOnlyDictionary<string, TypeRef> _typeAliases;
 
@@ -17,6 +18,7 @@ public sealed class RequirementMatcher
         _typeRefParser = new TypeRefParser(program);
         _typeResolver = new TypeResolver(program);
         _memberResolver = new ResolvedTypeMemberResolver(program);
+        _operatorCapabilities = new OperatorCapabilityResolver(program);
         _concreteStructs = (concreteStructs ?? [])
             .Concat(program.Structs.Where(structNode => structNode.TypeParameters.Count == 0))
             .GroupBy(structNode => structNode.Name, StringComparer.Ordinal)
@@ -295,9 +297,9 @@ public sealed class RequirementMatcher
         }
 
         var ownerType = GetBinding(bindings, "Self");
-        if (function.OperatorKind is not null
-            && MatchesIntrinsicOperator(function, ownerType, bindings))
+        if (function.OperatorKind is not null)
         {
+            MatchOperatorFunction(function, ownerType, bindings, failures);
             return;
         }
 
@@ -305,7 +307,6 @@ public sealed class RequirementMatcher
             .FirstOrDefault(candidate =>
                 !candidate.Declaration.IsStatic
                 && candidate.Name == function.Name
-                && candidate.Declaration.OperatorKind == function.OperatorKind
                 && candidate.ParameterTypes.Count == function.Parameters.Count);
 
         if (method is null)
@@ -407,32 +408,46 @@ public sealed class RequirementMatcher
         }
     }
 
-    private bool MatchesIntrinsicOperator(
+    private void MatchOperatorFunction(
         RequirementFunctionNode function,
         TypeRef ownerType,
-        TypeBindings bindings)
+        TypeBindings bindings,
+        List<string> failures)
     {
-        if (function.OperatorKind is null
+        if (function.OperatorKind is not { } operatorKind
             || function.Parameters.Count != 2)
         {
-            return false;
+            failures.Add($"Missing function '{function.Name}'.");
+            return;
         }
 
-        var receiverType = TypeRefRewriter.Substitute(
+        var expectedReceiver = TypeRefRewriter.Substitute(
             TypeRefOrUnknown(function.Parameters[0].TypeNode),
             bindings.Bindings);
-        var rightType = TypeRefRewriter.Substitute(
+        var expectedRight = TypeRefRewriter.Substitute(
             TypeRefOrUnknown(function.Parameters[1].TypeNode),
             bindings.Bindings);
-        var returnType = TypeRefRewriter.Substitute(
+        var expectedReturn = TypeRefRewriter.Substitute(
             TypeRefOrUnknown(function.ReturnTypeNode),
             bindings.Bindings);
-        return TypeIdentity.ResolvedEquals(receiverType, ownerType)
-            && PrimitiveSemantics.ResolveBinary(
-                function.OperatorKind.Value.ToBinaryOperator(),
-                receiverType,
-                rightType).ResultType is { } resultType
-            && TypeIdentity.ResolvedEquals(returnType, resultType);
+        foreach (var capability in _operatorCapabilities.Resolve(
+            ownerType,
+            operatorKind,
+            expectedRight))
+        {
+            var candidateBindings = bindings.Clone();
+            if (!Unify(expectedReceiver, capability.ReceiverType, candidateBindings)
+                || !Unify(expectedRight, capability.RightType, candidateBindings)
+                || !Unify(expectedReturn, capability.ResultType, candidateBindings))
+            {
+                continue;
+            }
+
+            MergeBindings(bindings, candidateBindings);
+            return;
+        }
+
+        failures.Add($"Missing function '{function.Name}'.");
     }
 
     private bool FunctionMatches(

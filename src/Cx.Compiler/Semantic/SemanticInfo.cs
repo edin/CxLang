@@ -14,6 +14,8 @@ internal sealed class SemanticInfo
 
     public ResolvedCallInfo? ResolvedCall { get; set; }
 
+    public OperatorDerivationKind? OperatorDerivation { get; set; }
+
     public bool IsScopeCleanup { get; set; }
 
     public SemanticInfo Clone() =>
@@ -24,6 +26,7 @@ internal sealed class SemanticInfo
             Origin = Origin,
             ModuleName = ModuleName,
             ResolvedCall = ResolvedCall,
+            OperatorDerivation = OperatorDerivation,
             IsScopeCleanup = IsScopeCleanup,
         };
 }

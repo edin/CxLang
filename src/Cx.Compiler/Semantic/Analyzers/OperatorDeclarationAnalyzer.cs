@@ -55,11 +55,25 @@ internal sealed class OperatorDeclarationAnalyzer(
 
     private void ValidateReturnType(FunctionNode function)
     {
-        if (function.OperatorKind != OperatorKind.Compare)
+        if (function.OperatorKind == OperatorKind.Compare)
         {
+            ValidateReturnsInt(function);
             return;
         }
 
+        if (function.OperatorKind is OperatorKind.Equal
+            or OperatorKind.NotEqual
+            or OperatorKind.LessThan
+            or OperatorKind.LessThanOrEqual
+            or OperatorKind.GreaterThan
+            or OperatorKind.GreaterThanOrEqual)
+        {
+            ValidateReturnsBool(function);
+        }
+    }
+
+    private void ValidateReturnsInt(FunctionNode function)
+    {
         var returnType = TypeRefRewriter.SubstituteSelf(
             TypeRefOrUnknown(function.ReturnTypeNode),
             TypeRefOrUnknown(function.OwnerTypeNode));
@@ -70,6 +84,22 @@ internal sealed class OperatorDeclarationAnalyzer(
             diagnostics.Report(
                 function.Location,
                 $"Operator '<=>' must return 'int', but returns '{TypeRefFormatter.ToCxString(returnType)}'.");
+        }
+    }
+
+    private void ValidateReturnsBool(FunctionNode function)
+    {
+        var returnType = TypeRefRewriter.SubstituteSelf(
+            TypeRefOrUnknown(function.ReturnTypeNode),
+            TypeRefOrUnknown(function.OwnerTypeNode));
+        var isBoolean = PrimitiveTypeRegistry.TryGet(returnType, out var descriptor)
+            && descriptor.Category == PrimitiveTypeCategory.Boolean;
+        if (!isBoolean)
+        {
+            diagnostics.Report(
+                function.Location,
+                $"Operator '{function.OperatorKind!.Value.ToSourceText()}' must return 'bool', " +
+                $"but returns '{TypeRefFormatter.ToCxString(returnType)}'.");
         }
     }
 

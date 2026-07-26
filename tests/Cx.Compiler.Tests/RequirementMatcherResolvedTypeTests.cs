@@ -49,6 +49,68 @@ public sealed class RequirementMatcherResolvedTypeTests
         Assert.True(match.Success, string.Join(Environment.NewLine, match.Failures));
     }
 
+    [Theory]
+    [InlineData("==")]
+    [InlineData("!=")]
+    [InlineData("<")]
+    [InlineData("<=")]
+    [InlineData(">")]
+    [InlineData(">=")]
+    public void Match_ComparisonRequirement_AcceptsIntrinsicEnumOperator(string comparison)
+    {
+        var program = CompilerTestHelpers.Parse(
+            $$"""
+            requires ComparisonOperator<T> {
+                fn operator {{comparison}}(other: T) -> bool;
+            }
+
+            enum Color {
+                Red,
+                Green,
+                Blue
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var match = new RequirementMatcher(program).Match(
+            "Color",
+            "ComparisonOperator",
+            ["Color"]);
+
+        Assert.True(match.Success, string.Join(Environment.NewLine, match.Failures));
+    }
+
+    [Fact]
+    public void Match_EqualityRequirement_AcceptsOperatorDerivedFromSpaceship()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            requires EqualityOperator<T> {
+                fn operator ==(other: T) -> bool;
+            }
+
+            struct Score {
+                value: int;
+
+                fn operator <=>(other: Score) -> int {
+                    return self.value <=> other.value;
+                }
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var match = new RequirementMatcher(program).Match(
+            "Score",
+            "EqualityOperator",
+            ["Score"]);
+
+        Assert.True(match.Success, string.Join(Environment.NewLine, match.Failures));
+    }
+
     [Fact]
     public void Match_OperatorRequirement_UsesPrimitiveMixedTypeResult()
     {

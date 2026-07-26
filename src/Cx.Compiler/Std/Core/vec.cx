@@ -254,7 +254,7 @@ extension Vec<T>
 where T: Equal<T> {
     fn index_of(value: T) -> Option<usize> {
         for (let i: usize = 0; i < self.length; i += 1) {
-            if (T.equals(self.data[i], value)) {
+            if (self.data[i] == value) {
                 return Option.some<usize>(i);
             }
         }

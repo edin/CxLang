@@ -11,6 +11,7 @@ internal sealed class ExpressionTypeResolver(
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
+    private readonly IntrinsicOperatorResolver _intrinsicOperators = new(program);
     private CallResolver? _callResolver;
     private BinaryOperatorResolver? _binaryOperatorResolver;
 
@@ -24,7 +25,8 @@ internal sealed class ExpressionTypeResolver(
     private BinaryOperatorResolver BinaryOperatorResolver =>
         _binaryOperatorResolver ??= new BinaryOperatorResolver(
             ResolveTypeRef,
-            CallResolver);
+            CallResolver,
+            _intrinsicOperators);
 
     public TypeRef? ResolveTypeRef(ExpressionNode? expression, TypeEnvironment variables)
     {
@@ -161,15 +163,24 @@ internal sealed class ExpressionTypeResolver(
                 ResultType: { } resultType,
             })
         {
-            if (operatorResolution.Call?.Function is { } function)
+            var effectiveCall = operatorResolution.EffectiveCall;
+            if (effectiveCall?.Function is { } function)
             {
                 binary.Semantic.ResolvedCall = new ResolvedCallInfo(
                     function,
-                    operatorResolution.Call.TypeArgumentRefs,
+                    effectiveCall.TypeArgumentRefs,
                     IsInstance: true);
             }
 
-            return resultType;
+            binary.Semantic.OperatorDerivation = operatorResolution.Derived?.Kind;
+            return resultType is TypeRef.Named
+                {
+                    Arguments.Count: 0,
+                    ModuleName: null,
+                } namedResult
+                && PrimitiveTypeRegistry.IsPrimitive(namedResult.Name)
+                ? ResolveKnownType(namedResult)
+                : resultType;
         }
 
         var left = operatorResolution?.LeftType

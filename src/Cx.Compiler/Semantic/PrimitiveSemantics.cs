@@ -177,9 +177,25 @@ internal static class PrimitiveSemantics
             and not BinaryOperator.Subtract
             and not BinaryOperator.Multiply
             and not BinaryOperator.Divide
-            and not BinaryOperator.Modulo)
+            and not BinaryOperator.Modulo
+            and not BinaryOperator.Equal
+            and not BinaryOperator.NotEqual
+            and not BinaryOperator.LessThan
+            and not BinaryOperator.LessThanOrEqual
+            and not BinaryOperator.GreaterThan
+            and not BinaryOperator.GreaterThanOrEqual)
         {
             return new();
+        }
+
+        var isComparison = IsBooleanComparison(binaryOperator);
+        if (leftDescriptor.Category == PrimitiveTypeCategory.Boolean
+            && rightDescriptor.Category == PrimitiveTypeCategory.Boolean)
+        {
+            return binaryOperator is BinaryOperator.Equal or BinaryOperator.NotEqual
+                ? Supported(TypeRef.Bool)
+                : Unsupported(
+                    $"Operator '{binaryOperator.ToSourceText()}' is not defined for primitive operands 'bool' and 'bool'.");
         }
 
         PromoteCharacter(ref left, ref leftDescriptor);
@@ -204,7 +220,7 @@ internal static class PrimitiveSemantics
         if (TryAdaptIntegerLiteral(left, leftDescriptor, right, rightDescriptor, out var literalResultType)
             || TryAdaptIntegerLiteral(right, rightDescriptor, left, leftDescriptor, out literalResultType))
         {
-            return Supported(literalResultType);
+            return Supported(isComparison ? TypeRef.Bool : literalResultType);
         }
 
         if ((IntegerLiteralFailure(left, leftDescriptor, right, rightDescriptor)
@@ -215,13 +231,16 @@ internal static class PrimitiveSemantics
 
         if (TypeIdentity.ResolvedEquals(left.Type, right.Type))
         {
-            return Supported(left.Type);
+            return Supported(isComparison ? TypeRef.Bool : left.Type);
         }
 
         if (leftDescriptor.Category == PrimitiveTypeCategory.FloatingPoint
             || rightDescriptor.Category == PrimitiveTypeCategory.FloatingPoint)
         {
-            return ResolveFloatingPoint(left, leftDescriptor, right, rightDescriptor);
+            var floatingPoint = ResolveFloatingPoint(left, leftDescriptor, right, rightDescriptor);
+            return isComparison && floatingPoint.IsSupported
+                ? Supported(TypeRef.Bool)
+                : floatingPoint;
         }
 
         if (leftDescriptor.IsSigned != rightDescriptor.IsSigned)
@@ -242,7 +261,7 @@ internal static class PrimitiveSemantics
 
         var leftIsWider = leftDescriptor.Rank > rightDescriptor.Rank;
         var resultType = leftIsWider ? left.Type : right.Type;
-        return Supported(resultType);
+        return Supported(isComparison ? TypeRef.Bool : resultType);
     }
 
     private static PrimitiveOperatorResult ResolveFloatingPoint(
@@ -348,6 +367,14 @@ internal static class PrimitiveSemantics
     private static PrimitiveOperatorResult Unsupported(string failure) =>
         new(Failure: failure);
 
+    private static bool IsBooleanComparison(BinaryOperator binaryOperator) =>
+        binaryOperator is BinaryOperator.Equal
+            or BinaryOperator.NotEqual
+            or BinaryOperator.LessThan
+            or BinaryOperator.LessThanOrEqual
+            or BinaryOperator.GreaterThan
+            or BinaryOperator.GreaterThanOrEqual;
+
     private static bool TryResolvePointerArithmetic(
         BinaryOperator binaryOperator,
         PrimitiveOperand left,
@@ -358,6 +385,10 @@ internal static class PrimitiveSemantics
         var rightType = TypeRefFacts.UnwrapAlias(right.Type);
         var leftIsPointer = leftType is TypeRef.Pointer;
         var rightIsPointer = rightType is TypeRef.Pointer;
+        var leftIsNullable = leftIsPointer || leftType is TypeRef.Function;
+        var rightIsNullable = rightIsPointer || rightType is TypeRef.Function;
+        var leftIsNull = leftType is TypeRef.Null;
+        var rightIsNull = rightType is TypeRef.Null;
         var leftIsInteger = PrimitiveTypeRegistry.TryGet(left.Type, out var leftDescriptor)
             && leftDescriptor.IsInteger;
         var rightIsInteger = PrimitiveTypeRegistry.TryGet(right.Type, out var rightDescriptor)
@@ -368,6 +399,15 @@ internal static class PrimitiveSemantics
             BinaryOperator.Add when leftIsPointer && rightIsInteger => left.Type,
             BinaryOperator.Add when leftIsInteger && rightIsPointer => right.Type,
             BinaryOperator.Subtract when leftIsPointer && rightIsInteger => left.Type,
+            BinaryOperator.Equal or BinaryOperator.NotEqual
+                when (leftIsNullable && rightIsNull)
+                    || (leftIsNull && rightIsNullable)
+                    || (leftIsNullable && rightIsNullable) => TypeRef.Bool,
+            BinaryOperator.LessThan
+                or BinaryOperator.LessThanOrEqual
+                or BinaryOperator.GreaterThan
+                or BinaryOperator.GreaterThanOrEqual
+                when leftIsPointer && rightIsPointer => TypeRef.Bool,
             _ => null,
         };
         if (resultType is null)

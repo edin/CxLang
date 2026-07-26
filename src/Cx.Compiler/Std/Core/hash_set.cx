@@ -125,7 +125,7 @@ extension HashSet<T> {
                     first_deleted = index;
                 }
             }
-            else if (self.hashes[index] == value_hash && T.equals(self.values[index], value)) {
+            else if (self.hashes[index] == value_hash && self.values[index] == value) {
                 *found = true;
                 return index;
             }

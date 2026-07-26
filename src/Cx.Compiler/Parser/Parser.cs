@@ -1388,6 +1388,12 @@ public sealed partial class Parser
             TokenType.Slash => OperatorKind.Divide,
             TokenType.Percent => OperatorKind.Modulo,
             TokenType.Spaceship => OperatorKind.Compare,
+            TokenType.EqualEqual => OperatorKind.Equal,
+            TokenType.BangEqual => OperatorKind.NotEqual,
+            TokenType.LessThan => OperatorKind.LessThan,
+            TokenType.LessThanOrEqual => OperatorKind.LessThanOrEqual,
+            TokenType.GreaterThan => OperatorKind.GreaterThan,
+            TokenType.GreaterThanOrEqual => OperatorKind.GreaterThanOrEqual,
             _ => (OperatorKind?)null,
         };
         if (operatorKind is not null)
@@ -1398,7 +1404,7 @@ public sealed partial class Parser
 
         _diagnostics.Report(
             Current.Location,
-            "Expected an overloadable operator after 'operator'. Supported operators: '+', '-', '*', '/', '%', '<=>'.");
+            "Expected an overloadable operator after 'operator'. Supported operators: '+', '-', '*', '/', '%', '<=>', '==', '!=', '<', '<=', '>', '>='.");
         return null;
     }
 

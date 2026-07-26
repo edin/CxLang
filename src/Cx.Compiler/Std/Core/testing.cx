@@ -122,7 +122,7 @@ extension TestRunner {
     }
 
     fn expect_string_view(expected: StringView, actual: StringView, message: const char*) -> void {
-        if (StringView.equals(expected, actual)) {
+        if (expected == actual) {
             return;
         }
 

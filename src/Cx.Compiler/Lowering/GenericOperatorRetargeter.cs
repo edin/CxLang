@@ -45,22 +45,32 @@ internal static class GenericOperatorRetargeter
             functionCatalog: functionCatalog);
         var operatorResolver = new BinaryOperatorResolver(
             ResolveExpression,
-            resolver);
+            resolver,
+            new IntrinsicOperatorResolver(program));
         foreach (var binary in AstExpressionTraversal
             .Enumerate(function.Body)
             .OfType<BinaryExpressionNode>())
         {
             var resolution = operatorResolver.Resolve(binary, variables);
-            if (resolution?.Call?.Function is not { } operatorFunction)
+            binary.Semantic.ResolvedCall = null;
+            binary.Semantic.OperatorDerivation = null;
+            if (resolution is not { IsResolved: true })
             {
                 continue;
             }
 
-            binary.Semantic.Type = resolution.Call.ReturnType;
+            binary.Semantic.Type = resolution.ResultType;
+            if (resolution.EffectiveCall?.Function is not { } operatorFunction)
+            {
+                continue;
+            }
+
+            var effectiveCall = resolution.EffectiveCall;
             binary.Semantic.ResolvedCall = new ResolvedCallInfo(
                 operatorFunction,
-                resolution.Call.TypeArgumentRefs,
+                effectiveCall.TypeArgumentRefs,
                 IsInstance: true);
+            binary.Semantic.OperatorDerivation = resolution.Derived?.Kind;
         }
     }
 

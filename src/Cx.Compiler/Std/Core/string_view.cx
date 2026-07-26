@@ -52,15 +52,19 @@ public struct StringView {
     }
 
     static fn equals(left: StringView, right: StringView) -> bool {
-        if (left.length != right.length) {
+        return left == right;
+    }
+
+    fn operator ==(other: StringView) -> bool {
+        if (self.length != other.length) {
             return false;
         }
 
-        if (left.length == 0) {
+        if (self.length == 0) {
             return true;
         }
 
-        return strncmp(left.data, right.data, left.length) == 0;
+        return strncmp(self.data, other.data, self.length) == 0;
     }
 
     static fn hash(value: StringView) -> u64 {
@@ -93,15 +97,7 @@ public struct StringView {
     }
 
     fn is_equal(other: StringView) -> bool {
-        if (self.length != other.length) {
-            return false;
-        }
-
-        if (self.length == 0) {
-            return true;
-        }
-
-        return strncmp(self.data, other.data, self.length) == 0;
+        return self == other;
     }
 
     fn equals_cstr(self: StringView*, other: const char*) -> bool {

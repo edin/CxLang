@@ -18,6 +18,7 @@ internal sealed class ExpressionSemanticAnalyzer(
     FunctionCatalog? functionCatalog = null)
 {
     private readonly TypeRefParser _typeRefParser = new(program);
+    private readonly IntrinsicOperatorResolver _intrinsicOperators = new(program);
     private CallResolver? _callResolver;
     private BinaryOperatorResolver? _binaryOperatorResolver;
 
@@ -31,7 +32,8 @@ internal sealed class ExpressionSemanticAnalyzer(
     private BinaryOperatorResolver BinaryOperatorResolver =>
         _binaryOperatorResolver ??= new BinaryOperatorResolver(
             expressionTypeResolver.ResolveTypeRef,
-            CallResolver);
+            CallResolver,
+            _intrinsicOperators);
 
     public void Analyze(
         ExpressionNode? expression,
@@ -202,7 +204,8 @@ internal sealed class ExpressionSemanticAnalyzer(
             return;
         }
 
-        if (resolution.Call is null)
+        var effectiveCall = resolution.EffectiveCall;
+        if (effectiveCall is null)
         {
             diagnostics.Report(
                 binary.Location,
@@ -212,7 +215,7 @@ internal sealed class ExpressionSemanticAnalyzer(
             return;
         }
 
-        if (!resolution.Call.IsAmbiguous)
+        if (!effectiveCall.IsAmbiguous)
         {
             return;
         }
@@ -221,7 +224,7 @@ internal sealed class ExpressionSemanticAnalyzer(
             binary.Location,
             $"Ambiguous operator '{resolution.OperatorKind.ToSourceText()}' for operands " +
             $"'{TypeRefFormatter.ToCxString(resolution.LeftType)}' and '{TypeRefFormatter.ToCxString(resolution.RightType)}'. " +
-            $"Candidates: {string.Join(", ", resolution.Call.AmbiguousFunctions.Select(FormatFunctionCandidate))}.");
+            $"Candidates: {string.Join(", ", effectiveCall.AmbiguousFunctions.Select(FormatFunctionCandidate))}.");
     }
 
     private void AnalyzeCallExpression(

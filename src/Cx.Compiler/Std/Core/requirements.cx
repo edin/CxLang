@@ -1,7 +1,7 @@
 module std.core;
 
 public requires Equal<T> {
-    static fn equals(left: T, right: T) -> bool;
+    fn operator ==(other: T) -> bool;
 }
 
 public requires Hash<T> {
@@ -55,8 +55,8 @@ public fn compare(left: int, right: int) -> int {
 }
 
 test "int equal hash compare requirements" {
-    expect_true(int.equals(10, 10));
-    expect_false(int.equals(10, 11));
+    expect_true(10 == 10);
+    expect_false(10 == 11);
     expect_eq_u64((u64)42, int.hash(42));
     expect_eq_int(-1, int.compare(1, 2));
     expect_eq_int(0, int.compare(2, 2));
@@ -78,7 +78,7 @@ test "string view equal and hash requirements" {
     let same: StringView = StringView.from_cstr("cx");
     let other: StringView = StringView.from_cstr("c");
 
-    expect_true(StringView.equals(left, same));
-    expect_false(StringView.equals(left, other));
+    expect_true(left == same);
+    expect_false(left == other);
     expect_eq_u64(StringView.hash(left), StringView.hash(same));
 }

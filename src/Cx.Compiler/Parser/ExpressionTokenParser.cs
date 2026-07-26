@@ -210,6 +210,12 @@ internal sealed class ExpressionTokenParser
                         TokenType.Slash => OperatorKind.Divide,
                         TokenType.Percent => OperatorKind.Modulo,
                         TokenType.Spaceship => OperatorKind.Compare,
+                        TokenType.EqualEqual => OperatorKind.Equal,
+                        TokenType.BangEqual => OperatorKind.NotEqual,
+                        TokenType.LessThan => OperatorKind.LessThan,
+                        TokenType.LessThanOrEqual => OperatorKind.LessThanOrEqual,
+                        TokenType.GreaterThan => OperatorKind.GreaterThan,
+                        TokenType.GreaterThanOrEqual => OperatorKind.GreaterThanOrEqual,
                         _ => (OperatorKind?)null,
                     };
                     if (operatorKind is null)

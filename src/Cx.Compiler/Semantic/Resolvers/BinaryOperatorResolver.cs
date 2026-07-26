@@ -7,21 +7,31 @@ internal sealed record BinaryOperatorResolution(
     TypeRef LeftType,
     TypeRef RightType,
     PrimitiveOperatorResult Primitive,
-    CallResolution? Call)
+    CallResolution? Call,
+    DerivedOperatorResolution? Derived = null)
 {
     public bool IsIntrinsic => Primitive.IsSupported;
 
-    public bool IsResolved => IsIntrinsic || Call is not null;
+    public bool IsResolved => IsIntrinsic || Call is not null || Derived is not null;
 
     public TypeRef? ResultType =>
-        Primitive.ResultType ?? Call?.ReturnType;
+        Derived is null
+            ? Primitive.ResultType ?? Call?.ReturnType
+            : TypeRef.Bool;
 
     public string? Failure => Primitive.Failure;
+
+    public CallResolution? EffectiveCall => Derived?.UnderlyingCall ?? Call;
 }
+
+internal sealed record DerivedOperatorResolution(
+    OperatorDerivationKind Kind,
+    CallResolution UnderlyingCall);
 
 internal sealed class BinaryOperatorResolver(
     Func<ExpressionNode, TypeEnvironment, TypeRef?> resolveExpressionType,
-    CallResolver callResolver)
+    CallResolver callResolver,
+    IntrinsicOperatorResolver intrinsicOperators)
 {
     public BinaryOperatorResolution? Resolve(
         BinaryExpressionNode binary,
@@ -40,10 +50,12 @@ internal sealed class BinaryOperatorResolver(
             return null;
         }
 
-        var primitive = PrimitiveSemantics.ResolveBinary(
+        var leftOperand = PrimitiveOperand.FromExpression(leftType, binary.Left);
+        var rightOperand = PrimitiveOperand.FromExpression(rightType, binary.Right);
+        var primitive = intrinsicOperators.Resolve(
             binary.Operator,
-            PrimitiveOperand.FromExpression(leftType, binary.Left),
-            PrimitiveOperand.FromExpression(rightType, binary.Right));
+            leftOperand,
+            rightOperand);
         var call = primitive.IsSupported
             ? null
             : callResolver.ResolveOperatorTypeRefs(
@@ -51,11 +63,93 @@ internal sealed class BinaryOperatorResolver(
                 leftType,
                 binary.Right,
                 variables);
+        var derived = !primitive.IsSupported && call is null
+            ? ResolveDerived(
+                operatorKind.Value,
+                leftType,
+                binary.Right,
+                variables,
+                leftOperand,
+                rightOperand)
+            : null;
         return new(
             operatorKind.Value,
             leftType,
             rightType,
             primitive,
-            call);
+            call,
+            derived);
     }
+
+    private DerivedOperatorResolution? ResolveDerived(
+        OperatorKind requestedOperator,
+        TypeRef leftType,
+        ExpressionNode right,
+        TypeEnvironment variables,
+        PrimitiveOperand leftOperand,
+        PrimitiveOperand rightOperand)
+    {
+        if (requestedOperator == OperatorKind.NotEqual
+            && ResolveExact(
+                OperatorKind.Equal,
+                leftType,
+                right,
+                variables,
+                leftOperand,
+                rightOperand) is { } equality)
+        {
+            return new(OperatorDerivationKind.NegateBoolean, equality);
+        }
+
+        var derivation = requestedOperator switch
+        {
+            OperatorKind.Equal => OperatorDerivationKind.CompareEqualToZero,
+            OperatorKind.NotEqual => OperatorDerivationKind.CompareNotEqualToZero,
+            OperatorKind.LessThan => OperatorDerivationKind.CompareLessThanZero,
+            OperatorKind.LessThanOrEqual => OperatorDerivationKind.CompareLessThanOrEqualToZero,
+            OperatorKind.GreaterThan => OperatorDerivationKind.CompareGreaterThanZero,
+            OperatorKind.GreaterThanOrEqual => OperatorDerivationKind.CompareGreaterThanOrEqualToZero,
+            _ => (OperatorDerivationKind?)null,
+        };
+        if (derivation is null)
+        {
+            return null;
+        }
+
+        var comparison = ResolveExact(
+            OperatorKind.Compare,
+            leftType,
+            right,
+            variables,
+            leftOperand,
+            rightOperand);
+        return comparison is null
+            ? null
+            : new DerivedOperatorResolution(derivation.Value, comparison);
+    }
+
+    private CallResolution? ResolveExact(
+        OperatorKind operatorKind,
+        TypeRef leftType,
+        ExpressionNode right,
+        TypeEnvironment variables,
+        PrimitiveOperand leftOperand,
+        PrimitiveOperand rightOperand)
+    {
+        var primitive = intrinsicOperators.Resolve(
+            operatorKind.ToBinaryOperator(),
+            leftOperand,
+            rightOperand);
+        if (primitive.IsSupported)
+        {
+            return null;
+        }
+
+        return callResolver.ResolveOperatorTypeRefs(
+            operatorKind,
+            leftType,
+            right,
+            variables);
+    }
+
 }
