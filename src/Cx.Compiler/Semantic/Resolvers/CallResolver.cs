@@ -121,11 +121,11 @@ internal sealed class CallResolver(
         var resolution = ResolveBestFunction(
             $"{TypeRefFormatter.ToCxString(normalizedReceiver)}.operator {operatorKind.ToSourceText()}",
             _functionCatalog.Query(new FunctionQuery
-                {
-                    Kind = FunctionKind.Instance,
-                    OperatorKind = operatorKind,
-                    ReceiverType = normalizedReceiver,
-                })
+            {
+                Kind = FunctionKind.Instance,
+                OperatorKind = operatorKind,
+                ReceiverType = normalizedReceiver,
+            })
                 .Select(candidate => candidate.Declaration)
                 .ToList(),
             explicitTypeArguments: [],
@@ -419,9 +419,9 @@ internal sealed class CallResolver(
         bool skipSelf,
         bool isInstance,
         IReadOnlyList<TypeRef>? seedTypeArguments = null)
-    {
-        var candidates = functions
-            .Select(function => BuildApplicableCandidate(
+        =>
+        OverloadCandidateSelector.Select(
+            functions.Select(function => BuildApplicableCandidate(
                 displayName,
                 function,
                 explicitTypeArguments,
@@ -429,34 +429,9 @@ internal sealed class CallResolver(
                 variables,
                 skipSelf,
                 isInstance,
-                seedTypeArguments))
-            .Where(candidate => candidate is not null)
-            .Select(candidate => candidate!)
-            .DistinctBy(candidate =>
-                FunctionDeclarationIdentity(candidate.Function))
-            .OrderBy(candidate => candidate.Score)
-            .ToList();
-        if (candidates.Count == 0)
-        {
-            return null;
-        }
+                seedTypeArguments)));
 
-        var best = candidates[0];
-        var tied = candidates
-            .TakeWhile(candidate => candidate.Score == best.Score)
-            .ToList();
-        return tied.Count == 1
-            ? best.Resolution
-            : best.Resolution with
-            {
-                Function = null,
-                AmbiguousFunctions = tied
-                    .Select(candidate => candidate.Function)
-                    .ToList(),
-            };
-    }
-
-    private ApplicableFunctionCandidate? BuildApplicableCandidate(
+    private ApplicableCallCandidate? BuildApplicableCandidate(
         string displayName,
         FunctionNode function,
         IReadOnlyList<TypeRef> explicitTypeArguments,
@@ -526,7 +501,7 @@ internal sealed class CallResolver(
             function.TypeParameters.Count > 0);
         return score is null
             ? null
-            : new ApplicableFunctionCandidate(
+            : new ApplicableCallCandidate(
                 function,
                 resolution,
                 score.Value);
@@ -732,50 +707,25 @@ internal sealed class CallResolver(
         IReadOnlyList<TypeRef> explicitTypeArguments,
         IReadOnlyList<ExpressionNode> arguments,
         TypeEnvironment variables)
-    {
-        var candidates = _typeSystem.GetMethods(receiverType)
-            .Where(method =>
+        =>
+        OverloadCandidateSelector.Select(
+            _typeSystem.GetMethods(receiverType)
+                .Where(method =>
                 string.Equals(
                     method.Name,
                     methodName,
                     StringComparison.Ordinal)
                 && method.Declaration.IsStatic == isStatic)
-            .Select(method => BuildApplicableMethodCandidate(
-                displayName,
-                method,
-                explicitTypeArguments,
-                arguments,
-                variables,
-                receiverType,
-                skipSelf: !isStatic))
-            .Where(candidate => candidate is not null)
-            .Select(candidate => candidate!)
-            .DistinctBy(candidate =>
-                FunctionDeclarationIdentity(
-                    candidate.Method.Declaration))
-            .OrderBy(candidate => candidate.Score)
-            .ToList();
-        if (candidates.Count == 0)
-        {
-            return null;
-        }
+                .Select(method => BuildApplicableMethodCandidate(
+                    displayName,
+                    method,
+                    explicitTypeArguments,
+                    arguments,
+                    variables,
+                    receiverType,
+                    skipSelf: !isStatic)));
 
-        var best = candidates[0];
-        var tied = candidates
-            .TakeWhile(candidate => candidate.Score == best.Score)
-            .ToList();
-        return tied.Count == 1
-            ? best.Resolution
-            : best.Resolution with
-            {
-                Function = null,
-                AmbiguousFunctions = tied
-                    .Select(candidate => candidate.Method.Declaration)
-                    .ToList(),
-            };
-    }
-
-    private ApplicableMethodCandidate? BuildApplicableMethodCandidate(
+    private ApplicableCallCandidate? BuildApplicableMethodCandidate(
         string displayName,
         ResolvedMethod method,
         IReadOnlyList<TypeRef> explicitTypeArguments,
@@ -810,8 +760,8 @@ internal sealed class CallResolver(
             function.TypeParameters.Count > 0);
         return score is null
             ? null
-            : new ApplicableMethodCandidate(
-                method,
+            : new ApplicableCallCandidate(
+                function,
                 resolution,
                 score.Value);
     }
@@ -1187,30 +1137,30 @@ internal sealed class CallResolver(
 
     private IReadOnlyList<FunctionNode> FreeFunctionCandidates(string name) =>
         _functionCatalog.Query(new FunctionQuery
-            {
-                Name = name,
-                Kind = FunctionKind.Free,
-            })
+        {
+            Name = name,
+            Kind = FunctionKind.Free,
+        })
             .Select(function => function.Declaration)
             .ToList();
 
     private IReadOnlyList<FunctionNode> StaticFunctionCandidates(string ownerType, string name) =>
         _functionCatalog.Query(new FunctionQuery
-            {
-                Name = name,
-                Kind = FunctionKind.Static,
-                ReceiverType = new TypeRef.Named(ownerType, []),
-            })
+        {
+            Name = name,
+            Kind = FunctionKind.Static,
+            ReceiverType = new TypeRef.Named(ownerType, []),
+        })
             .Select(function => function.Declaration)
             .ToList();
 
     private IReadOnlyList<FunctionNode> InstanceFunctionCandidates(TypeRef receiverType, string name) =>
         _functionCatalog.Query(new FunctionQuery
-            {
-                Name = name,
-                Kind = FunctionKind.Instance,
-                ReceiverType = receiverType,
-            })
+        {
+            Name = name,
+            Kind = FunctionKind.Instance,
+            ReceiverType = receiverType,
+        })
             .Select(function => function.Declaration)
             .ToList();
 
@@ -1220,49 +1170,7 @@ internal sealed class CallResolver(
     private IReadOnlyList<TypeRef> TypeArgumentRefs(IReadOnlyList<TypeNode> nodes) =>
         nodes.Select(ResolveType).ToList();
 
-    private static string FunctionDeclarationIdentity(FunctionNode function)
-    {
-        var owner = function.OwnerTypeNode?.ToSourceText() ?? string.Empty;
-        var parameters = string.Join(
-            ",",
-            function.Parameters.Select(parameter =>
-                parameter.IsVariadic
-                    ? "..."
-                    : parameter.TypeNode?.ToSourceText() ?? string.Empty));
-        return $"{function.Location.File.Path}:{function.Location.Position}:{owner}.{function.Name}<{function.TypeParameters.Count}>({parameters})";
-    }
-
 }
-
-internal readonly record struct FunctionCandidateScore(
-    int ConversionCost,
-    int VariadicPenalty,
-    int GenericPenalty) : IComparable<FunctionCandidateScore>
-{
-    public int CompareTo(FunctionCandidateScore other)
-    {
-        var conversionComparison = ConversionCost.CompareTo(other.ConversionCost);
-        if (conversionComparison != 0)
-        {
-            return conversionComparison;
-        }
-
-        var variadicComparison = VariadicPenalty.CompareTo(other.VariadicPenalty);
-        return variadicComparison != 0
-            ? variadicComparison
-            : GenericPenalty.CompareTo(other.GenericPenalty);
-    }
-}
-
-internal sealed record ApplicableFunctionCandidate(
-    FunctionNode Function,
-    CallResolution Resolution,
-    FunctionCandidateScore Score);
-
-internal sealed record ApplicableMethodCandidate(
-    ResolvedMethod Method,
-    CallResolution Resolution,
-    FunctionCandidateScore Score);
 
 internal sealed record StaticCallTypes(
     TypeRef ReceiverType,

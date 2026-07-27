@@ -50,4 +50,17 @@ internal static class OperatorDerivationRules
             ],
             _ => [],
         };
+
+    public static BinaryOperator? ZeroComparison(
+        this OperatorDerivationKind derivation) =>
+        derivation switch
+        {
+            OperatorDerivationKind.CompareEqualToZero => BinaryOperator.Equal,
+            OperatorDerivationKind.CompareNotEqualToZero => BinaryOperator.NotEqual,
+            OperatorDerivationKind.CompareLessThanZero => BinaryOperator.LessThan,
+            OperatorDerivationKind.CompareLessThanOrEqualToZero => BinaryOperator.LessThanOrEqual,
+            OperatorDerivationKind.CompareGreaterThanZero => BinaryOperator.GreaterThan,
+            OperatorDerivationKind.CompareGreaterThanOrEqualToZero => BinaryOperator.GreaterThanOrEqual,
+            _ => null,
+        };
 }

@@ -3,12 +3,9 @@ using Cx.Compiler.Syntax.Nodes;
 namespace Cx.Compiler.Semantic;
 
 internal sealed record OperatorCapability(
-    OperatorKind OperatorKind,
     TypeRef ReceiverType,
     TypeRef RightType,
-    TypeRef ResultType,
-    FunctionNode? Function = null,
-    OperatorDerivationKind? Derivation = null);
+    TypeRef ResultType);
 
 internal sealed class OperatorCapabilityResolver(
     IntrinsicOperatorResolver intrinsicOperators,
@@ -22,9 +19,7 @@ internal sealed class OperatorCapabilityResolver(
     {
         var exact = ResolveExact(receiverType, operatorKind, rightType);
         var derived = ResolveDerived(receiverType, operatorKind, rightType);
-        return exact.Count == 0
-            ? derived
-            : exact.Concat(derived).ToList();
+        return exact.Concat(derived).ToList();
     }
 
     private IReadOnlyList<OperatorCapability> ResolveExact(
@@ -41,7 +36,6 @@ internal sealed class OperatorCapabilityResolver(
             return
             [
                 new OperatorCapability(
-                    operatorKind,
                     receiverType,
                     rightType,
                     intrinsicResult),
@@ -56,11 +50,9 @@ internal sealed class OperatorCapabilityResolver(
                 && method.Declaration.OperatorKind == operatorKind
                 && method.ParameterTypes.Count == 2)
             .Select(method => new OperatorCapability(
-                operatorKind,
                 method.ParameterTypes[0],
                 method.ParameterTypes[1],
-                method.ReturnType,
-                method.Declaration))
+                method.ReturnType))
             .ToList();
     }
 
@@ -77,9 +69,7 @@ internal sealed class OperatorCapabilityResolver(
                     rightType)
                 .Select(capability => capability with
                 {
-                    OperatorKind = requestedOperator,
                     ResultType = TypeRef.Bool,
-                    Derivation = derivation.Kind,
                 }))
             .ToList();
     }

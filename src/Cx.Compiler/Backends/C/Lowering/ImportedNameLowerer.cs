@@ -286,25 +286,17 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
             return call;
         }
 
-        return derivation switch
+        if (derivation == OperatorDerivationKind.NegateBoolean)
         {
-            OperatorDerivationKind.NegateBoolean =>
-                new CUnaryExpression("!", new CParenthesizedExpression(call)),
-            OperatorDerivationKind.CompareEqualToZero =>
-                CompareToZero(call, "=="),
-            OperatorDerivationKind.CompareNotEqualToZero =>
-                CompareToZero(call, "!="),
-            OperatorDerivationKind.CompareLessThanZero =>
-                CompareToZero(call, "<"),
-            OperatorDerivationKind.CompareLessThanOrEqualToZero =>
-                CompareToZero(call, "<="),
-            OperatorDerivationKind.CompareGreaterThanZero =>
-                CompareToZero(call, ">"),
-            OperatorDerivationKind.CompareGreaterThanOrEqualToZero =>
-                CompareToZero(call, ">="),
-            _ => throw new InvalidOperationException(
-                $"Unsupported operator derivation '{derivation}'."),
-        };
+            return new CUnaryExpression(
+                "!",
+                new CParenthesizedExpression(call));
+        }
+
+        return derivation.ZeroComparison() is { } comparison
+            ? CompareToZero(call, comparison.ToSourceText())
+            : throw new InvalidOperationException(
+                $"Unsupported operator derivation '{derivation}'.");
     }
 
     private static CExpression CompareToZero(CExpression expression, string comparisonOperator) =>

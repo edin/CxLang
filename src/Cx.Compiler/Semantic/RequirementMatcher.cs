@@ -329,31 +329,12 @@ public sealed class RequirementMatcher
             return;
         }
 
-        var candidateBindings = bindings.Clone();
-        var failureStart = failures.Count;
-        for (var i = 0; i < function.Parameters.Count; i++)
-        {
-            var actualType = method.ParameterTypes[i];
-            var expectedType = TypeRefOrUnknown(function.Parameters[i].TypeNode);
-            if (!Unify(expectedType, actualType, candidateBindings))
-            {
-                failures.Add(
-                    $"Method '{function.Name}' parameter {i + 1} has type '{TypeRefFormatter.ToCxString(actualType)}', expected '{Substitute(expectedType, bindings)}'.");
-            }
-        }
-
-        var actualReturnType = method.ReturnType;
-        var expectedReturnType = TypeRefOrUnknown(function.ReturnTypeNode);
-        if (!Unify(expectedReturnType, actualReturnType, candidateBindings))
-        {
-            failures.Add(
-                $"Method '{function.Name}' returns '{TypeRefFormatter.ToCxString(actualReturnType)}', expected '{Substitute(expectedReturnType, bindings)}'.");
-        }
-
-        if (failures.Count == failureStart)
-        {
-            MergeBindings(bindings, candidateBindings);
-        }
+        MatchMethodSignature(
+            function,
+            method,
+            "Method",
+            bindings,
+            failures);
     }
 
     private void MatchStaticFunction(
@@ -374,6 +355,21 @@ public sealed class RequirementMatcher
             return;
         }
 
+        MatchMethodSignature(
+            function,
+            method,
+            "Static method",
+            bindings,
+            failures);
+    }
+
+    private void MatchMethodSignature(
+        RequirementFunctionNode function,
+        ResolvedMethod method,
+        string methodKind,
+        TypeBindings bindings,
+        List<string> failures)
+    {
         var candidateBindings = bindings.Clone();
         var failureStart = failures.Count;
         for (var i = 0; i < function.Parameters.Count; i++)
@@ -383,7 +379,7 @@ public sealed class RequirementMatcher
             if (!Unify(expectedType, actualType, candidateBindings))
             {
                 failures.Add(
-                    $"Static method '{function.Name}' parameter {i + 1} has type '{TypeRefFormatter.ToCxString(actualType)}', expected '{Substitute(expectedType, bindings)}'.");
+                    $"{methodKind} '{function.Name}' parameter {i + 1} has type '{TypeRefFormatter.ToCxString(actualType)}', expected '{Substitute(expectedType, bindings)}'.");
             }
         }
 
@@ -392,7 +388,7 @@ public sealed class RequirementMatcher
         if (!Unify(expectedReturnType, actualReturnType, candidateBindings))
         {
             failures.Add(
-                $"Static method '{function.Name}' returns '{TypeRefFormatter.ToCxString(actualReturnType)}', expected '{Substitute(expectedReturnType, bindings)}'.");
+                $"{methodKind} '{function.Name}' returns '{TypeRefFormatter.ToCxString(actualReturnType)}', expected '{Substitute(expectedReturnType, bindings)}'.");
         }
 
         if (failures.Count == failureStart)
