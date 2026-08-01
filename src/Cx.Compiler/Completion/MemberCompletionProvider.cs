@@ -47,8 +47,8 @@ internal sealed class MemberCompletionProvider(
             return [];
         }
 
-        var hole = AstExpressionTraversal.Enumerate(program)
-            .OfType<IncompleteMemberExpressionNode>()
+        var hole = ExecutableAstTraversal
+            .DescendantsAndSelf<IncompleteMemberExpressionNode>(program)
             .LastOrDefault(member =>
                 SourcePathsEqual(member.DotSpan.File.Path, path)
                 && member.DotSpan.Position == position - 1);
@@ -113,8 +113,8 @@ internal sealed class MemberCompletionProvider(
         var diagnostics = new DiagnosticBag();
         var tokens = new Lexer.Lexer(source, diagnostics).Tokenize();
         var program = new Parser.Parser(diagnostics).Parse(source, tokens);
-        var hole = AstExpressionTraversal.Enumerate(program)
-            .OfType<IncompleteMemberExpressionNode>()
+        var hole = ExecutableAstTraversal
+            .DescendantsAndSelf<IncompleteMemberExpressionNode>(program)
             .LastOrDefault(member => member.DotSpan.Position == position - 1);
 
         if (hole?.Target is NameExpressionNode { Name: "member" }
@@ -138,8 +138,9 @@ internal sealed class MemberCompletionProvider(
             .Where(enumNode => enumNode.IsDataEnum)
             .SelectMany(enumNode => enumNode.DataFields ?? [])
             .Where(field => field.DefaultValue is not null)
-            .Any(field => AstExpressionTraversal
-                .Enumerate(field.DefaultValue!)
+            .Any(field => ExecutableAstTraversal
+                .DescendantsAndSelf<IncompleteMemberExpressionNode>(
+                    field.DefaultValue!)
                 .Any(expression => ReferenceEquals(expression, hole)));
 
     private static IReadOnlyList<MemberCompletion> CollectStaticMemberCompletions(

@@ -1,5 +1,6 @@
 using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.C;
@@ -30,8 +31,18 @@ internal sealed class CLoweringScope(
         var locals = function.Parameters
             .Where(parameter => !parameter.IsVariadic)
             .Select(parameter => (parameter.Name, Type: SubstituteSelf(parameter.TypeNode.ToTypeRef(TypeRefParser), scopeSelfTypeRef)))
-            .Concat(CollectLocalVariableTypes(function.Body)
-                .Select(statement => (statement.Name, Type: SubstituteSelf(statement.TypeRef, scopeSelfTypeRef))))
+            .Concat(FunctionLocalBindingFacts
+                .Enumerate(function.Body)
+                .Where(binding =>
+                    binding.Declaration is LetStatement
+                    || binding.Kind is
+                        FunctionLocalBindingKind.ForInitializer
+                        or FunctionLocalBindingKind.GeneratedForInitializer)
+                .Select(binding => (
+                    binding.Name,
+                    Type: SubstituteSelf(
+                        binding.TypeNode.ToTypeRef(TypeRefParser),
+                        scopeSelfTypeRef))))
             .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !IsUnknown(item.Type))
             .GroupBy(item => item.Name, StringComparer.Ordinal)
             .Select(group => (group.Key, Type: group.First().Type))
@@ -64,81 +75,6 @@ internal sealed class CLoweringScope(
 
     public bool IsImplicitReferenceLocal(string name) =>
         ImplicitReferenceLocals.ContainsKey(name);
-
-    private IEnumerable<(string Name, TypeRef TypeRef)> CollectLocalVariableTypes(IEnumerable<StatementNode> statements)
-    {
-        foreach (var statement in statements)
-        {
-            switch (statement)
-            {
-                case LetStatement let:
-                    yield return (let.Name, let.TypeNode.ToTypeRef(TypeRefParser));
-                    break;
-                case IfStatement ifStatement:
-                    foreach (var variable in CollectLocalVariableTypes(ifStatement.ThenBody))
-                    {
-                        yield return variable;
-                    }
-
-                    if (ifStatement.ElseBranch is not null)
-                    {
-                        foreach (var variable in CollectLocalVariableTypes([ifStatement.ElseBranch]))
-                        {
-                            yield return variable;
-                        }
-                    }
-
-                    break;
-                case ElseBlockStatement elseBlock:
-                    foreach (var variable in CollectLocalVariableTypes(elseBlock.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case WhileStatement whileStatement:
-                    foreach (var variable in CollectLocalVariableTypes(whileStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case ForStatement forStatement:
-                    if (forStatement.CachedRangeEndInitializer is not null)
-                    {
-                        yield return (forStatement.CachedRangeEndInitializer.Name, forStatement.CachedRangeEndInitializer.TypeNode.ToTypeRef(TypeRefParser));
-                    }
-
-                    if (forStatement.CounterInitializer is not null)
-                    {
-                        yield return (forStatement.CounterInitializer.Name, forStatement.CounterInitializer.TypeNode.ToTypeRef(TypeRefParser));
-                    }
-
-                    if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
-                    {
-                        yield return (declaration.Name, declaration.TypeNode.ToTypeRef(TypeRefParser));
-                    }
-
-                    foreach (var variable in CollectLocalVariableTypes(forStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case SwitchStatement switchStatement:
-                    foreach (var switchCase in switchStatement.Cases)
-                    {
-                        foreach (var variable in CollectLocalVariableTypes(switchCase.Body))
-                        {
-                            yield return variable;
-                        }
-                    }
-
-                    foreach (var variable in CollectLocalVariableTypes(switchStatement.DefaultBody))
-                    {
-                        yield return variable;
-                    }
-                    break;
-            }
-        }
-    }
 
     private TypeRef SubstituteSelf(TypeRef type, TypeRef? selfType) =>
         selfType is null

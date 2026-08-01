@@ -92,7 +92,8 @@ internal static class CxFunctionReachabilityPruner
 
         while (pending.TryDequeue(out var function))
         {
-            foreach (var expression in AstExpressionTraversal.Enumerate(function.Body))
+            foreach (var expression in AstTraversal
+                .DescendantsAndSelf<ExpressionNode>(function.Body))
             {
                 EnqueueExpressionDependency(expression, EnqueueName);
             }
@@ -134,7 +135,8 @@ internal static class CxFunctionReachabilityPruner
             return;
         }
 
-        foreach (var nested in AstExpressionTraversal.Enumerate(expression))
+        foreach (var nested in AstTraversal
+            .DescendantsAndSelf<ExpressionNode>(expression))
         {
             EnqueueExpressionDependency(nested, enqueueName);
         }

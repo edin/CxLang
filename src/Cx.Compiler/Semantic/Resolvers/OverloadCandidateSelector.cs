@@ -47,28 +47,6 @@ internal static class OverloadCandidateSelector
     }
 }
 
-internal readonly record struct FunctionCandidateScore(
-    int ConversionCost,
-    int VariadicPenalty,
-    int GenericPenalty) : IComparable<FunctionCandidateScore>
-{
-    public int CompareTo(FunctionCandidateScore other)
-    {
-        var conversionComparison = ConversionCost.CompareTo(
-            other.ConversionCost);
-        if (conversionComparison != 0)
-        {
-            return conversionComparison;
-        }
-
-        var variadicComparison = VariadicPenalty.CompareTo(
-            other.VariadicPenalty);
-        return variadicComparison != 0
-            ? variadicComparison
-            : GenericPenalty.CompareTo(other.GenericPenalty);
-    }
-}
-
 internal sealed record ApplicableCallCandidate(
     FunctionNode Function,
     CallResolution Resolution,

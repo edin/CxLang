@@ -82,10 +82,10 @@ public sealed class AdapterOverloadTests
         program = new TypeInferencePass(diagnostics, model).Apply(program);
 
         CompilerTestHelpers.AssertNoErrors(diagnostics);
-        var calls = Cx.Compiler.Syntax.AstExpressionTraversal
-            .Enumerate(program.Functions.Single(
-                function => function.Name == "main").Body)
-            .OfType<CallExpressionNode>()
+        var calls = Cx.Compiler.Syntax.ExecutableAstTraversal
+            .DescendantsAndSelf<CallExpressionNode>(
+                program.Functions.Single(
+                    function => function.Name == "main").Body)
             .ToList();
         Assert.Equal(2, calls.Count);
         var parameterTypes = calls

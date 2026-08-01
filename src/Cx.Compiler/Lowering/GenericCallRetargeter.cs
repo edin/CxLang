@@ -10,7 +10,10 @@ internal static class GenericCallRetargeter
         ProgramNode program,
         IReadOnlyDictionary<FunctionInstanceKey, FunctionNode> specializations)
     {
-        Retarget(AstExpressionTraversal.Enumerate(program), specializations);
+        Retarget(
+            ExecutableAstTraversal
+                .DescendantsAndSelf<ExpressionNode>(program),
+            specializations);
     }
 
     public static void Retarget(
@@ -18,7 +21,8 @@ internal static class GenericCallRetargeter
         IReadOnlyDictionary<FunctionInstanceKey, FunctionNode> specializations)
     {
         Retarget(
-            functions.SelectMany(function => AstExpressionTraversal.Enumerate(function.Body)),
+            functions.SelectMany(function =>
+                AstTraversal.DescendantsAndSelf<ExpressionNode>(function.Body)),
             specializations);
     }
 

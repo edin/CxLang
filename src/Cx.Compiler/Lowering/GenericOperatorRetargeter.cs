@@ -47,9 +47,8 @@ internal static class GenericOperatorRetargeter
             ResolveExpression,
             resolver,
             new IntrinsicOperatorResolver(program));
-        foreach (var binary in AstExpressionTraversal
-            .Enumerate(function.Body)
-            .OfType<BinaryExpressionNode>())
+        foreach (var binary in ExecutableAstTraversal
+            .DescendantsAndSelf<BinaryExpressionNode>(function.Body))
         {
             var resolution = operatorResolver.Resolve(binary, variables);
             BinaryOperatorSemanticInfo.Apply(binary, resolution);
@@ -78,7 +77,8 @@ internal static class GenericOperatorRetargeter
                     ?? parameter.TypeNode.ToTypeRef(parser));
         }
 
-        foreach (var let in EnumerateLets(function.Body))
+        foreach (var let in ExecutableAstTraversal
+            .DescendantsAndSelf<LetStatement>(function.Body))
         {
             var type = let.TypeNode?.Semantic.Type
                 ?? let.TypeNode?.ToTypeRef(parser)
@@ -90,41 +90,5 @@ internal static class GenericOperatorRetargeter
         }
 
         return variables;
-    }
-
-    private static IEnumerable<LetStatement> EnumerateLets(
-        IEnumerable<StatementNode> statements)
-    {
-        foreach (var statement in statements)
-        {
-            if (statement is LetStatement let)
-            {
-                yield return let;
-            }
-
-            foreach (var nested in statement switch
-            {
-                IfStatement conditional => conditional.ThenBody.Concat(
-                    conditional.ElseBranch is null
-                        ? []
-                        : [conditional.ElseBranch]),
-                ElseBlockStatement elseBlock => elseBlock.Body,
-                WhileStatement whileStatement => whileStatement.Body,
-                ForStatement forStatement => forStatement.Body,
-                ForeachStatement foreachStatement => foreachStatement.Body,
-                SwitchStatement switchStatement => switchStatement.Cases
-                    .SelectMany(switchCase => switchCase.Body)
-                    .Concat(switchStatement.DefaultBody),
-                MatchStatement matchStatement => matchStatement.Arms
-                    .SelectMany(arm => arm.Body),
-                _ => [],
-            })
-            {
-                foreach (var nestedLet in EnumerateLets([nested]))
-                {
-                    yield return nestedLet;
-                }
-            }
-        }
     }
 }

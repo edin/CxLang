@@ -58,18 +58,16 @@ internal sealed class CompileTimeExpansionPipeline(
         ProgramNode program,
         bool validateIncompleteMembers)
     {
-        foreach (var list in AstExpressionTraversal
-            .Enumerate(program)
-            .OfType<ListExpressionNode>())
+        foreach (var list in ExecutableAstTraversal
+            .DescendantsAndSelf<ListExpressionNode>(program))
         {
             diagnostics.Report(
                 list.Location,
                 "List expressions are only valid during compile-time evaluation.");
         }
 
-        foreach (var typeLiteral in AstExpressionTraversal
-            .Enumerate(program)
-            .OfType<TypeLiteralExpressionNode>())
+        foreach (var typeLiteral in ExecutableAstTraversal
+            .DescendantsAndSelf<TypeLiteralExpressionNode>(program))
         {
             diagnostics.Report(
                 typeLiteral.Location,
@@ -81,9 +79,8 @@ internal sealed class CompileTimeExpansionPipeline(
             return;
         }
 
-        foreach (var incompleteMember in AstExpressionTraversal
-            .Enumerate(program)
-            .OfType<IncompleteMemberExpressionNode>())
+        foreach (var incompleteMember in ExecutableAstTraversal
+            .DescendantsAndSelf<IncompleteMemberExpressionNode>(program))
         {
             diagnostics.Report(
                 incompleteMember.DotSpan,

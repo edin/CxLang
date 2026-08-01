@@ -230,8 +230,8 @@ public sealed class GenericLoweringServicesTests
             .Where(function => function.Name == "select")
             .OrderBy(function => function.Parameters.Count)
             .ToList();
-        var calls = AstExpressionTraversal.Enumerate(main.Body)
-            .OfType<CallExpressionNode>()
+        var calls = ExecutableAstTraversal
+            .DescendantsAndSelf<CallExpressionNode>(main.Body)
             .OrderBy(call => call.Arguments.Count)
             .ToList();
         Assert.Equal(2, overloads.Count);
@@ -352,6 +352,51 @@ public sealed class GenericLoweringServicesTests
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("MiniVec.add<u8>", uses);
+    }
+
+    [Fact]
+    public void GenericUseCollector_FindsIteratorUsesInsideElseIf()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Iterator<T> {
+                current: T;
+
+                fn next() -> bool {
+                    return false;
+                }
+
+                fn value() -> T {
+                    return self.current;
+                }
+            }
+
+            struct Values<T> {
+                fn iterator() -> Iterator<T> {
+                    return Iterator<T> {};
+                }
+            }
+
+            fn main() -> int {
+                let values: Values<int> = Values<int> {};
+                if (false) {
+                } else if (true) {
+                    foreach value: int in values {}
+                }
+                return 0;
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+        var main = program.Functions.Single(function => function.Name == "main");
+
+        var uses = new GenericUseCollector(program)
+            .Collect(main)
+            .Select(use => use.Function.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("iterator", uses);
+        Assert.Contains("next", uses);
+        Assert.Contains("value", uses);
     }
 
     [Fact]
@@ -587,6 +632,30 @@ public sealed class GenericLoweringServicesTests
         Assert.Equal("int", TypeRefFormatter.ToCxString(value.TypeNode!.Semantic.Type!));
         Assert.Equal("Box<int>*", next.TypeNode?.ToSourceText());
         Assert.Equal("Box<int>*", TypeRefFormatter.ToCxString(next.TypeNode!.Semantic.Type!));
+    }
+
+    [Fact]
+    public void GenericStructSpecializer_FindsTypesInNestedLocalBindings()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Box<T> {
+                value: T;
+            }
+
+            fn main() -> void {
+                if (false) {
+                } else if (true) {
+                    let value: Box<int>;
+                }
+            }
+            """);
+
+        var structs = GenericStructSpecializer.Specialize(program, []);
+
+        Assert.Equal(
+            "Box_int",
+            Assert.Single(structs).Name);
     }
 
     private static IReadOnlyList<string> TypeArguments(GenericFunctionUse use) =>

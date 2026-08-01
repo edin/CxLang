@@ -3,7 +3,7 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
 
-public sealed class AstExpressionTraversalTests
+public sealed class ExecutableAstTraversalTests
 {
     [Fact]
     public void Enumerate_DescendsIntoForeachAndMatchStatements()
@@ -31,8 +31,9 @@ public sealed class AstExpressionTraversalTests
             }
             """);
 
-        var names = AstExpressionTraversal.Enumerate(program.Functions.Single().Body)
-            .OfType<NameExpressionNode>()
+        var names = ExecutableAstTraversal
+            .DescendantsAndSelf<NameExpressionNode>(
+                program.Functions.Single().Body)
             .Select(expression => expression.Name)
             .ToList();
 

@@ -8,9 +8,9 @@ internal sealed class CompileTimePlaceholderUsageAnalyzer(DiagnosticBag diagnost
 {
     public void Analyze(IEnumerable<ProgramNode> programs)
     {
-        foreach (var placeholder in programs
-            .SelectMany(AstExpressionTraversal.Enumerate)
-            .OfType<PlaceholderExpressionNode>())
+        foreach (var placeholder in programs.SelectMany(program =>
+            ExecutableAstTraversal
+                .DescendantsAndSelf<PlaceholderExpressionNode>(program)))
         {
             diagnostics.Report(
                 placeholder.Location,

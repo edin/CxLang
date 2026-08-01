@@ -13,8 +13,7 @@ internal static class DataEnumDefaultExpressionSpecializer
         new Rewriter(member.Name, memberIndex).Apply(expression);
 
     public static bool ContainsContextualMemberReference(ExpressionNode expression) =>
-        AstExpressionTraversal.Enumerate(expression)
-            .OfType<MemberExpressionNode>()
+        AstTraversal.DescendantsAndSelf<MemberExpressionNode>(expression)
             .Any(IsContextualAccess);
 
     private static bool IsContextualAccess(MemberExpressionNode member) =>

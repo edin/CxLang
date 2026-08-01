@@ -91,7 +91,8 @@ internal static class CDeclarationUsageAnalyzer
                 continue;
             }
 
-            foreach (var expression in AstExpressionTraversal.Enumerate(global.Initializer))
+            foreach (var expression in AstTraversal
+                .DescendantsAndSelf<ExpressionNode>(global.Initializer))
             {
                 yield return expression;
             }
@@ -99,7 +100,8 @@ internal static class CDeclarationUsageAnalyzer
 
         foreach (var function in program.Functions)
         {
-            foreach (var expression in AstExpressionTraversal.Enumerate(function.Body))
+            foreach (var expression in AstTraversal
+                .DescendantsAndSelf<ExpressionNode>(function.Body))
             {
                 yield return expression;
             }
@@ -111,7 +113,7 @@ internal static class CDeclarationUsageAnalyzer
         foreach (var global in program.GlobalVariables.Where(global => !global.IsHeaderDeclaration))
         {
             yield return ResolveDeclarationType(global.TypeNode, global.Name);
-            foreach (var type in EnumerateExpressionTypeReferences(global.Initializer))
+            foreach (var type in EnumerateNestedTypeReferences(global.Initializer))
             {
                 yield return type;
             }
@@ -130,7 +132,7 @@ internal static class CDeclarationUsageAnalyzer
                 yield return ResolveDeclarationType(parameter.TypeNode, parameter.Name);
             }
 
-            foreach (var type in EnumerateStatementTypeReferences(function.Body))
+            foreach (var type in EnumerateNestedTypeReferences(function.Body))
             {
                 yield return type;
             }
@@ -153,122 +155,26 @@ internal static class CDeclarationUsageAnalyzer
         }
     }
 
-    private static IEnumerable<TypeRef> EnumerateStatementTypeReferences(IEnumerable<StatementNode> statements)
+    private static IEnumerable<TypeRef> EnumerateNestedTypeReferences(
+        SyntaxNode? root)
     {
-        foreach (var statement in statements)
-        {
-            switch (statement)
-            {
-                case LetStatement letStatement:
-                    yield return ResolveDeclarationType(letStatement.TypeNode, letStatement.Name);
-                    foreach (var type in EnumerateExpressionTypeReferences(letStatement.Initializer))
-                    {
-                        yield return type;
-                    }
-                    break;
-                case ReturnStatement returnStatement:
-                    foreach (var type in EnumerateExpressionTypeReferences(returnStatement.Expression))
-                    {
-                        yield return type;
-                    }
-                    break;
-                case CStatement cStatement:
-                    foreach (var type in EnumerateExpressionTypeReferences(cStatement.Expression))
-                    {
-                        yield return type;
-                    }
-                    break;
-                case IfStatement ifStatement:
-                    foreach (var type in EnumerateExpressionTypeReferences(ifStatement.Condition)
-                        .Concat(EnumerateStatementTypeReferences(ifStatement.ThenBody)))
-                    {
-                        yield return type;
-                    }
-                    if (ifStatement.ElseBranch is not null)
-                    {
-                        foreach (var type in EnumerateStatementTypeReferences([ifStatement.ElseBranch]))
-                        {
-                            yield return type;
-                        }
-                    }
-                    break;
-                case ElseBlockStatement elseBlock:
-                    foreach (var type in EnumerateStatementTypeReferences(elseBlock.Body))
-                    {
-                        yield return type;
-                    }
-                    break;
-                case WhileStatement whileStatement:
-                    foreach (var type in EnumerateExpressionTypeReferences(whileStatement.Condition)
-                        .Concat(EnumerateStatementTypeReferences(whileStatement.Body)))
-                    {
-                        yield return type;
-                    }
-                    break;
-                case ForStatement forStatement:
-                    foreach (var type in EnumerateForInitializerTypeReferences(forStatement.CachedRangeEndInitializer)
-                        .Concat(EnumerateForInitializerTypeReferences(forStatement.CounterInitializer))
-                        .Concat(EnumerateForInitializerTypeReferences(forStatement.Initializer))
-                        .Concat(EnumerateExpressionTypeReferences(forStatement.Condition))
-                        .Concat(EnumerateExpressionTypeReferences(forStatement.Increment))
-                        .Concat(EnumerateExpressionTypeReferences(forStatement.CounterIncrement))
-                        .Concat(EnumerateStatementTypeReferences(forStatement.Body)))
-                    {
-                        yield return type;
-                    }
-                    break;
-                case SwitchStatement switchStatement:
-                    foreach (var type in EnumerateExpressionTypeReferences(switchStatement.Expression))
-                    {
-                        yield return type;
-                    }
-                    foreach (var switchCase in switchStatement.Cases)
-                    {
-                        foreach (var type in EnumerateExpressionTypeReferences(switchCase.Pattern)
-                            .Concat(EnumerateStatementTypeReferences(switchCase.Body)))
-                        {
-                            yield return type;
-                        }
-                    }
-                    foreach (var type in EnumerateStatementTypeReferences(switchStatement.DefaultBody))
-                    {
-                        yield return type;
-                    }
-                    break;
-            }
-        }
-    }
-
-    private static IEnumerable<TypeRef> EnumerateForInitializerTypeReferences(ForInitializerNode? initializer) => initializer switch
-    {
-        ForDeclarationInitializerNode declaration => [ResolveDeclarationType(declaration.TypeNode, declaration.Name), .. EnumerateExpressionTypeReferences(declaration.Initializer)],
-        ForExpressionInitializerNode expression => EnumerateExpressionTypeReferences(expression.Expression),
-        _ => [],
-    };
-
-    private static IEnumerable<TypeRef> EnumerateExpressionTypeReferences(ExpressionNode? expression)
-    {
-        if (expression is null)
+        if (root is null)
         {
             yield break;
         }
 
-        foreach (var node in AstExpressionTraversal.Enumerate(expression))
+        foreach (var typeNode in AstTraversal
+            .DescendantsAndSelf<TypeNode>(root))
         {
-            switch (node)
-            {
-                case CastExpressionNode cast:
-                    yield return ResolveTypeExpression(cast.TargetTypeNode);
-                    break;
-                case InitializerExpressionNode { TypeNameNode: not null } initializer:
-                    yield return ResolveTypeExpression(initializer.TypeNameNode);
-                    break;
-                case SizeOfExpressionNode { Operand: SizeOfTypeOperandNode operand }:
-                    yield return ResolveTypeExpression(operand.TypeNode);
-                    break;
-            }
+            yield return ResolveTypeExpression(typeNode);
         }
     }
+
+    private static IEnumerable<TypeRef> EnumerateNestedTypeReferences(
+        IEnumerable<StatementNode> statements) =>
+        AstTraversal
+            .DescendantsAndSelf<TypeNode>(statements)
+            .Select(ResolveTypeExpression);
 
     private static IEnumerable<string> ExtractTypeNames(TypeRef type)
     {

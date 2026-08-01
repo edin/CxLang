@@ -1,6 +1,7 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Modules;
 using Cx.Compiler.Source;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Analyzers;
@@ -125,7 +126,9 @@ internal sealed class ModuleVisibilityAnalyzer(
         }
 
         var locals = new HashSet<string>(function.Parameters.Select(parameter => parameter.Name), StringComparer.Ordinal);
-        foreach (var local in CollectLocalNames(function.Body))
+        foreach (var local in FunctionLocalBindingFacts
+            .Enumerate(function.Body)
+            .Select(binding => binding.Name))
         {
             locals.Add(local);
         }
@@ -451,66 +454,6 @@ internal sealed class ModuleVisibilityAnalyzer(
             diagnostics.Report(location, $"Public declaration exposes private type '{typeName}'.");
         }
     }
-
-    private static IEnumerable<string> CollectLocalNames(IEnumerable<StatementNode> statements)
-    {
-        foreach (var statement in statements)
-        {
-            switch (statement)
-            {
-                case LetStatement let:
-                    yield return let.Name;
-                    break;
-                case UsingStatement usingStatement:
-                    yield return usingStatement.Name;
-                    break;
-                case ForStatement { Initializer: ForDeclarationInitializerNode declaration }:
-                    yield return declaration.Name;
-                    foreach (var local in CollectLocalNames(GetBody(statement)))
-                    {
-                        yield return local;
-                    }
-
-                    break;
-                case ForeachStatement foreachStatement:
-                    foreach (var local in GetForeachBindingNames(foreachStatement))
-                    {
-                        yield return local;
-                    }
-
-                    foreach (var local in CollectLocalNames(foreachStatement.Body))
-                    {
-                        yield return local;
-                    }
-
-                    break;
-                default:
-                    foreach (var local in CollectLocalNames(GetBody(statement)))
-                    {
-                        yield return local;
-                    }
-
-                    break;
-            }
-        }
-    }
-
-    private static IReadOnlyList<StatementNode> GetBody(StatementNode statement) => statement switch
-    {
-        IfStatement ifStatement => ifStatement.ThenBody
-            .Concat(ifStatement.ElseBranch is null ? [] : [ifStatement.ElseBranch])
-            .ToList(),
-        ElseBlockStatement elseBlock => elseBlock.Body,
-        WhileStatement whileStatement => whileStatement.Body,
-        ForStatement forStatement => forStatement.Body,
-        ForeachStatement foreachStatement => foreachStatement.Body,
-        SwitchStatement switchStatement => switchStatement.Cases
-            .SelectMany(switchCase => switchCase.Body)
-            .Concat(switchStatement.DefaultBody)
-            .ToList(),
-        MatchStatement matchStatement => matchStatement.Arms.SelectMany(arm => arm.Body).ToList(),
-        _ => [],
-    };
 
     private static IReadOnlySet<string> AddForeachLocals(IReadOnlySet<string> locals, ForeachStatement foreachStatement)
     {

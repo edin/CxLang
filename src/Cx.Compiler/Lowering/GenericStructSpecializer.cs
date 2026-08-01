@@ -167,102 +167,17 @@ internal static class GenericStructSpecializer
             collectFromType(parameter.TypeNode);
         }
 
-        foreach (var statement in function.Body)
+        foreach (var binding in FunctionLocalBindingFacts
+            .Enumerate(function.Body)
+            .Where(binding =>
+                binding.Declaration is LetStatement
+                || binding.Kind is
+                    FunctionLocalBindingKind.ForInitializer
+                    or FunctionLocalBindingKind.ForeachIndex
+                    or FunctionLocalBindingKind.ForeachKey
+                    or FunctionLocalBindingKind.ForeachValue))
         {
-            CollectFromStatement(statement, collectFromType);
-        }
-    }
-
-    private static void CollectFromStatement(
-        StatementNode statement,
-        Action<TypeNode?> collectFromType)
-    {
-        switch (statement)
-        {
-            case LetStatement let:
-                collectFromType(let.TypeNode);
-                break;
-            case IfStatement ifStatement:
-                foreach (var nested in ifStatement.ThenBody)
-                {
-                    CollectFromStatement(nested, collectFromType);
-                }
-
-                if (ifStatement.ElseBranch is not null)
-                {
-                    CollectFromStatement(ifStatement.ElseBranch, collectFromType);
-                }
-
-                break;
-            case ElseBlockStatement elseBlock:
-                foreach (var nested in elseBlock.Body)
-                {
-                    CollectFromStatement(nested, collectFromType);
-                }
-
-                break;
-            case WhileStatement whileStatement:
-                foreach (var nested in whileStatement.Body)
-                {
-                    CollectFromStatement(nested, collectFromType);
-                }
-
-                break;
-            case ForStatement forStatement:
-                if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
-                {
-                    collectFromType(declaration.TypeNode);
-                }
-
-                foreach (var nested in forStatement.Body)
-                {
-                    CollectFromStatement(nested, collectFromType);
-                }
-
-                break;
-            case ForeachStatement foreachStatement:
-                collectFromType(foreachStatement.ValueBinding.TypeNode);
-                if (foreachStatement.IndexBinding is not null)
-                {
-                    collectFromType(foreachStatement.IndexBinding.TypeNode);
-                }
-
-                if (foreachStatement.KeyBinding is not null)
-                {
-                    collectFromType(foreachStatement.KeyBinding.TypeNode);
-                }
-
-                foreach (var nested in foreachStatement.Body)
-                {
-                    CollectFromStatement(nested, collectFromType);
-                }
-
-                break;
-            case SwitchStatement switchStatement:
-                foreach (var switchCase in switchStatement.Cases)
-                {
-                    foreach (var nested in switchCase.Body)
-                    {
-                        CollectFromStatement(nested, collectFromType);
-                    }
-                }
-
-                foreach (var nested in switchStatement.DefaultBody)
-                {
-                    CollectFromStatement(nested, collectFromType);
-                }
-
-                break;
-            case MatchStatement matchStatement:
-                foreach (var arm in matchStatement.Arms)
-                {
-                    foreach (var nested in arm.Body)
-                    {
-                        CollectFromStatement(nested, collectFromType);
-                    }
-                }
-
-                break;
+            collectFromType(binding.TypeNode);
         }
     }
 

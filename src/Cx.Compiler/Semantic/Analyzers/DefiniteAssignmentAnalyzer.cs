@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic.Resolvers;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Analyzers;
@@ -487,89 +488,20 @@ internal sealed class DefiniteAssignmentAnalyzer(
             _ => null,
         };
 
-    private IEnumerable<(string Name, TypeRef Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
-    {
-        foreach (var statement in statements)
-        {
-            switch (statement)
-            {
-                case LetStatement let:
-                    yield return (let.Name, TypeRefOrUnknown(let.TypeNode));
-                    break;
-                case IfStatement ifStatement:
-                    foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
-                    {
-                        yield return variable;
-                    }
-
-                    if (ifStatement.ElseBranch is not null)
-                    {
-                        foreach (var variable in CollectLocalVariables([ifStatement.ElseBranch]))
-                        {
-                            yield return variable;
-                        }
-                    }
-                    break;
-                case ElseBlockStatement elseBlock:
-                    foreach (var variable in CollectLocalVariables(elseBlock.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case WhileStatement whileStatement:
-                    foreach (var variable in CollectLocalVariables(whileStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case ForStatement forStatement:
-                    if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
-                    {
-                        yield return (declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
-                    }
-
-                    foreach (var variable in CollectLocalVariables(forStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case ForeachStatement foreachStatement:
-                    foreach (var binding in SemanticFacts.GetForeachBindings(foreachStatement))
-                    {
-                        yield return (binding.Name, TypeRefOrUnknown(binding.TypeNode));
-                    }
-
-                    foreach (var variable in CollectLocalVariables(foreachStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case SwitchStatement switchStatement:
-                    foreach (var switchCase in switchStatement.Cases)
-                    {
-                        foreach (var variable in CollectLocalVariables(switchCase.Body))
-                        {
-                            yield return variable;
-                        }
-                    }
-
-                    foreach (var variable in CollectLocalVariables(switchStatement.DefaultBody))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var variable in CollectLocalVariables(arm.Body))
-                        {
-                            yield return variable;
-                        }
-                    }
-                    break;
-            }
-        }
-    }
+    private IEnumerable<(string Name, TypeRef Type)> CollectLocalVariables(
+        IEnumerable<StatementNode> statements) =>
+        FunctionLocalBindingFacts
+            .Enumerate(statements)
+            .Where(binding =>
+                binding.Declaration is LetStatement
+                || binding.Kind is
+                    FunctionLocalBindingKind.ForInitializer
+                    or FunctionLocalBindingKind.ForeachIndex
+                    or FunctionLocalBindingKind.ForeachKey
+                    or FunctionLocalBindingKind.ForeachValue)
+            .Select(binding => (
+                binding.Name,
+                TypeRefOrUnknown(binding.TypeNode)));
 
     private static bool TryGetAssignmentRootName(ExpressionNode expression, out string name)
     {

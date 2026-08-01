@@ -6,6 +6,6 @@ namespace Cx.Compiler.C;
 internal static class CNullUsageAnalyzer
 {
     public static bool UsesNull(ProgramNode program) =>
-        AstExpressionTraversal.Enumerate(program)
-            .Any(expression => expression is LiteralExpressionNode { Kind: LiteralKind.Null });
+        AstTraversal.DescendantsAndSelf<LiteralExpressionNode>(program)
+            .Any(literal => literal.Kind == LiteralKind.Null);
 }

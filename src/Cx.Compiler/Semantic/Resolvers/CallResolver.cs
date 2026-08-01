@@ -494,10 +494,12 @@ internal sealed class CallResolver(
             typeArgumentRefs,
             skipSelf,
             isInstance);
-        var score = ScoreResolution(
+        var score = CallCandidateScorer.Score(
             resolution,
             arguments,
             variables,
+            _typeCompatibility,
+            ResolveArgumentType,
             function.TypeParameters.Count > 0);
         return score is null
             ? null
@@ -549,47 +551,6 @@ internal sealed class CallResolver(
         }
 
         return bindings;
-    }
-
-    private FunctionCandidateScore? ScoreResolution(
-        CallResolution resolution,
-        IReadOnlyList<ExpressionNode> arguments,
-        TypeEnvironment variables,
-        bool isGeneric)
-    {
-        if (arguments.Count < resolution.ParameterTypes.Count
-            || !resolution.IsVariadic
-                && arguments.Count > resolution.ParameterTypes.Count)
-        {
-            return null;
-        }
-
-        var conversionCost = 0;
-        for (var index = 0; index < resolution.ParameterTypes.Count; index++)
-        {
-            var argumentType = ResolveArgumentType(arguments[index], variables);
-            var parameterType = resolution.ParameterTypes[index];
-            if (!_typeCompatibility.CanAssign(
-                parameterType,
-                argumentType,
-                out _))
-            {
-                return null;
-            }
-
-            if (argumentType is null
-                || !TypeIdentity.SpecializationEquals(
-                    parameterType,
-                    argumentType))
-            {
-                conversionCost++;
-            }
-        }
-
-        return new FunctionCandidateScore(
-            conversionCost,
-            resolution.IsVariadic ? 1 : 0,
-            isGeneric ? 1 : 0);
     }
 
     private CallResolution? ResolveExternFunction(
@@ -753,10 +714,12 @@ internal sealed class CallResolver(
             return null;
         }
 
-        var score = ScoreResolution(
+        var score = CallCandidateScorer.Score(
             resolution,
             arguments,
             variables,
+            _typeCompatibility,
+            ResolveArgumentType,
             function.TypeParameters.Count > 0);
         return score is null
             ? null

@@ -115,8 +115,9 @@ internal sealed class ProgramCompilationPipeline(
 
         mergedProgram = semanticResolution.Program;
         var semanticModel = semanticResolution.SemanticModel;
-        if (AstExpressionTraversal.Enumerate(mergedProgram)
-            .OfType<TryExpressionNode>()
+        if (AstTraversal.DescendantsAndSelf<TryExpressionNode>(
+                mergedProgram,
+                IsRuntimeProgramSubtree)
             .Any(attempt => attempt.Fallback is TryExpressionNode))
         {
             mergedProgram = profiler.Measure(
@@ -166,4 +167,9 @@ internal sealed class ProgramCompilationPipeline(
 
         return (mergedProgram, diagnostics);
     }
+
+    private static bool IsRuntimeProgramSubtree(SyntaxNode node) =>
+        node is not MacroDeclarationNode
+            and not AttributeApplicationNode
+            and not TypeNode;
 }

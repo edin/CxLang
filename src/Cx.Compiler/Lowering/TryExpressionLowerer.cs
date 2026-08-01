@@ -17,7 +17,8 @@ internal sealed class TryExpressionLowerer(DiagnosticBag diagnostics) : AstRewri
     public override ProgramNode RewriteProgram(ProgramNode program)
     {
         var rewritten = base.RewriteProgram(program);
-        foreach (var attempt in AstExpressionTraversal.Enumerate(rewritten).OfType<TryExpressionNode>())
+        foreach (var attempt in ExecutableAstTraversal
+            .DescendantsAndSelf<TryExpressionNode>(rewritten))
         {
             if (IsCompleteFallbackChain(attempt))
             {
@@ -40,7 +41,9 @@ internal sealed class TryExpressionLowerer(DiagnosticBag diagnostics) : AstRewri
         _returnType = function.ReturnTypeNode;
         _usedNames = function.Parameters
             .Select(parameter => parameter.Name)
-            .Concat(CollectLocalNames(function.Body))
+            .Concat(FunctionLocalBindingFacts
+                .Enumerate(function.Body)
+                .Select(binding => binding.Name))
             .ToHashSet(StringComparer.Ordinal);
         _temporaryIndex = 0;
 
@@ -215,37 +218,4 @@ internal sealed class TryExpressionLowerer(DiagnosticBag diagnostics) : AstRewri
         return node;
     }
 
-    private static IEnumerable<string> CollectLocalNames(IEnumerable<StatementNode> statements)
-    {
-        foreach (var statement in statements)
-        {
-            if (statement is LocalBindingStatement binding)
-            {
-                yield return binding.Name;
-            }
-
-            foreach (var child in ChildStatements(statement))
-            {
-                foreach (var name in CollectLocalNames([child]))
-                {
-                    yield return name;
-                }
-            }
-        }
-    }
-
-    private static IEnumerable<StatementNode> ChildStatements(StatementNode statement) => statement switch
-    {
-        IfStatement conditional => conditional.ThenBody
-            .Concat(conditional.ElseBranch is null ? [] : [conditional.ElseBranch]),
-        ElseBlockStatement elseBlock => elseBlock.Body,
-        WhileStatement loop => loop.Body,
-        ForStatement loop => loop.Body,
-        ForeachStatement loop => loop.Body,
-        SwitchStatement switchStatement => switchStatement.Cases
-            .SelectMany(@case => @case.Body)
-            .Concat(switchStatement.DefaultBody),
-        MatchStatement match => match.Arms.SelectMany(arm => arm.Body),
-        _ => [],
-    };
 }

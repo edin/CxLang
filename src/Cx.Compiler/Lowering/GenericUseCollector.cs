@@ -37,7 +37,8 @@ internal sealed class GenericUseCollector
     {
         foreach (var expression in program.Functions
             .Where(function => function.TypeParameters.Count == 0)
-            .SelectMany(function => AstExpressionTraversal.Enumerate(function.Body)))
+            .SelectMany(function =>
+                AstTraversal.DescendantsAndSelf<ExpressionNode>(function.Body)))
         {
             foreach (var use in CollectResolvedUse(expression))
             {
@@ -67,7 +68,8 @@ internal sealed class GenericUseCollector
         var variables = BuildFunctionVariables(function, scopeSelfTypeRef);
 
         var knownUses = new HashSet<FunctionInstanceKey>();
-        foreach (var expression in AstExpressionTraversal.Enumerate(function.Body))
+        foreach (var expression in AstTraversal
+            .DescendantsAndSelf<ExpressionNode>(function.Body))
         {
             foreach (var use in CollectExpressionGenericUses(expression, variables, selfApiType))
             {
@@ -150,99 +152,48 @@ internal sealed class GenericUseCollector
         IEnumerable<StatementNode> statements,
         TypeEnvironment variables)
     {
-        foreach (var statement in statements)
+        foreach (var foreachStatement in ExecutableAstTraversal
+            .DescendantsAndSelf<ForeachStatement>(statements))
         {
-            switch (statement)
+            if (foreachStatement.IterableExpression is not NameExpressionNode name
+                || !variables.TryGet(name.Name, out var iterableType)
+                || !TypeRefFacts.TryGetNamed(iterableType, out var iterableNamed)
+                || iterableNamed.Arguments.Count == 0)
             {
-                case ForeachStatement foreachStatement:
-                    if (foreachStatement.IterableExpression is NameExpressionNode name
-                        && variables.TryGet(name.Name, out var iterableType)
-                        && TypeRefFacts.TryGetNamed(iterableType, out var iterableNamed)
-                        && iterableNamed.Arguments.Count > 0)
-                    {
-                        foreach (var iteratorFunction in GenericMethods(
-                            iterableType,
-                            "iterator",
-                            iterableNamed.Arguments.Count))
-                        {
-                            yield return Use(iteratorFunction, iterableNamed.Arguments);
+                continue;
+            }
 
-                            var substitutions = iteratorFunction.TypeParameters
-                                .Zip(iterableNamed.Arguments)
-                                .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-                            var iteratorType = TypeRefRewriter.Substitute(TypeRefOrUnknown(iteratorFunction.ReturnTypeNode), substitutions);
-                            if (TypeRefFacts.TryGetNamed(iteratorType, out var iteratorNamed)
-                                && iteratorNamed.Arguments.Count > 0)
-                            {
-                                foreach (var iteratorMember in GenericMethods(
-                                    iteratorType,
-                                    genericArity: iteratorNamed.Arguments.Count).Where(
-                                        function => function.Name is "next" or "value" or "key"))
-                                {
-                                    yield return Use(iteratorMember, iteratorNamed.Arguments);
-                                }
-                            }
-                        }
-                    }
+            foreach (var iteratorFunction in GenericMethods(
+                iterableType,
+                "iterator",
+                iterableNamed.Arguments.Count))
+            {
+                yield return Use(iteratorFunction, iterableNamed.Arguments);
 
-                    foreach (var nested in FindForeachIteratorGenericUses(foreachStatement.Body, variables))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case IfStatement ifStatement:
-                    foreach (var nested in FindForeachIteratorGenericUses(ifStatement.ThenBody, variables))
-                    {
-                        yield return nested;
-                    }
-                    if (ifStatement.ElseBranch is ElseBlockStatement nestedElseBlock)
-                    {
-                        foreach (var nested in FindForeachIteratorGenericUses(nestedElseBlock.Body, variables))
-                        {
-                            yield return nested;
-                        }
-                    }
-                    break;
-                case ElseBlockStatement elseBlock:
-                    foreach (var nested in FindForeachIteratorGenericUses(elseBlock.Body, variables))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case WhileStatement whileStatement:
-                    foreach (var nested in FindForeachIteratorGenericUses(whileStatement.Body, variables))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case ForStatement forStatement:
-                    foreach (var nested in FindForeachIteratorGenericUses(forStatement.Body, variables))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case SwitchStatement switchStatement:
-                    foreach (var switchCase in switchStatement.Cases)
-                    {
-                        foreach (var nested in FindForeachIteratorGenericUses(switchCase.Body, variables))
-                        {
-                            yield return nested;
-                        }
-                    }
-                    foreach (var nested in FindForeachIteratorGenericUses(switchStatement.DefaultBody, variables))
-                    {
-                        yield return nested;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var nested in FindForeachIteratorGenericUses(arm.Body, variables))
-                        {
-                            yield return nested;
-                        }
-                    }
-                    break;
+                var substitutions = iteratorFunction.TypeParameters
+                    .Zip(iterableNamed.Arguments)
+                    .ToDictionary(
+                        pair => pair.First,
+                        pair => pair.Second,
+                        StringComparer.Ordinal);
+                var iteratorType = TypeRefRewriter.Substitute(
+                    TypeRefOrUnknown(iteratorFunction.ReturnTypeNode),
+                    substitutions);
+                if (!TypeRefFacts.TryGetNamed(
+                        iteratorType,
+                        out var iteratorNamed)
+                    || iteratorNamed.Arguments.Count == 0)
+                {
+                    continue;
+                }
+
+                foreach (var iteratorMember in GenericMethods(
+                    iteratorType,
+                    genericArity: iteratorNamed.Arguments.Count).Where(
+                        function => function.Name is "next" or "value" or "key"))
+                {
+                    yield return Use(iteratorMember, iteratorNamed.Arguments);
+                }
             }
         }
     }
@@ -451,106 +402,27 @@ internal sealed class GenericUseCollector
             SetVariable(variables, parameter.Name, SubstituteSelf(TypeRefOrUnknown(parameter.TypeNode), selfType));
         }
 
-        foreach (var local in CollectLocalVariables(function.Body))
+        foreach (var local in FunctionLocalBindingFacts
+            .Enumerate(function.Body)
+            .Where(IsGenericEnvironmentBinding))
         {
-            SetVariable(variables, local.Name, SubstituteSelf(local.Type, selfType));
+            SetVariable(
+                variables,
+                local.Name,
+                SubstituteSelf(
+                    TypeRefOrUnknown(local.TypeNode),
+                    selfType));
         }
 
         return variables;
     }
 
-    private IEnumerable<(string Name, TypeRef Type)> CollectLocalVariables(IEnumerable<StatementNode> statements)
-    {
-        foreach (var statement in statements)
-        {
-            switch (statement)
-            {
-                case LetStatement let:
-                    yield return (let.Name, TypeRefOrUnknown(let.TypeNode));
-                    break;
-                case IfStatement ifStatement:
-                    foreach (var variable in CollectLocalVariables(ifStatement.ThenBody))
-                    {
-                        yield return variable;
-                    }
-                    if (ifStatement.ElseBranch is not null)
-                    {
-                        foreach (var variable in CollectLocalVariables([ifStatement.ElseBranch]))
-                        {
-                            yield return variable;
-                        }
-                    }
-                    break;
-                case ElseBlockStatement elseBlock:
-                    foreach (var variable in CollectLocalVariables(elseBlock.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case WhileStatement whileStatement:
-                    foreach (var variable in CollectLocalVariables(whileStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case ForStatement forStatement:
-                    if (forStatement.CachedRangeEndInitializer is not null)
-                    {
-                        yield return (forStatement.CachedRangeEndInitializer.Name, TypeRefOrUnknown(forStatement.CachedRangeEndInitializer.TypeNode));
-                    }
-                    if (forStatement.CounterInitializer is not null)
-                    {
-                        yield return (forStatement.CounterInitializer.Name, TypeRefOrUnknown(forStatement.CounterInitializer.TypeNode));
-                    }
-                    if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
-                    {
-                        yield return (declaration.Name, TypeRefOrUnknown(declaration.TypeNode));
-                    }
-                    foreach (var variable in CollectLocalVariables(forStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case ForeachStatement foreachStatement:
-                    if (foreachStatement.IndexBinding is not null)
-                    {
-                        yield return (foreachStatement.IndexBinding.Name, TypeRefOrUnknown(foreachStatement.IndexBinding.TypeNode));
-                    }
-                    if (foreachStatement.KeyBinding is not null)
-                    {
-                        yield return (foreachStatement.KeyBinding.Name, TypeRefOrUnknown(foreachStatement.KeyBinding.TypeNode));
-                    }
-                    yield return (foreachStatement.ValueBinding.Name, TypeRefOrUnknown(foreachStatement.ValueBinding.TypeNode));
-                    foreach (var variable in CollectLocalVariables(foreachStatement.Body))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case SwitchStatement switchStatement:
-                    foreach (var switchCase in switchStatement.Cases)
-                    {
-                        foreach (var variable in CollectLocalVariables(switchCase.Body))
-                        {
-                            yield return variable;
-                        }
-                    }
-                    foreach (var variable in CollectLocalVariables(switchStatement.DefaultBody))
-                    {
-                        yield return variable;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var arm in matchStatement.Arms)
-                    {
-                        foreach (var variable in CollectLocalVariables(arm.Body))
-                        {
-                            yield return variable;
-                        }
-                    }
-                    break;
-            }
-        }
-    }
+    private static bool IsGenericEnvironmentBinding(
+        FunctionLocalBinding binding) =>
+        binding.Declaration is
+            LetStatement
+            or ForDeclarationInitializerNode
+            or ForeachBinding;
 
     private TypeRef? ResolveSelfTypeRef(FunctionNode function)
     {

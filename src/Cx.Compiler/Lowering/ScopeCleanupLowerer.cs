@@ -241,7 +241,9 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
         }
         _bindingScopes.Add(parameterScope);
         _usedNames = parameterNames
-            .Concat(CollectLocalNames(body))
+            .Concat(FunctionLocalBindingFacts
+                .Enumerate(body)
+                .Select(binding => binding.Name))
             .ToHashSet(StringComparer.Ordinal);
         _returnTemporaryIndex = 0;
         _replacementTemporaryIndex = 0;
@@ -429,74 +431,6 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
         node.Span = span;
         return node;
     }
-
-    private static IEnumerable<string> CollectLocalNames(IEnumerable<StatementNode> statements)
-    {
-        foreach (var statement in statements)
-        {
-            switch (statement)
-            {
-                case LocalBindingStatement binding:
-                    yield return binding.Name;
-                    break;
-                case ForStatement forStatement:
-                    if (forStatement.CachedRangeEndInitializer is not null)
-                    {
-                        yield return forStatement.CachedRangeEndInitializer.Name;
-                    }
-
-                    if (forStatement.CounterInitializer is not null)
-                    {
-                        yield return forStatement.CounterInitializer.Name;
-                    }
-
-                    if (forStatement.Initializer is ForDeclarationInitializerNode declaration)
-                    {
-                        yield return declaration.Name;
-                    }
-                    break;
-                case ForeachStatement foreachStatement:
-                    foreach (var binding in new[]
-                    {
-                        foreachStatement.IndexBinding,
-                        foreachStatement.KeyBinding,
-                        foreachStatement.ValueBinding,
-                    }.Where(binding => binding is not null))
-                    {
-                        yield return binding!.Name;
-                    }
-                    break;
-                case MatchStatement matchStatement:
-                    foreach (var bindingName in matchStatement.Arms
-                        .Select(arm => arm.BindingName)
-                        .Where(name => name is not null))
-                    {
-                        yield return bindingName!;
-                    }
-                    break;
-            }
-
-            foreach (var name in CollectLocalNames(ChildStatements(statement)))
-            {
-                yield return name;
-            }
-        }
-    }
-
-    private static IEnumerable<StatementNode> ChildStatements(StatementNode statement) => statement switch
-    {
-        IfStatement ifStatement => ifStatement.ThenBody
-            .Concat(ifStatement.ElseBranch is null ? [] : [ifStatement.ElseBranch]),
-        ElseBlockStatement elseBlock => elseBlock.Body,
-        WhileStatement whileStatement => whileStatement.Body,
-        ForStatement forStatement => forStatement.Body,
-        ForeachStatement foreachStatement => foreachStatement.Body,
-        SwitchStatement switchStatement => switchStatement.Cases
-            .SelectMany(switchCase => switchCase.Body)
-            .Concat(switchStatement.DefaultBody),
-        MatchStatement matchStatement => matchStatement.Arms.SelectMany(arm => arm.Body),
-        _ => [],
-    };
 
     private sealed record CleanupBinding(string Name, Location Location, SourceSpan? Span);
 
