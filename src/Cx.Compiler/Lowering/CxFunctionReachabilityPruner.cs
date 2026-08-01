@@ -103,11 +103,8 @@ internal static class CxFunctionReachabilityPruner
     }
 
     private static IReadOnlyList<FunctionNode> GetFunctions(ProgramNode program) =>
-        program.Functions
-            .Concat(program.Structs.SelectMany(node => node.Methods))
-            .Concat(program.TypeAdapters.SelectMany(node => node.Methods))
-            .Concat(program.TaggedUnions.SelectMany(node => node.Methods))
-            .Distinct((IEqualityComparer<FunctionNode>)ReferenceEqualityComparer.Instance)
+        ProgramFunctionFacts
+            .GetDeclarations(program)
             .ToList();
 
     private static IReadOnlyList<FunctionNode> FunctionsNamed(

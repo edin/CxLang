@@ -308,9 +308,8 @@ public sealed class SemanticAnalyzer(
         TypeRefParser typeRefParser)
     {
         var compatibility = new TypeCompatibility(typeRefParser);
-        var functions = program.Functions
-            .Concat(program.Structs.SelectMany(structNode => structNode.Methods))
-            .Concat(program.TaggedUnions.SelectMany(union => union.Methods))
+        var functions = ProgramFunctionFacts
+            .GetDeclarations(program)
             .DistinctBy(function => (
                 function.Location.File.Path,
                 function.Location.Position,

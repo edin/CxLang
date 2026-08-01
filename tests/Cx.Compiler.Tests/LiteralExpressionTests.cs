@@ -43,4 +43,21 @@ public sealed class LiteralExpressionTests
 
         Assert.True(CNullUsageAnalyzer.UsesNull(program));
     }
+
+    [Fact]
+    public void NullUsage_IgnoresReusableMacroTemplates()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro emit_null() -> statements {
+                consume(null);
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        Assert.False(CNullUsageAnalyzer.UsesNull(program));
+    }
 }

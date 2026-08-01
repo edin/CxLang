@@ -83,14 +83,14 @@ internal static class ModuleProgramFacts
             node.Semantic.ModuleName = moduleName;
         }
 
-        foreach (var method in node switch
+        if (node is not TopLevelNode declaration)
         {
-            StructNode structNode => structNode.Methods,
-            TaggedUnionNode union => union.Methods,
-            TypeAdapterNode adapter => adapter.Methods,
-            ExtensionNode extension => extension.Methods,
-            _ => [],
-        })
+            return;
+        }
+
+        foreach (var method in ProgramFunctionFacts
+            .GetDeclarations(declaration)
+            .Where(method => !ReferenceEquals(method, declaration)))
         {
             AnnotateModuleName(method, moduleNamesByPath);
         }

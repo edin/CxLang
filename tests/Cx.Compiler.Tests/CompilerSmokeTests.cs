@@ -29,6 +29,26 @@ public sealed class CompilerSmokeTests
     }
 
     [Fact]
+    public void CompileToC_IgnoresNestedTryInsideUnusedMacroTemplate()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            macro attempt_fallbacks() -> statements {
+                let value = try first() ?? try second() ?? 0;
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.DoesNotContain(
+            result.Timings,
+            timing => timing.Name == "Try fallback chain lowering");
+    }
+
+    [Fact]
     public void CompileToC_CanDisableUnusedDeclarationStripping()
     {
         var result = CompilerTestHelpers.Compile(

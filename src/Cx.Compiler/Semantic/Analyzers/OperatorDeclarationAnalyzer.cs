@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Analyzers;
@@ -9,7 +10,8 @@ internal sealed class OperatorDeclarationAnalyzer(
 {
     public void Analyze(ProgramNode program)
     {
-        foreach (var function in program.Functions
+        foreach (var function in ProgramFunctionFacts
+            .GetDeclarations(program)
             .Where(function => function.OperatorKind is not null)
             .DistinctBy(function => (
                 function.Location.File.Path,

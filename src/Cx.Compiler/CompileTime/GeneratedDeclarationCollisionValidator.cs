@@ -46,60 +46,16 @@ internal sealed class GeneratedDeclarationCollisionValidator(
     private void ValidateFunctions()
     {
         var functions = new List<Candidate>();
-        var seen = new HashSet<FunctionNode>(ReferenceEqualityComparer.Instance);
-        foreach (var function in program.Functions.Where(function => function.OwnerTypeNode is null))
+        foreach (var entry in ProgramFunctionFacts.GetEntries(program))
         {
-            AddOwnedFunction(function, inheritedOrigin: null);
+            functions.Add(FunctionCandidate(
+                entry.Function,
+                entry.Owner?.GeneratedFrom));
         }
 
         functions.AddRange(program.ExternFunctions.Select(FunctionCandidate));
 
-        foreach (var function in program.Functions.Where(function => function.OwnerTypeNode is not null))
-        {
-            AddOwnedFunction(function, inheritedOrigin: null);
-        }
-
-        foreach (var structNode in program.Structs)
-        {
-            foreach (var method in structNode.Methods)
-            {
-                AddOwnedFunction(method, structNode.GeneratedFrom);
-            }
-        }
-
-        foreach (var union in program.TaggedUnions)
-        {
-            foreach (var method in union.Methods)
-            {
-                AddOwnedFunction(method, union.GeneratedFrom);
-            }
-        }
-
-        foreach (var adapter in program.TypeAdapters)
-        {
-            foreach (var method in adapter.Methods)
-            {
-                AddOwnedFunction(method, adapter.GeneratedFrom);
-            }
-        }
-
-        foreach (var extension in program.Extensions)
-        {
-            foreach (var method in extension.Methods)
-            {
-                AddOwnedFunction(method, extension.GeneratedFrom);
-            }
-        }
-
         ValidateDuplicateKeys(functions);
-
-        void AddOwnedFunction(FunctionNode function, GeneratedSyntaxOrigin? inheritedOrigin)
-        {
-            if (seen.Add(function))
-            {
-                functions.Add(FunctionCandidate(function, inheritedOrigin));
-            }
-        }
     }
 
     private Candidate FunctionCandidate(

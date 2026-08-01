@@ -37,20 +37,13 @@ internal sealed class CompileTimeSyntaxBlockPlacementAnalyzer(DiagnosticBag diag
             case CDeclareNode cDeclare:
                 AnalyzeCDeclareMembers(cDeclare.Members);
                 break;
-            case FunctionNode function:
-                AnalyzeStatements(function.Body);
-                break;
-            case StructNode structNode:
-                AnalyzeFunctions(structNode.Methods);
-                break;
-            case ExtensionNode extension:
-                AnalyzeFunctions(extension.Methods);
-                break;
-            case TypeAdapterNode adapter:
-                AnalyzeFunctions(adapter.Methods);
-                break;
-            case TaggedUnionNode union:
-                AnalyzeFunctions(union.Methods);
+            case FunctionNode
+                or StructNode
+                or ExtensionNode
+                or TypeAdapterNode
+                or TaggedUnionNode:
+                AnalyzeFunctions(
+                    ProgramFunctionFacts.GetDeclarations(declaration));
                 break;
             case TestNode test:
                 AnalyzeStatements(test.Body);

@@ -7,7 +7,7 @@ internal static class ExecutableAstTraversal
     public static IEnumerable<TNode> DescendantsAndSelf<TNode>(
         ProgramNode program)
         where TNode : SyntaxNode =>
-        DescendantsAndSelf<TNode>(Roots(program));
+        DescendantsAndSelf<TNode>(GetRoots(program));
 
     public static IEnumerable<TNode> DescendantsAndSelf<TNode>(
         SyntaxNode root)
@@ -21,7 +21,7 @@ internal static class ExecutableAstTraversal
         where TNode : SyntaxNode =>
         roots.SelectMany(DescendantsAndSelf<TNode>);
 
-    private static IEnumerable<SyntaxNode> Roots(ProgramNode program)
+    internal static IEnumerable<SyntaxNode> GetRoots(ProgramNode program)
     {
         foreach (var enumNode in program.Enums.Where(node => node.IsDataEnum))
         {
@@ -46,10 +46,8 @@ internal static class ExecutableAstTraversal
             yield return initializer!;
         }
 
-        foreach (var function in program.Functions
-            .Concat(program.Structs.SelectMany(node => node.Methods))
-            .Concat(program.Extensions.SelectMany(node => node.Methods))
-            .Concat(program.TaggedUnions.SelectMany(node => node.Methods)))
+        foreach (var function in ProgramFunctionFacts
+            .GetDeclarations(program))
         {
             if (function.ComputedName is not null)
             {
