@@ -25,7 +25,8 @@ internal sealed class CxPostSemanticLoweringPipeline(DiagnosticBag diagnostics)
         lowered = DataEnumDefaultMaterializationPass.Apply(lowered);
         CoreCxFunctionAnnotationPass.Apply(lowered);
         CoreCxReferenceAnnotationPass.AnnotateLinkedDeclarations(lowered);
-        CoreCxCallAnnotationPass.Apply(lowered, functionCatalog);
+        CoreCxCallNormalizationPass.Apply(lowered, functionCatalog);
+        CoreCxCallAnnotationPass.Apply(lowered);
         CoreCxReferenceAnnotationPass.Apply(lowered);
         CoreCxMemberAccessAnnotationPass.Apply(lowered);
         CoreCxInterfaceAnnotationPass.Apply(lowered);

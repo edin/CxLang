@@ -51,9 +51,17 @@ public sealed class CoreCxValidatorTests
                 unresolvedMainCall.Callee)
             .Target.Semantic.Type =
             new TypeRef.Named("Point", []);
-        CoreCxCallAnnotationPass.Apply(
+        CoreCxCallNormalizationPass.Apply(
             program,
             model.GetOrCreateFunctionCatalog(program));
+        var normalizedCall = Assert.IsType<ResolvedCallInfo>(
+            unresolvedMainCall.Semantic.ResolvedCall);
+        Assert.Null(unresolvedMainCall.Semantic.CoreDirectCall);
+
+        CoreCxCallAnnotationPass.Apply(program);
+        Assert.Same(
+            normalizedCall,
+            unresolvedMainCall.Semantic.ResolvedCall);
         CoreCxReferenceAnnotationPass.Apply(program);
         CoreCxMemberAccessAnnotationPass.Apply(program);
 
