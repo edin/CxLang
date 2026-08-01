@@ -37,7 +37,12 @@ internal static class GenericFunctionSpecializer
                 .ToList(),
             Body = function.Body.Select(statement => SubstituteStatement(statement, typeSubstitutions)).ToList(),
         };
+        specialized.Semantic = function.Semantic.Clone();
         specialized.Semantic.ModuleName = function.Semantic.ModuleName;
+        specialized.Semantic.GenericFunctionSpecialization =
+            new GenericFunctionSpecializationInfo(
+                function,
+                argumentRefs.ToList());
         EnsureFunctionSymbol(specialized);
         return specialized;
     }

@@ -22,7 +22,15 @@ internal sealed class CxPostSemanticLoweringPipeline(DiagnosticBag diagnostics)
         lowered = ContiguousForeachLowerer.Lower(lowered, diagnostics);
         lowered = MatchLoweringPass.Lower(lowered, diagnostics);
         lowered = GenericSpecializationPass.Apply(lowered, diagnostics, functionCatalog);
-        new LoweringCompletenessAnalyzer(diagnostics).Analyze(lowered);
+        lowered = DataEnumDefaultMaterializationPass.Apply(lowered);
+        CoreCxFunctionAnnotationPass.Apply(lowered);
+        CoreCxReferenceAnnotationPass.AnnotateLinkedDeclarations(lowered);
+        CoreCxCallAnnotationPass.Apply(lowered, functionCatalog);
+        CoreCxReferenceAnnotationPass.Apply(lowered);
+        CoreCxMemberAccessAnnotationPass.Apply(lowered);
+        CoreCxInterfaceAnnotationPass.Apply(lowered);
+        new CoreCxValueConversionPass(lowered).Apply();
+        new CoreCxValidator(diagnostics).Validate(lowered);
         return lowered;
     }
 }

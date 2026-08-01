@@ -134,7 +134,7 @@ public sealed class CNameManglerTests
         string name,
         IReadOnlyList<string>? typeArguments = null,
         IReadOnlyList<string>? parameterTypes = null) =>
-        new(
+        AnnotateTypes(new(
             Location: Location(),
             Name: name,
             TypeParameters: [],
@@ -154,7 +154,27 @@ public sealed class CNameManglerTests
             TypeArgumentNodes = (typeArguments ?? [])
                 .Select(type => TypeNode.CreateFromText(Location(), type))
                 .ToList(),
-        };
+        });
+
+    private static FunctionNode AnnotateTypes(FunctionNode function)
+    {
+        foreach (var typeNode in function.TypeArgumentNodes
+                     .Concat(function.Parameters
+                         .Select(parameter => parameter.TypeNode)
+                         .OfType<TypeNode>())
+                     .Concat(
+                         function.OwnerTypeNode is null
+                             ? []
+                             : [function.OwnerTypeNode])
+                     .Append(function.ReturnTypeNode)
+                     .OfType<TypeNode>())
+        {
+            typeNode.Semantic.Type =
+                typeNode.Syntax.ToUnresolvedTypeRef();
+        }
+
+        return function;
+    }
 
     private static Location Location() => new(new SourceFile("test.cx", string.Empty), 0, 1, 1);
 }

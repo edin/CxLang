@@ -5,83 +5,76 @@ using Cx.Compiler.Syntax.Nodes;
 namespace Cx.Compiler;
 
 internal sealed class StructValueBuilder(
-    CLoweringContext context,
     Func<ExpressionNode, CExpression> lowerExpression,
-    Func<ExpressionNode, TypeRef?> inferExpressionTypeRef,
-    Func<TypeRef, string> lowerTypeRef,
     Func<TypeRef, CTypeRef> lowerCTypeRef)
 {
     public CExpression BuildPayloadExpression(
-        TypeRef payloadType,
+        CoreConstructorCallInfo.TaggedUnion constructor,
         IReadOnlyList<ExpressionNode> arguments)
     {
-        if (context.TryGetStruct(payloadType, out var structNode))
+        return constructor.PayloadConstructionKind switch
         {
-            if (arguments.Count == 1
-                && IsSameLoweredType(payloadType, inferExpressionTypeRef(arguments[0])))
-            {
-                return lowerExpression(arguments[0]);
-            }
-
-            if (TryBuildStructConstructorExpression(structNode, lowerCTypeRef(payloadType), arguments, out var initializer))
-            {
-                return initializer;
-            }
-        }
-
-        return arguments.Count == 1
-            ? lowerExpression(arguments[0])
-            : new CCommaExpression(arguments.Select(lowerExpression).ToList());
+            CoreAggregateConstructionKind.DirectExpression =>
+                lowerExpression(arguments.Single()),
+            CoreAggregateConstructionKind.FieldInitializer =>
+                BuildStructInitializer(
+                    constructor.PayloadStruct
+                    ?? throw new InvalidOperationException(
+                        "Core CX tagged-union payload has no struct declaration."),
+                    lowerCTypeRef(constructor.PayloadType),
+                    arguments),
+            CoreAggregateConstructionKind.FunctionCall =>
+                BuildStructConstructorCall(
+                    constructor.PayloadStruct
+                    ?? throw new InvalidOperationException(
+                        "Core CX tagged-union payload has no struct declaration."),
+                    arguments),
+            CoreAggregateConstructionKind.CommaExpression =>
+                new CCommaExpression(
+                    arguments.Select(lowerExpression).ToList()),
+            _ => throw new InvalidOperationException(
+                "Unsupported Core CX payload construction."),
+        };
     }
 
     public CExpression BuildStructConstructorExpression(
-        StructNode structNode,
+        CoreConstructorCallInfo.Struct constructor,
         IReadOnlyList<ExpressionNode> arguments)
     {
-        return TryBuildStructConstructorExpression(structNode, arguments, out var initializer)
-            ? initializer
-            : BuildStructConstructorCall(structNode, arguments);
+        return constructor.ConstructionKind switch
+        {
+            CoreAggregateConstructionKind.FieldInitializer =>
+                BuildStructInitializer(
+                    constructor.Declaration,
+                    lowerCTypeRef(constructor.ConstructedType),
+                    arguments),
+            CoreAggregateConstructionKind.FunctionCall =>
+                BuildStructConstructorCall(
+                    constructor.Declaration,
+                    arguments),
+            _ => throw new InvalidOperationException(
+                "Unsupported Core CX struct construction."),
+        };
     }
 
-    public CExpression BuildStructConstructorExpression(
+    private CExpression BuildStructInitializer(
         StructNode structNode,
         CTypeRef loweredStructType,
         IReadOnlyList<ExpressionNode> arguments)
-    {
-        return TryBuildStructConstructorExpression(structNode, loweredStructType, arguments, out var initializer)
-            ? initializer
-            : BuildStructConstructorCall(structNode, arguments);
-    }
-
-    private bool TryBuildStructConstructorExpression(
-        StructNode structNode,
-        IReadOnlyList<ExpressionNode> arguments,
-        out CExpression initializer) =>
-        TryBuildStructConstructorExpression(
-            structNode,
-            lowerCTypeRef(new TypeRef.Named(structNode.Name, [])),
-            arguments,
-            out initializer);
-
-    private bool TryBuildStructConstructorExpression(
-        StructNode structNode,
-        CTypeRef loweredStructType,
-        IReadOnlyList<ExpressionNode> arguments,
-        out CExpression initializer)
     {
         if (arguments.Count != structNode.Fields.Count)
         {
-            initializer = null!;
-            return false;
+            throw new InvalidOperationException(
+                $"Core CX struct initializer for '{structNode.Name}' "
+                + "does not match its field count.");
         }
 
-        initializer = new CInitializerExpression(
+        return new CInitializerExpression(
             loweredStructType,
             structNode.Fields
                 .Zip(arguments, (field, argument) => new CInitializerField(field.Name, lowerExpression(argument)))
                 .ToList(),
             []);
-        return true;
     }
 
     private CExpression BuildStructConstructorCall(
@@ -91,7 +84,4 @@ internal sealed class StructValueBuilder(
             new CFunctionName(structNode.Name),
             arguments.Select(lowerExpression).ToList());
 
-    private bool IsSameLoweredType(TypeRef leftType, TypeRef? rightType) =>
-        rightType is not null
-        && string.Equals(lowerTypeRef(leftType), lowerTypeRef(rightType), StringComparison.Ordinal);
 }

@@ -45,7 +45,8 @@ internal sealed class ExpressionTypeResolver(
             return ResolveFunctionExpressionTypeRef(functionLiteral);
         }
 
-        if (expression.Semantic.Type is { } semanticType)
+        if (expression.Semantic.Type is { } semanticType
+            && semanticType is not TypeRef.Unknown)
         {
             return semanticType;
         }
@@ -75,6 +76,11 @@ internal sealed class ExpressionTypeResolver(
             _ => null,
         };
     }
+
+    public TypeRef? ResolveAndAttachCall(
+        CallExpressionNode call,
+        TypeEnvironment variables) =>
+        ResolveCallTypeRef(call, variables);
 
     private TypeRef? ResolveLiteralTypeRef(LiteralExpressionNode literal) => literal.Kind switch
     {
@@ -438,6 +444,16 @@ internal sealed class ExpressionTypeResolver(
         ExpressionNode callee,
         CallResolution? resolution)
     {
+        if (resolution?.ExternFunction is { } externFunction)
+        {
+            var externCall = new ResolvedExternCallInfo(
+                externFunction,
+                resolution.TypeArgumentRefs);
+            call.Semantic.ResolvedExternCall = externCall;
+            callee.Semantic.ResolvedExternCall = externCall;
+            return;
+        }
+
         if (resolution?.Function is null)
         {
             return;

@@ -6,62 +6,8 @@ namespace Cx.Compiler;
 
 internal sealed class MemberAccessLowerer(
     CBackendContext backend,
-    CLoweringContext context,
-    CLoweringScope scope,
-    Func<ExpressionNode, string> lowerText,
     Func<ExpressionNode, CExpression> lowerExpression)
 {
-    public string LowerText(MemberExpressionNode member)
-    {
-        if (TryLowerDataEnumMember(member) is { } dataEnumMember)
-        {
-            return new CExpressionEmitter().Emit(dataEnumMember);
-        }
-
-        if (TryLowerFunctionReferenceMember(member) is { } functionReference)
-        {
-            return functionReference;
-        }
-
-        var qualifiedMember = $"{ExpressionNameFacts.GetQualifiedName(member.Target)}.{member.MemberName}";
-        if (context.TryGetEnumMemberAlias(qualifiedMember, out var enumMemberName))
-        {
-            return enumMemberName;
-        }
-
-        var staticMethodKey = $"{ExpressionNameFacts.GetQualifiedName(member.Target)}.{member.MemberName}";
-        if (context.TryGetMethod(staticMethodKey, out var staticMethod))
-        {
-            return staticMethod.CName;
-        }
-
-        if (ExpressionNameFacts.GetQualifiedName(member.Target) is { } moduleTarget
-            && context.IsModuleQualifierTarget(moduleTarget))
-        {
-            return member.MemberName;
-        }
-
-        if (TryLowerInterfaceVTableTypeIdText(member) is { } interfaceTypeIdAccess)
-        {
-            return interfaceTypeIdAccess;
-        }
-
-        if (TryGetNamedTarget(member, out var targetName, out var targetType, out var targetIsImplicitReference))
-        {
-            if (TryGetTaggedUnionAccess(member, targetType, targetIsImplicitReference) is { } taggedUnionAccess)
-            {
-                return targetName.Name + taggedUnionAccess + member.MemberName;
-            }
-
-            if (targetIsImplicitReference || targetType is TypeRef.Pointer)
-            {
-                return targetName.Name + "->" + member.MemberName;
-            }
-        }
-
-        return $"{lowerText(member.Target)}.{member.MemberName}";
-    }
-
     public CExpression LowerExpression(MemberExpressionNode member)
     {
         if (TryLowerDataEnumMember(member) is { } dataEnumMember)
@@ -74,187 +20,130 @@ internal sealed class MemberAccessLowerer(
             return new CNameExpression(functionReference);
         }
 
-        var qualifiedMember = $"{ExpressionNameFacts.GetQualifiedName(member.Target)}.{member.MemberName}";
-        if (context.TryGetEnumMemberAlias(qualifiedMember, out var enumMemberName))
+        if (TryLowerCoreReference(member) is { } coreReference)
         {
-            return new CNameExpression(enumMemberName);
+            return new CNameExpression(coreReference);
         }
 
-        var staticMethodKey = $"{ExpressionNameFacts.GetQualifiedName(member.Target)}.{member.MemberName}";
-        if (context.TryGetMethod(staticMethodKey, out var staticMethod))
-        {
-            return new CNameExpression(staticMethod.CName);
-        }
-
-        if (ExpressionNameFacts.GetQualifiedName(member.Target) is { } moduleTarget
-            && context.IsModuleQualifierTarget(moduleTarget))
-        {
-            return new CNameExpression(member.MemberName);
-        }
-
-        if (TryLowerInterfaceVTableTypeIdExpression(member) is { } interfaceTypeIdAccess)
+        if (TryLowerInterfaceVTableTypeIdExpression(member) is
+            { } interfaceTypeIdAccess)
         {
             return interfaceTypeIdAccess;
         }
 
-        if (TryGetNamedTarget(member, out var targetName, out var targetType, out var targetIsImplicitReference))
+        var target = lowerExpression(member.Target);
+        return member.Semantic.CoreMemberAccess?.Kind switch
         {
-            if (TryGetTaggedUnionAccess(member, targetType, targetIsImplicitReference) is { } taggedUnionAccess)
-            {
-                return new CMemberExpression(
-                    new CNameExpression(targetName.Name),
-                    taggedUnionAccess,
-                    member.MemberName);
-            }
-
-            if (targetIsImplicitReference || targetType is TypeRef.Pointer)
-            {
-                return new CMemberExpression(new CNameExpression(targetName.Name), "->", member.MemberName);
-            }
-        }
-
-        return new CMemberExpression(lowerExpression(member.Target), ".", member.MemberName);
+            CoreMemberAccessKind.Value =>
+                new CMemberExpression(
+                    target,
+                    ".",
+                    member.MemberName),
+            CoreMemberAccessKind.Pointer =>
+                new CMemberExpression(
+                    target,
+                    "->",
+                    member.MemberName),
+            CoreMemberAccessKind.TaggedUnionValue =>
+                LowerTaggedUnion(member, target, pointer: false),
+            CoreMemberAccessKind.TaggedUnionPointer =>
+                LowerTaggedUnion(member, target, pointer: true),
+            _ => throw CEmissionGuards.MissingCoreMemberAccess(member),
+        };
     }
 
     private CExpression? TryLowerDataEnumMember(MemberExpressionNode member)
     {
-        var targetType = ResolveExpressionTypeRef(member.Target);
-        if (targetType is null
-            || !context.TryGetDataEnum(targetType, out var enumNode)
-            || enumNode.DataFields?.Any(field => field.Name == member.MemberName) != true)
+        if (member.Semantic.MemberReference is not
+            CoreMemberReferenceInfo.DataEnumField reference)
         {
             return null;
         }
 
         var index = lowerExpression(member.Target);
-        if (TypeRefFacts.TryGetPointerElement(targetType, out _))
+        if (member.Semantic.CoreMemberAccess?.Kind is
+            CoreMemberAccessKind.DataEnumPointer)
         {
             index = new CUnaryExpression("*", index);
         }
 
         return new CMemberExpression(
             new CIndexExpression(
-                new CNameExpression(enumNode.Name + "_data"),
+                new CNameExpression(reference.Enum.Name + "_data"),
                 index),
             ".",
-            member.MemberName);
-    }
-
-    private string? TryLowerInterfaceVTableTypeIdText(MemberExpressionNode member)
-    {
-        if (!IsInterfaceVTableTypeIdAccess(member, out var interfaceValue, out var access))
-        {
-            return null;
-        }
-
-        return $"{lowerText(interfaceValue)}{access}vtable->type_id";
+            reference.Field.Name);
     }
 
     private CExpression? TryLowerInterfaceVTableTypeIdExpression(MemberExpressionNode member)
     {
-        if (!IsInterfaceVTableTypeIdAccess(member, out var interfaceValue, out var access))
+        var access = member.Semantic.CoreMemberAccess?.Kind switch
+        {
+            CoreMemberAccessKind.InterfaceTypeIdValue => ".",
+            CoreMemberAccessKind.InterfaceTypeIdPointer => "->",
+            _ => null,
+        };
+        if (access is null
+            || member.Target is not MemberExpressionNode vtableAccess)
         {
             return null;
         }
 
         return new CMemberExpression(
-            new CMemberExpression(lowerExpression(interfaceValue), access, "vtable"),
+            new CMemberExpression(
+                lowerExpression(vtableAccess.Target),
+                access,
+                "vtable"),
             "->",
             "type_id");
     }
 
-    private bool IsInterfaceVTableTypeIdAccess(
+    private static CExpression LowerTaggedUnion(
         MemberExpressionNode member,
-        out ExpressionNode interfaceValue,
-        out string access)
+        CExpression target,
+        bool pointer)
     {
-        interfaceValue = null!;
-        access = ".";
-        if (member is not { MemberName: "type_id", Target: MemberExpressionNode { MemberName: "vtable" } vtableAccess })
+        if (member.Semantic.MemberReference is not
+            CoreMemberReferenceInfo.TaggedUnionVariant reference)
         {
-            return false;
+            throw CEmissionGuards.MissingCoreMemberAccess(member);
         }
 
-        var targetType = ResolveExpressionTypeRef(vtableAccess.Target);
-        if (targetType is null)
+        if (reference.Union.IsRaw)
         {
-            return false;
+            return new CMemberExpression(
+                target,
+                pointer ? "->" : ".",
+                member.MemberName);
         }
 
-        var interfaceType = targetType is TypeRef.Pointer pointer ? pointer.Element : targetType;
-        var interfaceName = TypeRefFacts.GetBaseName(interfaceType);
-        if (interfaceName is null || !context.TryGetInterface(interfaceName, out _))
-        {
-            return false;
-        }
-
-        interfaceValue = vtableAccess.Target;
-        access = IsPointerLike(vtableAccess.Target, targetType) ? "->" : ".";
-        return true;
-    }
-
-    private bool IsPointerLike(ExpressionNode expression, TypeRef type) =>
-        type is TypeRef.Pointer
-        || expression is NameExpressionNode name && scope.IsImplicitReferenceLocal(name.Name);
-
-    private TypeRef? ResolveExpressionTypeRef(ExpressionNode expression)
-    {
-        if (expression.Semantic.Type is { } semanticType)
-        {
-            return semanticType;
-        }
-
-        return expression is NameExpressionNode name && scope.TryGetVariableTypeRef(name.Name, out var type)
-            ? type
-            : null;
-    }
-
-    private bool TryGetNamedTarget(
-        MemberExpressionNode member,
-        out NameExpressionNode targetName,
-        out TypeRef targetType,
-        out bool targetIsImplicitReference)
-    {
-        if (member.Target is NameExpressionNode name
-            && scope.TryGetVariableTypeRef(name.Name, out targetType!))
-        {
-            targetName = name;
-            targetIsImplicitReference = scope.IsImplicitReferenceLocal(name.Name);
-            return true;
-        }
-
-        targetName = null!;
-        targetType = new TypeRef.Unknown();
-        targetIsImplicitReference = false;
-        return false;
-    }
-
-    private string? TryGetTaggedUnionAccess(
-        MemberExpressionNode member,
-        TypeRef targetType,
-        bool targetIsImplicitReference)
-    {
-        var isPointer = targetType is TypeRef.Pointer;
-        if (!context.TryGetTaggedUnion(targetType, out var taggedUnion)
-            || !taggedUnion.Variants.Any(variant => variant.Name == member.MemberName))
-        {
-            return null;
-        }
-
-        if (taggedUnion.IsRaw)
-        {
-            return targetIsImplicitReference || isPointer
-                ? "->"
-                : ".";
-        }
-
-        return targetIsImplicitReference || isPointer
-            ? "->as."
-            : ".as.";
+        return new CMemberExpression(
+            target,
+            pointer ? "->as." : ".as.",
+            member.MemberName);
     }
 
     private string? TryLowerFunctionReferenceMember(MemberExpressionNode member) =>
-        member.Semantic is { Symbol: { Kind: SymbolKind.Function } symbol, ResolvedCall.IsInstance: false }
-            ? backend.NameMangler.SymbolName(symbol)
+        member.Semantic is
+            {
+                CoreDirectCall:
+                {
+                    IsInstance: false,
+                } directCall,
+            }
+            ? backend.NameMangler.FunctionName(directCall.Function)
             : null;
+
+    private static string? TryLowerCoreReference(
+        MemberExpressionNode member) =>
+        member.Semantic.MemberReference switch
+        {
+            CoreMemberReferenceInfo.EnumMember reference =>
+                CEnumNames.Member(
+                    reference.Enum.Name,
+                    reference.Member.Name),
+            CoreMemberReferenceInfo.ModuleSymbol reference =>
+                reference.Symbol.LinkName,
+            _ => null,
+        };
 }

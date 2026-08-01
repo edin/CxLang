@@ -22,7 +22,13 @@ public sealed class CallResolverTests
                 return add(1, 2);
             }
             """);
-        var call = GetReturnCall(program);
+        var call = Assert.IsType<CallExpressionNode>(
+            program.Functions
+                .Single(function => function.Name == "main")
+                .Body
+                .OfType<ReturnStatement>()
+                .Single()
+                .Expression);
         var resolver = CreateResolver(program);
 
         var resolved = resolver.ResolveTypeRefs(call.Callee, [], call.Arguments, new TypeEnvironment());
@@ -150,6 +156,74 @@ public sealed class CallResolverTests
         Assert.Equal("Vec", resolved.Function.OwnerTypeNode?.ToSourceText());
         Assert.False(resolved.IsInstance);
         Assert.Equal(["int"], TypeArgumentTexts(resolved.TypeArgumentRefs));
+    }
+
+    [Fact]
+    public void Resolve_ResolvesTypeQualifiedExplicitReceiverMethodAsDirectCall()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            struct Vector {
+                x: double;
+
+                fn length(value: Vector*) -> double {
+                    return value.x;
+                }
+            }
+
+            fn main() -> double {
+                let value: Vector = Vector { x: 1.0 };
+                return Vector.length(&value);
+            }
+            """);
+        var call = Assert.IsType<CallExpressionNode>(
+            program.Functions
+                .Single(function => function.Name == "main")
+                .Body
+                .OfType<ReturnStatement>()
+                .Single()
+                .Expression);
+        var resolver = CreateResolver(program);
+        var variables = TypeEnvironment(("value", "Vector"), program);
+
+        var resolved = resolver.ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            variables);
+
+        Assert.NotNull(resolved);
+        Assert.Equal("length", resolved.Function?.Name);
+        Assert.Equal(["Vector*"], resolved.ParameterTypes
+            .Select(TypeRefFormatter.ToCxString)
+            .ToArray());
+        Assert.False(resolved.IsInstance);
+    }
+
+    [Fact]
+    public void Resolve_PreservesExternFunctionIdentity()
+    {
+        var program = ParseAndResolveTypes(
+            """
+            extern fn native_write(value: int) -> int;
+
+            fn main() -> int {
+                return native_write(10);
+            }
+            """);
+        var call = GetReturnCall(program);
+        var resolver = CreateResolver(program);
+
+        var resolved = resolver.ResolveTypeRefs(
+            call.Callee,
+            [],
+            call.Arguments,
+            new TypeEnvironment());
+
+        Assert.NotNull(resolved);
+        Assert.Null(resolved.Function);
+        Assert.Same(program.ExternFunctions.Single(), resolved.ExternFunction);
+        Assert.Equal("int", TypeRefFormatter.ToCxString(resolved.ReturnType));
     }
 
     [Fact]

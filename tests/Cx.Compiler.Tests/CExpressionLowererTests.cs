@@ -157,8 +157,6 @@ public sealed class CExpressionLowererTests
                 ? type
                 : typeNode?.ToTypeRef(new TypeRefParser(new ProgramNode(TestLocation(), [])));
 
-        public CExpression? TryWrapAssignmentValue(AssignmentExpressionNode assignment, CExpression value) => null;
-
         public CExpression? TryLowerBinaryOperator(BinaryExpressionNode binary) => null;
 
         public CExpression? TryLowerMemberExpression(MemberExpressionNode member) => memberOverride;

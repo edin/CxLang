@@ -12,6 +12,8 @@ internal sealed record CallResolution(
 {
     public IReadOnlyList<TypeRef> TypeArgumentRefs { get; init; } = [];
 
+    public ExternFunctionNode? ExternFunction { get; init; }
+
     public IReadOnlyList<FunctionNode> AmbiguousFunctions { get; init; } = [];
 
     public bool IsAmbiguous => AmbiguousFunctions.Count > 0;
@@ -52,6 +54,12 @@ internal sealed class CallResolver(
     private readonly Dictionary<string, StructNode> _structsByName = program.Structs
         .GroupBy(node => node.Name, StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _moduleNamesByQualifier = program.Imports
+        .GroupBy(import => import.Alias ?? import.ModuleName, StringComparer.Ordinal)
+        .ToDictionary(
+            group => group.Key,
+            group => group.First().ModuleName,
+            StringComparer.Ordinal);
 
     public CallResolution? ResolveTypeRefs(
         ExpressionNode callee,
@@ -244,6 +252,43 @@ internal sealed class CallResolver(
 
         if (!variables.TryGet(targetName, out var targetType))
         {
+            var qualifiedName = $"{targetName}.{member.MemberName}";
+            if (ResolveBestFunction(
+                    qualifiedName,
+                    FreeFunctionCandidates(qualifiedName),
+                    typeArguments,
+                    arguments,
+                    variables,
+                    skipSelf: false,
+                    isInstance: false) is { } qualifiedFunctionResolution)
+            {
+                return qualifiedFunctionResolution;
+            }
+
+            if (ResolveExternFunction(
+                    qualifiedName,
+                    typeArguments,
+                    arguments,
+                    variables) is { } qualifiedExternResolution)
+            {
+                return qualifiedExternResolution;
+            }
+
+            if (_moduleNamesByQualifier.TryGetValue(
+                    targetName,
+                    out var moduleName)
+                && ResolveBestFunction(
+                    qualifiedName,
+                    ModuleFunctionCandidates(moduleName, member.MemberName),
+                    typeArguments,
+                    arguments,
+                    variables,
+                    skipSelf: false,
+                    isInstance: false) is { } moduleResolution)
+            {
+                return moduleResolution;
+            }
+
             if (ResolveStaticRequirementCall(targetName, member.MemberName) is { } requirementCall)
             {
                 return requirementCall;
@@ -277,6 +322,22 @@ internal sealed class CallResolver(
             if (staticResolution is not null)
             {
                 return staticResolution;
+            }
+
+            var explicitReceiverResolution = ResolveBestFunction(
+                $"{targetName}.{member.MemberName}",
+                InstanceFunctionCandidates(
+                    staticCallTypes.ReceiverType,
+                    member.MemberName),
+                staticCallTypes.MethodTypeArguments,
+                arguments,
+                variables,
+                skipSelf: false,
+                isInstance: false,
+                staticCallTypes.ReceiverTypeArguments);
+            if (explicitReceiverResolution is not null)
+            {
+                return explicitReceiverResolution;
             }
 
             var exposedStaticResolution = ResolveBestMethod(
@@ -580,7 +641,10 @@ internal sealed class CallResolver(
             function.ReturnTypeNode,
             resolvedArguments,
             skipSelf: false,
-            isInstance: false);
+            isInstance: false) with
+        {
+            ExternFunction = function,
+        };
     }
 
     private CallResolution? ResolveStaticRequirementCall(string targetName, string memberName)
@@ -1113,6 +1177,18 @@ internal sealed class CallResolver(
             Name = name,
             Kind = FunctionKind.Static,
             ReceiverType = new TypeRef.Named(ownerType, []),
+        })
+            .Select(function => function.Declaration)
+            .ToList();
+
+    private IReadOnlyList<FunctionNode> ModuleFunctionCandidates(
+        string moduleName,
+        string name) =>
+        _functionCatalog.Query(new FunctionQuery
+        {
+            Name = name,
+            Kind = FunctionKind.Free,
+            DeclaredInModule = moduleName,
         })
             .Select(function => function.Declaration)
             .ToList();

@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 using Cx.Compiler.Semantic;
 
@@ -6,6 +7,11 @@ namespace Cx.Compiler.C;
 
 internal static class CEmissionGuards
 {
+    public static InvalidOperationException UnvalidatedCoreProgram() =>
+        new(
+            "Internal C emission error: C lowering requires a validated "
+            + "Core CX program.");
+
     public static InvalidOperationException UnsupportedStatement(StatementNode statement) =>
         new($"Internal C emission error: unsupported CX statement '{statement.GetType().Name}' at {statement.Location} reached C statement lowering.");
 
@@ -49,6 +55,26 @@ internal static class CEmissionGuards
 
     public static InvalidOperationException UnsupportedCTypeRef(TypeRef type) =>
         new($"Internal C emission error: unsupported TypeRef '{type.GetType().Name}' reached C type lowering.");
+
+    public static InvalidOperationException MissingCoreFunctionInfo(
+        FunctionNode function) =>
+        new(
+            "Internal C emission error: function reached C lowering without "
+            + $"Core CX type facts: '{function.Name}' at {function.Location}.");
+
+    public static InvalidOperationException MissingCoreSymbolInfo(
+        SyntaxNode declaration,
+        string name) =>
+        new(
+            "Internal C emission error: declaration reached C lowering "
+            + $"without a Core CX link name: '{name}' at {declaration.Location}.");
+
+    public static InvalidOperationException MissingCoreMemberAccess(
+        MemberExpressionNode member) =>
+        new(
+            "Internal C emission error: member expression reached C lowering "
+            + "without Core CX access facts: "
+            + $"'{DiagnosticText.Summarize(member.ToSourceText())}' at {member.Location}.");
 
     private static string TypeTextOrFallback(TypeNode? typeNode, string fallback) =>
         typeNode is null ? fallback : TypeText(typeNode);

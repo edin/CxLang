@@ -5,8 +5,6 @@ namespace Cx.Compiler.C;
 
 internal interface ICExpressionLoweringContext
 {
-    TypeRef? SelfTypeRef { get; }
-
     CExpression LowerExpression(ExpressionNode expression);
 
     CExpression LowerNameExpression(NameExpressionNode name);
@@ -16,8 +14,6 @@ internal interface ICExpressionLoweringContext
     CTypeRef LowerTypeRef(TypeRef type);
 
     TypeRef? ResolveType(TypeNode? typeNode);
-
-    CExpression? TryWrapAssignmentValue(AssignmentExpressionNode assignment, CExpression value);
 
     CExpression? TryLowerBinaryOperator(BinaryExpressionNode binary);
 

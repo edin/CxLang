@@ -1,11 +1,29 @@
 using Cx.Compiler.Source;
+using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
+using Cx.Compiler.C;
 
 namespace Cx.Compiler.Tests;
 
 public sealed class CEmitterInvariantTests
 {
+    [Fact]
+    public void EmissionPipeline_RejectsProgramWithoutCoreValidation()
+    {
+        var program = new ProgramNode(
+            Location.Synthetic("<unvalidated-core-cx-test>"),
+            []);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new CEmissionPipeline(new CompilationProfiler())
+                .Emit(program, []));
+
+        Assert.Contains(
+            "requires a validated Core CX program",
+            exception.Message);
+    }
+
     [Fact]
     public void Emit_ThrowsWhenErrorExpressionReachesCEmission()
     {
@@ -29,6 +47,7 @@ public sealed class CEmitterInvariantTests
                     ReturnTypeNode: ResolvedTypeNode(location, "void")),
             ]);
 
+        CoreCxFunctionAnnotationPass.Apply(program);
         var exception = Assert.Throws<InvalidOperationException>(() => new CEmitter().Emit(program));
         Assert.Contains("Parser error expression reached C emission after lowering", exception.Message);
     }
@@ -59,6 +78,7 @@ public sealed class CEmitterInvariantTests
                     ReturnTypeNode: ResolvedTypeNode(location, "void")),
             ]);
 
+        CoreCxFunctionAnnotationPass.Apply(program);
         var exception = Assert.Throws<InvalidOperationException>(() => new CEmitter().Emit(program));
         Assert.Contains("match at", exception.Message);
         Assert.Contains("reached C statement lowering", exception.Message);

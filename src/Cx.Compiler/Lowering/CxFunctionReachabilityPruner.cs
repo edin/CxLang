@@ -70,6 +70,14 @@ internal static class CxFunctionReachabilityPruner
             EnqueueName(name);
         }
 
+        // Some structural lowerers run after the initial semantic pass because
+        // they need inferred types. Preserve the library methods those lowerers
+        // will introduce before early reachability pruning removes them.
+        foreach (var name in LaterLoweringMethodNames(program))
+        {
+            EnqueueName(name);
+        }
+
         foreach (var global in program.GlobalVariables)
         {
             EnqueueExpressionDependencies(global.Initializer, EnqueueName);
@@ -122,6 +130,16 @@ internal static class CxFunctionReachabilityPruner
             .Concat(program.TypeAdapters.SelectMany(adapter => adapter.ExposedMethods)
                 .SelectMany(expose => new[] { expose.SourceName, expose.ExposedName }))
             .Distinct(StringComparer.Ordinal);
+
+    private static IEnumerable<string> LaterLoweringMethodNames(ProgramNode program)
+    {
+        if (ExecutableAstTraversal
+            .DescendantsAndSelf<TryExpressionNode>(program)
+            .Any(attempt => attempt.Fallback is TryExpressionNode))
+        {
+            yield return "is_ok";
+        }
+    }
 
     private static void EnqueueExpressionDependencies(
         ExpressionNode? expression,

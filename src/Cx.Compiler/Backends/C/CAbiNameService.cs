@@ -1,5 +1,4 @@
 using Cx.Compiler.Semantic;
-using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.C;
@@ -8,14 +7,11 @@ internal sealed class CAbiNameService(IReadOnlyList<TypeAdapterNode> typeAdapter
 {
     private readonly CTypeRefLowerer _typeRefLowerer = new(typeAdapters);
 
-    public string LowerType(TypeRef type, TypeRef? selfType = null) =>
-        CTypeLowerer.LowerType(type, typeAdapters, selfType);
+    public string LowerType(TypeRef type) =>
+        CTypeLowerer.LowerType(type, typeAdapters);
 
-    public string LowerType(TypeSyntaxNode syntax) =>
-        CTypeLowerer.LowerType(syntax.ToUnresolvedTypeRef(), typeAdapters);
-
-    public CTypeRef LowerTypeRef(TypeRef type, TypeRef? selfType = null) =>
-        _typeRefLowerer.Lower(type, selfType);
+    public CTypeRef LowerTypeRef(TypeRef type) =>
+        _typeRefLowerer.Lower(type);
 
     public string SanitizeTypeName(string type) =>
         CTypeLowerer.SanitizeTypeName(type);

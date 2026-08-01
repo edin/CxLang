@@ -154,6 +154,10 @@ internal static class GenericStructSpecializer
             [],
             definition.Attributes);
         specialized.Semantic.ModuleName = definition.Semantic.ModuleName;
+        specialized.Semantic.GenericStructSpecialization =
+            new GenericStructSpecializationInfo(
+                definition,
+                arguments.ToList());
         return specialized;
     }
 

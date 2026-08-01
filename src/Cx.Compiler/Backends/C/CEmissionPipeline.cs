@@ -12,6 +12,11 @@ internal sealed class CEmissionPipeline(
         ProgramNode program,
         IReadOnlyList<Diagnostic> diagnostics)
     {
+        if (!program.Semantic.IsCoreCxValidated)
+        {
+            throw CEmissionGuards.UnvalidatedCoreProgram();
+        }
+
         var translationUnit = profiler.Measure(
             "C AST lowering",
             () => new CxToCTranslationUnitLowerer(

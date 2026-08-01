@@ -17,15 +17,6 @@ public sealed class CTypeLowererTests
     }
 
     [Fact]
-    public void LowerType_SubstitutesSelfThroughSharedTypeRules()
-    {
-        Assert.Equal("Vec_int*", CTypeLowerer.LowerType(
-            TypeRefFromText("Self*"),
-            [],
-            TypeRefFromText("Vec<int>")));
-    }
-
-    [Fact]
     public void ResolveAdapterStorageType_SubstitutesGenericBaseType()
     {
         var adapter = new TypeAdapterNode(
@@ -52,15 +43,6 @@ public sealed class CTypeLowererTests
         ]));
 
         Assert.Equal("Box_Vec_int*", CTypeLowerer.LowerType(type, []));
-    }
-
-    [Fact]
-    public void LowerType_SubstitutesStructuredSelf()
-    {
-        var type = new TypeRef.Pointer(new TypeRef.Named("Self", []));
-        var self = new TypeRef.Named("Vec", [new TypeRef.Named("int", [])]);
-
-        Assert.Equal("Vec_int*", CTypeLowerer.LowerType(type, [], self));
     }
 
     [Fact]
@@ -102,22 +84,6 @@ public sealed class CTypeLowererTests
         ]);
 
         Assert.Equal("Maybe_usize", CTypeLowerer.LowerType(type, []));
-    }
-
-    [Fact]
-    public void ReceiverTypeInfo_DerivesCompatibilityNamesFromTypeRef()
-    {
-        var type = new TypeRef.Pointer(new TypeRef.Pointer(
-            new TypeRef.Named("Vec", [TypeRef.Int])));
-
-        var info = ReceiverTypeInfo.FromTypeRef(type);
-
-        Assert.Same(type, info.TypeRef);
-        Assert.True(info.IsPointer);
-        Assert.Equal("Vec<int>*", info.ReceiverType);
-        Assert.Equal("Vec<int>", info.NormalizedType);
-        Assert.Equal("Vec", info.GenericBaseName);
-        Assert.Equal([TypeRef.Int], info.TypeArgumentRefs);
     }
 
     private static TypeNode Type(string type) =>

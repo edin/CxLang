@@ -5,7 +5,7 @@ namespace Cx.Compiler;
 
 internal sealed class CExpressionLoweringPipeline(
     ICExpressionLoweringContext context,
-    CallExpressionLowerer callExpressionLowerer)
+    CallLowerer callLowerer)
 {
     private readonly CExpressionLowerer _simpleLowerer = new(context);
 
@@ -26,8 +26,8 @@ internal sealed class CExpressionLoweringPipeline(
             or ScalarRangeExpressionNode
             or IndexExpressionNode => _simpleLowerer.LowerSimple(expression),
         FunctionExpressionNode functionExpression => throw CEmissionGuards.UnsupportedCExpressionLowering(functionExpression),
-        CallExpressionNode call => callExpressionLowerer.TryLower(call) ?? throw CEmissionGuards.UnsupportedCExpressionLowering(call),
-        GenericCallExpressionNode call => callExpressionLowerer.TryLower(call) ?? throw CEmissionGuards.UnsupportedCExpressionLowering(call),
+        CallExpressionNode call => callLowerer.TryLowerExpression(call) ?? throw CEmissionGuards.UnsupportedCExpressionLowering(call),
+        GenericCallExpressionNode call => throw CEmissionGuards.UnsupportedCExpressionLowering(call),
         ErrorExpressionNode error => throw CEmissionGuards.ErrorExpressionAfterLowering(error),
         _ => throw CEmissionGuards.UnsupportedCExpressionLowering(expression),
     };

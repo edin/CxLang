@@ -35,8 +35,6 @@ internal sealed class COperatorExpressionLowerer(ICExpressionLoweringContext con
     public CExpression LowerAssignment(AssignmentExpressionNode assignment)
     {
         var value = context.LowerExpression(assignment.Value);
-        value = context.TryWrapAssignmentValue(assignment, value) ?? value;
-
         var target = context.LowerExpression(assignment.Target);
 
         return new CAssignmentExpression(target, assignment.Operator.ToSourceText(), value);

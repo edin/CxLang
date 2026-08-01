@@ -8,7 +8,7 @@ internal sealed class CLocalDeclarationLowerer(CBackendContext backend, Imported
     public CLocalDeclarationStatement LowerLet(LetStatement let)
     {
         return new CLocalDeclarationStatement(
-            CDeclarationLowerer.LowerVariable(backend, let.TypeNode, let.Name, let.IsConst, nameLowerer.SelfTypeRef),
+            CDeclarationLowerer.LowerVariable(backend, let.TypeNode, let.Name, let.IsConst),
             LowerInitializer(let.TypeNode, let.Name, let.Initializer));
     }
 
@@ -32,8 +32,7 @@ internal sealed class CLocalDeclarationLowerer(CBackendContext backend, Imported
             backend,
             declaration.TypeNode,
             declaration.Name,
-            declaration.IsConst,
-            nameLowerer.SelfTypeRef);
+            declaration.IsConst);
 
     private CExpression? LowerInitializer(
         TypeNode? typeNode,

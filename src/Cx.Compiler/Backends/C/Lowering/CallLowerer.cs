@@ -5,36 +5,57 @@ using Cx.Compiler.Syntax.Nodes;
 namespace Cx.Compiler;
 
 internal sealed class CallLowerer(
-    CLoweringContext context,
-    GenericCallResolver genericCallResolver,
-    ResolvedCallLowerer resolvedCallLowerer,
-    CFunctionReferenceResolver functionReferences,
+    CoreDirectCallLowerer directCallLowerer,
     MemberCallLowerer memberCallLowerer,
     StructValueBuilder structValueBuilder,
     TaggedUnionValueBuilder taggedUnionValueBuilder,
-    Func<NameExpressionNode, string> lowerFunctionReferenceName,
     Func<ExpressionNode, CExpression> lowerExpression)
 {
     public CExpression? TryLowerExpression(CallExpressionNode call)
     {
-        if (resolvedCallLowerer.TryLowerStatic(call.Semantic.ResolvedCall, call.Arguments) is { } resolvedCall)
+        if (call.Semantic.CoreExternCall is { } externCall)
+        {
+            return new CCallExpression(
+                new CFunctionName(externCall.LinkName),
+                call.Arguments.Select(lowerExpression).ToList());
+        }
+
+        if (directCallLowerer.TryLowerStatic(
+                call.Semantic.CoreDirectCall,
+                call.Arguments) is { } resolvedCall)
         {
             return resolvedCall;
         }
 
+        if (call.Semantic.ConstructorCall is
+            CoreConstructorCallInfo.Struct structConstructor)
+        {
+            return structValueBuilder.BuildStructConstructorExpression(
+                structConstructor,
+                call.Arguments);
+        }
+
+        if (call.Semantic.ConstructorCall is
+            CoreConstructorCallInfo.TaggedUnion taggedUnionConstructor)
+        {
+            return taggedUnionValueBuilder.BuildConstructorExpression(
+                taggedUnionConstructor,
+                structValueBuilder.BuildPayloadExpression(
+                    taggedUnionConstructor,
+                    call.Arguments));
+        }
+
         if (call.Callee is MemberExpressionNode member)
         {
-            if (TryLowerTaggedUnionConstructorExpression(member, call.Arguments) is { } taggedUnionConstructor)
-            {
-                return taggedUnionConstructor;
-            }
-
-            if (memberCallLowerer.TryLower(member, call.Arguments) is { } memberCall)
+            if (memberCallLowerer.TryLower(
+                    member,
+                    call.Arguments,
+                    call.Semantic.CoreDirectCall) is { } memberCall)
             {
                 return memberCall;
             }
 
-            if (IsFunctionValue(member))
+            if (call.Semantic.CoreIndirectCall is not null)
             {
                 return new CExpressionCallExpression(
                     lowerExpression(member),
@@ -44,60 +65,11 @@ internal sealed class CallLowerer(
             return null;
         }
 
-        if (call.Callee is NameExpressionNode name)
-        {
-            if (context.TryGetStruct(name.Name, out var structNode))
-            {
-                return structValueBuilder.BuildStructConstructorExpression(structNode, call.Arguments);
-            }
-
-            if (context.IsTaggedUnion(name.Name))
-            {
-                return null;
-            }
-
-            var genericCall = genericCallResolver.FindInferredCall(null, name.Name, call.Arguments, skipSelf: false);
-            if (genericCall is not null)
-            {
-                return new CCallExpression(
-                    functionReferences.Resolve(genericCall.OwnerTypeRef, genericCall.Name, genericCall.CName),
-                    call.Arguments.Select(lowerExpression).ToList());
-            }
-
-            return new CCallExpression(
-                new CFunctionName(lowerFunctionReferenceName(name)),
-                call.Arguments.Select(lowerExpression).ToList());
-        }
-
-        return IsFunctionValue(call.Callee)
+        return call.Semantic.CoreIndirectCall is not null
             ? new CExpressionCallExpression(
                 lowerExpression(call.Callee),
                 call.Arguments.Select(lowerExpression).ToList())
             : null;
     }
 
-    private static bool IsFunctionValue(ExpressionNode expression) =>
-        expression.Semantic.Type is { } type
-        && TypeRefFacts.UnwrapAlias(type) is TypeRef.Function;
-
-    private CExpression? TryLowerTaggedUnionConstructorExpression(
-        MemberExpressionNode member,
-        IReadOnlyList<ExpressionNode> arguments)
-    {
-        if (ExpressionNameFacts.GetQualifiedName(member.Target) is not { } targetName)
-        {
-            return null;
-        }
-
-        return taggedUnionValueBuilder.TryBuildConstructorExpression(
-            targetName,
-            member.MemberName,
-            arguments,
-            LowerPayloadConstructorExpression);
-    }
-
-    private CExpression LowerPayloadConstructorExpression(
-        TypeRef payloadType,
-        IReadOnlyList<ExpressionNode> arguments) =>
-        structValueBuilder.BuildPayloadExpression(payloadType, arguments);
 }

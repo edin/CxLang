@@ -446,8 +446,8 @@ fn main() -> int {
     scene.render(&bitmap);
 
     let t2: clock_t = clock();
-    let time: clock_t = t2 - t1;
-    let time_ms: int = (int)((((double)time) / CLOCKS_PER_SEC) * 1000);
+    let time: double = (double)t2 - (double)t1;
+    let time_ms: int = (int)((time / (double)CLOCKS_PER_SEC) * 1000);
 
     printf("Completed in %d ms\n", time_ms);
     bitmap.save("cx-raytracer.bmp");

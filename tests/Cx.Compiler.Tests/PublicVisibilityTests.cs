@@ -49,6 +49,34 @@ public sealed class PublicVisibilityTests
     }
 
     [Fact]
+    public void CompileToC_LowersQualifiedExternCallFromSemanticIdentity()
+    {
+        var result = CompilerTestHelpers.Compile(
+        [
+            CompilerTestHelpers.Source(
+                """
+                module app.main;
+                import native.api as native;
+
+                fn main() -> int {
+                    return native.write(10);
+                }
+                """),
+            CompilerTestHelpers.Source(
+                """
+                module native.api;
+
+                public extern fn write(value: int) -> int;
+                """,
+                "native.cx"),
+        ]);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("return write(10);", result.Output);
+        Assert.DoesNotContain("native.write", result.Output);
+    }
+
+    [Fact]
     public void CompileToC_RejectsPrivateFunctionFromAnotherModule()
     {
         var result = CompilerTestHelpers.Compile(
@@ -238,6 +266,34 @@ public sealed class PublicVisibilityTests
         ]);
 
         CompilerTestHelpers.AssertDiagnosticContains(result, "symbol 'values.answer'", "private", "lib.values");
+    }
+
+    [Fact]
+    public void CompileToC_AllowsPublicGlobalFromAnotherModule()
+    {
+        var result = CompilerTestHelpers.Compile(
+        [
+            CompilerTestHelpers.Source(
+                """
+                module app.main;
+                import lib.values as values;
+
+                fn main() -> int {
+                    return values.answer;
+                }
+                """),
+            CompilerTestHelpers.Source(
+                """
+                module lib.values;
+                public const answer: int = 42;
+                """,
+                "values.cx"),
+        ]);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("const int answer = 42;", result.Output);
+        Assert.Contains("return answer;", result.Output);
+        Assert.DoesNotContain("values.answer", result.Output);
     }
 
     [Fact]

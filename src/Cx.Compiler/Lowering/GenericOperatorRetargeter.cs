@@ -24,6 +24,11 @@ internal static class GenericOperatorRetargeter
         FunctionCatalog functionCatalog)
     {
         var variables = BuildVariables(program, function);
+        var substitutions = FunctionSubstitutions(function);
+        var expressionResolver = new ExpressionTypeResolver(
+            program,
+            functionCatalog: functionCatalog);
+        var typeSystem = new TypeSystem(program);
         TypeRef? ResolveExpression(ExpressionNode expression, TypeEnvironment environment)
         {
             if (expression is NameExpressionNode name
@@ -32,11 +37,40 @@ internal static class GenericOperatorRetargeter
                 return variableType;
             }
 
-            return expression.Semantic.Type
-                ?? new ExpressionTypeResolver(
-                    program,
-                    functionCatalog: functionCatalog)
-                    .ResolveTypeRef(expression, environment);
+            if (expression.Semantic.Type is { } semanticType)
+            {
+                return TypeRefRewriter.Substitute(
+                    semanticType,
+                    substitutions);
+            }
+
+            if (expression is MemberExpressionNode member
+                && ResolveExpression(member.Target, environment) is { } targetType)
+            {
+                return typeSystem
+                    .GetFields(TypeRefFacts.StripPointersAndAliases(targetType))
+                    .FirstOrDefault(field =>
+                        string.Equals(
+                            field.Name,
+                            member.MemberName,
+                            StringComparison.Ordinal))
+                    ?.Type;
+            }
+
+            if (expression is IndexExpressionNode index
+                && ResolveExpression(index.Target, environment) is { } indexedType)
+            {
+                return TypeRefFacts.UnwrapAlias(indexedType) switch
+                {
+                    TypeRef.Pointer pointer => pointer.Element,
+                    TypeRef.FixedArray array => array.Element,
+                    _ => null,
+                };
+            }
+
+            return expressionResolver.ResolveTypeRef(
+                expression,
+                environment);
         }
 
         var resolver = new CallResolver(
@@ -59,6 +93,22 @@ internal static class GenericOperatorRetargeter
 
             binary.Semantic.Type = resolution.ResultType;
         }
+    }
+
+    private static IReadOnlyDictionary<string, TypeRef> FunctionSubstitutions(
+        FunctionNode function)
+    {
+        if (function.Semantic.GenericFunctionSpecialization is not { } specialization)
+        {
+            return new Dictionary<string, TypeRef>(StringComparer.Ordinal);
+        }
+
+        return specialization.Definition.TypeParameters
+            .Zip(specialization.TypeArguments)
+            .ToDictionary(
+                pair => pair.First,
+                pair => pair.Second,
+                StringComparer.Ordinal);
     }
 
     private static TypeEnvironment BuildVariables(

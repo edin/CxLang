@@ -98,6 +98,7 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         type.Symbol switch
         {
             TypeSymbol.Struct structSymbol => ResolveFields(structSymbol.Declaration, type),
+            TypeSymbol.Adapter adapterSymbol => ResolveAdapterFields(adapterSymbol.Declaration, type),
             _ => [],
         };
 
@@ -126,22 +127,47 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
             })
             .ToList();
 
+    private IReadOnlyList<ResolvedField> ResolveAdapterFields(
+        TypeAdapterNode declaration,
+        ResolvedType type)
+    {
+        var baseType = ResolveAdapterBaseType(declaration, type.Substitutions);
+        var baseResolvedType = new TypeResolver(program).ResolveDefinition(baseType);
+        return GetFields(baseResolvedType);
+    }
+
     private IReadOnlyList<ResolvedMethod> ResolveStructMethods(
         StructNode declaration,
         ResolvedType type)
     {
-        var methods = declaration.Methods
+        var specialization = declaration.Semantic.GenericStructSpecialization;
+        var methodOwner = specialization?.Definition ?? declaration;
+        var methodType = specialization is null
+            ? type
+            : type with
+            {
+                Substitutions = methodOwner.TypeParameters
+                    .Zip(specialization.TypeArguments)
+                    .ToDictionary(
+                        pair => pair.First,
+                        pair => pair.Second,
+                        StringComparer.Ordinal),
+            };
+        var methods = methodOwner.Methods
             .Concat(program.Extensions
                 .Where(extension =>
-                    HasOwnerName(extension.TargetTypeNode, declaration.Name)
-                    && ExtensionConstraintsSatisfied(extension, type))
+                    HasOwnerName(extension.TargetTypeNode, methodOwner.Name)
+                    && ExtensionConstraintsSatisfied(extension, methodType))
                 .SelectMany(extension => extension.Methods))
             .Concat(program.Functions.Where(function =>
-                HasOwnerName(function.OwnerTypeNode, declaration.Name)))
+                HasOwnerName(function.OwnerTypeNode, methodOwner.Name)))
             .Distinct((IEqualityComparer<FunctionNode>)ReferenceEqualityComparer.Instance)
-            .Where(method => FunctionConstraintsSatisfied(method, type));
+            .Where(method => FunctionConstraintsSatisfied(method, methodType));
         return methods
-            .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
+            .Select(method => ResolveMethod(
+                method,
+                methodType.Type,
+                methodType.Substitutions))
             .GroupBy(ResolvedMethodIdentity, StringComparer.Ordinal)
             .Select(group => group.First())
             .ToList();

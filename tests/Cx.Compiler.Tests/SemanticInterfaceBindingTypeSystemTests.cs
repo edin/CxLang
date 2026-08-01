@@ -63,6 +63,54 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
             """);
 
         CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains(".state = &arena", result.Output);
+        Assert.Contains(
+            ".vtable = &Arena_ScratchAllocator_vtable",
+            result.Output);
+        Assert.Contains(".allocate =", result.Output);
+        Assert.Contains("Arena_allocate", result.Output);
+    }
+
+    [Fact]
+    public void Compile_LowersInterfaceConversionsOutsideLocalInitializers()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            interface ScratchAllocator {
+                fn allocate(size: usize, align: usize) -> void*;
+            }
+
+            struct Arena: ScratchAllocator {
+                used: usize;
+            }
+
+            extension Arena {
+                fn allocate(size: usize, align: usize) -> void* {
+                    return null;
+                }
+            }
+
+            fn consume(allocator: ScratchAllocator) -> bool {
+                return allocator.state != null;
+            }
+
+            fn forward(arena: Arena) -> ScratchAllocator {
+                return arena;
+            }
+
+            fn main() -> int {
+                let arena: Arena = Arena { used: 0 };
+                let allocator: ScratchAllocator = arena;
+                allocator = arena;
+                return consume(allocator) && forward(arena).state != null ? 0 : 1;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.True(
+            result.Output!.Split(
+                ".vtable = &Arena_ScratchAllocator_vtable",
+                StringSplitOptions.None).Length >= 4);
     }
 
     [Fact]
@@ -94,6 +142,10 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
             """);
 
         CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains(".state = &arena", result.Output);
+        Assert.Contains(
+            ".vtable = &Arena_ScratchAllocator_vtable",
+            result.Output);
     }
 
     [Fact]

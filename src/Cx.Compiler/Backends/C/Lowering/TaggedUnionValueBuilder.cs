@@ -1,64 +1,33 @@
 using Cx.Compiler.C;
 using Cx.Compiler.Semantic;
-using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler;
 
 internal sealed class TaggedUnionValueBuilder(
-    CLoweringContext context,
-    Func<ExpressionNode, TypeRef?> inferExpressionTypeRef,
-    Func<TypeRef, string> lowerTypeRef,
     Func<TypeRef, CTypeRef> lowerCTypeRef)
 {
-    public CExpression? TryBuildConstructorExpression(
-        string unionName,
-        string variantName,
-        IReadOnlyList<ExpressionNode> arguments,
-        Func<TypeRef, IReadOnlyList<ExpressionNode>, CExpression> buildPayload)
+    public CExpression BuildConstructorExpression(
+        CoreConstructorCallInfo.TaggedUnion constructor,
+        CExpression payload)
     {
-        if (!context.TryGetTaggedUnionVariant(unionName, variantName, out var taggedUnion, out var variant)
-            || taggedUnion.IsRaw
-            || variant.TypeNode?.Semantic.Type is not { } variantType)
-        {
-            return null;
-        }
-
         return BuildInitializer(
-            lowerCTypeRef(new TypeRef.Named(taggedUnion.Name, [])),
-            taggedUnion.Name,
-            variant.Name,
-            buildPayload(variantType, arguments));
+            lowerCTypeRef(
+                new TypeRef.Named(
+                    constructor.Declaration.Name,
+                    [])),
+            constructor.Declaration.Name,
+            constructor.Variant.Name,
+            payload);
     }
 
-    public CExpression? TryWrapExpression(
-        TypeRef targetType,
-        ExpressionNode sourceExpression,
-        CExpression loweredExpression)
-    {
-        if (!context.TryGetTaggedUnion(targetType, out var taggedUnion)
-            || taggedUnion.IsRaw)
-        {
-            return null;
-        }
-
-        var expressionType = inferExpressionTypeRef(sourceExpression);
-        if (expressionType is null)
-        {
-            return null;
-        }
-
-        var matchingVariants = taggedUnion.Variants
-            .Where(variant => AreSameLoweredType(variant.TypeNode, expressionType))
-            .ToList();
-
-        if (matchingVariants.Count != 1)
-        {
-            return null;
-        }
-
-        var matchedVariant = matchingVariants[0];
-        return BuildInitializer(lowerCTypeRef(targetType), taggedUnion.Name, matchedVariant.Name, loweredExpression);
-    }
+    public CExpression Wrap(
+        CoreValueConversionInfo.TaggedUnion conversion,
+        CExpression expression) =>
+        BuildInitializer(
+            lowerCTypeRef(conversion.TargetType),
+            conversion.Union.Name,
+            conversion.Variant.Name,
+            expression);
 
     private CExpression BuildInitializer(
         CTypeRef unionType,
@@ -73,15 +42,4 @@ internal sealed class TaggedUnionValueBuilder(
             ],
             []);
 
-    private bool AreSameLoweredType(TypeNode? leftTypeNode, TypeRef rightType)
-    {
-        if (leftTypeNode?.Semantic.Type is not { } leftType)
-        {
-            return false;
-        }
-
-        var loweredLeft = lowerTypeRef(leftType);
-        var loweredRight = lowerTypeRef(rightType);
-        return string.Equals(loweredLeft, loweredRight, StringComparison.Ordinal);
-    }
 }

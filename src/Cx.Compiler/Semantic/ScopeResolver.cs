@@ -524,15 +524,36 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
         var variables = BuildTypeEnvironment(scope);
         var resolved = _callResolver.ResolveTypeRefs(callee, typeArguments, arguments, variables);
-        if (resolved?.Function is null)
+        if (resolved is null
+            || resolved.Function is null && resolved.ExternFunction is null)
         {
             return false;
         }
 
-        var functionSymbol = FunctionSymbol(resolved.Function);
+        if (resolved.ExternFunction is { } externFunction)
+        {
+            var externSymbol = externFunction.Semantic.Symbol
+                ?? CreateSymbol(
+                    externFunction.Name,
+                    SymbolKind.Function,
+                    externFunction.ReturnTypeNode,
+                    externFunction.Location,
+                    externFunction);
+            var externCall = new ResolvedExternCallInfo(
+                externFunction,
+                resolved.TypeArgumentRefs);
+            callExpression.Semantic.Symbol = externSymbol;
+            callExpression.Semantic.ResolvedExternCall = externCall;
+            callee.Semantic.Symbol = externSymbol;
+            callee.Semantic.ResolvedExternCall = externCall;
+            return true;
+        }
+
+        var function = resolved.Function!;
+        var functionSymbol = FunctionSymbol(function);
         callExpression.Semantic.Symbol = functionSymbol;
         callExpression.Semantic.ResolvedCall = CreateResolvedCallInfo(
-            resolved.Function,
+            function,
             resolved.TypeArgumentRefs,
             resolved.IsInstance);
 

@@ -448,16 +448,9 @@ internal static class GenericTypeRewriter
                     .Select(argument => RewriteExpression(argument, concreteStructNames))
                     .ToList(),
             },
-            GenericCallExpressionNode call => call with
-            {
-                Callee = RewriteExpression(call.Callee, concreteStructNames),
-                TypeArgumentNodes = call.TypeArgumentNodes
-                    .Select(typeNode => RewriteTypeNode(typeNode, concreteStructNames)!)
-                    .ToList(),
-                Arguments = call.Arguments
-                    .Select(argument => RewriteExpression(argument, concreteStructNames))
-                    .ToList(),
-            },
+            GenericCallExpressionNode call => RewriteGenericCall(
+                call,
+                concreteStructNames),
             MemberExpressionNode member => member with
             {
                 Target = RewriteExpression(member.Target, concreteStructNames),
@@ -471,6 +464,50 @@ internal static class GenericTypeRewriter
         };
 
         return CopySemantic(expression, rewritten);
+    }
+
+    private static ExpressionNode RewriteGenericCall(
+        GenericCallExpressionNode call,
+        IReadOnlySet<string> concreteStructNames)
+    {
+        var callee = RewriteExpression(call.Callee, concreteStructNames);
+        var typeArguments = call.TypeArgumentNodes
+            .Select(typeNode => RewriteTypeNode(typeNode, concreteStructNames)!)
+            .ToList();
+        var arguments = call.Arguments
+            .Select(argument => RewriteExpression(argument, concreteStructNames))
+            .ToList();
+        var calleeName = ExpressionNameFacts.GetQualifiedName(callee);
+        var typeArgumentRefs = typeArguments
+            .Select(typeNode =>
+                typeNode.Semantic.Type
+                ?? typeNode.Syntax.ToUnresolvedTypeRef())
+            .ToList();
+        if (calleeName is not null
+            && typeArgumentRefs.All(type => type is not TypeRef.Unknown))
+        {
+            var concreteName = LowerGenericTypeName(
+                new TypeRef.Named(
+                    calleeName,
+                    typeArgumentRefs));
+            if (concreteStructNames.Contains(concreteName))
+            {
+                var concreteCallee = CopySemantic(
+                    callee,
+                    new NameExpressionNode(callee.Location, concreteName));
+                return new CallExpressionNode(
+                    call.Location,
+                    concreteCallee,
+                    arguments);
+            }
+        }
+
+        return call with
+        {
+            Callee = callee,
+            TypeArgumentNodes = typeArguments,
+            Arguments = arguments,
+        };
     }
 
     private static string LowerTypeName(TypeRef type) =>

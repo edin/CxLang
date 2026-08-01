@@ -8,14 +8,12 @@ internal static class CDeclarationLowerer
 {
     public static CTypeRef LowerReturnType(
         CBackendContext backend,
-        TypeNode? typeNode,
-        TypeRef? selfType = null) =>
-        LowerDeclarationType(backend, ResolveDeclarationType(typeNode, "return"), selfType);
+        TypeNode? typeNode) =>
+        LowerDeclarationType(backend, ResolveDeclarationType(typeNode, "return"));
 
     public static CParameterDeclaration LowerParameter(
         CBackendContext backend,
-        ParameterNode parameter,
-        TypeRef? selfType)
+        ParameterNode parameter)
     {
         if (parameter.IsVariadic)
         {
@@ -23,7 +21,7 @@ internal static class CDeclarationLowerer
         }
 
         return new CParameterDeclaration(
-            LowerDeclarationType(backend, ResolveDeclarationType(parameter.TypeNode, parameter.Name), selfType),
+            LowerDeclarationType(backend, ResolveDeclarationType(parameter.TypeNode, parameter.Name)),
             parameter.Name);
     }
 
@@ -31,11 +29,10 @@ internal static class CDeclarationLowerer
         CBackendContext backend,
         TypeNode? typeNode,
         string name,
-        bool isConst = false,
-        TypeRef? selfType = null)
+        bool isConst = false)
     {
         return new CVariableDeclaration(
-            LowerDeclarationType(backend, ResolveDeclarationType(typeNode, name), selfType),
+            LowerDeclarationType(backend, ResolveDeclarationType(typeNode, name)),
             name,
             isConst);
     }
@@ -48,12 +45,6 @@ internal static class CDeclarationLowerer
 
     private static CTypeRef LowerDeclarationType(CBackendContext backend, TypeRef type) =>
         backend.AbiNames.LowerTypeRef(type);
-
-    private static CTypeRef LowerDeclarationType(
-        CBackendContext backend,
-        TypeRef type,
-        TypeRef? selfType) =>
-        backend.AbiNames.LowerTypeRef(type, selfType);
 
     public static TypeRef ResolveDeclarationType(TypeNode? typeNode, string name) =>
         typeNode?.Semantic.Type is { } type && type is not TypeRef.Unknown

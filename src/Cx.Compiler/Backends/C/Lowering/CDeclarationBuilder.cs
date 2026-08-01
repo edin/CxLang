@@ -29,21 +29,16 @@ internal static class CDeclarationBuilder
                 CDeclarationLowerer.ResolveDeclarationType(field.TypeNode, field.Name),
                 field.Name))
             .ToList();
-        var rows = enumNode.Members.Select((member, memberIndex) =>
+        var rows = enumNode.Members.Select(member =>
             new CDataEnumRow(
                 CEnumNames.Member(enumNode.Name, member.Name),
                 fields.Select(field =>
                 {
-                    var explicitValue = member.DataValues?
+                    var value = member.DataValues?
                         .FirstOrDefault(candidate => candidate.Name == field.Name)?
-                        .Value;
-                    var value = explicitValue
-                        ?? (field.DefaultValue is null
-                            ? throw new InvalidOperationException($"Enum member '{member.Name}' has no value for data field '{field.Name}'.")
-                            : DataEnumDefaultExpressionSpecializer.Specialize(
-                                field.DefaultValue,
-                                member,
-                                memberIndex));
+                        .Value
+                        ?? throw new InvalidOperationException(
+                            $"Core CX data-enum member '{member.Name}' has no value for field '{field.Name}'.");
                     var targetType = CDeclarationLowerer.ResolveDeclarationType(field.TypeNode, field.Name);
                     return new CInitializerField(field.Name, nameLowerer.LowerInitializerExpression(targetType, value));
                 }).ToList()))
@@ -82,13 +77,14 @@ internal static class CDeclarationBuilder
 
     public static CFunctionDeclaration BuildFunctionDeclaration(CBackendContext backend, FunctionNode function)
     {
-        var selfType = CFunctionTypeResolver.ResolveSelfTypeRef(backend, function);
+        _ = function.Semantic.CoreFunction
+            ?? throw CEmissionGuards.MissingCoreFunctionInfo(function);
         return new CFunctionDeclaration(
             new CFunctionSignature(
-                CDeclarationLowerer.LowerReturnType(backend, function.ReturnTypeNode, selfType),
+                CDeclarationLowerer.LowerReturnType(backend, function.ReturnTypeNode),
                 backend.NameMangler.FunctionName(function),
                 function.Parameters
-                    .Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter, selfType))
+                    .Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter))
                     .ToList()));
     }
 
@@ -107,9 +103,9 @@ internal static class CDeclarationBuilder
         new(
             new CFunctionSignature(
                 CDeclarationLowerer.LowerReturnType(backend, function.ReturnTypeNode),
-                function.Name,
+                ExternFunctionFacts.SymbolName(function),
                 function.Parameters
-                    .Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter, (TypeRef?)null))
+                    .Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter))
                     .ToList()));
 
     public static CGlobalDeclaration BuildGlobalDeclaration(
@@ -117,8 +113,16 @@ internal static class CDeclarationBuilder
         GlobalVariableNode global,
         ImportedNameLowerer nameLowerer)
     {
+        var linkName = global.Semantic.CoreSymbol?.LinkName
+            ?? throw CEmissionGuards.MissingCoreSymbolInfo(
+                global,
+                global.Name);
         return new CGlobalDeclaration(
-            CDeclarationLowerer.LowerVariable(backend, global.TypeNode, global.Name, global.IsConst),
+            CDeclarationLowerer.LowerVariable(
+                backend,
+                global.TypeNode,
+                linkName,
+                global.IsConst),
             LowerGlobalInitializer(global, nameLowerer));
     }
 

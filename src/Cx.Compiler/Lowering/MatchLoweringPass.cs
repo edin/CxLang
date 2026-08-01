@@ -1,4 +1,3 @@
-using Cx.Compiler.C;
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Source;
@@ -11,10 +10,11 @@ internal static class MatchLoweringPass
     public static ProgramNode Lower(ProgramNode program, DiagnosticBag diagnostics) =>
         AstTransformPipeline
             .Create()
-            .Transform(new MatchTransform(program, new CAbiNameService(program.TypeAdapters)))
+            .Transform(new MatchTransform(program))
             .Run(program);
 
-    private sealed class MatchTransform(ProgramNode program, CAbiNameService abiNames) : IAstNodeTransform<MatchStatement>
+    private sealed class MatchTransform(ProgramNode program)
+        : IAstNodeTransform<MatchStatement>
     {
         private readonly TypeRefParser _typeRefParser = new(program);
 
@@ -100,7 +100,9 @@ internal static class MatchLoweringPass
 
                 cases.Add(new SwitchCaseNode(
                     arm.Location,
-                    Name(arm.Location, abiNames.TypeIdName(new TypeRef.Named(arm.Pattern, []))),
+                    TypeId(
+                        arm.Location,
+                        new TypeRef.Named(arm.Pattern, [])),
                     body));
             }
 
@@ -126,7 +128,7 @@ internal static class MatchLoweringPass
                     arm.Location,
                     IsConst: false,
                     arm.BindingName,
-                    Member(Member(source, "as"), arm.Pattern),
+                    Member(source, arm.Pattern),
                     variant.TypeNode));
             }
 
@@ -209,6 +211,18 @@ internal static class MatchLoweringPass
 
         private static NameExpressionNode Name(Location location, string name) =>
             new(location, name);
+
+        private static NameExpressionNode TypeId(
+            Location location,
+            TypeRef type)
+        {
+            var expression = new NameExpressionNode(
+                location,
+                TypeRefFormatter.ToCxString(type));
+            expression.Semantic.CoreTypeId =
+                new CoreTypeIdInfo(type);
+            return expression;
+        }
 
         private static MemberExpressionNode Member(ExpressionNode target, string memberName) =>
             new(

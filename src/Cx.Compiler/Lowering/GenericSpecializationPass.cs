@@ -26,7 +26,16 @@ internal static class GenericSpecializationPass
             loweredSpecializedFunctions.Values,
             catalog);
         RetargetGenericCalls(loweredProgram, loweredSpecializedFunctions);
-        return AppendSpecializations(loweredProgram, result, loweredSpecializedFunctions);
+        var specializedProgram = AppendSpecializations(
+            loweredProgram,
+            result,
+            loweredSpecializedFunctions);
+        var normalizedProgram = GenericCallNormalizationPass.Apply(
+            specializedProgram,
+            out var rewrittenFunctions);
+        RebindNormalizedFunctions(result, catalog, rewrittenFunctions);
+        GenericCallRetargeter.RebindDeclarations(normalizedProgram, rewrittenFunctions);
+        return normalizedProgram;
     }
 
     private static GenericSpecializationResult BuildSpecializationResult(
@@ -135,6 +144,25 @@ internal static class GenericSpecializationPass
             .Concat(program.Requirements.SelectMany(requirement => requirement.TypeParameters))
             .Concat(program.ExternFunctions.SelectMany(function => function.TypeParameters))
             .ToHashSet(StringComparer.Ordinal);
+
+    private static void RebindNormalizedFunctions(
+        GenericSpecializationResult result,
+        FunctionCatalog catalog,
+        IReadOnlyDictionary<FunctionNode, FunctionNode> rewrittenFunctions)
+    {
+        foreach (var pair in rewrittenFunctions)
+        {
+            catalog.TryRebindDeclaration(pair.Key, pair.Value);
+        }
+
+        foreach (var instance in result.Instances)
+        {
+            if (rewrittenFunctions.TryGetValue(instance.Declaration, out var rewritten))
+            {
+                instance.RebindDeclaration(rewritten);
+            }
+        }
+    }
 
     private static bool IsClosedTypeArgumentList(
         GenericFunctionUse use,

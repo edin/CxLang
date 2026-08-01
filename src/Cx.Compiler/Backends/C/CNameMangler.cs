@@ -61,7 +61,7 @@ internal sealed class CNameMangler(
             : "_" + string.Join("_", arguments.Select(LowerTypeArgument));
 
     private string LowerTypeArgument(TypeNode typeNode) =>
-        lowerSpecializationType(typeNode.Semantic.Type ?? typeNode.Syntax.ToUnresolvedTypeRef());
+        lowerSpecializationType(RequireType(typeNode));
 
     private string OverloadSuffix(FunctionNode function) =>
         !_overloadKeys.Contains(OverloadIdentity(function))
@@ -78,13 +78,10 @@ internal sealed class CNameMangler(
         typeNode is null
             ? "unknown"
             : lowerSpecializationType(
-                typeNode.Semantic.Type
-                ?? typeNode.Syntax.ToUnresolvedTypeRef());
+                RequireType(typeNode));
 
     private static string TypeText(TypeNode typeNode) =>
-        typeNode.Semantic.Type is { } type
-            ? TypeRefFormatter.ToCxString(type)
-            : TypeSyntaxFormatter.ToCxString(typeNode.Syntax);
+        TypeRefFormatter.ToCxString(RequireType(typeNode));
 
     private static string? TypeTextOrNull(TypeNode? typeNode) =>
         typeNode is null ? null : TypeText(typeNode);
@@ -132,7 +129,13 @@ internal sealed class CNameMangler(
                     : TypeNodeIdentity(parameter.TypeNode)));
 
     private static string TypeNodeIdentity(TypeNode? typeNode) =>
-        typeNode?.Semantic.Type is { } type
-            ? TypeIdentity.SpecializationKey(type)
-            : typeNode?.ToSourceText() ?? string.Empty;
+        typeNode is null
+            ? string.Empty
+            : TypeIdentity.SpecializationKey(RequireType(typeNode));
+
+    private static TypeRef RequireType(TypeNode typeNode) =>
+        typeNode.Semantic.Type is { } type
+            && type is not TypeRef.Unknown
+                ? type
+                : throw CEmissionGuards.UnresolvedTypeExpression(typeNode);
 }

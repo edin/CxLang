@@ -101,17 +101,17 @@ extension Bitmap {
         let bmpInfoHeader: BitmapInfoHeader = {0};
         fread(&bmpInfoHeader, sizeof(char), sizeof(BitmapInfoHeader), hFile);
 
-        if (bfh.type != 66 + (77 << 8)) {
+        if (bfh.type != (u16)(66 + (77 << 8))) {
             fclose(hFile);
             return bitmap;
         }
 
-        if (bmpInfoHeader.bit_count != 32) {
+        if (bmpInfoHeader.bit_count != (u16)32) {
             fclose(hFile);
             return bitmap;
         }
 
-        if (bmpInfoHeader.compression != 0) {
+        if (bmpInfoHeader.compression != (u32)0) {
             fclose(hFile);
             return bitmap;
         }

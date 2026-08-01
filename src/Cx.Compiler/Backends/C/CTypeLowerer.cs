@@ -1,21 +1,14 @@
 using Cx.Compiler.Semantic;
-using Cx.Compiler.Source;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.C;
 
 internal static class CTypeLowerer
 {
-    private static readonly TypeRefParser TypeParser = new(new ProgramNode(
-        Location.Synthetic("<c-type-lowerer>"),
-        []));
-
     public static string LowerType(
         TypeRef type,
-        IReadOnlyList<TypeAdapterNode> typeAdapters,
-        TypeRef? selfType = null)
+        IReadOnlyList<TypeAdapterNode> typeAdapters)
     {
-        type = SubstituteSelf(type, selfType);
         type = ResolveAdapterStorageType(type, typeAdapters);
 
         return type switch
@@ -78,63 +71,10 @@ internal static class CTypeLowerer
         return $"{name}_{string.Join("_", arguments)}";
     }
 
-    private static TypeRef SubstituteSelf(TypeRef type, TypeRef? selfType) =>
-        selfType is null ? type : TypeRefRewriter.SubstituteSelf(type, selfType);
-
     public static TypeRef ResolveAdapterStorageType(
         TypeRef type,
-        IReadOnlyList<TypeAdapterNode> typeAdapters)
-    {
-        if (type is TypeRef.Pointer pointer)
-        {
-            return new TypeRef.Pointer(ResolveAdapterStorageType(pointer.Element, typeAdapters));
-        }
-
-        if (type is TypeRef.Const constType)
-        {
-            return new TypeRef.Const(ResolveAdapterStorageType(constType.Element, typeAdapters));
-        }
-
-        if (type is TypeRef.Alias)
-        {
-            return type;
-        }
-
-        if (type is not TypeRef.Named named)
-        {
-            return type;
-        }
-
-        var adapterName = named.Name;
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (true)
-        {
-            var adapter = typeAdapters.LastOrDefault(adapter => adapter.Name == adapterName);
-            if (adapter is null || !seen.Add(adapter.Name))
-            {
-                return named;
-            }
-
-            if (adapter.TypeParameters.Count != named.Arguments.Count)
-            {
-                return named;
-            }
-
-            var substitutions = adapter.TypeParameters
-                .Zip(named.Arguments)
-                .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-            var baseType = adapter.BaseTypeNode.ToTypeRef(TypeParser);
-            var resolved = TypeRefRewriter.Substitute(baseType, substitutions);
-            if (resolved is not TypeRef.Named resolvedNamed)
-            {
-                return resolved;
-            }
-
-            named = resolvedNamed;
-            adapterName = named.Name;
-        }
-    }
+        IReadOnlyList<TypeAdapterNode> typeAdapters) =>
+        TypeAdapterStorageResolver.Resolve(type, typeAdapters);
 
     private static string StripModuleQualifier(string type)
     {

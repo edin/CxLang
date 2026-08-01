@@ -8,13 +8,11 @@ internal sealed class CBackendContext
     private CBackendContext(
         IReadOnlyList<TypeAdapterNode> typeAdapters,
         CAbiNameService abiNames,
-        CNameMangler nameMangler,
-        TypeRefParser? typeRefParser)
+        CNameMangler nameMangler)
     {
         TypeAdapters = typeAdapters;
         AbiNames = abiNames;
         NameMangler = nameMangler;
-        TypeRefParser = typeRefParser;
     }
 
     public IReadOnlyList<TypeAdapterNode> TypeAdapters { get; }
@@ -23,13 +21,10 @@ internal sealed class CBackendContext
 
     public CNameMangler NameMangler { get; }
 
-    public TypeRefParser? TypeRefParser { get; }
-
     public static CBackendContext Create(
         ProgramNode program,
         IReadOnlyList<TypeAdapterNode> typeAdapters,
-        CNameManglerOptions? nameManglerOptions,
-        TypeRefParser? typeRefParser)
+        CNameManglerOptions? nameManglerOptions)
     {
         var abiNames = new CAbiNameService(typeAdapters);
         var nameMangler = new CNameMangler(
@@ -40,7 +35,7 @@ internal sealed class CBackendContext
                 ? CNameMangler.FindModuleCollisionKeys(program.Functions)
                 : null,
             CNameMangler.FindOverloadKeys(program.Functions));
-        return new CBackendContext(typeAdapters, abiNames, nameMangler, typeRefParser);
+        return new CBackendContext(typeAdapters, abiNames, nameMangler);
     }
 
 }

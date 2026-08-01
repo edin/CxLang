@@ -240,6 +240,37 @@ public sealed class ScopeResolverTests
     }
 
     [Fact]
+    public void Resolve_AttachesDirectCallInfoToTypeQualifiedExplicitReceiverMethod()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Vector {
+                x: double;
+
+                fn length(value: Vector*) -> double {
+                    return value.x;
+                }
+            }
+
+            fn main() -> double {
+                let value: Vector = Vector { x: 1.0 };
+                return Vector.length(&value);
+            }
+            """);
+        CompilerTestHelpers.Resolve(program);
+
+        var length = program.Structs.Single().Methods.Single();
+        var main = program.Functions.Single(function => function.Name == "main");
+        var ret = main.Body.OfType<ReturnStatement>().Single();
+        var call = Assert.IsType<CallExpressionNode>(ret.Expression);
+
+        Assert.Same(length.Semantic.Symbol, call.Semantic.Symbol);
+        Assert.NotNull(call.Semantic.ResolvedCall);
+        Assert.Same(length, call.Semantic.ResolvedCall.Function);
+        Assert.False(call.Semantic.ResolvedCall.IsInstance);
+    }
+
+    [Fact]
     public void Resolve_AttachesResolvedCallInfoToGenericInstanceCall()
     {
         var program = CompilerTestHelpers.Parse(

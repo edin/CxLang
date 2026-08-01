@@ -8,7 +8,7 @@ internal static class CInterfaceDeclarationBuilder
 {
     public static CEnumDeclaration BuildTypeIdEnum(
         CBackendContext backend,
-        IReadOnlyList<InterfaceImplementation> implementations) =>
+        IReadOnlyList<CoreInterfaceImplementationInfo> implementations) =>
         new(
             "CxTypeId",
             new[] { new CEnumMember("CX_TYPE_UNKNOWN", "0") }
@@ -28,7 +28,7 @@ internal static class CInterfaceDeclarationBuilder
             {
                 new(new CPointerTypeRef(new CNamedTypeRef("void")), "state"),
             };
-            parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter, (TypeRef?)null)));
+            parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter)));
             fields.Add(new CFieldDeclaration(
                 new CFunctionTypeRef(
                     CDeclarationLowerer.LowerReturnType(backend, method.ReturnTypeNode),
@@ -53,8 +53,7 @@ internal static class CInterfaceDeclarationBuilder
 
     public static CGlobalDeclaration BuildVTableInstance(
         CBackendContext backend,
-        InterfaceImplementation implementation,
-        IReadOnlyList<FunctionNode> functions)
+        CoreInterfaceImplementationInfo implementation)
     {
         var fields = new List<CInitializerField>
         {
@@ -63,11 +62,9 @@ internal static class CInterfaceDeclarationBuilder
 
         foreach (var method in implementation.Interface.Methods)
         {
-            var concrete = functions.FirstOrDefault(function =>
-                CFunctionTypeResolver.ResolveConcreteOwnerType(function) is { } ownerType
-                && backend.AbiNames.LowerType(ownerType) == implementation.Struct.Name
-                && !function.IsStatic
-                && function.Name == method.Name);
+            var concrete = implementation.Methods.FirstOrDefault(
+                binding => ReferenceEquals(binding.Method, method))
+                ?.Function;
             if (concrete is null)
             {
                 continue;
@@ -94,7 +91,7 @@ internal static class CInterfaceDeclarationBuilder
         {
             new(new CPointerTypeRef(new CNamedTypeRef("void")), string.Empty),
         };
-        parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter, (TypeRef?)null)));
+        parameters.AddRange(method.Parameters.Select(parameter => CDeclarationLowerer.LowerParameter(backend, parameter)));
         return new CFunctionTypeRef(
             CDeclarationLowerer.LowerReturnType(backend, method.ReturnTypeNode),
             parameters);
@@ -102,7 +99,7 @@ internal static class CInterfaceDeclarationBuilder
 
     public static CExternGlobalDeclaration BuildVTableDeclaration(
         CBackendContext backend,
-        InterfaceImplementation implementation) =>
+        CoreInterfaceImplementationInfo implementation) =>
         new(new CVariableDeclaration(
             new CNamedTypeRef(GetInterfaceVTableName(backend, implementation.Interface.Name)),
             GetInterfaceVTableInstanceName(backend, implementation.Struct.Name, implementation.Interface.Name),

@@ -1,9 +1,41 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Lowering;
+using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
 
 public sealed class DataEnumTests
 {
+    [Fact]
+    public void DefaultMaterialization_CreatesExplicitValueForEveryMemberField()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            enum TokenType(
+                name: const char* = member.name,
+                index: int = member.index
+            ) {
+                Identifier {},
+                Plus { index: 10 },
+            }
+            """);
+
+        var lowered = DataEnumDefaultMaterializationPass.Apply(program);
+        var enumNode = Assert.Single(lowered.Enums);
+        var members = enumNode.Members;
+
+        Assert.All(enumNode.DataFields!, field => Assert.Null(field.DefaultValue));
+
+        Assert.Collection(
+            members[0].DataValues!,
+            value => Assert.Equal("\"Identifier\"", Assert.IsType<LiteralExpressionNode>(value.Value).LiteralText),
+            value => Assert.Equal("0", Assert.IsType<LiteralExpressionNode>(value.Value).LiteralText));
+        Assert.Collection(
+            members[1].DataValues!,
+            value => Assert.Equal("\"Plus\"", Assert.IsType<LiteralExpressionNode>(value.Value).LiteralText),
+            value => Assert.Equal("10", Assert.IsType<LiteralExpressionNode>(value.Value).LiteralText));
+    }
+
     [Fact]
     public void CompileDataEnum_SpecializesContextualDefaultsForEachMember()
     {

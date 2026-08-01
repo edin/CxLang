@@ -241,6 +241,19 @@ internal sealed class FunctionCatalog
         return symbol;
     }
 
+    public bool TryRebindDeclaration(
+        FunctionNode previousDeclaration,
+        FunctionNode declaration)
+    {
+        if (!_symbolsByDeclaration.ContainsKey(previousDeclaration))
+        {
+            return false;
+        }
+
+        RebindDeclaration(previousDeclaration, declaration);
+        return true;
+    }
+
     public IReadOnlyList<FunctionSymbol> Query(FunctionQuery query) =>
         _functions
             .Where(function => query.Name is null

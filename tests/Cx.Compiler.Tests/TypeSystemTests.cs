@@ -279,6 +279,37 @@ public sealed class TypeSystemTests
     }
 
     [Fact]
+    public void GetFields_ReturnsSubstitutedAdapterStorageFields()
+    {
+        var program = ResolveTypes(
+            """
+            struct Vec<T> {
+                data: T*;
+                length: usize;
+            }
+
+            type Stack<T> using Vec<T> {
+            }
+            """);
+        var typeSystem = new TypeSystem(program);
+
+        var fields = typeSystem.GetFields(Parse(program, "Stack<int>"));
+
+        Assert.Collection(
+            fields,
+            field =>
+            {
+                Assert.Equal("data", field.Name);
+                Assert.Equal("int*", TypeRefFormatter.ToCxString(field.Type));
+            },
+            field =>
+            {
+                Assert.Equal("length", field.Name);
+                Assert.Equal("usize", TypeRefFormatter.ToCxString(field.Type));
+            });
+    }
+
+    [Fact]
     public void FindMethod_ReturnsChainedAdapterExposedTarget()
     {
         var program = ResolveTypes(
