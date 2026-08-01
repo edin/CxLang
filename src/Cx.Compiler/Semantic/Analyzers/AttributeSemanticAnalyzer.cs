@@ -1,5 +1,6 @@
 using Cx.Compiler.CompileTime;
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Analyzers;
@@ -13,11 +14,13 @@ internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
         _evaluator = new CompileTimeExpressionEvaluator(
             diagnostics,
             reflection: new ProgramCompileTimeReflection(program));
-        var declarations = program.AttributeDeclarations
+        var declarationGroups = program.AttributeDeclarations
             .GroupBy(attribute => attribute.Name, StringComparer.Ordinal)
+            .ToList();
+        var declarations = declarationGroups
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
 
-        foreach (var group in program.AttributeDeclarations.GroupBy(attribute => attribute.Name, StringComparer.Ordinal))
+        foreach (var group in declarationGroups)
         {
             if (group.Count() > 1)
             {
@@ -71,7 +74,7 @@ internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
             }
         }
 
-        foreach (var function in program.Functions)
+        foreach (var function in ProgramFunctionFacts.GetDeclarations(program))
         {
             AnalyzeFunctionAttributes(function, declarations);
         }

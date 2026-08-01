@@ -29,6 +29,12 @@ internal static class ProgramFunctionFacts
         TopLevelNode declaration) =>
         GetEntries(declaration).Select(entry => entry.Function);
 
+    public static IEnumerable<FunctionNode> GetOwnedDeclarations(
+        TopLevelNode declaration) =>
+        GetEntries(declaration)
+            .Where(entry => entry.Owner is not null)
+            .Select(entry => entry.Function);
+
     private static IEnumerable<ProgramFunctionEntry> GetEntries(
         TopLevelNode declaration) =>
         declaration switch

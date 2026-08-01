@@ -117,4 +117,24 @@ public sealed class AttributeSemanticTests
 
         CompilerTestHelpers.AssertDiagnosticContains(result, "Unknown attribute 'derive'.");
     }
+
+    [Fact]
+    public void Compile_ValidatesAttributesOnNestedMethods()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Item {
+                @unknown
+                fn inspect() -> void {}
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            "Unknown attribute 'unknown'.");
+    }
 }

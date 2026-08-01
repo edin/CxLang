@@ -89,8 +89,7 @@ internal static class ModuleProgramFacts
         }
 
         foreach (var method in ProgramFunctionFacts
-            .GetDeclarations(declaration)
-            .Where(method => !ReferenceEquals(method, declaration)))
+            .GetOwnedDeclarations(declaration))
         {
             AnnotateModuleName(method, moduleNamesByPath);
         }

@@ -107,5 +107,13 @@ public sealed class ProgramFunctionFactsTests
         Assert.Null(
             entries.Single(entry =>
                 entry.Function.Name == "free_function").Owner);
+        Assert.Equal(
+            ["method"],
+            ProgramFunctionFacts
+                .GetOwnedDeclarations(program.Structs.Single())
+                .Select(function => function.Name));
+        Assert.Empty(
+            ProgramFunctionFacts.GetOwnedDeclarations(
+                program.Functions.Single()));
     }
 }
