@@ -41,7 +41,8 @@ internal static class AstChildren
             structNode.Fields,
             structNode.Methods,
             structNode.Attributes,
-            structNode.MacroInvocations),
+            structNode.MacroInvocations,
+            structNode.CompileTimeMembers),
         GenericConstraintNode constraint => Children(constraint.Requirements),
         StructRequirementNode requirement => Children(
             requirement.TypeArgumentNodes),
@@ -64,17 +65,23 @@ internal static class AstChildren
             extension.GenericConstraints,
             extension.Methods,
             extension.Attributes,
-            extension.TargetTypeNode),
+            extension.TargetTypeNode,
+            extension.CompileTimeMembers),
         TypeAdapterNode adapter => Children(
             adapter.ExposedMethods,
             adapter.Methods,
             adapter.Attributes,
-            adapter.BaseTypeNode),
+            adapter.BaseTypeNode,
+            adapter.CompileTimeMembers),
         ExposeMethodNode exposed => Children(exposed.ReturnTypeNode),
         GlobalVariableNode global => Children(
             global.Initializer,
             global.Attributes,
             global.TypeNode),
+        CompileTimeConstantNode constant => Children(
+            constant.TypeNode,
+            constant.Initializer,
+            constant.Attributes),
         FunctionNode function => Children(
             function.ComputedName,
             function.ComputedParameters,

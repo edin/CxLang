@@ -85,6 +85,7 @@ internal abstract record CompileTimeValue
     public sealed record List : CompileTimeObjectValue
     {
         private readonly System.Collections.Generic.List<CompileTimeValue> _values;
+        private bool _isReadOnly;
 
         public List(IEnumerable<CompileTimeValue> values)
         {
@@ -95,7 +96,18 @@ internal abstract record CompileTimeValue
 
         public override string DisplayType => "list";
 
-        internal void Add(CompileTimeValue value) => _values.Add(value);
+        internal bool TryAdd(CompileTimeValue value)
+        {
+            if (_isReadOnly)
+            {
+                return false;
+            }
+
+            _values.Add(value);
+            return true;
+        }
+
+        internal void Freeze() => _isReadOnly = true;
     }
 }
 
@@ -116,4 +128,19 @@ internal static class CompileTimeValueFacts
         CompileTimeValue.Name => "name",
         _ => "unknown",
     };
+
+    public static void Freeze(CompileTimeValue value)
+    {
+        if (value is not CompileTimeValue.List list)
+        {
+            return;
+        }
+
+        foreach (var item in list.Values)
+        {
+            Freeze(item);
+        }
+
+        list.Freeze();
+    }
 }

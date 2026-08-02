@@ -421,7 +421,49 @@ public sealed class CoreCxValidatorTests
         new CoreCxValidator(diagnostics).Validate(program);
 
         Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("compile-time @if declaration", StringComparison.Ordinal));
+                diagnostic.Message.Contains("compile-time @if declaration", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Analyze_ReportsTopLevelCompileTimeDirectiveResidue()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            @if(true) {
+                fn generated() -> int {
+                    return 0;
+                }
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        new CoreCxValidator(diagnostics).Validate(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "top-level compile-time @if",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Analyze_ReportsTypeMemberCompileTimeDirectiveResidue()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Value {
+                @if(true) {
+                    value: int;
+                }
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        new CoreCxValidator(diagnostics).Validate(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "compile-time @if declaration",
+                StringComparison.Ordinal));
     }
 
     [Fact]

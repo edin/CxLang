@@ -21,7 +21,13 @@ internal sealed class ListCompileTimeBinding : CompileTimeTypeBinding
         CompileTimeValue.List list,
         CompileTimeValue value)
     {
-        list.Add(value);
+        if (!list.TryAdd(value))
+        {
+            context.Diagnostics.Report(
+                context.Location,
+                "Compile-time constant list values are read-only.");
+        }
+
         return list;
     }
 }

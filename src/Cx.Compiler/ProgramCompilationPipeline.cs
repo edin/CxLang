@@ -160,7 +160,9 @@ internal sealed class ProgramCompilationPipeline(
                 "Post-semantic lowering",
                 () => postSemanticLowering.Lower(
                     mergedProgram,
-                    semanticModel.FunctionCatalog));
+                    semanticModel.FunctionCatalog,
+                    compileTimeEnvironment,
+                    moduleNamesByPath));
             if (diagnostics.HasErrors)
             {
                 return (null, diagnostics);

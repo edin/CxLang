@@ -18,6 +18,7 @@ internal sealed class CompileTimeEvaluationSession
     private readonly CompileTimeEvaluationLimits _limits;
     private readonly Stack<CompileTimeCallFrame> _callFrames = [];
     private readonly Stack<GeneratedSyntaxOrigin> _generatedOrigins = [];
+    private readonly Stack<string> _moduleScopes = [];
     private readonly HashSet<int> _annotatedDiagnostics = [];
     private int _steps;
     private bool _budgetDiagnosticReported;
@@ -78,9 +79,24 @@ internal sealed class CompileTimeEvaluationSession
     public void ExitFunction() => _callFrames.Pop();
 
     public string? CurrentModule =>
-        _callFrames.TryPeek(out var frame)
+        _moduleScopes.TryPeek(out var module)
+            ? module
+            : _callFrames.TryPeek(out var frame)
             ? frame.Function.DeclaringModule
             : null;
+
+    public T WithModule<T>(string moduleName, Func<T> action)
+    {
+        _moduleScopes.Push(moduleName);
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            _moduleScopes.Pop();
+        }
+    }
 
     public T WithGeneratedOrigin<T>(
         GeneratedSyntaxOrigin origin,

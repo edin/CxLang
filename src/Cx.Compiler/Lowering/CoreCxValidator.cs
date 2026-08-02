@@ -43,7 +43,7 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
             ValidateCoreFunction(function);
         }
 
-        foreach (var node in CDeclareCompileTimeRoots(program)
+        foreach (var node in CompileTimeDeclarationRoots(program)
             .Concat(ExecutableAstTraversal.GetRoots(
                 program,
                 coreFunctions))
@@ -152,13 +152,25 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
         }
     }
 
-    private static IEnumerable<SyntaxNode> CDeclareCompileTimeRoots(
+    private static IEnumerable<SyntaxNode> CompileTimeDeclarationRoots(
         ProgramNode program) =>
-        program.CDeclarations
+        program.Declarations
+            .Where(declaration => declaration is
+                CompileTimeScriptDeclarationNode
+                or CompileTimeIfTopLevelNode
+                or CompileTimeForeachTopLevelNode
+                or MacroInvocationDeclarationNode
+                or CompileTimeConstantNode
+                or FunctionNode { IsCompileTime: true })
+            .Cast<SyntaxNode>()
+            .Concat(program.CDeclarations
             .SelectMany(declaration => declaration.Members)
             .Where(member => member is
                 CompileTimeIfDeclarationNode
-                or CompileTimeForeachDeclarationNode);
+                or CompileTimeForeachDeclarationNode))
+            .Concat(program.Structs.SelectMany(node => node.CompileTimeMemberNodes))
+            .Concat(program.Extensions.SelectMany(node => node.CompileTimeMemberNodes))
+            .Concat(program.TypeAdapters.SelectMany(node => node.CompileTimeMemberNodes));
 
     private static IEnumerable<FunctionNode> CoreFunctions(
         ProgramNode program) =>
@@ -225,6 +237,36 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
                 diagnostics.Report(
                     loop.Location,
                     "Internal lowering error: compile-time @foreach declaration remains after lowering.");
+                break;
+            case CompileTimeScriptDeclarationNode script:
+                diagnostics.Report(
+                    script.Location,
+                    "Internal lowering error: compile-time declaration script remains after lowering.");
+                break;
+            case CompileTimeIfTopLevelNode conditional:
+                diagnostics.Report(
+                    conditional.Location,
+                    "Internal lowering error: top-level compile-time @if remains after lowering.");
+                break;
+            case CompileTimeForeachTopLevelNode loop:
+                diagnostics.Report(
+                    loop.Location,
+                    "Internal lowering error: top-level compile-time @foreach remains after lowering.");
+                break;
+            case MacroInvocationDeclarationNode invocation:
+                diagnostics.Report(
+                    invocation.Location,
+                    $"Internal lowering error: declaration macro invocation '{invocation.MacroName}' remains after lowering.");
+                break;
+            case CompileTimeConstantNode constant:
+                diagnostics.Report(
+                    constant.Location,
+                    $"Internal lowering error: compile-time constant '{constant.Name}' remains after lowering.");
+                break;
+            case FunctionNode { IsCompileTime: true } function:
+                diagnostics.Report(
+                    function.Location,
+                    $"Internal lowering error: compile-time function '{function.Name}' remains after lowering.");
                 break;
             case CompileTimeLetStatementNode binding:
                 diagnostics.Report(

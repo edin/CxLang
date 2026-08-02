@@ -51,4 +51,48 @@ public sealed class CompileTimeSyntaxBlockPlacementAnalyzerTests
                 "not valid in statement context",
                 StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Analyze_ReportsInvalidGeneratedStructMember()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Value {
+                @if(true) {
+                    value: int;
+                }
+            }
+            """);
+        var structNode = Assert.Single(program.Structs);
+        var conditional = Assert.IsType<CompileTimeIfDeclarationNode>(
+            Assert.Single(structNode.CompileTimeMemberNodes));
+        var invalid = conditional with
+        {
+            ThenBlock = conditional.ThenBlock with
+            {
+                Items =
+                [
+                    new CLinkNode(
+                        conditional.Location,
+                        Platform: null,
+                        Library: "invalid-in-struct")
+                ],
+            },
+        };
+        var rewritten = program with
+        {
+            Declarations =
+            [
+                structNode with { CompileTimeMembers = [invalid] }
+            ],
+        };
+        var diagnostics = new DiagnosticBag();
+
+        new CompileTimeSyntaxBlockPlacementAnalyzer(diagnostics).Analyze(rewritten);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "not valid in struct member context",
+                StringComparison.Ordinal));
+    }
 }

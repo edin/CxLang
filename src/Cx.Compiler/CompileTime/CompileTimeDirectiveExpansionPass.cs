@@ -12,6 +12,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 {
     private readonly DiagnosticBag _diagnostics;
     private readonly CompileTimeExpressionEvaluator _evaluator;
+    private readonly ICompileTimeReflection _reflection;
     private CompileTimeEvaluationContext _context = new();
 
     public CompileTimeDirectiveExpansionPass(
@@ -20,11 +21,12 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         CompileTimeEnvironment? environment = null)
     {
         _diagnostics = diagnostics;
+        _reflection = reflection ?? UnavailableCompileTimeReflection.Instance;
         _evaluator = environment is not null
-            ? environment.CreateEvaluator(diagnostics, reflection)
+            ? environment.CreateEvaluator(diagnostics, _reflection)
             : new CompileTimeExpressionEvaluator(
                 diagnostics,
-                reflection: reflection);
+                reflection: _reflection);
     }
 
     public ProgramNode ExpandProgram(
@@ -57,6 +59,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         node switch
         {
             FunctionNode { IsCompileTime: true } => [],
+            CompileTimeConstantNode => [],
             CompileTimeIfTopLevelNode conditional => ExpandTopLevelIf(conditional),
             CompileTimeForeachTopLevelNode foreachNode => ExpandTopLevelForeach(foreachNode),
             _ => base.RewriteTopLevelNode(node),
@@ -97,11 +100,16 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     private IReadOnlyList<TopLevelNode> ExpandTopLevelIf(
         CompileTimeIfTopLevelNode conditional)
     {
-        if (!TrySelectBranch(
+        var selection = SelectBranch(
             conditional.Condition,
             conditional.ThenBlock,
             conditional.ElseBlock,
-            out var selectedBlock))
+            out var selectedBlock);
+        if (selection == CompileTimeExpansionDecision.Deferred)
+        {
+            return [conditional];
+        }
+        if (selection == CompileTimeExpansionDecision.Failed)
         {
             return [];
         }
@@ -115,9 +123,14 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     private IReadOnlyList<TopLevelNode> ExpandTopLevelForeach(
         CompileTimeForeachTopLevelNode foreachNode)
     {
-        if (!TryEvaluateForeach(
+        var evaluation = EvaluateForeach(
             foreachNode.IterableExpression,
-            out var values))
+            out var values);
+        if (evaluation == CompileTimeExpansionDecision.Deferred)
+        {
+            return [foreachNode];
+        }
+        if (evaluation == CompileTimeExpansionDecision.Failed)
         {
             return [];
         }
@@ -137,9 +150,18 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     protected override FunctionNode RewriteFunction(FunctionNode function)
     {
-        var resolved = ResolveComputedFunctionName(function);
-        resolved = ResolveComputedFunctionParameters(resolved);
-        return base.RewriteFunction(resolved);
+        var functionContext = _context.CreateChild();
+        foreach (var typeParameter in function.TypeParameters)
+        {
+            functionContext.DefineDeferred(typeParameter);
+        }
+
+        return WithContext(functionContext, () =>
+        {
+            var resolved = ResolveComputedFunctionName(function);
+            resolved = ResolveComputedFunctionParameters(resolved);
+            return base.RewriteFunction(resolved);
+        });
     }
 
     private FunctionNode ResolveComputedFunctionName(FunctionNode function)
@@ -360,9 +382,58 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     protected override CDeclareNode RewriteCDeclare(CDeclareNode cDeclare) =>
         cDeclare with { Members = ExpandCDeclareMembers(cDeclare.Members) };
 
+    protected override StructNode RewriteStruct(StructNode structNode)
+    {
+        var context = CreateTypeMemberContext(
+            structNode.TypeParameters,
+            new TypeRef.Named(
+                structNode.Name,
+                structNode.TypeParameters
+                    .Select(name => new TypeRef.Named(name, []))
+                    .Cast<TypeRef>()
+                    .ToList()));
+        var generated = WithContext(
+            context,
+            () => ExpandTypeMembers(
+                structNode.CompileTimeMemberNodes,
+                TypeMemberPlacement.Struct));
+        var prepared = structNode with
+        {
+            Fields = structNode.Fields.Concat(generated.Fields).ToList(),
+            Methods = structNode.Methods.Concat(generated.Methods).ToList(),
+            MacroInvocations = structNode.MacroInvocationNodes
+                .Concat(generated.MacroInvocations)
+                .ToList(),
+            CompileTimeMembers = generated.Deferred,
+        };
+        ReportDeferredTypeMembers(generated.Deferred, "struct");
+        return base.RewriteStruct(prepared);
+    }
+
     protected override ExtensionNode RewriteExtension(ExtensionNode extension)
     {
-        var rewritten = base.RewriteExtension(extension);
+        TypeRef? selfType = null;
+        if (extension.TargetTypeNode is not null
+            && _reflection.TryGetType(extension.TargetTypeNode, out var resolved))
+        {
+            selfType = resolved;
+        }
+
+        var context = CreateTypeMemberContext(
+            extension.TypeParameters,
+            selfType);
+        var generated = WithContext(
+            context,
+            () => ExpandTypeMembers(
+                extension.CompileTimeMemberNodes,
+                TypeMemberPlacement.Extension));
+        var prepared = extension with
+        {
+            Methods = extension.Methods.Concat(generated.Methods).ToList(),
+            CompileTimeMembers = generated.Deferred,
+        };
+        ReportDeferredTypeMembers(generated.Deferred, "extension");
+        var rewritten = base.RewriteExtension(prepared);
         if (extension.TargetTypeNode?.Syntax is not ComputedTypeSyntaxNode)
         {
             return rewritten;
@@ -375,6 +446,166 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
                 OwnerTypeNode = rewritten.TargetTypeNode,
             }).ToList(),
         };
+    }
+
+    protected override TypeAdapterNode RewriteTypeAdapter(TypeAdapterNode adapter)
+    {
+        var context = CreateTypeMemberContext(
+            adapter.TypeParameters,
+            new TypeRef.Named(
+                adapter.Name,
+                adapter.TypeParameters
+                    .Select(name => new TypeRef.Named(name, []))
+                    .Cast<TypeRef>()
+                    .ToList()));
+        var generated = WithContext(
+            context,
+            () => ExpandTypeMembers(
+                adapter.CompileTimeMemberNodes,
+                TypeMemberPlacement.TypeAdapter));
+        var prepared = adapter with
+        {
+            ExposedMethods = adapter.ExposedMethods
+                .Concat(generated.ExposedMethods)
+                .ToList(),
+            Methods = adapter.Methods.Concat(generated.Methods).ToList(),
+            CompileTimeMembers = generated.Deferred,
+        };
+        ReportDeferredTypeMembers(generated.Deferred, "type adapter");
+        return base.RewriteTypeAdapter(prepared);
+    }
+
+    private CompileTimeEvaluationContext CreateTypeMemberContext(
+        IReadOnlyList<string> typeParameters,
+        TypeRef? selfType)
+    {
+        var context = _context.CreateChild();
+        if (selfType is not null)
+        {
+            context.Define(
+                "Self",
+                new CompileTimeValue.Type(selfType),
+                isMutable: false);
+        }
+        foreach (var typeParameter in typeParameters)
+        {
+            context.DefineDeferred(typeParameter);
+        }
+
+        return context;
+    }
+
+    private TypeMemberExpansion ExpandTypeMembers(
+        IReadOnlyList<SyntaxNode> members,
+        TypeMemberPlacement placement)
+    {
+        var result = new TypeMemberExpansion();
+        foreach (var member in members)
+        {
+            switch (member)
+            {
+                case CompileTimeIfDeclarationNode conditional:
+                    ExpandTypeMemberIf(conditional, placement, result);
+                    break;
+                case CompileTimeForeachDeclarationNode foreachNode:
+                    ExpandTypeMemberForeach(foreachNode, placement, result);
+                    break;
+                case StructFieldNode field when placement == TypeMemberPlacement.Struct:
+                    result.Fields.Add(RewriteStructField(field));
+                    break;
+                case FunctionNode method:
+                    result.Methods.Add(RewriteFunction(method));
+                    break;
+                case MacroInvocationDeclarationNode invocation
+                    when placement == TypeMemberPlacement.Struct:
+                    result.MacroInvocations.Add(
+                        base.RewriteMacroInvocationDeclaration(invocation));
+                    break;
+                case ExposeMethodNode exposed
+                    when placement == TypeMemberPlacement.TypeAdapter:
+                    result.ExposedMethods.Add(RewriteExposeMethod(exposed));
+                    break;
+                default:
+                    ReportInvalidSyntaxBlockItem(
+                        member,
+                        placement == TypeMemberPlacement.Struct
+                            ? "struct member"
+                            : placement == TypeMemberPlacement.Extension
+                                ? "extension method"
+                                : "type adapter member");
+                    break;
+            }
+        }
+
+        return result;
+    }
+
+    private void ExpandTypeMemberIf(
+        CompileTimeIfDeclarationNode conditional,
+        TypeMemberPlacement placement,
+        TypeMemberExpansion result)
+    {
+        var selection = SelectBranch(
+            conditional.Condition,
+            conditional.ThenBlock,
+            conditional.ElseBlock,
+            out var selectedBlock);
+        if (selection == CompileTimeExpansionDecision.Deferred)
+        {
+            result.Deferred.Add(conditional);
+            return;
+        }
+        if (selection == CompileTimeExpansionDecision.Failed)
+        {
+            return;
+        }
+
+        var branchContext = _context.CreateChild();
+        var expanded = WithContext(
+            branchContext,
+            () => ExpandTypeMembers(selectedBlock.Items, placement));
+        result.Add(expanded);
+    }
+
+    private void ExpandTypeMemberForeach(
+        CompileTimeForeachDeclarationNode foreachNode,
+        TypeMemberPlacement placement,
+        TypeMemberExpansion result)
+    {
+        var evaluation = EvaluateForeach(
+            foreachNode.IterableExpression,
+            out var values);
+        if (evaluation == CompileTimeExpansionDecision.Deferred)
+        {
+            result.Deferred.Add(foreachNode);
+            return;
+        }
+        if (evaluation == CompileTimeExpansionDecision.Failed)
+        {
+            return;
+        }
+
+        foreach (var value in values)
+        {
+            var iterationContext = _context.CreateChild();
+            iterationContext.Define(foreachNode.BindingName, value);
+            var expanded = WithContext(
+                iterationContext,
+                () => ExpandTypeMembers(foreachNode.Body.Items, placement));
+            result.Add(expanded);
+        }
+    }
+
+    private void ReportDeferredTypeMembers(
+        IReadOnlyList<SyntaxNode> members,
+        string containerName)
+    {
+        foreach (var member in members)
+        {
+            _diagnostics.Report(
+                member.Location,
+                $"Compile-time {containerName} member expansion depends on an unresolved generic type parameter; specialization-dependent type member expansion is not supported yet.");
+        }
     }
 
     protected override ExpressionNode RewritePlaceholderExpression(PlaceholderExpressionNode placeholder)
@@ -441,13 +672,21 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private IReadOnlyList<StatementNode> ExpandLet(CompileTimeLetStatementNode compileTimeLet)
     {
-        var value = _evaluator.Evaluate(compileTimeLet.Initializer, _context);
-        if (value is null)
+        var outcome = _evaluator.EvaluateOutcome(
+            compileTimeLet.Initializer,
+            _context);
+        if (outcome is CompileTimeEvaluationOutcome.Deferred)
+        {
+            _context.DefineDeferred(compileTimeLet.Name);
+            return [compileTimeLet];
+        }
+
+        if (outcome is not CompileTimeEvaluationOutcome.Value evaluated)
         {
             return [];
         }
 
-        if (!_context.Define(compileTimeLet.Name, value))
+        if (!_context.Define(compileTimeLet.Name, evaluated.Result))
         {
             _diagnostics.Report(
                 compileTimeLet.Location,
@@ -557,11 +796,16 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private IReadOnlyList<StatementNode> ExpandIf(CompileTimeIfStatementNode conditional)
     {
-        if (!TrySelectBranch(
+        var selection = SelectBranch(
             conditional.Condition,
             conditional.ThenBlock,
             conditional.ElseBlock,
-            out var selectedBlock))
+            out var selectedBlock);
+        if (selection == CompileTimeExpansionDecision.Deferred)
+        {
+            return [conditional];
+        }
+        if (selection == CompileTimeExpansionDecision.Failed)
         {
             return [];
         }
@@ -571,9 +815,14 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private IReadOnlyList<StatementNode> ExpandForeach(CompileTimeForeachStatementNode foreachNode)
     {
-        if (!TryEvaluateForeach(
+        var evaluation = EvaluateForeach(
             foreachNode.IterableExpression,
-            out var values))
+            out var values);
+        if (evaluation == CompileTimeExpansionDecision.Deferred)
+        {
+            return [foreachNode];
+        }
+        if (evaluation == CompileTimeExpansionDecision.Failed)
         {
             return [];
         }
@@ -615,11 +864,16 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private IReadOnlyList<SyntaxNode> ExpandCDeclareIf(CompileTimeIfDeclarationNode conditional)
     {
-        if (!TrySelectBranch(
+        var selection = SelectBranch(
             conditional.Condition,
             conditional.ThenBlock,
             conditional.ElseBlock,
-            out var selectedBlock))
+            out var selectedBlock);
+        if (selection == CompileTimeExpansionDecision.Deferred)
+        {
+            return [conditional];
+        }
+        if (selection == CompileTimeExpansionDecision.Failed)
         {
             return [];
         }
@@ -630,9 +884,14 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     private IReadOnlyList<SyntaxNode> ExpandCDeclareForeach(
         CompileTimeForeachDeclarationNode foreachNode)
     {
-        if (!TryEvaluateForeach(
+        var evaluation = EvaluateForeach(
             foreachNode.IterableExpression,
-            out var values))
+            out var values);
+        if (evaluation == CompileTimeExpansionDecision.Deferred)
+        {
+            return [foreachNode];
+        }
+        if (evaluation == CompileTimeExpansionDecision.Failed)
         {
             return [];
         }
@@ -676,50 +935,66 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             item.Location,
             $"Compile-time syntax block item '{item.GetType().Name}' cannot be expanded as a {expectedKind}.");
 
-    private bool TrySelectBranch(
+    private CompileTimeExpansionDecision SelectBranch(
         ExpressionNode condition,
         SyntaxBlockNode thenBlock,
         SyntaxBlockNode elseBlock,
         out SyntaxBlockNode selectedBlock)
     {
         selectedBlock = thenBlock;
-        var value = _evaluator.Evaluate(condition, _context);
-        if (value is CompileTimeValue.Boolean boolean)
+        var outcome = _evaluator.EvaluateOutcome(condition, _context);
+        if (outcome is CompileTimeEvaluationOutcome.Value
+            {
+                Result: CompileTimeValue.Boolean boolean,
+            })
         {
             selectedBlock = boolean.Value ? thenBlock : elseBlock;
-            return true;
+            return CompileTimeExpansionDecision.Expanded;
         }
 
-        if (value is not null)
+        if (outcome is CompileTimeEvaluationOutcome.Deferred)
+        {
+            return CompileTimeExpansionDecision.Deferred;
+        }
+
+        if (outcome is CompileTimeEvaluationOutcome.Value)
         {
             _diagnostics.Report(
                 condition.Location,
                 "Compile-time @if condition must evaluate to a boolean value.");
         }
 
-        return false;
+        return CompileTimeExpansionDecision.Failed;
     }
 
-    private bool TryEvaluateForeach(
+    private CompileTimeExpansionDecision EvaluateForeach(
         ExpressionNode iterableExpression,
         out IReadOnlyList<CompileTimeValue> values)
     {
         values = [];
-        var value = _evaluator.Evaluate(iterableExpression, _context);
-        if (value is CompileTimeValue.List list)
+        var outcome = _evaluator.EvaluateOutcome(iterableExpression, _context);
+        if (outcome is CompileTimeEvaluationOutcome.Value
+            {
+                Result: CompileTimeValue.List list,
+            })
         {
             values = list.Values;
-            return true;
+            return CompileTimeExpansionDecision.Expanded;
         }
 
-        if (value is not null)
+        if (outcome is CompileTimeEvaluationOutcome.Deferred)
+        {
+            return CompileTimeExpansionDecision.Deferred;
+        }
+
+        if (outcome is CompileTimeEvaluationOutcome.Value)
         {
             _diagnostics.Report(
                 iterableExpression.Location,
                 "Compile-time @foreach expression must evaluate to a list value.");
         }
 
-        return false;
+        return CompileTimeExpansionDecision.Failed;
     }
 
     private T WithContext<T>(CompileTimeEvaluationContext context, Func<T> action)
@@ -733,6 +1008,42 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         finally
         {
             _context = previous;
+        }
+    }
+
+    private enum CompileTimeExpansionDecision
+    {
+        Expanded,
+        Deferred,
+        Failed,
+    }
+
+    private enum TypeMemberPlacement
+    {
+        Struct,
+        Extension,
+        TypeAdapter,
+    }
+
+    private sealed class TypeMemberExpansion
+    {
+        public List<StructFieldNode> Fields { get; } = [];
+
+        public List<FunctionNode> Methods { get; } = [];
+
+        public List<MacroInvocationDeclarationNode> MacroInvocations { get; } = [];
+
+        public List<ExposeMethodNode> ExposedMethods { get; } = [];
+
+        public List<SyntaxNode> Deferred { get; } = [];
+
+        public void Add(TypeMemberExpansion other)
+        {
+            Fields.AddRange(other.Fields);
+            Methods.AddRange(other.Methods);
+            MacroInvocations.AddRange(other.MacroInvocations);
+            ExposedMethods.AddRange(other.ExposedMethods);
+            Deferred.AddRange(other.Deferred);
         }
     }
 }

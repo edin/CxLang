@@ -60,6 +60,77 @@ public sealed class CompileTimeDirectiveExpansionPassTests
     }
 
     [Fact]
+    public void ExpandProgram_PreservesDirectiveThatDependsOnGenericTypeParameter()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn selected<T>() -> int {
+                @if(T == int) {
+                    return 1;
+                } else {
+                    return 2;
+                }
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        Assert.IsType<CompileTimeIfStatementNode>(
+            Assert.Single(Assert.Single(expanded.Functions).Body));
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_SelectsTopLevelCompileTimeIfBranch()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            @if(enabled) {
+                fn selected() -> int {
+                    return 1;
+                }
+            } else {
+                fn discarded() -> int {
+                    return 2;
+                }
+            }
+            """);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("enabled", new CompileTimeValue.Boolean(true));
+
+        var (expanded, diagnostics) = Expand(program, context);
+
+        Assert.Equal("selected", Assert.Single(expanded.Functions).Name);
+        Assert.DoesNotContain(
+            expanded.Declarations,
+            declaration => declaration is CompileTimeIfTopLevelNode);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void ExpandProgram_ExecutesTopLevelCompileTimeForeach()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            @foreach name in ["first", "second"] {
+                fn @{as_name(name)}() -> int {
+                    return 0;
+                }
+            }
+            """);
+
+        var (expanded, diagnostics) = Expand(program);
+
+        Assert.Equal(
+            ["first", "second"],
+            expanded.Functions.Select(function => function.Name));
+        Assert.DoesNotContain(
+            expanded.Declarations,
+            declaration => declaration is CompileTimeForeachTopLevelNode);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
     public void ExpandProgram_ExpandsForeachWithScopedBindingsAndNestedIf()
     {
         var program = CompilerTestHelpers.Parse(

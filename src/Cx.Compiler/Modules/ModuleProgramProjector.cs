@@ -65,6 +65,9 @@ internal static class ModuleProgramProjector
                 .SelectMany(program => program.GlobalVariables
                     .Concat(program.CDeclarations.SelectMany(declaration => declaration.Constants)))
                 .ToList(),
+            CompileTimeConstants = programs
+                .SelectMany(program => program.CompileTimeConstants)
+                .ToList(),
             Functions = programs
                 .SelectMany(program => program.Functions
                     .Concat(program.Structs.SelectMany(structNode => structNode.Methods))

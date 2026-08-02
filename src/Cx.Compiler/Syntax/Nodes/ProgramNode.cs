@@ -157,6 +157,12 @@ public sealed record ProgramNode(
         init => Declarations = ReplaceAll(Declarations, value);
     }
 
+    public IReadOnlyList<CompileTimeConstantNode> CompileTimeConstants
+    {
+        get => Declarations.OfType<CompileTimeConstantNode>().ToList();
+        init => Declarations = ReplaceAll(Declarations, value);
+    }
+
     public IReadOnlyList<FunctionNode> Functions
     {
         get => Declarations.OfType<FunctionNode>().ToList();
@@ -272,13 +278,24 @@ public sealed record GlobalVariableNode(
     bool IsMacro = false,
     TypeNode? TypeNode = null) : TopLevelNode(Location);
 
+public sealed record CompileTimeConstantNode(
+    Location Location,
+    string Name,
+    TypeNode TypeNode,
+    ExpressionNode Initializer,
+    IReadOnlyList<AttributeApplicationNode> Attributes) : TopLevelNode(Location);
+
 public sealed record ExtensionNode(
     Location Location,
     IReadOnlyList<string> TypeParameters,
     IReadOnlyList<GenericConstraintNode> GenericConstraints,
     IReadOnlyList<FunctionNode> Methods,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    TypeNode? TargetTypeNode = null) : TopLevelNode(Location);
+    TypeNode? TargetTypeNode = null,
+    IReadOnlyList<SyntaxNode>? CompileTimeMembers = null) : TopLevelNode(Location)
+{
+    public IReadOnlyList<SyntaxNode> CompileTimeMemberNodes => CompileTimeMembers ?? [];
+}
 
 public sealed record TypeAdapterNode(
     Location Location,
@@ -287,7 +304,11 @@ public sealed record TypeAdapterNode(
     IReadOnlyList<ExposeMethodNode> ExposedMethods,
     IReadOnlyList<FunctionNode> Methods,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    TypeNode? BaseTypeNode = null) : TopLevelNode(Location);
+    TypeNode? BaseTypeNode = null,
+    IReadOnlyList<SyntaxNode>? CompileTimeMembers = null) : TopLevelNode(Location)
+{
+    public IReadOnlyList<SyntaxNode> CompileTimeMemberNodes => CompileTimeMembers ?? [];
+}
 
 public sealed record ExposeMethodNode(
     Location Location,

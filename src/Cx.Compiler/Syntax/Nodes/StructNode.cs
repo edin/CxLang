@@ -12,9 +12,12 @@ public sealed record StructNode(
     IReadOnlyList<FunctionNode> Methods,
     IReadOnlyList<AttributeApplicationNode> Attributes,
     bool IsHeaderDeclaration = false,
-    IReadOnlyList<MacroInvocationDeclarationNode>? MacroInvocations = null) : TopLevelNode(Location)
+    IReadOnlyList<MacroInvocationDeclarationNode>? MacroInvocations = null,
+    IReadOnlyList<SyntaxNode>? CompileTimeMembers = null) : TopLevelNode(Location)
 {
     public IReadOnlyList<MacroInvocationDeclarationNode> MacroInvocationNodes => MacroInvocations ?? [];
+
+    public IReadOnlyList<SyntaxNode> CompileTimeMemberNodes => CompileTimeMembers ?? [];
 }
 
 public sealed record GenericConstraintNode(

@@ -64,6 +64,9 @@ internal static class ImportedProgramRewriter
             Extensions = program.Extensions.Concat(projected.Extensions).ToList(),
             TaggedUnions = program.TaggedUnions.Concat(projected.TaggedUnions).ToList(),
             GlobalVariables = program.GlobalVariables.Concat(projected.GlobalVariables).ToList(),
+            CompileTimeConstants = program.CompileTimeConstants
+                .Concat(projected.CompileTimeConstants)
+                .ToList(),
             Functions = program.Functions.Concat(projected.Functions).ToList(),
         };
 
@@ -84,6 +87,7 @@ internal static class ImportedProgramRewriter
             Extensions = [],
             TaggedUnions = [],
             GlobalVariables = [],
+            CompileTimeConstants = [],
             Functions = [],
         };
 }

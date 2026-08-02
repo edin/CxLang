@@ -33,17 +33,55 @@ public sealed partial class Parser
         while (!IsAtEnd)
         {
             var declarationStart = Current;
+
+            if (Check(TokenType.At) && PeekType() == TokenType.If)
+            {
+                if (ParseCompileTimeIfTopLevel() is { } conditional)
+                {
+                    AddSpannedNode(
+                        declarations,
+                        conditional,
+                        declarationStart,
+                        DeclarationVisibility.Module);
+                }
+
+                continue;
+            }
+
+            if (Check(TokenType.At) && PeekType() == TokenType.Foreach)
+            {
+                if (ParseCompileTimeForeachTopLevel() is { } foreachNode)
+                {
+                    AddSpannedNode(
+                        declarations,
+                        foreachNode,
+                        declarationStart,
+                        DeclarationVisibility.Module);
+                }
+
+                continue;
+            }
+
             var attributes = ParseAttributeApplications();
             var modifiers = ParseDeclarationModifiers();
             var visibility = !modifiers.IsPublic
                 ? DeclarationVisibility.Module
                 : DeclarationVisibility.Public;
-            if (!Check(TokenType.Fn))
+            var isCompileTimeConstant =
+                modifiers.IsCompileTime && Check(TokenType.Const);
+            if (!Check(TokenType.Fn) && !isCompileTimeConstant)
             {
                 ValidateOnlyModifiers(
                     modifiers,
                     DeclarationModifier.Public,
                     "this declaration");
+            }
+            else if (isCompileTimeConstant)
+            {
+                ValidateOnlyModifiers(
+                    modifiers,
+                    DeclarationModifier.Public | DeclarationModifier.CompileTime,
+                    "compile-time constants");
             }
 
             if (Check(TokenType.Module))
@@ -165,9 +203,27 @@ public sealed partial class Parser
 
             if (Match(TokenType.Const) is { } constToken)
             {
-                if (ParseGlobalVariable(constToken, isConst: true, attributes) is { } global)
+                if (modifiers.IsCompileTime)
                 {
-                    AddSpannedNode(declarations, global, declarationStart, visibility);
+                    if (ParseCompileTimeConstant(constToken, attributes) is { } constant)
+                    {
+                        AddSpannedNode(
+                            declarations,
+                            constant,
+                            declarationStart,
+                            visibility);
+                    }
+                }
+                else if (ParseGlobalVariable(
+                    constToken,
+                    isConst: true,
+                    attributes) is { } global)
+                {
+                    AddSpannedNode(
+                        declarations,
+                        global,
+                        declarationStart,
+                        visibility);
                 }
 
                 continue;
@@ -435,7 +491,7 @@ public sealed partial class Parser
             {
                 _diagnostics.Report(
                     Current.Location,
-                    "Expected a function, struct, global, type, or compile-time declaration in declaration macro template.");
+                    "Expected a top-level declaration or compile-time directive in expandable declaration block.");
                 Advance();
             }
         }
@@ -487,13 +543,64 @@ public sealed partial class Parser
         {
             declaration = ParseExtension(attributes);
         }
+        else if (Check(TokenType.Interface))
+        {
+            declaration = ParseInterface(attributes);
+        }
+        else if (Check(TokenType.Enum))
+        {
+            declaration = ParseEnum(attributes);
+        }
+        else if (Check(TokenType.Raw) && PeekType() == TokenType.Union)
+        {
+            var rawToken = Expect(TokenType.Raw, "Expected 'raw'.");
+            declaration = ParseTaggedUnion(
+                attributes,
+                isRaw: true,
+                rawLocation: rawToken?.Location);
+        }
+        else if (Check(TokenType.Union))
+        {
+            declaration = ParseTaggedUnion(attributes, isRaw: false);
+        }
+        else if (Check(TokenType.Requires))
+        {
+            ReportUnexpectedAttributes(attributes, "requirements");
+            declaration = ParseRequirement();
+        }
+        else if (Check(TokenType.Attribute))
+        {
+            ReportUnexpectedAttributes(attributes, "attribute declarations");
+            declaration = ParseAttributeDeclaration();
+        }
+        else if (Check(ContextualKeyword.Test))
+        {
+            declaration = ParseTest(attributes);
+        }
+        else if (Check(TokenType.Include))
+        {
+            ReportUnexpectedAttributes(attributes, "includes");
+            declaration = ParseInclude();
+        }
+        else if (Check(TokenType.Declare))
+        {
+            ReportUnexpectedAttributes(attributes, "C declarations");
+            declaration = ParseCDeclare();
+        }
+        else if (Match(TokenType.Use) is { } useToken)
+        {
+            ReportUnexpectedAttributes(attributes, "macro invocations");
+            declaration = ParseMacroInvocationDeclaration(useToken);
+        }
         else if (Match(TokenType.Let) is { } letToken)
         {
             declaration = ParseGlobalVariable(letToken, isConst: false, attributes);
         }
         else if (Match(TokenType.Const) is { } constToken)
         {
-            declaration = ParseGlobalVariable(constToken, isConst: true, attributes);
+            declaration = modifiers.IsCompileTime
+                ? ParseCompileTimeConstant(constToken, attributes)
+                : ParseGlobalVariable(constToken, isConst: true, attributes);
         }
         else if (Check(TokenType.Type))
         {
@@ -507,7 +614,14 @@ public sealed partial class Parser
 
         if (declaration is not null)
         {
-            if (declaration is not FunctionNode)
+            if (declaration is CompileTimeConstantNode)
+            {
+                ValidateOnlyModifiers(
+                    modifiers,
+                    DeclarationModifier.Public | DeclarationModifier.CompileTime,
+                    "compile-time constants");
+            }
+            else if (declaration is not FunctionNode)
             {
                 ValidateOnlyModifiers(
                     modifiers,
@@ -1115,32 +1229,25 @@ public sealed partial class Parser
 
             var exposedMethods = new List<ExposeMethodNode>();
             var methods = new List<FunctionNode>();
+            var compileTimeMembers = new List<SyntaxNode>();
             while (!IsAtEnd && !Check(TokenType.RBrace))
             {
-                var memberAttributes = ParseAttributeApplications();
-
-                if (Check(TokenType.Expose))
+                var member = ParseSpannedNode(() => ParseTypeAdapterMember(
+                    nameToken?.Value ?? string.Empty,
+                    typeParameters));
+                switch (member)
                 {
-                    if (ParseExposeMethod() is { } expose)
-                    {
-                        exposedMethods.Add(expose);
-                    }
-
-                    continue;
-                }
-
-                if (TryParseOwnedFunction(nameToken?.Value ?? string.Empty, typeParameters, memberAttributes, out var method))
-                {
-                    if (method is not null)
-                    {
+                    case ExposeMethodNode exposed:
+                        exposedMethods.Add(exposed);
+                        break;
+                    case FunctionNode method:
                         methods.Add(method);
-                    }
-
-                    continue;
+                        break;
+                    case CompileTimeIfDeclarationNode
+                        or CompileTimeForeachDeclarationNode:
+                        compileTimeMembers.Add(member);
+                        break;
                 }
-
-                _diagnostics.Report(Current.Location, "Expected 'expose' or adapter method declaration.");
-                SynchronizeStatement();
             }
 
             Expect(TokenType.RBrace, "Expected '}' after type adapter body.");
@@ -1154,7 +1261,8 @@ public sealed partial class Parser
                     exposedMethods,
                     methods,
                     attributes,
-                    BaseTypeNode: baseTypeNode);
+                    BaseTypeNode: baseTypeNode,
+                    CompileTimeMembers: compileTimeMembers);
         }
 
         if (typeParameters.Count > 0)
@@ -1176,6 +1284,46 @@ public sealed partial class Parser
                 attributes,
                 IsHeaderDeclaration: isHeaderDeclaration,
                 TargetTypeNode: targetTypeNode);
+    }
+
+    private SyntaxNode? ParseTypeAdapterMember(
+        string ownerType,
+        IReadOnlyList<string> ownerTypeParameters)
+    {
+        if (Check(TokenType.At) && PeekType() == TokenType.If)
+        {
+            return ParseCompileTimeIfTypeMember(
+                () => ParseTypeAdapterMember(ownerType, ownerTypeParameters),
+                "type adapter");
+        }
+        if (Check(TokenType.At) && PeekType() == TokenType.Foreach)
+        {
+            return ParseCompileTimeForeachTypeMember(
+                () => ParseTypeAdapterMember(ownerType, ownerTypeParameters),
+                "type adapter");
+        }
+
+        var attributes = ParseAttributeApplications();
+        if (Check(TokenType.Expose))
+        {
+            ReportUnexpectedAttributes(attributes, "exposed adapter methods");
+            return ParseExposeMethod();
+        }
+
+        if (TryParseOwnedFunction(
+            ownerType,
+            ownerTypeParameters,
+            attributes,
+            out var method))
+        {
+            return method;
+        }
+
+        _diagnostics.Report(
+            Current.Location,
+            "Expected 'expose', an adapter method, or a compile-time directive.");
+        SynchronizeStatement();
+        return null;
     }
 
     private ExposeMethodNode? ParseExposeMethod()
@@ -1229,6 +1377,43 @@ public sealed partial class Parser
             IsHeaderDeclaration: isHeaderDeclaration,
             IsMacro: isMacro,
             TypeNode: declaration.TypeNode);
+    }
+
+    private CompileTimeConstantNode? ParseCompileTimeConstant(
+        Token constToken,
+        IReadOnlyList<AttributeApplicationNode> attributes)
+    {
+        var declaration = ParseVariableDeclarationParts(
+            constToken.Location,
+            nameMessage: "Expected compile-time constant name.",
+            typeSubject: "compile-time constant",
+            missingTypeOrInitializerMessage:
+                "Expected ':' and an initializer after compile-time constant name.");
+
+        if (declaration.TypeNode is null)
+        {
+            _diagnostics.Report(
+                constToken.Location,
+                "Compile-time constants require an explicit type.");
+        }
+        if (declaration.Initializer is null)
+        {
+            _diagnostics.Report(
+                constToken.Location,
+                "Compile-time constants require an initializer.");
+        }
+
+        Expect(
+            TokenType.Semicolon,
+            "Expected ';' after compile-time constant declaration.");
+        return declaration.TypeNode is null || declaration.Initializer is null
+            ? null
+            : new CompileTimeConstantNode(
+                constToken.Location,
+                declaration.Name,
+                declaration.TypeNode,
+                declaration.Initializer,
+                attributes);
     }
 
     private FunctionNode? ParseFunction(
@@ -1499,37 +1684,27 @@ public sealed partial class Parser
         var fields = new List<StructFieldNode>();
         var methods = new List<FunctionNode>();
         var macroInvocations = new List<MacroInvocationDeclarationNode>();
+        var compileTimeMembers = new List<SyntaxNode>();
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
-            var memberAttributes = ParseAttributeApplications();
-
-            if (Match(TokenType.Use) is { } useToken)
+            var member = ParseSpannedNode(() => ParseStructMember(
+                nameToken?.Value ?? string.Empty,
+                typeParameters));
+            switch (member)
             {
-                ReportUnexpectedAttributes(memberAttributes, "struct macro invocations");
-                var invocation = ParseMacroInvocationDeclaration(useToken);
-                invocation.Span = SourceSpan.FromBounds(useToken.Span, Tokens.Previous.Span);
-                macroInvocations.Add(invocation);
-                continue;
-            }
-
-            if (TryParseOwnedFunction(nameToken?.Value ?? string.Empty, typeParameters, memberAttributes, out var method))
-            {
-                if (method is not null)
-                {
+                case StructFieldNode field:
+                    fields.Add(field);
+                    break;
+                case FunctionNode method:
                     methods.Add(method);
-                }
-
-                continue;
-            }
-
-            var fieldToken = ExpectIdentifierLike("Expected struct field name.");
-            Expect(TokenType.Colon, "Expected ':' after struct field name.");
-            var typeNode = ParseTypeNode();
-            Expect(TokenType.Semicolon, "Expected ';' after struct field.");
-
-            if (fieldToken is not null)
-            {
-                fields.Add(new StructFieldNode(fieldToken.Location, fieldToken.Value, memberAttributes, typeNode));
+                    break;
+                case MacroInvocationDeclarationNode invocation:
+                    macroInvocations.Add(invocation);
+                    break;
+                case CompileTimeIfDeclarationNode
+                    or CompileTimeForeachDeclarationNode:
+                    compileTimeMembers.Add(member);
+                    break;
             }
         }
 
@@ -1548,7 +1723,54 @@ public sealed partial class Parser
                 methods,
                 attributes,
                 IsHeaderDeclaration: isHeaderDeclaration,
-                MacroInvocations: macroInvocations);
+                MacroInvocations: macroInvocations,
+                CompileTimeMembers: compileTimeMembers);
+    }
+
+    private SyntaxNode? ParseStructMember(
+        string ownerType,
+        IReadOnlyList<string> ownerTypeParameters)
+    {
+        if (Check(TokenType.At) && PeekType() == TokenType.If)
+        {
+            return ParseCompileTimeIfTypeMember(
+                () => ParseStructMember(ownerType, ownerTypeParameters),
+                "struct");
+        }
+        if (Check(TokenType.At) && PeekType() == TokenType.Foreach)
+        {
+            return ParseCompileTimeForeachTypeMember(
+                () => ParseStructMember(ownerType, ownerTypeParameters),
+                "struct");
+        }
+
+        var attributes = ParseAttributeApplications();
+        if (Match(TokenType.Use) is { } useToken)
+        {
+            ReportUnexpectedAttributes(attributes, "struct macro invocations");
+            return ParseMacroInvocationDeclaration(useToken);
+        }
+
+        if (TryParseOwnedFunction(
+            ownerType,
+            ownerTypeParameters,
+            attributes,
+            out var method))
+        {
+            return method;
+        }
+
+        var fieldToken = ExpectIdentifierLike("Expected struct field name.");
+        Expect(TokenType.Colon, "Expected ':' after struct field name.");
+        var typeNode = ParseTypeNode();
+        Expect(TokenType.Semicolon, "Expected ';' after struct field.");
+        return fieldToken is null
+            ? null
+            : new StructFieldNode(
+                fieldToken.Location,
+                fieldToken.Value,
+                attributes,
+                typeNode);
     }
 
     private ExtensionNode? ParseExtension(IReadOnlyList<AttributeApplicationNode> attributes)
@@ -1572,25 +1794,23 @@ public sealed partial class Parser
         Expect(TokenType.LBrace, "Expected '{' before extension body.");
 
         var methods = new List<FunctionNode>();
+        var compileTimeMembers = new List<SyntaxNode>();
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
-            var memberAttributes = ParseAttributeApplications();
-
-            if (TryParseOwnedFunction(targetType, typeParameters, memberAttributes, out var method))
+            var member = ParseSpannedNode(() => ParseExtensionMember(
+                targetType,
+                typeParameters,
+                genericConstraints));
+            switch (member)
             {
-                if (method is not null)
-                {
-                    methods.Add(method with
-                    {
-                        GenericConstraints = genericConstraints.Concat(method.GenericConstraints).ToList(),
-                    });
-                }
-
-                continue;
+                case FunctionNode method:
+                    methods.Add(method);
+                    break;
+                case CompileTimeIfDeclarationNode
+                    or CompileTimeForeachDeclarationNode:
+                    compileTimeMembers.Add(member);
+                    break;
             }
-
-            _diagnostics.Report(Current.Location, "Expected extension method declaration.");
-            SynchronizeStatement();
         }
 
         Expect(TokenType.RBrace, "Expected '}' after extension body.");
@@ -1604,7 +1824,140 @@ public sealed partial class Parser
                 genericConstraints,
                 methods,
                 attributes,
-                TargetTypeNode: targetTypeNode);
+                TargetTypeNode: targetTypeNode,
+                CompileTimeMembers: compileTimeMembers);
+    }
+
+    private SyntaxNode? ParseExtensionMember(
+        string ownerType,
+        IReadOnlyList<string> ownerTypeParameters,
+        IReadOnlyList<GenericConstraintNode> extensionConstraints)
+    {
+        if (Check(TokenType.At) && PeekType() == TokenType.If)
+        {
+            return ParseCompileTimeIfTypeMember(
+                () => ParseExtensionMember(
+                    ownerType,
+                    ownerTypeParameters,
+                    extensionConstraints),
+                "extension");
+        }
+        if (Check(TokenType.At) && PeekType() == TokenType.Foreach)
+        {
+            return ParseCompileTimeForeachTypeMember(
+                () => ParseExtensionMember(
+                    ownerType,
+                    ownerTypeParameters,
+                    extensionConstraints),
+                "extension");
+        }
+
+        var attributes = ParseAttributeApplications();
+        if (TryParseOwnedFunction(
+            ownerType,
+            ownerTypeParameters,
+            attributes,
+            out var method))
+        {
+            return method is null
+                ? null
+                : method with
+                {
+                    GenericConstraints = extensionConstraints
+                        .Concat(method.GenericConstraints)
+                        .ToList(),
+                };
+        }
+
+        _diagnostics.Report(
+            Current.Location,
+            "Expected an extension method or compile-time directive.");
+        SynchronizeStatement();
+        return null;
+    }
+
+    private CompileTimeIfDeclarationNode? ParseCompileTimeIfTypeMember(
+        Func<SyntaxNode?> parseMember,
+        string containerName)
+    {
+        var atToken = Expect(TokenType.At, "Expected '@'.");
+        Expect(TokenType.If, "Expected 'if' after '@'.");
+        var condition = ParseParenthesizedExpression("compile-time if condition");
+        var thenBlock = ParseSyntaxBlock(() => ParseTypeMemberBlock(
+            parseMember,
+            $"Expected '{{' before compile-time {containerName} member branch.",
+            $"Expected '}}' after compile-time {containerName} member branch."));
+        var elseBlock = EmptySyntaxBlock(atToken?.Location ?? Current.Location);
+        if (ConsumeOptional(TokenType.Else))
+        {
+            elseBlock = ParseSyntaxBlock(() => ParseTypeMemberBlock(
+                parseMember,
+                $"Expected '{{' before compile-time {containerName} member else branch.",
+                $"Expected '}}' after compile-time {containerName} member else branch."));
+        }
+
+        return atToken is null
+            ? null
+            : new CompileTimeIfDeclarationNode(
+                atToken.Location,
+                condition,
+                thenBlock,
+                elseBlock);
+    }
+
+    private CompileTimeForeachDeclarationNode? ParseCompileTimeForeachTypeMember(
+        Func<SyntaxNode?> parseMember,
+        string containerName)
+    {
+        var atToken = Expect(TokenType.At, "Expected '@'.");
+        Expect(TokenType.Foreach, "Expected 'foreach' after '@'.");
+        var bindingToken = Expect(
+            TokenType.Identifier,
+            "Expected compile-time foreach binding name.");
+        Expect(TokenType.In, "Expected 'in' after compile-time foreach binding.");
+        var iterable = ReadExpressionUntil(
+            atToken?.Location ?? Current.Location,
+            TokenType.LBrace);
+        var body = ParseSyntaxBlock(() => ParseTypeMemberBlock(
+            parseMember,
+            $"Expected '{{' before compile-time {containerName} member foreach body.",
+            $"Expected '}}' after compile-time {containerName} member foreach body."));
+
+        return atToken is null
+            ? null
+            : new CompileTimeForeachDeclarationNode(
+                atToken.Location,
+                bindingToken?.Value ?? string.Empty,
+                iterable,
+                body);
+    }
+
+    private IReadOnlyList<SyntaxNode> ParseTypeMemberBlock(
+        Func<SyntaxNode?> parseMember,
+        string openMessage,
+        string closeMessage)
+    {
+        Expect(TokenType.LBrace, openMessage);
+        var members = new List<SyntaxNode>();
+        while (!IsAtEnd && !Check(TokenType.RBrace))
+        {
+            var startPosition = Tokens.Position;
+            var member = ParseSpannedNode(parseMember);
+            if (member is not null)
+            {
+                members.Add(member);
+            }
+            if (Tokens.Position == startPosition)
+            {
+                _diagnostics.Report(
+                    Current.Location,
+                    "Expected a member declaration or compile-time directive.");
+                Advance();
+            }
+        }
+
+        Expect(TokenType.RBrace, closeMessage);
+        return members;
     }
 
     private static FunctionNode? InheritOwnerTypeParameters(

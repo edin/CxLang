@@ -16,6 +16,8 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         statement switch
         {
             ReturnStatement => true,
+            CompileTimeIfStatementNode conditional =>
+                CompileTimeIfAlwaysReturns(conditional, variables),
             IfStatement ifStatement => IfStatementAlwaysReturns(ifStatement, variables),
             ElseBlockStatement elseBlock => StatementsAlwaysReturn(elseBlock.Body, variables),
             SwitchStatement switchStatement => SwitchStatementAlwaysReturns(switchStatement, variables),
@@ -29,6 +31,8 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         statement switch
         {
             ReturnStatement or BreakStatement or ContinueStatement => true,
+            CompileTimeIfStatementNode conditional =>
+                CompileTimeIfAlwaysTransfersControl(conditional, variables),
             IfStatement ifStatement => IfStatementAlwaysTransfersControl(ifStatement, variables),
             ElseBlockStatement elseBlock => StatementsAlwaysTransferControl(elseBlock.Body, variables),
             SwitchStatement switchStatement => SwitchStatementAlwaysReturns(switchStatement, variables),
@@ -61,12 +65,38 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         && ifStatement.ElseBranch is not null
         && StatementAlwaysTransfersControl(ifStatement.ElseBranch, variables);
 
+    private bool CompileTimeIfAlwaysTransfersControl(
+        CompileTimeIfStatementNode conditional,
+        TypeEnvironment variables) =>
+        SyntaxBlockAlwaysTransfersControl(conditional.ThenBlock, variables)
+        && SyntaxBlockAlwaysTransfersControl(conditional.ElseBlock, variables);
+
     private bool IfStatementAlwaysReturns(
         IfStatement ifStatement,
         TypeEnvironment variables) =>
         StatementsAlwaysReturn(ifStatement.ThenBody, variables)
         && ifStatement.ElseBranch is not null
         && StatementAlwaysReturns(ifStatement.ElseBranch, variables);
+
+    private bool CompileTimeIfAlwaysReturns(
+        CompileTimeIfStatementNode conditional,
+        TypeEnvironment variables) =>
+        SyntaxBlockAlwaysReturns(conditional.ThenBlock, variables)
+        && SyntaxBlockAlwaysReturns(conditional.ElseBlock, variables);
+
+    private bool SyntaxBlockAlwaysReturns(
+        SyntaxBlockNode block,
+        TypeEnvironment variables) =>
+        StatementsAlwaysReturn(
+            block.Items.OfType<StatementNode>().ToList(),
+            variables);
+
+    private bool SyntaxBlockAlwaysTransfersControl(
+        SyntaxBlockNode block,
+        TypeEnvironment variables) =>
+        StatementsAlwaysTransferControl(
+            block.Items.OfType<StatementNode>().ToList(),
+            variables);
 
     private bool SwitchStatementAlwaysReturns(
         SwitchStatement switchStatement,

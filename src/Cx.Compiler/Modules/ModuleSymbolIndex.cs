@@ -334,6 +334,15 @@ internal sealed record ModuleSymbols(
                 Add(valueNames, publicValueNames, global.Name, global.IsPublic);
             }
 
+            foreach (var constant in program.CompileTimeConstants)
+            {
+                Add(
+                    valueNames,
+                    publicValueNames,
+                    constant.Name,
+                    constant.IsPublic);
+            }
+
             foreach (var function in program.Functions.Where(function => OwnerType(function) is null))
             {
                 Add(functionNames, publicFunctionNames, function.Name, function.IsPublic);

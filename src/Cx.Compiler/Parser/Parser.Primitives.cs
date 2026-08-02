@@ -124,6 +124,7 @@ public sealed partial class Parser
         or TypeAdapterNode
         or TaggedUnionNode
         or GlobalVariableNode
+        or CompileTimeConstantNode
         or FunctionNode
         or MacroDeclarationNode;
 

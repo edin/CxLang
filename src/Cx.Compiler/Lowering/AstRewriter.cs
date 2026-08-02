@@ -48,6 +48,7 @@ internal abstract class AstRewriter
             ExtensionNode extension => [RewriteExtension(extension)],
             TaggedUnionNode union => [RewriteTaggedUnion(union)],
             GlobalVariableNode global => [RewriteGlobalVariable(global)],
+            CompileTimeConstantNode constant => [RewriteCompileTimeConstant(constant)],
             FunctionNode function => [RewriteFunction(function)],
             CompileTimeScriptDeclarationNode script => RewriteCompileTimeScriptDeclaration(script),
             CompileTimeIfTopLevelNode conditional => [RewriteCompileTimeIfTopLevel(conditional)],
@@ -185,6 +186,15 @@ internal abstract class AstRewriter
             TypeNode = RewriteType(global.TypeNode),
         };
 
+    protected virtual CompileTimeConstantNode RewriteCompileTimeConstant(
+        CompileTimeConstantNode constant) =>
+        constant with
+        {
+            TypeNode = RewriteType(constant.TypeNode)!,
+            Initializer = RewriteExpression(constant.Initializer)!,
+            Attributes = RewriteAttributeApplications(constant.Attributes),
+        };
+
     protected virtual StructNode RewriteStruct(StructNode structNode) =>
         structNode with
         {
@@ -195,6 +205,9 @@ internal abstract class AstRewriter
             MacroInvocations = structNode.MacroInvocationNodes
                 .Select(RewriteMacroInvocationDeclaration)
                 .ToList(),
+            CompileTimeMembers = structNode.CompileTimeMemberNodes
+                .Select(RewriteTypeMember)
+                .ToList(),
             Attributes = RewriteAttributeApplications(structNode.Attributes),
         };
 
@@ -203,8 +216,39 @@ internal abstract class AstRewriter
         {
             GenericConstraints = RewriteGenericConstraints(extension.GenericConstraints),
             Methods = extension.Methods.Select(RewriteFunction).ToList(),
+            CompileTimeMembers = extension.CompileTimeMemberNodes
+                .Select(RewriteTypeMember)
+                .ToList(),
             Attributes = RewriteAttributeApplications(extension.Attributes),
             TargetTypeNode = RewriteType(extension.TargetTypeNode),
+        };
+
+    protected virtual SyntaxNode RewriteTypeMember(SyntaxNode member) =>
+        member switch
+        {
+            CompileTimeIfDeclarationNode conditional => conditional with
+            {
+                Condition = RewriteRequiredExpression(conditional.Condition),
+                ThenBlock = RewriteTypeMemberSyntaxBlock(conditional.ThenBlock),
+                ElseBlock = RewriteTypeMemberSyntaxBlock(conditional.ElseBlock),
+            },
+            CompileTimeForeachDeclarationNode foreachNode => foreachNode with
+            {
+                IterableExpression = RewriteRequiredExpression(foreachNode.IterableExpression),
+                Body = RewriteTypeMemberSyntaxBlock(foreachNode.Body),
+            },
+            FunctionNode function => RewriteFunction(function),
+            StructFieldNode field => RewriteStructField(field),
+            ExposeMethodNode exposed => RewriteExposeMethod(exposed),
+            MacroInvocationDeclarationNode invocation =>
+                RewriteMacroInvocationDeclaration(invocation),
+            _ => member,
+        };
+
+    private SyntaxBlockNode RewriteTypeMemberSyntaxBlock(SyntaxBlockNode block) =>
+        block with
+        {
+            Items = block.Items.Select(RewriteTypeMember).ToList(),
         };
 
     protected virtual TypeAdapterNode RewriteTypeAdapter(TypeAdapterNode adapter) =>
@@ -212,6 +256,9 @@ internal abstract class AstRewriter
         {
             ExposedMethods = adapter.ExposedMethods.Select(RewriteExposeMethod).ToList(),
             Methods = adapter.Methods.Select(RewriteFunction).ToList(),
+            CompileTimeMembers = adapter.CompileTimeMemberNodes
+                .Select(RewriteTypeMember)
+                .ToList(),
             Attributes = RewriteAttributeApplications(adapter.Attributes),
             BaseTypeNode = RewriteType(adapter.BaseTypeNode),
         };

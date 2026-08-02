@@ -75,6 +75,11 @@ internal static class ImportedDeclarationQualifier
                 Name = ImportedTypeRewriter.QualifyName(alias, global.Name),
                 TypeNode = ImportedTypeRewriter.Qualify(global.TypeNode, alias, typeNames),
             }).ToList(),
+            CompileTimeConstants = program.CompileTimeConstants.Select(constant => constant with
+            {
+                Name = ImportedTypeRewriter.QualifyName(alias, constant.Name),
+                TypeNode = ImportedTypeRewriter.Qualify(constant.TypeNode, alias, typeNames),
+            }).ToList(),
             Functions = program.Functions.Select(function => function.OwnerTypeNode is null
                 ? QualifyFunction(function, alias, typeNames) with { Name = ImportedTypeRewriter.QualifyName(alias, function.Name) }
                 : function).ToList(),

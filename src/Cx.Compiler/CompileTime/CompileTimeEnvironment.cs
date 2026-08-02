@@ -6,18 +6,20 @@ namespace Cx.Compiler.CompileTime;
 internal sealed record CompileTimeEnvironment(
     CompileTimeScriptTypeRegistry ScriptTypes,
     CompileTimeFunctionRegistry Functions,
+    CompileTimeConstantRegistry Constants,
     CompileTimeIntrinsicRegistry Intrinsics,
     CompileTimeObjectRegistry Objects,
     CompileTimeMethodRegistry Methods,
     CompileTimePropertyRegistry Properties)
 {
     public static CompileTimeEnvironment Empty { get; } = Create(
-        CompileTimeFunctionRegistry.Empty);
+        new ProgramNode(Cx.Compiler.Source.Location.Unknown, []));
 
     public static CompileTimeEnvironment Create(ProgramNode program)
     {
         var scriptTypes = CompileTimeScriptTypeRegistry.Default;
-        return Create(CompileTimeFunctionRegistry.Create(program, scriptTypes));
+        var modules = CompileTimeModuleContext.Create([program]);
+        return Create(program, scriptTypes, modules);
     }
 
     public static CompileTimeEnvironment Create(
@@ -29,10 +31,7 @@ internal sealed record CompileTimeEnvironment(
         var modules = CompileTimeModuleContext.Create(
             sourcePrograms,
             moduleNamesByPath);
-        return Create(CompileTimeFunctionRegistry.Create(
-            program,
-            scriptTypes,
-            modules));
+        return Create(program, scriptTypes, modules);
     }
 
     public CompileTimeEnvironment WithProgram(ProgramNode program) =>
@@ -42,6 +41,11 @@ internal sealed record CompileTimeEnvironment(
                 program,
                 ScriptTypes,
                 Functions.Modules),
+            Constants = CompileTimeConstantRegistry.Create(
+                program,
+                Functions.Modules,
+                ScriptTypes,
+                Constants),
         };
 
     public CompileTimeExpressionEvaluator CreateEvaluator(
@@ -50,12 +54,24 @@ internal sealed record CompileTimeEnvironment(
         new(diagnostics, this, reflection);
 
     private static CompileTimeEnvironment Create(
-        CompileTimeFunctionRegistry functions) =>
-        new(
-            functions.Types,
+        ProgramNode program,
+        CompileTimeScriptTypeRegistry scriptTypes,
+        CompileTimeModuleContext modules)
+    {
+        var functions = CompileTimeFunctionRegistry.Create(
+            program,
+            scriptTypes,
+            modules);
+        return new(
+            scriptTypes,
             functions,
+            CompileTimeConstantRegistry.Create(
+                program,
+                modules,
+                scriptTypes),
             CompileTimeIntrinsicRegistry.CreateDefault(),
             CompileTimeObjectRegistry.CreateDefault(),
             CompileTimeMethodRegistry.Default,
             CompileTimePropertyRegistry.Default);
+    }
 }

@@ -68,6 +68,27 @@ internal static class GenericFunctionSpecializer
     {
         return statement switch
         {
+            CompileTimeLetStatementNode compileTimeLet => compileTimeLet with
+            {
+                Initializer = compileTimeLet.Initializer,
+            },
+            CompileTimeIfStatementNode conditional => conditional with
+            {
+                Condition = conditional.Condition,
+                ThenBlock = SubstituteSyntaxBlock(
+                    conditional.ThenBlock,
+                    typeSubstitutions),
+                ElseBlock = SubstituteSyntaxBlock(
+                    conditional.ElseBlock,
+                    typeSubstitutions),
+            },
+            CompileTimeForeachStatementNode foreachNode => foreachNode with
+            {
+                IterableExpression = foreachNode.IterableExpression,
+                Body = SubstituteSyntaxBlock(
+                    foreachNode.Body,
+                    typeSubstitutions),
+            },
             LetStatement let => let with
             {
                 TypeNode = SubstituteTypeNode(let.TypeNode, typeSubstitutions),
@@ -129,6 +150,17 @@ internal static class GenericFunctionSpecializer
             _ => statement,
         };
     }
+
+    private static SyntaxBlockNode SubstituteSyntaxBlock(
+        SyntaxBlockNode block,
+        IReadOnlyDictionary<string, TypeRef> typeSubstitutions) =>
+        block with
+        {
+            Items = block.Items.Select(item =>
+                item is StatementNode statement
+                    ? SubstituteStatement(statement, typeSubstitutions)
+                    : item).ToList(),
+        };
 
     private static ExpressionNode? SubstituteOptionalExpression(
         ExpressionNode? expression,

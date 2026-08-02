@@ -32,6 +32,19 @@ internal sealed class CompileTimeExpansionPipeline(
             sourcePrograms,
             moduleNamesByPath);
         environment.Functions.Validate(diagnostics);
+        environment.Constants.Validate(diagnostics);
+        if (diagnostics.HasErrors)
+        {
+            return null;
+        }
+
+        var directiveExpansion = new CompileTimeDirectiveExpansionPass(
+            diagnostics,
+            new ProgramCompileTimeReflection(program, moduleNamesByPath),
+            environment: environment);
+        program = profiler.Measure(
+            "Compile-time directive expansion",
+            () => directiveExpansion.ExpandProgram(program));
         if (diagnostics.HasErrors)
         {
             return null;
@@ -46,25 +59,6 @@ internal sealed class CompileTimeExpansionPipeline(
         program = profiler.Measure(
             "Macro expansion",
             () => macroExpansion.RewriteProgram(program));
-        if (diagnostics.HasErrors)
-        {
-            return null;
-        }
-
-        environment = environment.WithProgram(program);
-        environment.Functions.Validate(diagnostics);
-        if (diagnostics.HasErrors)
-        {
-            return null;
-        }
-
-        var directiveExpansion = new CompileTimeDirectiveExpansionPass(
-            diagnostics,
-            new ProgramCompileTimeReflection(program, moduleNamesByPath),
-            environment: environment);
-        program = profiler.Measure(
-            "Compile-time directive expansion",
-            () => directiveExpansion.ExpandProgram(program));
         if (diagnostics.HasErrors)
         {
             return null;

@@ -52,6 +52,17 @@ internal sealed class ModuleVisibilityAnalyzer(
             AnalyzeExpression(global.Initializer, visibility);
         }
 
+        foreach (var constant in program.CompileTimeConstants)
+        {
+            AnalyzeType(constant.TypeNode, constant.Location, visibility);
+            AnalyzePublicType(
+                constant.TypeNode,
+                constant.Location,
+                visibility,
+                constant.IsPublic);
+            AnalyzeExpression(constant.Initializer, visibility);
+        }
+
         foreach (var structNode in program.Structs)
         {
             foreach (var field in structNode.Fields)

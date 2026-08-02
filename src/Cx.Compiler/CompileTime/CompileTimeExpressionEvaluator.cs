@@ -14,8 +14,10 @@ internal sealed class CompileTimeExpressionEvaluator
     private readonly CompileTimeMethodRegistry _methods;
     private readonly CompileTimePropertyRegistry _properties;
     private readonly CompileTimeFunctionRegistry _functions;
+    private readonly CompileTimeConstantRegistry _constants;
     private readonly ICompileTimeReflection _reflection;
     private readonly CompileTimeEvaluationSession _session;
+    private int _deferredReferenceCount;
 
     public CompileTimeExpressionEvaluator(
         DiagnosticBag diagnostics,
@@ -28,7 +30,8 @@ internal sealed class CompileTimeExpressionEvaluator
             environment.Objects,
             environment.Methods,
             environment.Properties,
-            environment.Functions)
+            environment.Functions,
+            environment.Constants)
     {
     }
 
@@ -40,6 +43,7 @@ internal sealed class CompileTimeExpressionEvaluator
         CompileTimeMethodRegistry? methods = null,
         CompileTimePropertyRegistry? properties = null,
         CompileTimeFunctionRegistry? functions = null,
+        CompileTimeConstantRegistry? constants = null,
         CompileTimeEvaluationLimits? limits = null)
     {
         _diagnostics = diagnostics;
@@ -49,6 +53,7 @@ internal sealed class CompileTimeExpressionEvaluator
         _methods = methods ?? CompileTimeMethodRegistry.Default;
         _properties = properties ?? CompileTimePropertyRegistry.Default;
         _functions = functions ?? CompileTimeFunctionRegistry.Empty;
+        _constants = constants ?? CompileTimeConstantRegistry.Empty;
         _session = new CompileTimeEvaluationSession(diagnostics, limits);
     }
 
@@ -77,6 +82,24 @@ internal sealed class CompileTimeExpressionEvaluator
             ComputedMemberExpressionNode member => EvaluateComputedMember(member, context),
             _ => Unsupported(expression),
         };
+    }
+
+    public CompileTimeEvaluationOutcome EvaluateOutcome(
+        ExpressionNode expression,
+        CompileTimeEvaluationContext context)
+    {
+        var initialDeferredReferenceCount = _deferredReferenceCount;
+        var initialDiagnosticCount = _diagnostics.Count;
+        var value = Evaluate(expression, context);
+        if (value is not null)
+        {
+            return new CompileTimeEvaluationOutcome.Value(value);
+        }
+
+        return _deferredReferenceCount > initialDeferredReferenceCount
+            && _diagnostics.Count == initialDiagnosticCount
+                ? new CompileTimeEvaluationOutcome.Deferred()
+                : new CompileTimeEvaluationOutcome.Failed();
     }
 
     public bool IsKnownObject(string name) => _objects.TryGet(name, out _);
@@ -111,6 +134,11 @@ internal sealed class CompileTimeExpressionEvaluator
         MemberExpressionNode member,
         CompileTimeEvaluationContext context)
     {
+        if (TryEvaluateConstant(member, out var constantValue))
+        {
+            return constantValue;
+        }
+
         var target = Evaluate(member.Target, context);
         if (target is null)
         {
@@ -269,6 +297,17 @@ internal sealed class CompileTimeExpressionEvaluator
             return value;
         }
 
+        if (context.IsDeferred(name.Name))
+        {
+            _deferredReferenceCount++;
+            return null;
+        }
+
+        if (TryEvaluateConstant(name, out var constantValue))
+        {
+            return constantValue;
+        }
+
         if (_objects.TryGet(name.Name, out var compileTimeObject))
         {
             return compileTimeObject;
@@ -293,6 +332,65 @@ internal sealed class CompileTimeExpressionEvaluator
 
         _diagnostics.Report(name.Location, $"Unknown compile-time name '{name.Name}'.");
         return null;
+    }
+
+    private bool TryEvaluateConstant(
+        ExpressionNode expression,
+        out CompileTimeValue? value)
+    {
+        value = null;
+        var requestedName = ExpressionNameFacts.GetQualifiedName(expression);
+        if (requestedName is null)
+        {
+            return false;
+        }
+
+        var callerModule = _session.CurrentModule
+            ?? _functions.ModuleForPath(expression.Location.File.Path);
+        var lookup = _constants.Lookup(requestedName, callerModule);
+        switch (lookup)
+        {
+            case CompileTimeSymbolLookup<CompileTimeConstantSymbol>.NotSymbolReference:
+                return false;
+            case CompileTimeSymbolLookup<CompileTimeConstantSymbol>.Missing missing
+                when expression is NameExpressionNode
+                    && missing.SuggestedModule is null:
+                return false;
+            case CompileTimeSymbolLookup<CompileTimeConstantSymbol>.Missing missing:
+                _diagnostics.Report(
+                    expression.Location,
+                    missing.SuggestedModule is null
+                        ? $"Unknown compile-time constant '{missing.RequestedName}'."
+                        : $"Unknown compile-time constant '{missing.RequestedName}'. Did you mean to import {missing.SuggestedModule}?");
+                return true;
+            case CompileTimeSymbolLookup<CompileTimeConstantSymbol>.Inaccessible inaccessible:
+                _diagnostics.Report(
+                    expression.Location,
+                    $"Compile-time constant '{inaccessible.RequestedName}' is private to module '{inaccessible.DeclaringModule}'.");
+                return true;
+            case CompileTimeSymbolLookup<CompileTimeConstantSymbol>.Candidates candidates:
+                if (candidates.Values.Count != 1)
+                {
+                    _diagnostics.Report(
+                        expression.Location,
+                        $"Compile-time constant reference '{requestedName}' is ambiguous.");
+                    return true;
+                }
+
+                var constant = candidates.Values[0];
+                value = _constants.Evaluate(
+                    constant,
+                    expression.Location,
+                    _diagnostics,
+                    symbol => _session.WithModule(
+                        symbol.DeclaringModule,
+                        () => Evaluate(
+                            symbol.Declaration.Initializer,
+                            new CompileTimeEvaluationContext())));
+                return true;
+            default:
+                return false;
+        }
     }
 
     private CompileTimeValue? EvaluateUnary(
@@ -758,4 +856,13 @@ internal sealed class CompileTimeExpressionEvaluator
         return null;
     }
 
+}
+
+internal abstract record CompileTimeEvaluationOutcome
+{
+    public sealed record Value(CompileTimeValue Result) : CompileTimeEvaluationOutcome;
+
+    public sealed record Deferred : CompileTimeEvaluationOutcome;
+
+    public sealed record Failed : CompileTimeEvaluationOutcome;
 }

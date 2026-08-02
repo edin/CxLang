@@ -96,6 +96,17 @@ internal static class SymbolImportProjector
                     TypeNode = ImportedTypeRewriter.Project(global.TypeNode, symbols, typeNames),
                 })
                 .ToList(),
+            CompileTimeConstants = program.CompileTimeConstants
+                .Where(constant => symbols.ContainsKey(constant.Name))
+                .Select(constant => constant with
+                {
+                    Name = symbols[constant.Name],
+                    TypeNode = ImportedTypeRewriter.Project(
+                        constant.TypeNode,
+                        symbols,
+                        typeNames),
+                })
+                .ToList(),
             Functions = program.Functions
                 .Where(function => function.OwnerTypeNode is not null || symbols.ContainsKey(function.Name))
                 .Select(function => function.OwnerTypeNode is null

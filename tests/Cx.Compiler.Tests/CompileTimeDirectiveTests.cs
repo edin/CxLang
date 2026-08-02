@@ -6,6 +6,236 @@ namespace Cx.Compiler.Tests;
 public sealed class CompileTimeDirectiveTests
 {
     [Fact]
+    public void Compile_ExpandsDirectivesAtModuleTopLevel()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            compile const enabled: bool = true;
+            compile const names: list<string> = ["first", "second"];
+
+            @if(enabled) {
+                @foreach name in names {
+                    fn @{as_name(name)}() -> int {
+                        return 1;
+                    }
+                }
+            }
+
+            fn main() -> int {
+                return first() + second();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("first(", result.Output, StringComparison.Ordinal);
+        Assert.Contains("second(", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("@foreach", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_ExpandsSelectedTopLevelMacroInvocationOnly()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            macro Generate() -> declarations {
+                fn generated() -> int {
+                    return 42;
+                }
+            }
+
+            @if(false) {
+                use MissingMacro();
+            } else {
+                use Generate();
+            }
+
+            fn main() -> int {
+                return generated();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("generated(", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("MissingMacro", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_ExpandsGenericDependentDirectiveForEachSpecialization()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            fn selected<T>(value: T) -> int {
+                @if(T == int) {
+                    return 1;
+                } else {
+                    return 2;
+                }
+            }
+
+            fn main() -> int {
+                return selected<int>(0);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_ExpandsGenericDependentForeachForEachSpecialization()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            extern fn consume(value: const char*) -> void;
+
+            struct User {
+                id: int;
+                age: int;
+            }
+
+            fn inspect<T>(value: T*) -> int {
+                @let fields = T.fields;
+                @foreach field in fields {
+                    consume(@{field.name});
+                }
+
+                return 0;
+            }
+
+            fn main() -> int {
+                let user = User { id: 1, age: 2 };
+                return inspect<User>(&user);
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("\"id\"", result.Output, StringComparison.Ordinal);
+        Assert.Contains("\"age\"", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("@foreach", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_ExpandsCompileTimeDirectivesInsideStructBody()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Value {
+                data: int;
+
+                @if(true) {
+                    extra: int;
+
+                    fn total() -> int {
+                        return self.data + self.extra;
+                    }
+                }
+            }
+
+            fn main() -> int {
+                let value = Value { data: 10, extra: 20 };
+                return value.total();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("extra", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_ExpandsCompileTimeForeachInsideExtensionBody()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Value {
+                first: int;
+                second: int;
+            }
+
+            extension Value {
+                @foreach field in Self.fields {
+                    fn @{as_name(concat("get_", field.name))}() -> int {
+                        return self.@{field.name};
+                    }
+                }
+            }
+
+            fn main() -> int {
+                let value = Value { first: 10, second: 20 };
+                return value.get_first() + value.get_second();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("get_first", result.Output, StringComparison.Ordinal);
+        Assert.Contains("get_second", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("@foreach", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_ExpandsMacroInvocationGeneratedInsideStructDirective()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            macro AddGenerated(target: type) -> declarations {
+                extension @{target} {
+                    fn generated() -> int {
+                        return self.data;
+                    }
+                }
+            }
+
+            struct Value {
+                data: int;
+
+                @if(true) {
+                    use AddGenerated(Self);
+                }
+            }
+
+            fn main() -> int {
+                let value = Value { data: 42 };
+                return value.generated();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("generated", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("AddGenerated", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_ExpandsCompileTimeDirectiveInsideTypeAdapterBody()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Storage {
+                data: int;
+
+                static fn create() -> Storage {
+                    return Storage { data: 42 };
+                }
+            }
+
+            type View using Storage {
+                @if(true) {
+                    expose static create -> Self;
+                }
+            }
+
+            fn main() -> int {
+                let value: View = View.create();
+                return value.data;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("Storage_create", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compile_CompileTimeFunctionsSupportNullableValues()
     {
         var result = CompilerTestHelpers.Compile(

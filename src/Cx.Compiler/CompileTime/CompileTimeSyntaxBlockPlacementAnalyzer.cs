@@ -37,11 +37,25 @@ internal sealed class CompileTimeSyntaxBlockPlacementAnalyzer(DiagnosticBag diag
             case CDeclareNode cDeclare:
                 AnalyzeCDeclareMembers(cDeclare.Members);
                 break;
-            case FunctionNode
-                or StructNode
-                or ExtensionNode
-                or TypeAdapterNode
-                or TaggedUnionNode:
+            case StructNode structNode:
+                AnalyzeTypeMembers(
+                    structNode.CompileTimeMemberNodes,
+                    SyntaxBlockPlacement.StructMember);
+                AnalyzeFunctions(structNode.Methods);
+                break;
+            case ExtensionNode extension:
+                AnalyzeTypeMembers(
+                    extension.CompileTimeMemberNodes,
+                    SyntaxBlockPlacement.ExtensionMember);
+                AnalyzeFunctions(extension.Methods);
+                break;
+            case TypeAdapterNode adapter:
+                AnalyzeTypeMembers(
+                    adapter.CompileTimeMemberNodes,
+                    SyntaxBlockPlacement.TypeAdapterMember);
+                AnalyzeFunctions(adapter.Methods);
+                break;
+            case FunctionNode or TaggedUnionNode:
                 AnalyzeFunctions(
                     ProgramFunctionFacts.GetDeclarations(declaration));
                 break;
@@ -125,6 +139,28 @@ internal sealed class CompileTimeSyntaxBlockPlacementAnalyzer(DiagnosticBag diag
         }
     }
 
+    private void AnalyzeTypeMembers(
+        IEnumerable<SyntaxNode> members,
+        SyntaxBlockPlacement placement)
+    {
+        foreach (var member in members)
+        {
+            switch (member)
+            {
+                case CompileTimeIfDeclarationNode conditional:
+                    AnalyzeBlock(conditional.ThenBlock, placement);
+                    AnalyzeBlock(conditional.ElseBlock, placement);
+                    break;
+                case CompileTimeForeachDeclarationNode foreachNode:
+                    AnalyzeBlock(foreachNode.Body, placement);
+                    break;
+                case FunctionNode function:
+                    AnalyzeFunctions([function]);
+                    break;
+            }
+        }
+    }
+
     private void AnalyzeBlock(SyntaxBlockNode block, SyntaxBlockPlacement placement)
     {
         foreach (var item in block.Items)
@@ -148,6 +184,11 @@ internal sealed class CompileTimeSyntaxBlockPlacementAnalyzer(DiagnosticBag diag
                 case SyntaxBlockPlacement.CDeclaration:
                     AnalyzeCDeclareMembers([item]);
                     break;
+                case SyntaxBlockPlacement.StructMember
+                    or SyntaxBlockPlacement.ExtensionMember
+                    or SyntaxBlockPlacement.TypeAdapterMember:
+                    AnalyzeTypeMembers([item], placement);
+                    break;
             }
         }
     }
@@ -158,6 +199,21 @@ internal sealed class CompileTimeSyntaxBlockPlacementAnalyzer(DiagnosticBag diag
             SyntaxBlockPlacement.Statement => item is StatementNode,
             SyntaxBlockPlacement.TopLevel => item is TopLevelNode,
             SyntaxBlockPlacement.CDeclaration => IsCDeclareMember(item),
+            SyntaxBlockPlacement.StructMember => item is
+                StructFieldNode
+                or FunctionNode
+                or MacroInvocationDeclarationNode
+                or CompileTimeIfDeclarationNode
+                or CompileTimeForeachDeclarationNode,
+            SyntaxBlockPlacement.ExtensionMember => item is
+                FunctionNode
+                or CompileTimeIfDeclarationNode
+                or CompileTimeForeachDeclarationNode,
+            SyntaxBlockPlacement.TypeAdapterMember => item is
+                ExposeMethodNode
+                or FunctionNode
+                or CompileTimeIfDeclarationNode
+                or CompileTimeForeachDeclarationNode,
             _ => false,
         };
 
@@ -178,6 +234,9 @@ internal sealed class CompileTimeSyntaxBlockPlacementAnalyzer(DiagnosticBag diag
             SyntaxBlockPlacement.Statement => "statement",
             SyntaxBlockPlacement.TopLevel => "top-level declaration",
             SyntaxBlockPlacement.CDeclaration => "C declaration",
+            SyntaxBlockPlacement.StructMember => "struct member",
+            SyntaxBlockPlacement.ExtensionMember => "extension member",
+            SyntaxBlockPlacement.TypeAdapterMember => "type adapter member",
             _ => "unknown",
         };
 
@@ -186,5 +245,8 @@ internal sealed class CompileTimeSyntaxBlockPlacementAnalyzer(DiagnosticBag diag
         Statement,
         TopLevel,
         CDeclaration,
+        StructMember,
+        ExtensionMember,
+        TypeAdapterMember,
     }
 }

@@ -9,7 +9,8 @@ internal static class GenericSpecializationPass
     public static ProgramNode Apply(
         ProgramNode program,
         DiagnosticBag diagnostics,
-        FunctionCatalog? functionCatalog = null)
+        FunctionCatalog? functionCatalog = null,
+        Func<FunctionNode, FunctionNode>? finalizeSpecialization = null)
     {
         if (diagnostics.HasErrors)
         {
@@ -17,7 +18,10 @@ internal static class GenericSpecializationPass
         }
 
         var catalog = functionCatalog ?? FunctionCatalog.Build(program);
-        var result = BuildSpecializationResult(program, catalog);
+        var result = BuildSpecializationResult(
+            program,
+            catalog,
+            finalizeSpecialization);
         var loweredProgram = RewriteGenericStructTypes(program, result);
         var loweredSpecializedFunctions = RewriteSpecializedFunctionTypes(result);
 
@@ -40,7 +44,8 @@ internal static class GenericSpecializationPass
 
     private static GenericSpecializationResult BuildSpecializationResult(
         ProgramNode program,
-        FunctionCatalog? functionCatalog)
+        FunctionCatalog? functionCatalog,
+        Func<FunctionNode, FunctionNode>? finalizeSpecialization)
     {
         var catalog = functionCatalog ?? FunctionCatalog.Build(program);
         var instances = new Dictionary<FunctionInstanceKey, FunctionInstance>();
@@ -63,9 +68,14 @@ internal static class GenericSpecializationPass
             var instance = catalog.GetOrAddInstance(
                 use.Function,
                 use.TypeArgumentRefs,
-                () => GenericFunctionSpecializer.Specialize(
-                    use.Function,
-                    use.TypeArgumentRefs),
+                () =>
+                {
+                    var specialized = GenericFunctionSpecializer.Specialize(
+                        use.Function,
+                        use.TypeArgumentRefs);
+                    return finalizeSpecialization?.Invoke(specialized)
+                        ?? specialized;
+                },
                 out _);
             if (!instances.TryAdd(instance.Key, instance))
             {

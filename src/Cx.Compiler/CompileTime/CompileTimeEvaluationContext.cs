@@ -6,6 +6,7 @@ internal sealed class CompileTimeEvaluationContext
 {
     private readonly CompileTimeEvaluationContext? _parent;
     private readonly Dictionary<string, CompileTimeValue> _bindings = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _deferredBindings = new(StringComparer.Ordinal);
     private readonly HashSet<string> _readOnlyBindings = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeNode> _declaredTypes = new(StringComparer.Ordinal);
 
@@ -15,6 +16,14 @@ internal sealed class CompileTimeEvaluationContext
     }
 
     public CompileTimeEvaluationContext CreateChild() => new(this);
+
+    public void DefineDeferred(string name)
+    {
+        if (!_bindings.ContainsKey(name))
+        {
+            _deferredBindings.Add(name);
+        }
+    }
 
     public bool Define(
         string name,
@@ -101,5 +110,20 @@ internal sealed class CompileTimeEvaluationContext
 
         value = null!;
         return false;
+    }
+
+    public bool IsDeferred(string name)
+    {
+        if (_bindings.ContainsKey(name))
+        {
+            return false;
+        }
+
+        if (_deferredBindings.Contains(name))
+        {
+            return true;
+        }
+
+        return _parent?.IsDeferred(name) ?? false;
     }
 }
