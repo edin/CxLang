@@ -83,14 +83,14 @@ extension Result<T, E> {
 
 extension Result<T, E>
 where T: Disposable<T> {
-    fn free() -> void {
+    fn dispose() -> void {
         if (!self.has_value) {
             return;
         }
 
         if (self.ok) {
             let value: T = self.value;
-            value.free();
+            value.dispose();
         }
 
         self.has_value = false;
@@ -199,13 +199,13 @@ test "result frees disposable success value" {
     expect_not_null(buffer.data);
 
     let result: Result<ByteBuffer, int> = Result.ok<ByteBuffer, int>(buffer);
-    result.free();
+    result.dispose();
     expect_false(result.has_value);
 }
 
 test "result clears disposable error state" {
     let result: Result<ByteBuffer, int> = Result.err<ByteBuffer, int>(7);
     expect_true(result.is_error());
-    result.free();
+    result.dispose();
     expect_false(result.has_value);
 }

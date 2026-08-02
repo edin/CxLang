@@ -5,11 +5,11 @@ fn main() -> int {
     }
 
     if (bytes.value.length == 0) {
-        bytes.free();
+        bytes.dispose();
         return 2;
     }
 
-    bytes.free();
+    bytes.dispose();
     if (bytes.has_value) {
         return 3;
     }

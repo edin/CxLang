@@ -21,16 +21,16 @@ fn main() -> int {
 
     let buffer: ByteBuffer = bytes.value;
     if (buffer.length != 14) {
-        buffer.free();
+        buffer.dispose();
         return 5;
     }
 
     if (buffer.data[0] != 'h' || buffer.data[13] != '\n') {
-        buffer.free();
+        buffer.dispose();
         return 6;
     }
 
-    buffer.free();
+    buffer.dispose();
 
     if (!File.remove(path)) {
         return 7;

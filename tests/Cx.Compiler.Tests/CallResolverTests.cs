@@ -588,7 +588,7 @@ public sealed class CallResolverTests
         var program = ParseAndResolveTypes(
             """
             requires Disposable<T> {
-                fn dispose(self: Self*) -> void;
+                fn dispose() -> void;
             }
 
             struct Plain {
@@ -647,7 +647,7 @@ public sealed class CallResolverTests
         var program = ParseAndResolveTypes(
             """
             requires Disposable<T> {
-                fn dispose(self: Self*) -> void;
+                fn dispose() -> void;
             }
 
             struct File: Disposable<File> {
@@ -711,7 +711,7 @@ public sealed class CallResolverTests
         var result = CompilerTestHelpers.Compile(
             """
             requires Disposable<T> {
-                fn dispose(self: Self*) -> void;
+                fn dispose() -> void;
             }
 
             struct Plain {

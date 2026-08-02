@@ -372,12 +372,12 @@ struct Scene {
         return scene;
     }
 
-    fn free(self: Scene*) -> void {
+    fn dispose(self: Scene*) -> void {
         let things: Vec<Thing> = self.things;
         let lights: Vec<Light> = self.lights;
 
-        things.free<Thing>();
-        lights.free<Light>();
+        things.dispose<Thing>();
+        lights.dispose<Light>();
 
         self.things = things;
         self.lights = lights;
@@ -452,8 +452,8 @@ fn main() -> int {
     printf("Completed in %d ms\n", time_ms);
     bitmap.save("cx-raytracer.bmp");
 
-    scene.free();
-    bitmap.free();
+    scene.dispose();
+    bitmap.dispose();
 
     return 0;
 }

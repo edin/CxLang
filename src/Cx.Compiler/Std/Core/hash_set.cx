@@ -60,7 +60,7 @@ extension HashSet<T> {
         return set;
     }
 
-    fn free() -> void {
+    fn dispose() -> void {
         if (self.values != null) {
             self.allocator.free_bytes(self.values, self.capacity * sizeof(T));
         }
@@ -269,7 +269,7 @@ test "hash set add contains and remove" {
     expect_eq_usize((usize)1, set.length);
     expect_false(set.remove(10));
 
-    set.free();
+    set.dispose();
 }
 
 test "hash set grows and iterates" {
@@ -289,7 +289,7 @@ test "hash set grows and iterates" {
     }
 
     expect_eq_int(78, total);
-    set.free();
+    set.dispose();
 }
 
 test "hash set string view keys" {
@@ -302,5 +302,5 @@ test "hash set string view keys" {
     expect_true(set.remove(StringView.from_cstr("/")));
     expect_false(set.contains(StringView.from_cstr("/")));
 
-    set.free();
+    set.dispose();
 }

@@ -19,13 +19,13 @@ fn main() -> int {
         }
 
         if (!clean.find(StringView.from_cstr("=")).has_value) {
-            buffer.free();
+            buffer.dispose();
             return 2;
         }
 
         let split: Option<StringSplit> = clean.split_once('=');
         if (!split.has_value) {
-            buffer.free();
+            buffer.dispose();
             return 3;
         }
 
@@ -36,14 +36,14 @@ fn main() -> int {
 
         if (key.equals_cstr("answer")) {
             if (!clean.starts_with(StringView.from_cstr("answer")) || !clean.ends_with(StringView.from_cstr("42"))) {
-                buffer.free();
+                buffer.dispose();
                 return 4;
             }
 
             let value: Option<int> = value_text.parse_int();
             let number: Option<u64> = value_text.parse_u64();
             if (!value.has_value || value.value != 42 || !number.has_value || number.value != (u64)42) {
-                buffer.free();
+                buffer.dispose();
                 return 5;
             }
 
@@ -51,7 +51,7 @@ fn main() -> int {
         } else if (key.equals_cstr("ratio")) {
             let ratio: Option<double> = value_text.parse_float();
             if (!ratio.has_value || ratio.value > -12.49 || ratio.value < -12.51) {
-                buffer.free();
+                buffer.dispose();
                 return 6;
             }
 
@@ -60,11 +60,11 @@ fn main() -> int {
     }
 
     if (answer != 42 || !ratio_ok) {
-        buffer.free();
+        buffer.dispose();
         return 7;
     }
 
-    buffer.free();
+    buffer.dispose();
     File.remove("build/string-view-text.txt");
     return 0;
 }

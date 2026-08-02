@@ -8,6 +8,6 @@ fn main() -> int {
     let last: Option<int> = bag.last();
     let length: usize = bag.length;
 
-    bag.free();
+    bag.dispose();
     return removed.value + last.value + (int)length - 52;
 }

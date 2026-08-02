@@ -3,7 +3,7 @@ module std.core;
 public type PriorityQueue<T> using Vec<T> {
     expose static with_capacity -> Self;
     expose static with_allocator -> Self;
-    expose free;
+    expose dispose;
     expose clear;
     expose is_empty;
     expose reserve;
@@ -117,7 +117,7 @@ test "priority queue pops highest first" {
     expect_false(fourth.has_value);
     expect_true(queue.is_empty());
 
-    queue.free();
+    queue.dispose();
 }
 
 test "priority queue grows" {
@@ -133,5 +133,5 @@ test "priority queue grows" {
     expect_eq_int(9, first.value);
     expect_eq_int(5, second.value);
 
-    queue.free();
+    queue.dispose();
 }

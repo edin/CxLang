@@ -68,7 +68,7 @@ public sealed class AnalysisTests
     {
         const string source = """
             requires Disposable<T> {
-                fn dispose(self: Self*) -> void;
+                fn dispose() -> void;
             }
 
             struct Plain {

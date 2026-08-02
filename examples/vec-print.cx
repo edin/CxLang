@@ -11,6 +11,6 @@ fn main() -> int {
         printf("%llu: %d\n", index, item);
     }
 
-    values.free<int>();
+    values.dispose<int>();
     return 0;
 }

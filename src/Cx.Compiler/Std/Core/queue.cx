@@ -38,7 +38,7 @@ extension Queue<T> {
         return queue;
     }
 
-    fn free() -> void {
+    fn dispose() -> void {
         if (self.data != null) {
             self.allocator.free_bytes(self.data, self.capacity * sizeof(T));
         }
@@ -161,7 +161,7 @@ test "queue enqueue dequeue and wrap" {
     expect_true(queue.is_empty());
     expect_false(queue.dequeue().has_value);
 
-    queue.free();
+    queue.dispose();
 }
 
 test "queue clear resets state" {
@@ -173,5 +173,5 @@ test "queue clear resets state" {
     expect_eq_usize((usize)0, queue.head);
     expect_false(queue.peek().has_value);
 
-    queue.free();
+    queue.dispose();
 }

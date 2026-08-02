@@ -2,7 +2,7 @@ type StackView<T> using Vec<T> {
     expose static with_capacity -> Self;
     expose add as push;
     expose pop;
-    expose free;
+    expose dispose;
 }
 
 extension StackView<T> {
@@ -24,6 +24,6 @@ fn main() -> int {
     let first: Option<int> = stack.pop();
     let second: Option<int> = stack.pop();
 
-    stack.free();
+    stack.dispose();
     return top.value + first.value + second.value - 20;
 }

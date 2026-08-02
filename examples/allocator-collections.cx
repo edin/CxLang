@@ -31,9 +31,9 @@ fn main() -> int {
     let top: Option<int> = stack.pop();
     let total: int = sum_values(heap_values) + sum_values(values) + top.value + stack.length;
 
-    heap_values.free();
-    values.free();
-    stack.free();
+    heap_values.dispose();
+    values.dispose();
+    stack.dispose();
 
     printf("total=%d\n", total);
     return total - 54;

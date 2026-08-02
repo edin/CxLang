@@ -43,7 +43,7 @@ fn main() -> int {
         printf("Value %d\n", value);
     }
 
-    values.free();
+    values.dispose();
     return 0;
 }
 ```

@@ -46,10 +46,10 @@ extension Option<T> {
 
 extension Option<T>
 where T: Disposable<T> {
-    fn free() -> void {
+    fn dispose() -> void {
         if (self.has_value) {
             let value: T = self.value;
-            value.free();
+            value.dispose();
             self.has_value = false;
         }
     }
@@ -82,6 +82,6 @@ test "option frees disposable value" {
     expect_not_null(buffer.data);
 
     let maybe_buffer: Option<ByteBuffer> = Option.some<ByteBuffer>(buffer);
-    maybe_buffer.free();
+    maybe_buffer.dispose();
     expect_false(maybe_buffer.has_value);
 }

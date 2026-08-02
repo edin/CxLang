@@ -129,7 +129,7 @@ extension Bitmap {
         return bitmap;
     }
 
-    fn free() -> void {
+    fn dispose() -> void {
         free(self.data);
         self.data = null;
         self.width = 0;

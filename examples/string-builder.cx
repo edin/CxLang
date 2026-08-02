@@ -26,6 +26,6 @@ fn main() -> int {
     builder.null_terminate();
     let terminated: bool = builder.data[builder.length - 1] == (u8)0;
 
-    builder.free();
+    builder.dispose();
     return ok && terminated ? 0 : 1;
 }

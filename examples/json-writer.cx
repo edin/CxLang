@@ -46,26 +46,26 @@ fn main() -> int {
         && view.data[86] == (char)125
         && json.ok();
 
-    json.free();
+    json.dispose();
 
     let invalid_name: JsonWriter = JsonWriter.with_capacity(16);
     invalid_name.begin_array();
     let name_in_array: bool = invalid_name.name_cstr("bad");
     let write_after_error: bool = invalid_name.write_int(1);
     let name_error: bool = invalid_name.has_error();
-    invalid_name.free();
+    invalid_name.dispose();
 
     let invalid_value: JsonWriter = JsonWriter.with_capacity(16);
     invalid_value.begin_object();
     let value_without_name: bool = invalid_value.write_int(1);
     let value_error: bool = invalid_value.has_error();
-    invalid_value.free();
+    invalid_value.dispose();
 
     let invalid_close: JsonWriter = JsonWriter.with_capacity(16);
     invalid_close.begin_array();
     let close_wrong_kind: bool = invalid_close.end_object();
     let close_error: bool = invalid_close.has_error();
-    invalid_close.free();
+    invalid_close.dispose();
 
     return ok
         && !name_in_array

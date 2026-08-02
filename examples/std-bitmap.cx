@@ -15,7 +15,7 @@ fn main() -> int {
     *loaded.pixel(0, 0) = Color32.create(1.0, 1.0, 0.0, 1.0);
     loaded.save("std-bitmap-loaded.bmp");
 
-    loaded.free();
-    bitmap.free();
+    loaded.dispose();
+    bitmap.dispose();
     return 0;
 }

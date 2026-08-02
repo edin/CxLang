@@ -95,6 +95,6 @@ fn main() -> int {
         internal_code: 99,
     };
     let ok: bool = user.write_debug(&builder);
-    builder.free();
+    builder.dispose();
     return ok ? 0 : 1;
 }

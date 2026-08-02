@@ -282,5 +282,5 @@ test "vec uses fixed buffer allocator" {
     expect_eq_usize((usize)3, values.length);
     expect_eq_int(30, values.data[2]);
 
-    values.free();
+    values.dispose();
 }

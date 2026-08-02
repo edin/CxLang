@@ -4,7 +4,7 @@ public type Stack<T> using Vec<T> {
     expose static with_capacity -> Self;
     expose static with_allocator -> Self;
     expose add as push;
-    expose free;
+    expose dispose;
     expose is_empty;
     expose pop;
 
@@ -38,5 +38,5 @@ test "stack push peek and pop" {
     expect_eq_int(4, second.value);
     expect_true(stack.is_empty());
 
-    stack.free();
+    stack.dispose();
 }

@@ -9,6 +9,6 @@ fn main() -> int {
     let third: Option<int> = queue.pop();
     let empty: bool = queue.is_empty();
 
-    queue.free();
+    queue.dispose();
     return first.value + second.value + third.value + empty - 61;
 }

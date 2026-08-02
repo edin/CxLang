@@ -29,9 +29,9 @@ public struct JsonWriter {
         return JsonWriter.with_capacity(0);
     }
 
-    fn free() -> void {
+    fn dispose() -> void {
         let builder: StringBuilder* = &self.builder;
-        builder.free();
+        builder.dispose();
         self.depth = 0;
         self.expecting_value = false;
         self.failed = false;
@@ -410,7 +410,7 @@ test "json writer writes object and array" {
     let view: StringView = json.as_view();
     expect_eq_string_view(StringView.from_cstr("{\"name\":\"CX\",\"count\":42,\"ok\":true,\"items\":[1,2,3]}"), view);
 
-    json.free();
+    json.dispose();
 }
 
 test "json writer escapes strings" {
@@ -421,7 +421,7 @@ test "json writer escapes strings" {
     let view: StringView = json.as_view();
     expect_eq_string_view(StringView.from_cstr("\"quote \\\" slash \\\\ line\\n\""), view);
 
-    json.free();
+    json.dispose();
 }
 
 test "json writer reports invalid state" {
@@ -430,17 +430,17 @@ test "json writer reports invalid state" {
     expect_false(name_in_array.name_cstr("bad"));
     expect_true(name_in_array.has_error());
     expect_false(name_in_array.write_int(1));
-    name_in_array.free();
+    name_in_array.dispose();
 
     let value_without_name: JsonWriter = JsonWriter.with_capacity((usize)16);
     expect_true(value_without_name.begin_object());
     expect_false(value_without_name.write_int(1));
     expect_true(value_without_name.has_error());
-    value_without_name.free();
+    value_without_name.dispose();
 
     let wrong_close: JsonWriter = JsonWriter.with_capacity((usize)16);
     expect_true(wrong_close.begin_array());
     expect_false(wrong_close.end_object());
     expect_true(wrong_close.has_error());
-    wrong_close.free();
+    wrong_close.dispose();
 }

@@ -14,7 +14,7 @@ fn main() -> int {
         return 1;
     }
 
-    good.free();
+    good.dispose();
     if (good.has_value) {
         return 2;
     }
@@ -24,7 +24,7 @@ fn main() -> int {
         return 3;
     }
 
-    bad.free();
+    bad.dispose();
     if (bad.has_value) {
         return 4;
     }

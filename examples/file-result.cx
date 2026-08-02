@@ -11,11 +11,11 @@ fn main() -> int {
 
     let text: StringView = StringView.from_bytes(loaded.value.data, loaded.value.length);
     if (!text.equals_cstr("result file\n")) {
-        loaded.free();
+        loaded.dispose();
         return 3;
     }
 
-    loaded.free();
+    loaded.dispose();
     if (loaded.has_value) {
         return 4;
     }

@@ -153,7 +153,7 @@ extension File {
 
         file.close();
         if (read_count != size) {
-            buffer.free();
+            buffer.dispose();
             return Result.err<ByteBuffer, Error>(Error.create("file", (int)FileError.ReadFailed, "read failed"));
         }
 
@@ -332,7 +332,7 @@ test "file write read size and remove" {
     let loaded_text: StringView = StringView.from_bytes(loaded.data, loaded.length);
     expect_eq_string_view(text, loaded_text);
 
-    loaded.free();
+    loaded.dispose();
     expect_true(File.remove(path));
     expect_false(File.exists(path));
 }

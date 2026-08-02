@@ -26,6 +26,6 @@ fn main() -> int {
     }
 
     printf("%s: x=%d y=%.1f ok=%d some=%d len=%zu sum=%d\n", banner, x, y, ok, maybe.value, values.length, sum);
-    values.free();
+    values.dispose();
     return 0;
 }

@@ -8,6 +8,6 @@ fn main() -> int {
     let second: Option<int> = stack.pop();
     let empty: bool = stack.is_empty();
 
-    stack.free();
+    stack.dispose();
     return top.value + first.value + second.value + empty - 21;
 }

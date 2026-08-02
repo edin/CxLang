@@ -36,6 +36,6 @@ fn main() -> int {
     let direct_vec: Vec<int> = alias_vec;
 
     write_line("assignment compatibility");
-    direct_vec.free<int>();
+    direct_vec.dispose<int>();
     return op(generic, method) - 6;
 }

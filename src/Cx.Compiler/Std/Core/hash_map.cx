@@ -67,7 +67,7 @@ extension HashMap<K, V> {
         return map;
     }
 
-    fn free() -> void {
+    fn dispose() -> void {
         if (self.keys != null) {
             self.allocator.free_bytes(self.keys, self.capacity * sizeof(K));
         }
@@ -303,7 +303,7 @@ test "hash map put get update and remove" {
     expect_false(map.remove(2));
     expect_eq_usize((usize)1, map.length);
 
-    map.free();
+    map.dispose();
 }
 
 test "hash map grows reuses removed slots and iterates" {
@@ -326,7 +326,7 @@ test "hash map grows reuses removed slots and iterates" {
     }
 
     expect_eq_int(715, total);
-    map.free();
+    map.dispose();
 }
 
 test "hash map string view keys" {
@@ -343,5 +343,5 @@ test "hash map string view keys" {
     expect_true(map.remove(StringView.from_cstr("/")));
     expect_false(map.contains(StringView.from_cstr("/")));
 
-    map.free();
+    map.dispose();
 }

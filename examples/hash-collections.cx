@@ -49,12 +49,12 @@ fn main() -> int {
         map_total = map_total + key + item;
     }
 
-    set.free();
-    map.free();
-    local_map.free();
-    local_set.free();
-    route_map.free();
-    route_set.free();
+    set.dispose();
+    map.dispose();
+    local_map.dispose();
+    local_set.dispose();
+    route_map.dispose();
+    route_set.dispose();
     return result
         + local_result
         + local_set_result

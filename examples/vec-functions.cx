@@ -6,22 +6,22 @@ fn main() -> int {
     }
 
     if (!values.push<int>(20)) {
-        values.free<int>();
+        values.dispose<int>();
         return 2;
     }
 
     if (!values.add<int>(30)) {
-        values.free<int>();
+        values.dispose<int>();
         return 3;
     }
 
     if (!values.remove_at<int>(1)) {
-        values.free<int>();
+        values.dispose<int>();
         return 4;
     }
 
     let result: int = values.data[0] + values.data[1] - 40;
     values.clear<int>();
-    values.free<int>();
+    values.dispose<int>();
     return result + values.length;
 }

@@ -2,16 +2,16 @@ fn main() -> int {
     let values: Vec<float> = Vec<float>.with_capacity(2);
 
     if (!values.add<float>(1.5)) {
-        values.free<float>();
+        values.dispose<float>();
         return 1;
     }
 
     if (!values.add<float>(2.5)) {
-        values.free<float>();
+        values.dispose<float>();
         return 2;
     }
 
     let total: float = values.data[0] + values.data[1];
-    values.free<float>();
+    values.dispose<float>();
     return (int)total - 4;
 }

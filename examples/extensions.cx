@@ -32,6 +32,6 @@ fn main() -> int {
     values.add(22);
 
     let total: int = counter.value + values.sum_ints();
-    values.free();
+    values.dispose();
     return total - 57;
 }

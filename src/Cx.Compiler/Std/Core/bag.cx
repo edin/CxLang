@@ -3,7 +3,7 @@ module std.core;
 public type Bag<T> using Vec<T> {
     expose static with_capacity -> Self;
     expose static with_allocator -> Self;
-    expose free;
+    expose dispose;
     expose clear;
     expose is_empty;
     expose reserve;

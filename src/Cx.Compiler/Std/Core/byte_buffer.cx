@@ -4,7 +4,7 @@ public type ByteBuffer using Vec<u8> {
     expose static create -> Self;
     expose static with_capacity -> Self;
     expose static with_allocator -> Self;
-    expose free;
+    expose dispose;
     expose clear;
     expose is_empty;
     expose reserve;
@@ -64,7 +64,7 @@ test "byte buffer writes bytes" {
     expect_eq_int(65, (int)buffer.data[0]);
     expect_eq_int(66, (int)buffer.data[1]);
 
-    buffer.free();
+    buffer.dispose();
 }
 
 test "byte buffer writes byte ranges and slices" {
@@ -89,7 +89,7 @@ test "byte buffer writes byte ranges and slices" {
 
     buffer.clear();
     expect_true(buffer.is_empty());
-    buffer.free();
+    buffer.dispose();
 }
 
 test "byte buffer reserve and zero length write" {
@@ -99,5 +99,5 @@ test "byte buffer reserve and zero length write" {
     expect_true(buffer.reserve((usize)16));
     expect(buffer.capacity >= 16);
 
-    buffer.free();
+    buffer.dispose();
 }

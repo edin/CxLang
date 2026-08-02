@@ -6,7 +6,7 @@ public type StringBuilder using ByteBuffer {
     expose static create -> Self;
     expose static with_capacity -> Self;
     expose static with_allocator -> Self;
-    expose free;
+    expose dispose;
     expose clear;
     expose is_empty;
     expose reserve;
@@ -107,7 +107,7 @@ test "string builder appends text and values" {
     let view: StringView = builder.as_view();
     expect_true(view.starts_with_cstr("count=42 ok=true total=9001 pi=3.5"));
 
-    builder.free();
+    builder.dispose();
 }
 
 test "string builder appends views lines and bytes" {
@@ -120,7 +120,7 @@ test "string builder appends views lines and bytes" {
     let view: StringView = builder.as_view();
     expect_eq_string_view(StringView.from_cstr("alpha\nbeta\n!"), view);
 
-    builder.free();
+    builder.dispose();
 }
 
 test "string builder null terminate" {
@@ -133,5 +133,5 @@ test "string builder null terminate" {
     expect_true(builder.null_terminate());
     expect_eq_usize(length_after_first, builder.length);
 
-    builder.free();
+    builder.dispose();
 }

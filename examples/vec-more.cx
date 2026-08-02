@@ -10,6 +10,6 @@ fn main() -> int {
     let popped: Option<int> = values.pop<int>();
 
     let result: int = first.value + last.value + removed.value + popped.value;
-    values.free<int>();
+    values.dispose<int>();
     return result - 90;
 }

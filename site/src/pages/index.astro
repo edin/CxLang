@@ -48,7 +48,7 @@ fn main() -> int {
         printf("Value %d\\n", value);
     }
 
-    values.free();
+    values.dispose();
     return 0;
 }`
   },
@@ -73,7 +73,7 @@ fn score(value: Value*) -> int {
     let stack = Stack<int>.create();
     stack.push(10);
     expect(stack.length == 1);
-    stack.free();
+    stack.dispose();
 }`
   }
 ];
@@ -85,7 +85,7 @@ const stdlib = [
     code: `let values = Vec<int>.create();
 values.add(10);
 values.add(20);
-values.free();`
+values.dispose();`
   },
   {
     id: "string-view",
@@ -101,7 +101,7 @@ let ok = trimmed.equals_cstr("hi");`
 builder.append_cstr("hello");
 builder.append_char(' ');
 builder.append_cstr("cx");
-builder.free();`
+builder.dispose();`
   },
   {
     id: "hash-map",
@@ -109,7 +109,7 @@ builder.free();`
     code: `let routes = HashMap<StringView, int>.create();
 routes.put(StringView.from_cstr("/health"), 200);
 let status = routes.get(StringView.from_cstr("/health"));
-routes.free();`
+routes.dispose();`
   },
   {
     id: "hash-set",
@@ -117,7 +117,7 @@ routes.free();`
     code: `let seen = HashSet<int>.create();
 seen.add(10);
 let ok = seen.contains(10);
-seen.free();`
+seen.dispose();`
   },
   {
     id: "option",
@@ -132,7 +132,7 @@ if (value.has_value) {
     name: "Result<T, E>",
     code: `let file = File.open("data.txt");
 if (file.is_ok) {
-    file.value.free();
+    file.value.dispose();
 }`
   },
   {
@@ -140,7 +140,7 @@ if (file.is_ok) {
     name: "File",
     code: `let file = File.create("notes.txt");
 file.write_cstr("hello cx");
-file.free();`
+file.dispose();`
   },
   {
     id: "path",
@@ -155,7 +155,7 @@ let ext = Path.extension(path);`
     code: `let bitmap = Bitmap.create(64, 64);
 bitmap.clear(Color32 { r: 16, g: 16, b: 16, a: 255 });
 bitmap.save("image.bmp");
-bitmap.free();`
+bitmap.dispose();`
   },
   {
     id: "allocator",
@@ -172,7 +172,7 @@ json.begin_object();
 json.name("ok");
 json.bool_value(true);
 json.end_object();
-json.free();`
+json.dispose();`
   }
 ];
 
@@ -211,7 +211,7 @@ fn main() -> int {
         total += value;
     }
 
-    values.free();
+    values.dispose();
     return 0;
 }`;
 ---
