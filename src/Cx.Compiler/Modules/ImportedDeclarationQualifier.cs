@@ -45,11 +45,14 @@ internal static class ImportedDeclarationQualifier
                             typeNames),
                     })
                     .ToList())).ToList(),
-            TypeAdapters = program.TypeAdapters.Select(adapter => adapter with
-            {
-                Name = ImportedTypeRewriter.QualifyName(alias, adapter.Name),
-                BaseTypeNode = ImportedTypeRewriter.Qualify(adapter.BaseTypeNode, alias, typeNames),
-                Methods = adapter.Methods.Select(method => method with
+            TypeAdapters = program.TypeAdapters.Select(adapter => (adapter with
+                {
+                    Name = ImportedTypeRewriter.QualifyName(alias, adapter.Name),
+                    BaseTypeNode = ImportedTypeRewriter.Qualify(
+                        adapter.BaseTypeNode,
+                        alias,
+                        typeNames),
+                }).WithMethods(adapter.Methods.Select(method => method with
                 {
                     OwnerTypeNode = ImportedTypeRewriter.Qualify(
                         method.OwnerTypeNode ?? TypeNode.Named(method.Location, adapter.Name),
@@ -57,12 +60,14 @@ internal static class ImportedDeclarationQualifier
                         typeNames),
                     ReturnTypeNode = ImportedTypeRewriter.Qualify(method.ReturnTypeNode, alias, typeNames),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
-                }).ToList(),
-            }).ToList(),
-            Extensions = program.Extensions.Select(extension => extension with
-            {
-                TargetTypeNode = ImportedTypeRewriter.Qualify(extension.TargetTypeNode, alias, typeNames),
-                Methods = extension.Methods.Select(method => method with
+                }).ToList())).ToList(),
+            Extensions = program.Extensions.Select(extension => (extension with
+                {
+                    TargetTypeNode = ImportedTypeRewriter.Qualify(
+                        extension.TargetTypeNode,
+                        alias,
+                        typeNames),
+                }).WithMethods(extension.Methods.Select(method => method with
                 {
                     OwnerTypeNode = ImportedTypeRewriter.Qualify(
                         method.OwnerTypeNode ?? extension.TargetTypeNode,
@@ -70,8 +75,7 @@ internal static class ImportedDeclarationQualifier
                         typeNames),
                     ReturnTypeNode = ImportedTypeRewriter.Qualify(method.ReturnTypeNode, alias, typeNames),
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
-                }).ToList(),
-            }).ToList(),
+                }).ToList())).ToList(),
             TaggedUnions = program.TaggedUnions.Select(union => union with
             {
                 Name = ImportedTypeRewriter.QualifyName(alias, union.Name),

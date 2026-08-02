@@ -49,28 +49,34 @@ internal static class GenericTypeRewriter
                 .Select(structNode => RewriteStruct(structNode, concreteStructNames))
                 .ToList(),
             TypeAdapters = program.TypeAdapters
-                .Select(adapter => adapter with
+                .Select(adapter =>
                 {
-                    BaseTypeNode = RewriteTypeNode(adapter.BaseTypeNode, concreteStructNames),
-                    ExposedMethods = adapter.ExposedMethods
+                    var rewritten = adapter with
+                    {
+                        BaseTypeNode = RewriteTypeNode(
+                            adapter.BaseTypeNode,
+                            concreteStructNames),
+                    };
+                    rewritten = rewritten.WithExposedMethods(adapter.ExposedMethods
                         .Select(method => method with
                         {
                             ReturnTypeNode = RewriteTypeNode(method.ReturnTypeNode, concreteStructNames),
                         })
-                        .ToList(),
-                    Methods = adapter.Methods
+                        .ToList());
+                    return rewritten.WithMethods(adapter.Methods
                         .Select(method => Rewrite(method, concreteStructNames))
-                        .ToList(),
+                        .ToList());
                 })
                 .ToList(),
             Extensions = program.Extensions
-                .Select(extension => extension with
-                {
-                    TargetTypeNode = RewriteTypeNode(extension.TargetTypeNode, concreteStructNames),
-                    Methods = extension.Methods
+                .Select(extension => (extension with
+                    {
+                        TargetTypeNode = RewriteTypeNode(
+                            extension.TargetTypeNode,
+                            concreteStructNames),
+                    }).WithMethods(extension.Methods
                         .Select(method => Rewrite(method, concreteStructNames))
-                        .ToList(),
-                })
+                        .ToList()))
                 .ToList(),
             TaggedUnions = program.TaggedUnions
                 .Select(taggedUnion => taggedUnion with

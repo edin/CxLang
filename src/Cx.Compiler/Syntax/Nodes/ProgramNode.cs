@@ -289,25 +289,73 @@ public sealed record ExtensionNode(
     Location Location,
     IReadOnlyList<string> TypeParameters,
     IReadOnlyList<GenericConstraintNode> GenericConstraints,
-    IReadOnlyList<FunctionNode> Methods,
+    IReadOnlyList<SyntaxNode> Members,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    TypeNode? TargetTypeNode = null,
-    IReadOnlyList<SyntaxNode>? CompileTimeMembers = null) : TopLevelNode(Location)
+    TypeNode? TargetTypeNode = null) : TopLevelNode(Location)
 {
-    public IReadOnlyList<SyntaxNode> CompileTimeMemberNodes => CompileTimeMembers ?? [];
+    public IReadOnlyList<FunctionNode> Methods =>
+        TypeMemberList.Project<FunctionNode>(Members);
+
+    public IReadOnlyList<SyntaxNode> CompileTimeMemberNodes =>
+        TypeMemberList.CompileTimeMembers(Members);
+
+    public ExtensionNode WithMethods(IReadOnlyList<FunctionNode> methods) =>
+        this with { Members = TypeMemberList.Replace(Members, methods) };
+
+    public ExtensionNode WithCompileTimeMembers(IReadOnlyList<SyntaxNode> members) =>
+        this with
+        {
+            Members = TypeMemberList.ReplaceCompileTimeMembers(Members, members),
+        };
 }
 
 public sealed record TypeAdapterNode(
     Location Location,
     string Name,
     IReadOnlyList<string> TypeParameters,
-    IReadOnlyList<ExposeMethodNode> ExposedMethods,
-    IReadOnlyList<FunctionNode> Methods,
+    IReadOnlyList<SyntaxNode> Members,
     IReadOnlyList<AttributeApplicationNode> Attributes,
-    TypeNode? BaseTypeNode = null,
-    IReadOnlyList<SyntaxNode>? CompileTimeMembers = null) : TopLevelNode(Location)
+    TypeNode? BaseTypeNode = null) : TopLevelNode(Location)
 {
-    public IReadOnlyList<SyntaxNode> CompileTimeMemberNodes => CompileTimeMembers ?? [];
+    public TypeAdapterNode(
+        Location location,
+        string name,
+        IReadOnlyList<string> typeParameters,
+        IReadOnlyList<ExposeMethodNode> exposedMethods,
+        IReadOnlyList<FunctionNode> methods,
+        IReadOnlyList<AttributeApplicationNode> attributes,
+        TypeNode? baseTypeNode = null)
+        : this(
+            location,
+            name,
+            typeParameters,
+            [.. exposedMethods, .. methods],
+            attributes,
+            baseTypeNode)
+    {
+    }
+
+    public IReadOnlyList<ExposeMethodNode> ExposedMethods =>
+        TypeMemberList.Project<ExposeMethodNode>(Members);
+
+    public IReadOnlyList<FunctionNode> Methods =>
+        TypeMemberList.Project<FunctionNode>(Members);
+
+    public IReadOnlyList<SyntaxNode> CompileTimeMemberNodes =>
+        TypeMemberList.CompileTimeMembers(Members);
+
+    public TypeAdapterNode WithExposedMethods(
+        IReadOnlyList<ExposeMethodNode> methods) =>
+        this with { Members = TypeMemberList.Replace(Members, methods) };
+
+    public TypeAdapterNode WithMethods(IReadOnlyList<FunctionNode> methods) =>
+        this with { Members = TypeMemberList.Replace(Members, methods) };
+
+    public TypeAdapterNode WithCompileTimeMembers(IReadOnlyList<SyntaxNode> members) =>
+        this with
+        {
+            Members = TypeMemberList.ReplaceCompileTimeMembers(Members, members),
+        };
 }
 
 public sealed record ExposeMethodNode(

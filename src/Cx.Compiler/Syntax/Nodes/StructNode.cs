@@ -13,54 +13,32 @@ public sealed record StructNode(
     bool IsHeaderDeclaration = false) : TopLevelNode(Location)
 {
     public IReadOnlyList<StructFieldNode> Fields =>
-        Members.OfType<StructFieldNode>().ToList();
+        TypeMemberList.Project<StructFieldNode>(Members);
 
     public IReadOnlyList<FunctionNode> Methods =>
-        Members.OfType<FunctionNode>().ToList();
+        TypeMemberList.Project<FunctionNode>(Members);
 
     public IReadOnlyList<MacroInvocationDeclarationNode> MacroInvocationNodes =>
-        Members.OfType<MacroInvocationDeclarationNode>().ToList();
+        TypeMemberList.Project<MacroInvocationDeclarationNode>(Members);
 
     public IReadOnlyList<SyntaxNode> CompileTimeMemberNodes =>
-        Members.Where(IsCompileTimeMember).ToList();
+        TypeMemberList.CompileTimeMembers(Members);
 
     public StructNode WithFields(IReadOnlyList<StructFieldNode> fields) =>
-        WithMembersWhere(member => member is StructFieldNode, fields);
+        this with { Members = TypeMemberList.Replace(Members, fields) };
 
     public StructNode WithMethods(IReadOnlyList<FunctionNode> methods) =>
-        WithMembersWhere(member => member is FunctionNode, methods);
+        this with { Members = TypeMemberList.Replace(Members, methods) };
 
     public StructNode WithMacroInvocations(
         IReadOnlyList<MacroInvocationDeclarationNode> invocations) =>
-        WithMembersWhere(member => member is MacroInvocationDeclarationNode, invocations);
+        this with { Members = TypeMemberList.Replace(Members, invocations) };
 
     public StructNode WithCompileTimeMembers(IReadOnlyList<SyntaxNode> members) =>
-        WithMembersWhere(IsCompileTimeMember, members);
-
-    private StructNode WithMembersWhere(
-        Func<SyntaxNode, bool> predicate,
-        IEnumerable<SyntaxNode> replacements)
-    {
-        var remaining = new Queue<SyntaxNode>(replacements);
-        var members = new List<SyntaxNode>();
-        foreach (var member in Members)
+        this with
         {
-            if (!predicate(member))
-            {
-                members.Add(member);
-            }
-            else if (remaining.TryDequeue(out var replacement))
-            {
-                members.Add(replacement);
-            }
-        }
-
-        members.AddRange(remaining);
-        return this with { Members = members };
-    }
-
-    private static bool IsCompileTimeMember(SyntaxNode member) =>
-        member is CompileTimeIfDeclarationNode or CompileTimeForeachDeclarationNode;
+            Members = TypeMemberList.ReplaceCompileTimeMembers(Members, members),
+        };
 }
 
 public sealed record GenericConstraintNode(

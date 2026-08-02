@@ -55,6 +55,105 @@ public sealed class CompileTimeDirectiveExpansionPassTests
     }
 
     [Fact]
+    public void ExpandProgram_PreservesCanonicalExtensionMemberOrder()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Value {
+                data: int;
+            }
+
+            extension Value {
+                fn first() -> int {
+                    return self.data;
+                }
+
+                @if(true) {
+                    fn middle() -> int {
+                        return self.data;
+                    }
+                }
+
+                fn last() -> int {
+                    return self.data;
+                }
+            }
+            """);
+        var parsed = Assert.Single(program.Extensions);
+        Assert.Collection(
+            parsed.Members,
+            member => Assert.Equal("first", Assert.IsType<FunctionNode>(member).Name),
+            member => Assert.IsType<CompileTimeIfDeclarationNode>(member),
+            member => Assert.Equal("last", Assert.IsType<FunctionNode>(member).Name));
+
+        var (expanded, diagnostics) = Expand(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var extension = Assert.Single(expanded.Extensions);
+        Assert.Equal(
+            ["first", "middle", "last"],
+            extension.Members
+                .Select(member => Assert.IsType<FunctionNode>(member).Name));
+        Assert.Equal(
+            ["first", "middle", "last"],
+            extension.Methods.Select(method => method.Name));
+    }
+
+    [Fact]
+    public void ExpandProgram_PreservesCanonicalTypeAdapterMemberOrder()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Storage {
+                data: int;
+            }
+
+            type View using Storage {
+                expose first;
+
+                @if(true) {
+                    expose second;
+
+                    fn middle() -> int {
+                        return self.data;
+                    }
+                }
+
+                expose third;
+
+                fn last() -> int {
+                    return self.data;
+                }
+            }
+            """);
+        var parsed = Assert.Single(program.TypeAdapters);
+        Assert.Collection(
+            parsed.Members,
+            member => Assert.Equal("first", Assert.IsType<ExposeMethodNode>(member).ExposedName),
+            member => Assert.IsType<CompileTimeIfDeclarationNode>(member),
+            member => Assert.Equal("third", Assert.IsType<ExposeMethodNode>(member).ExposedName),
+            member => Assert.Equal("last", Assert.IsType<FunctionNode>(member).Name));
+
+        var (expanded, diagnostics) = Expand(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var adapter = Assert.Single(expanded.TypeAdapters);
+        Assert.Collection(
+            adapter.Members,
+            member => Assert.Equal("first", Assert.IsType<ExposeMethodNode>(member).ExposedName),
+            member => Assert.Equal("second", Assert.IsType<ExposeMethodNode>(member).ExposedName),
+            member => Assert.Equal("middle", Assert.IsType<FunctionNode>(member).Name),
+            member => Assert.Equal("third", Assert.IsType<ExposeMethodNode>(member).ExposedName),
+            member => Assert.Equal("last", Assert.IsType<FunctionNode>(member).Name));
+        Assert.Equal(
+            ["first", "second", "third"],
+            adapter.ExposedMethods.Select(method => method.ExposedName));
+        Assert.Equal(
+            ["middle", "last"],
+            adapter.Methods.Select(method => method.Name));
+    }
+
+    [Fact]
     public void ExpandStatementList_ReportsInvalidGeneralizedSyntaxBlockItem()
     {
         var location = Location.Synthetic("<syntax-block-test>");
@@ -480,12 +579,48 @@ public sealed class CompileTimeDirectiveExpansionPassTests
             }
             """);
 
-        var (_, diagnostics) = Expand(program);
+        var (expanded, diagnostics) = Expand(program);
 
         Assert.Contains(diagnostics.Diagnostics, diagnostic =>
             diagnostic.Message.Contains("Computed type must evaluate to a type", StringComparison.Ordinal));
         Assert.Contains(diagnostics.Diagnostics, diagnostic =>
             diagnostic.Message.Contains("Computed member name must evaluate to a name or string", StringComparison.Ordinal));
+        var let = Assert.IsType<LetStatement>(Assert.Single(expanded.Functions).Body[0]);
+        Assert.IsType<ErrorExpressionNode>(let.Initializer);
+    }
+
+    [Fact]
+    public void ExpandProgram_DistinguishesFailedAndDeferredPlaceholders()
+    {
+        var failedProgram = CompilerTestHelpers.Parse(
+            """
+            fn failed() -> int {
+                return @{missing};
+            }
+            """);
+        var deferredProgram = CompilerTestHelpers.Parse(
+            """
+            fn deferred() -> int {
+                return @{pending};
+            }
+            """);
+        var context = new CompileTimeEvaluationContext();
+        context.DefineDeferred("pending");
+
+        var (failed, failedDiagnostics) = Expand(failedProgram);
+        var (deferred, deferredDiagnostics) = Expand(deferredProgram, context);
+
+        Assert.IsType<ErrorExpressionNode>(
+            Assert.IsType<ReturnStatement>(
+                Assert.Single(failed.Functions).Body[0]).Expression);
+        Assert.Contains(failedDiagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "Unknown compile-time name 'missing'",
+                StringComparison.Ordinal));
+        Assert.IsType<PlaceholderExpressionNode>(
+            Assert.IsType<ReturnStatement>(
+                Assert.Single(deferred.Functions).Body[0]).Expression);
+        CompilerTestHelpers.AssertNoErrors(deferredDiagnostics);
     }
 
     [Fact]

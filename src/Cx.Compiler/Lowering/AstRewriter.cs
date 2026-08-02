@@ -218,9 +218,10 @@ internal abstract class AstRewriter
         extension with
         {
             GenericConstraints = RewriteGenericConstraints(extension.GenericConstraints),
-            Methods = extension.Methods.Select(RewriteFunction).ToList(),
-            CompileTimeMembers = extension.CompileTimeMemberNodes
-                .Select(RewriteTypeMember)
+            Members = extension.Members
+                .Select(member => member is FunctionNode method
+                    ? RewriteFunction(method)
+                    : RewriteTypeMember(member))
                 .ToList(),
             Attributes = RewriteAttributeApplications(extension.Attributes),
             TargetTypeNode = RewriteType(extension.TargetTypeNode),
@@ -257,10 +258,13 @@ internal abstract class AstRewriter
     protected virtual TypeAdapterNode RewriteTypeAdapter(TypeAdapterNode adapter) =>
         adapter with
         {
-            ExposedMethods = adapter.ExposedMethods.Select(RewriteExposeMethod).ToList(),
-            Methods = adapter.Methods.Select(RewriteFunction).ToList(),
-            CompileTimeMembers = adapter.CompileTimeMemberNodes
-                .Select(RewriteTypeMember)
+            Members = adapter.Members
+                .Select(member => member switch
+                {
+                    ExposeMethodNode exposed => RewriteExposeMethod(exposed),
+                    FunctionNode method => RewriteFunction(method),
+                    _ => RewriteTypeMember(member),
+                })
                 .ToList(),
             Attributes = RewriteAttributeApplications(adapter.Attributes),
             BaseTypeNode = RewriteType(adapter.BaseTypeNode),

@@ -171,7 +171,15 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             return function;
         }
 
-        var value = _evaluator.Evaluate(function.ComputedName.Expression, _context);
+        var outcome = _evaluator.EvaluateOutcome(
+            function.ComputedName.Expression,
+            _context);
+        if (outcome is not CompileTimeEvaluationOutcome.Value evaluated)
+        {
+            return function;
+        }
+
+        var value = evaluated.Result;
         var name = value switch
         {
             CompileTimeValue.Name named => named.Value,
@@ -180,13 +188,9 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         };
         if (name is null)
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    function.ComputedName.Location,
-                    $"Computed function name must evaluate to a name or string, but found {CompileTimeValueFacts.Describe(value)}.");
-            }
-
+            _diagnostics.Report(
+                function.ComputedName.Location,
+                $"Computed function name must evaluate to a name or string, but found {CompileTimeValueFacts.Describe(value)}.");
             return function;
         }
 
@@ -214,16 +218,20 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             return function;
         }
 
-        var value = _evaluator.Evaluate(function.ComputedParameters.Expression, _context);
+        var outcome = _evaluator.EvaluateOutcome(
+            function.ComputedParameters.Expression,
+            _context);
+        if (outcome is not CompileTimeEvaluationOutcome.Value evaluated)
+        {
+            return function;
+        }
+
+        var value = evaluated.Result;
         if (value is not CompileTimeValue.List list)
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    function.ComputedParameters.Location,
-                    $"Computed function parameters must evaluate to a list of parameter declarations, but found {CompileTimeValueFacts.Describe(value)}.");
-            }
-
+            _diagnostics.Report(
+                function.ComputedParameters.Location,
+                $"Computed function parameters must evaluate to a list of parameter declarations, but found {CompileTimeValueFacts.Describe(value)}.");
             return function;
         }
 
@@ -283,10 +291,35 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             return SyntaxNode.CloneMetadata(call, base.RewriteCallExpression(call));
         }
 
-        var value = _evaluator.Evaluate(placeholder.Expression, _context);
-        if (value is not CompileTimeValue.List list)
+        var outcome = _evaluator.EvaluateOutcome(placeholder.Expression, _context);
+        if (outcome is CompileTimeEvaluationOutcome.Deferred)
         {
             return SyntaxNode.CloneMetadata(call, base.RewriteCallExpression(call));
+        }
+        if (outcome is CompileTimeEvaluationOutcome.Failed)
+        {
+            return SyntaxNode.CloneMetadata(
+                call,
+                base.RewriteCallExpression(call with
+                {
+                    Arguments =
+                    [
+                        SyntaxNode.CloneMetadata(
+                            placeholder,
+                            new ErrorExpressionNode(placeholder.Location)),
+                    ],
+                }));
+        }
+
+        var value = ((CompileTimeEvaluationOutcome.Value)outcome).Result;
+        if (value is not CompileTimeValue.List list)
+        {
+            return SyntaxNode.CloneMetadata(
+                call,
+                base.RewriteCallExpression(call with
+                {
+                    Arguments = [ToExpression(placeholder, value)],
+                }));
         }
 
         var arguments = list.Values.Select(item => ToCallArgument(placeholder, item)).ToList();
@@ -301,9 +334,9 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             CompileTimeLetStatementNode compileTimeLet => ExpandLet(compileTimeLet),
             CompileTimeIfStatementNode conditional => ExpandIf(conditional),
             CompileTimeForeachStatementNode foreachNode => ExpandForeach(foreachNode),
-            CStatement { Expression: AssignmentExpressionNode assignment }
+            CStatement { Expression: AssignmentExpressionNode assignment } expressionStatement
                 when IsCompileTimeAssignment(assignment) =>
-                EvaluateCompileTimeAssignment(assignment),
+                EvaluateCompileTimeAssignment(expressionStatement, assignment),
             CStatement expressionStatement when IsCompileTimeMethodCall(expressionStatement.Expression) =>
                 EvaluateCompileTimeMethodCall(expressionStatement),
             _ => base.RewriteStatement(statement),
@@ -314,6 +347,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         && _context.TryGet(name, out _);
 
     private IReadOnlyList<StatementNode> EvaluateCompileTimeAssignment(
+        CStatement statement,
         AssignmentExpressionNode assignment)
     {
         TryGetAssignedName(assignment.Target, out var name);
@@ -326,8 +360,14 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             return [];
         }
 
-        var value = _evaluator.Evaluate(assignment.Value, _context);
-        if (value is not null && !_context.Assign(name, value))
+        var outcome = _evaluator.EvaluateOutcome(assignment.Value, _context);
+        if (outcome is CompileTimeEvaluationOutcome.Deferred)
+        {
+            return [statement];
+        }
+
+        if (outcome is CompileTimeEvaluationOutcome.Value evaluated
+            && !_context.Assign(name, evaluated.Result))
         {
             _diagnostics.Report(
                 assignment.Location,
@@ -354,8 +394,10 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private IReadOnlyList<StatementNode> EvaluateCompileTimeMethodCall(CStatement statement)
     {
-        _evaluator.Evaluate(statement.Expression, _context);
-        return [];
+        var outcome = _evaluator.EvaluateOutcome(statement.Expression, _context);
+        return outcome is CompileTimeEvaluationOutcome.Deferred
+            ? [statement]
+            : [];
     }
 
     private bool IsCompileTimeMethodCall(ExpressionNode expression) =>
@@ -417,13 +459,9 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         var generated = WithContext(
             context,
             () => ExpandTypeMembers(
-                extension.CompileTimeMemberNodes,
+                extension.Members,
                 TypeMemberPlacement.Extension));
-        var prepared = extension with
-        {
-            Methods = extension.Methods.Concat(generated.Methods).ToList(),
-            CompileTimeMembers = generated.Deferred,
-        };
+        var prepared = extension with { Members = generated.Members };
         ReportDeferredTypeMembers(generated.Deferred, "extension");
         var rewritten = base.RewriteExtension(prepared);
         if (extension.TargetTypeNode?.Syntax is not ComputedTypeSyntaxNode)
@@ -431,13 +469,11 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             return rewritten;
         }
 
-        return rewritten with
-        {
-            Methods = rewritten.Methods.Select(method => method with
+        return rewritten.WithMethods(
+            rewritten.Methods.Select(method => method with
             {
                 OwnerTypeNode = rewritten.TargetTypeNode,
-            }).ToList(),
-        };
+            }).ToList());
     }
 
     protected override TypeAdapterNode RewriteTypeAdapter(TypeAdapterNode adapter)
@@ -453,16 +489,9 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         var generated = WithContext(
             context,
             () => ExpandTypeMembers(
-                adapter.CompileTimeMemberNodes,
+                adapter.Members,
                 TypeMemberPlacement.TypeAdapter));
-        var prepared = adapter with
-        {
-            ExposedMethods = adapter.ExposedMethods
-                .Concat(generated.ExposedMethods)
-                .ToList(),
-            Methods = adapter.Methods.Concat(generated.Methods).ToList(),
-            CompileTimeMembers = generated.Deferred,
-        };
+        var prepared = adapter with { Members = generated.Members };
         ReportDeferredTypeMembers(generated.Deferred, "type adapter");
         return base.RewriteTypeAdapter(prepared);
     }
@@ -601,14 +630,35 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     protected override ExpressionNode RewritePlaceholderExpression(PlaceholderExpressionNode placeholder)
     {
-        var value = _evaluator.Evaluate(placeholder.Expression, _context);
-        return value is null ? placeholder : ToExpression(placeholder, value);
+        return _evaluator.EvaluateOutcome(placeholder.Expression, _context) switch
+        {
+            CompileTimeEvaluationOutcome.Value value =>
+                ToExpression(placeholder, value.Result),
+            CompileTimeEvaluationOutcome.Deferred => placeholder,
+            _ => SyntaxNode.CloneMetadata(
+                placeholder,
+                new ErrorExpressionNode(placeholder.Location)),
+        };
     }
 
     protected override ExpressionNode RewriteComputedMemberExpression(ComputedMemberExpressionNode member)
     {
         var target = RewriteExpression(member.Target)!;
-        var value = _evaluator.Evaluate(member.MemberName.Expression, _context);
+        var outcome = _evaluator.EvaluateOutcome(
+            member.MemberName.Expression,
+            _context);
+        if (outcome is CompileTimeEvaluationOutcome.Deferred)
+        {
+            return member with { Target = target };
+        }
+        if (outcome is CompileTimeEvaluationOutcome.Failed)
+        {
+            return SyntaxNode.CloneMetadata(
+                member,
+                new ErrorExpressionNode(member.Location));
+        }
+
+        var value = ((CompileTimeEvaluationOutcome.Value)outcome).Result;
         var name = value switch
         {
             CompileTimeValue.Name named => named.Value,
@@ -617,20 +667,20 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         };
         if (name is null)
         {
-            if (value is not null)
-            {
-                _diagnostics.Report(
-                    member.MemberName.Location,
-                    $"Computed member name must evaluate to a name or string, but found {CompileTimeValueFacts.Describe(value)}.");
-            }
-
-            return member with { Target = target };
+            _diagnostics.Report(
+                member.MemberName.Location,
+                $"Computed member name must evaluate to a name or string, but found {CompileTimeValueFacts.Describe(value)}.");
+            return SyntaxNode.CloneMetadata(
+                member,
+                new ErrorExpressionNode(member.Location));
         }
 
         if (!IsIdentifier(name))
         {
             _diagnostics.Report(member.MemberName.Location, $"Computed member name '{name}' is not a valid identifier.");
-            return member with { Target = target };
+            return SyntaxNode.CloneMetadata(
+                member,
+                new ErrorExpressionNode(member.Location));
         }
 
         return SyntaxNode.CloneMetadata(
@@ -645,17 +695,20 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             return base.RewriteType(type);
         }
 
-        var value = _evaluator.Evaluate(computed.Expression, _context);
-        if (value is CompileTimeValue.Type resolved)
+        var outcome = _evaluator.EvaluateOutcome(computed.Expression, _context);
+        if (outcome is CompileTimeEvaluationOutcome.Value
+            {
+                Result: CompileTimeValue.Type resolved,
+            })
         {
             return SyntaxNode.CloneMetadata(type, resolved.Value.ToTypeNode(type.Location));
         }
 
-        if (value is not null)
+        if (outcome is CompileTimeEvaluationOutcome.Value value)
         {
             _diagnostics.Report(
                 computed.Expression.Location,
-                $"Computed type must evaluate to a type, but found {CompileTimeValueFacts.Describe(value)}.");
+                $"Computed type must evaluate to a type, but found {CompileTimeValueFacts.Describe(value.Result)}.");
         }
 
         return type;

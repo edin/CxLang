@@ -52,14 +52,14 @@ internal sealed class TypeInferencePass(
                 .Select(structNode => structNode.WithMethods(
                     InferCatalogFunctions(structNode.Methods)))
                 .ToList(),
-            TypeAdapters = program.TypeAdapters.Select(adapter => adapter with
-            {
-                Methods = InferCatalogFunctions(adapter.Methods),
-            }).ToList(),
-            Extensions = program.Extensions.Select(extension => extension with
-            {
-                Methods = InferCatalogFunctions(extension.Methods),
-            }).ToList(),
+            TypeAdapters = program.TypeAdapters
+                .Select(adapter => adapter.WithMethods(
+                    InferCatalogFunctions(adapter.Methods)))
+                .ToList(),
+            Extensions = program.Extensions
+                .Select(extension => extension.WithMethods(
+                    InferCatalogFunctions(extension.Methods)))
+                .ToList(),
             TaggedUnions = program.TaggedUnions.Select(union => union with
             {
                 Methods = InferCatalogFunctions(union.Methods),

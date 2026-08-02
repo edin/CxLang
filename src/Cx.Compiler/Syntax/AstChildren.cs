@@ -60,16 +60,13 @@ internal static class AstChildren
             variant.TypeNode),
         ExtensionNode extension => Children(
             extension.GenericConstraints,
-            extension.Methods,
+            extension.Members,
             extension.Attributes,
-            extension.TargetTypeNode,
-            extension.CompileTimeMembers),
+            extension.TargetTypeNode),
         TypeAdapterNode adapter => Children(
-            adapter.ExposedMethods,
-            adapter.Methods,
+            adapter.Members,
             adapter.Attributes,
-            adapter.BaseTypeNode,
-            adapter.CompileTimeMembers),
+            adapter.BaseTypeNode),
         ExposeMethodNode exposed => Children(exposed.ReturnTypeNode),
         GlobalVariableNode global => Children(
             global.Initializer,

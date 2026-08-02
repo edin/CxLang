@@ -62,30 +62,33 @@ internal static class SymbolImportProjector
                 .ToList(),
             TypeAdapters = program.TypeAdapters
                 .Where(adapter => symbols.ContainsKey(adapter.Name))
-                .Select(adapter => adapter with
-                {
-                    Name = symbols[adapter.Name],
-                    BaseTypeNode = ImportedTypeRewriter.Project(adapter.BaseTypeNode, symbols, typeNames),
-                    Methods = adapter.Methods.Select(method => method with
+                .Select(adapter => (adapter with
+                    {
+                        Name = symbols[adapter.Name],
+                        BaseTypeNode = ImportedTypeRewriter.Project(
+                            adapter.BaseTypeNode,
+                            symbols,
+                            typeNames),
+                    }).WithMethods(adapter.Methods.Select(method => method with
                     {
                         OwnerTypeNode = ImportedTypeRewriter.Rename(method.OwnerTypeNode, symbols[adapter.Name]),
                         ReturnTypeNode = ImportedTypeRewriter.Project(method.ReturnTypeNode, symbols, typeNames),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
-                    }).ToList(),
-                })
+                    }).ToList()))
                 .ToList(),
             Extensions = program.Extensions
                 .Where(extension => symbols.ContainsKey(ImportedTypeRewriter.GetText(extension.TargetTypeNode)))
-                .Select(extension => extension with
-                {
-                    TargetTypeNode = ImportedTypeRewriter.Rename(extension.TargetTypeNode, symbols[ImportedTypeRewriter.GetText(extension.TargetTypeNode)]),
-                    Methods = extension.Methods.Select(method => method with
+                .Select(extension => (extension with
+                    {
+                        TargetTypeNode = ImportedTypeRewriter.Rename(
+                            extension.TargetTypeNode,
+                            symbols[ImportedTypeRewriter.GetText(extension.TargetTypeNode)]),
+                    }).WithMethods(extension.Methods.Select(method => method with
                     {
                         OwnerTypeNode = ImportedTypeRewriter.Rename(method.OwnerTypeNode, symbols[ImportedTypeRewriter.GetText(extension.TargetTypeNode)]),
                         ReturnTypeNode = ImportedTypeRewriter.Project(method.ReturnTypeNode, symbols, typeNames),
                         Parameters = method.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
-                    }).ToList(),
-                })
+                    }).ToList()))
                 .ToList(),
             TaggedUnions = program.TaggedUnions
                 .Where(union => symbols.ContainsKey(union.Name))

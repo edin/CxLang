@@ -1227,26 +1227,15 @@ public sealed partial class Parser
             var baseTypeNode = ParseTypeNode();
             Expect(TokenType.LBrace, "Expected '{' before type adapter body.");
 
-            var exposedMethods = new List<ExposeMethodNode>();
-            var methods = new List<FunctionNode>();
-            var compileTimeMembers = new List<SyntaxNode>();
+            var members = new List<SyntaxNode>();
             while (!IsAtEnd && !Check(TokenType.RBrace))
             {
                 var member = ParseSpannedNode(() => ParseTypeAdapterMember(
                     nameToken?.Value ?? string.Empty,
                     typeParameters));
-                switch (member)
+                if (member is not null)
                 {
-                    case ExposeMethodNode exposed:
-                        exposedMethods.Add(exposed);
-                        break;
-                    case FunctionNode method:
-                        methods.Add(method);
-                        break;
-                    case CompileTimeIfDeclarationNode
-                        or CompileTimeForeachDeclarationNode:
-                        compileTimeMembers.Add(member);
-                        break;
+                    members.Add(member);
                 }
             }
 
@@ -1258,11 +1247,9 @@ public sealed partial class Parser
                     typeToken.Location,
                     nameToken?.Value ?? string.Empty,
                     typeParameters,
-                    exposedMethods,
-                    methods,
+                    members,
                     attributes,
-                    BaseTypeNode: baseTypeNode,
-                    CompileTimeMembers: compileTimeMembers);
+                    BaseTypeNode: baseTypeNode);
         }
 
         if (typeParameters.Count > 0)
@@ -1775,23 +1762,16 @@ public sealed partial class Parser
         var genericConstraints = ParseOptionalGenericConstraints(typeParameters);
         Expect(TokenType.LBrace, "Expected '{' before extension body.");
 
-        var methods = new List<FunctionNode>();
-        var compileTimeMembers = new List<SyntaxNode>();
+        var members = new List<SyntaxNode>();
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
             var member = ParseSpannedNode(() => ParseExtensionMember(
                 targetType,
                 typeParameters,
                 genericConstraints));
-            switch (member)
+            if (member is not null)
             {
-                case FunctionNode method:
-                    methods.Add(method);
-                    break;
-                case CompileTimeIfDeclarationNode
-                    or CompileTimeForeachDeclarationNode:
-                    compileTimeMembers.Add(member);
-                    break;
+                members.Add(member);
             }
         }
 
@@ -1804,10 +1784,9 @@ public sealed partial class Parser
                 extensionToken.Location,
                 typeParameters,
                 genericConstraints,
-                methods,
+                members,
                 attributes,
-                TargetTypeNode: targetTypeNode,
-                CompileTimeMembers: compileTimeMembers);
+                TargetTypeNode: targetTypeNode);
     }
 
     private SyntaxNode? ParseExtensionMember(

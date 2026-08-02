@@ -187,10 +187,8 @@ internal static class CxFunctionReachabilityPruner
                         structNode.Methods.Where(reachable.Contains).ToList()));
                     break;
                 case TypeAdapterNode adapter:
-                    declarations.Add(adapter with
-                    {
-                        Methods = adapter.Methods.Where(reachable.Contains).ToList(),
-                    });
+                    declarations.Add(adapter.WithMethods(
+                        adapter.Methods.Where(reachable.Contains).ToList()));
                     break;
                 case TaggedUnionNode union:
                     declarations.Add(union with

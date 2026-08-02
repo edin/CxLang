@@ -124,6 +124,45 @@ public sealed class CompileTimeDirectiveTests
     }
 
     [Fact]
+    public void Compile_PreservesDeferredCompileTimeMutationsUntilSpecialization()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            extern fn consume(value: const char*) -> void;
+
+            struct User {
+                id: int;
+            }
+
+            fn inspect<T>() -> int {
+                @let count = T.fields.count;
+                count = count == 1 ? 2 : 3;
+
+                @let members = T.fields;
+                members.add(Parameter.create("extra", int));
+                @foreach member in members {
+                    consume(@{member.name});
+                }
+
+                @if(count == 2) {
+                    return 2;
+                } else {
+                    return 1;
+                }
+            }
+
+            fn main() -> int {
+                return inspect<User>();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("\"id\"", result.Output, StringComparison.Ordinal);
+        Assert.Contains("\"extra\"", result.Output, StringComparison.Ordinal);
+        Assert.Contains("return 2;", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compile_ExpandsGenericDependentForeachForEachSpecialization()
     {
         var result = CompilerTestHelpers.Compile(
