@@ -212,7 +212,7 @@ public sealed class ScopeCleanupLowererTests
 
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("__cx_using_return_", result.Output);
-        Assert.Contains("Vec_free_u8(&buffer);", result.Output);
+        Assert.Contains("Vec_dispose_u8(&buffer);", result.Output);
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public sealed class ScopeCleanupLowererTests
         Assert.Contains("__cx_using_replacement_", result.Output);
         Assert.Equal(
             2,
-            result.Output!.Split("Vec_free_u8(&buffer);", StringSplitOptions.None).Length - 1);
+            result.Output!.Split("Vec_dispose_u8(&buffer);", StringSplitOptions.None).Length - 1);
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public sealed class ScopeCleanupLowererTests
     }
 
     [Fact]
-    public void CompileToC_RejectsResourceWithoutFreeMethod()
+    public void CompileToC_RejectsResourceWithoutDisposeMethod()
     {
         var result = CompilerTestHelpers.Compile(
             """
@@ -268,7 +268,7 @@ public sealed class ScopeCleanupLowererTests
             }
             """);
 
-        CompilerTestHelpers.AssertDiagnosticContains(result, "free");
+        CompilerTestHelpers.AssertDiagnosticContains(result, "dispose");
     }
 
     private static ProgramNode Lower(string source) =>
@@ -285,7 +285,7 @@ public sealed class ScopeCleanupLowererTests
                 Callee: MemberExpressionNode
                 {
                     Target: NameExpressionNode name,
-                    MemberName: "free",
+                    MemberName: "dispose",
                 },
                 Arguments.Count: 0,
             },

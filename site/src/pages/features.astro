@@ -234,7 +234,7 @@ struct HashSet<T> where T: Hash<T> + Equal<T> {
       {
         name: "Constrained Extensions",
         code: `requires Disposable<T> {
-    fn free(self: Self*) -> void;
+    fn dispose() -> void;
 }
 
 extension Option<T>

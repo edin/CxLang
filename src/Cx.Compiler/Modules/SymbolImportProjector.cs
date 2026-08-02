@@ -47,11 +47,18 @@ internal static class SymbolImportProjector
                 .ToList(),
             Structs = program.Structs
                 .Where(structNode => symbols.ContainsKey(structNode.Name))
-                .Select(structNode => structNode with
-                {
-                    Name = symbols[structNode.Name],
-                    Fields = structNode.Fields.Select(field => field with { TypeNode = ImportedTypeRewriter.Project(field.TypeNode, symbols, typeNames) }).ToList(),
-                })
+                .Select(structNode => (structNode with
+                    {
+                        Name = symbols[structNode.Name],
+                    }).WithFields(structNode.Fields
+                        .Select(field => field with
+                        {
+                            TypeNode = ImportedTypeRewriter.Project(
+                                field.TypeNode,
+                                symbols,
+                                typeNames),
+                        })
+                        .ToList()))
                 .ToList(),
             TypeAdapters = program.TypeAdapters
                 .Where(adapter => symbols.ContainsKey(adapter.Name))
@@ -149,11 +156,18 @@ internal static class SymbolImportProjector
                 .ToList(),
             Structs = declaration.Structs
                 .Where(structNode => symbols.ContainsKey(structNode.Name))
-                .Select(structNode => structNode with
-                {
-                    Name = symbols[structNode.Name],
-                    Fields = structNode.Fields.Select(field => field with { TypeNode = ImportedTypeRewriter.Project(field.TypeNode, symbols, typeNames) }).ToList(),
-                })
+                .Select(structNode => (structNode with
+                    {
+                        Name = symbols[structNode.Name],
+                    }).WithFields(structNode.Fields
+                        .Select(field => field with
+                        {
+                            TypeNode = ImportedTypeRewriter.Project(
+                                field.TypeNode,
+                                symbols,
+                                typeNames),
+                        })
+                        .ToList()))
                 .ToList(),
             Unions = declaration.Unions
                 .Where(union => symbols.ContainsKey(union.Name))

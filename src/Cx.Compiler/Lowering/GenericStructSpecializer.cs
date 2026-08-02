@@ -151,7 +151,6 @@ internal static class GenericStructSpecializer
             [],
             requirements,
             fields,
-            [],
             definition.Attributes);
         specialized.Semantic.ModuleName = definition.Semantic.ModuleName;
         specialized.Semantic.GenericStructSpecialization =

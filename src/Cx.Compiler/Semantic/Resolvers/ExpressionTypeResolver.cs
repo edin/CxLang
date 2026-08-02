@@ -624,9 +624,8 @@ internal sealed class ExpressionTypeResolver(
             var substitutions = definition.TypeParameters
                 .Zip(namedType.Arguments)
                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
-            return definition with
-            {
-                Fields = definition.Fields
+            return definition.WithFields(
+                definition.Fields
                     .Select(field =>
                     {
                         var substitutedType = TypeRefRewriter.Substitute(
@@ -637,8 +636,7 @@ internal sealed class ExpressionTypeResolver(
                             TypeNode = substitutedType.ToTypeNode(field.Location),
                         };
                     })
-                    .ToList(),
-            };
+                    .ToList());
         }
 
         var typeName = TypeRefFacts.GetBaseName(type);

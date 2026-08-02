@@ -29,7 +29,7 @@ public sealed class TryExpressionLowererTests
 
         CompilerTestHelpers.AssertSuccess(result);
         Assert.Contains("__cx_try_", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("Vec_free_u8(&buffer);", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Vec_dispose_u8(&buffer);", result.Output, StringComparison.Ordinal);
         Assert.Contains(".error", result.Output, StringComparison.Ordinal);
     }
 

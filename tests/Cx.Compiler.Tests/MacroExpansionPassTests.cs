@@ -373,7 +373,7 @@ public sealed class MacroExpansionPassTests
                     address: Address { number: 42 },
                 };
                 let ok: bool = user.write_debug(&builder);
-                builder.free();
+                builder.dispose();
                 return ok ? 0 : 1;
             }
             """);

@@ -441,8 +441,8 @@ internal sealed class ExpressionSemanticAnalyzer(
         diagnostics.Report(
             location,
             type is null or TypeRef.Unknown
-                ? "A using resource must provide 'free(self: Self*) -> void'."
-                : $"Type '{SemanticFacts.FormatTypeRef(type)}' used by 'using' must provide 'free(self: Self*) -> void'.");
+                ? $"A using resource must provide '{ResourceCleanupFacts.ContractDisplay}'."
+                : $"Type '{SemanticFacts.FormatTypeRef(type)}' used by 'using' must provide '{ResourceCleanupFacts.ContractDisplay}'.");
     }
 
     private TypeRef? ResolveExpressionTypeRef(

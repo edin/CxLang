@@ -110,20 +110,24 @@ internal static class GenericTypeRewriter
 
     public static StructNode RewriteStruct(
         StructNode structNode,
-        IReadOnlySet<string> concreteStructNames) =>
-        structNode with
+        IReadOnlySet<string> concreteStructNames)
+    {
+        var rewritten = structNode with
         {
             Requirements = RewriteStructRequirements(structNode.Requirements, concreteStructNames),
-            Fields = structNode.Fields
+        };
+        rewritten = rewritten.WithFields(
+            structNode.Fields
                 .Select(field => field with
                 {
                     TypeNode = RewriteTypeNode(field.TypeNode, concreteStructNames),
                 })
-                .ToList(),
-            Methods = structNode.Methods
+                .ToList());
+        return rewritten.WithMethods(
+            structNode.Methods
                 .Select(method => Rewrite(method, concreteStructNames))
-                .ToList(),
-        };
+                .ToList());
+    }
 
     public static FunctionNode Rewrite(
         FunctionNode function,

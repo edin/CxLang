@@ -83,6 +83,47 @@ public sealed class CompileTimeDirectiveTests
     }
 
     [Fact]
+    public void Compile_ExpandsGenericRequirementMatchAndResolvesGeneratedCalls()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Resource: Disposable<Resource> {
+                disposed: bool;
+            }
+
+            extension Resource {
+                fn dispose() -> void {
+                    self.disposed = true;
+                }
+            }
+
+            fn dispose_value<T>(value: T*) -> void {
+                @let match = T.match(Disposable);
+
+                @if(match.success) {
+                    value.dispose();
+                }
+            }
+
+            fn main() -> int {
+                let resource = Resource { disposed: false };
+                let number = 42;
+                dispose_value<Resource>(&resource);
+                dispose_value<int>(&number);
+                return resource.disposed ? 0 : 1;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Equal(
+            1,
+            result.Output!.Split(
+                "Resource_dispose(value);",
+                StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compile_ExpandsGenericDependentForeachForEachSpecialization()
     {
         var result = CompilerTestHelpers.Compile(

@@ -48,10 +48,10 @@ internal sealed class TypeInferencePass(
         return programWithGlobals with
         {
             Functions = InferCatalogFunctions(program.Functions),
-            Structs = program.Structs.Select(structNode => structNode with
-            {
-                Methods = InferCatalogFunctions(structNode.Methods),
-            }).ToList(),
+            Structs = program.Structs
+                .Select(structNode => structNode.WithMethods(
+                    InferCatalogFunctions(structNode.Methods)))
+                .ToList(),
             TypeAdapters = program.TypeAdapters.Select(adapter => adapter with
             {
                 Methods = InferCatalogFunctions(adapter.Methods),

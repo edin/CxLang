@@ -74,7 +74,7 @@ internal sealed class MacroExpansionPass : AstRewriter
             InjectTopLevelDeclarations(ExpandDeclarationInvocation(boundInvocation));
         }
 
-        return rewritten with { MacroInvocations = [] };
+        return rewritten.WithMacroInvocations([]);
     }
 
     protected override IReadOnlyList<TopLevelNode> RewriteTopLevelNode(TopLevelNode node)

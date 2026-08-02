@@ -1,4 +1,5 @@
 using Cx.Compiler.Source;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -300,7 +301,7 @@ internal sealed class ScopeCleanupLowerer : AstRewriter
             new MemberExpressionNode(
                 location,
                 new NameExpressionNode(location, binding.Name),
-                "free"),
+                ResourceCleanupFacts.MethodName),
             []);
         call.Semantic.IsScopeCleanup = true;
         return WithSpan(new CStatement(location, call), binding.Span);

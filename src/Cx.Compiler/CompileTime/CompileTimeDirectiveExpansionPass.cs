@@ -395,17 +395,9 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
         var generated = WithContext(
             context,
             () => ExpandTypeMembers(
-                structNode.CompileTimeMemberNodes,
+                structNode.Members,
                 TypeMemberPlacement.Struct));
-        var prepared = structNode with
-        {
-            Fields = structNode.Fields.Concat(generated.Fields).ToList(),
-            Methods = structNode.Methods.Concat(generated.Methods).ToList(),
-            MacroInvocations = structNode.MacroInvocationNodes
-                .Concat(generated.MacroInvocations)
-                .ToList(),
-            CompileTimeMembers = generated.Deferred,
-        };
+        var prepared = structNode with { Members = generated.Members };
         ReportDeferredTypeMembers(generated.Deferred, "struct");
         return base.RewriteStruct(prepared);
     }
@@ -511,19 +503,18 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
                     ExpandTypeMemberForeach(foreachNode, placement, result);
                     break;
                 case StructFieldNode field when placement == TypeMemberPlacement.Struct:
-                    result.Fields.Add(RewriteStructField(field));
+                    result.Add(RewriteStructField(field));
                     break;
                 case FunctionNode method:
-                    result.Methods.Add(RewriteFunction(method));
+                    result.Add(RewriteFunction(method));
                     break;
                 case MacroInvocationDeclarationNode invocation
                     when placement == TypeMemberPlacement.Struct:
-                    result.MacroInvocations.Add(
-                        base.RewriteMacroInvocationDeclaration(invocation));
+                    result.Add(base.RewriteMacroInvocationDeclaration(invocation));
                     break;
                 case ExposeMethodNode exposed
                     when placement == TypeMemberPlacement.TypeAdapter:
-                    result.ExposedMethods.Add(RewriteExposeMethod(exposed));
+                    result.Add(RewriteExposeMethod(exposed));
                     break;
                 default:
                     ReportInvalidSyntaxBlockItem(
@@ -552,7 +543,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             out var selectedBlock);
         if (selection == CompileTimeExpansionDecision.Deferred)
         {
-            result.Deferred.Add(conditional);
+            result.AddDeferred(conditional);
             return;
         }
         if (selection == CompileTimeExpansionDecision.Failed)
@@ -577,7 +568,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             out var values);
         if (evaluation == CompileTimeExpansionDecision.Deferred)
         {
-            result.Deferred.Add(foreachNode);
+            result.AddDeferred(foreachNode);
             return;
         }
         if (evaluation == CompileTimeExpansionDecision.Failed)
@@ -1027,6 +1018,8 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
     private sealed class TypeMemberExpansion
     {
+        public List<SyntaxNode> Members { get; } = [];
+
         public List<StructFieldNode> Fields { get; } = [];
 
         public List<FunctionNode> Methods { get; } = [];
@@ -1037,8 +1030,35 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
 
         public List<SyntaxNode> Deferred { get; } = [];
 
+        public void Add(SyntaxNode member)
+        {
+            Members.Add(member);
+            switch (member)
+            {
+                case StructFieldNode field:
+                    Fields.Add(field);
+                    break;
+                case FunctionNode method:
+                    Methods.Add(method);
+                    break;
+                case MacroInvocationDeclarationNode invocation:
+                    MacroInvocations.Add(invocation);
+                    break;
+                case ExposeMethodNode exposed:
+                    ExposedMethods.Add(exposed);
+                    break;
+            }
+        }
+
+        public void AddDeferred(SyntaxNode member)
+        {
+            Members.Add(member);
+            Deferred.Add(member);
+        }
+
         public void Add(TypeMemberExpansion other)
         {
+            Members.AddRange(other.Members);
             Fields.AddRange(other.Fields);
             Methods.AddRange(other.Methods);
             MacroInvocations.AddRange(other.MacroInvocations);

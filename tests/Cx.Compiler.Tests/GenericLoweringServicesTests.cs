@@ -185,7 +185,7 @@ public sealed class GenericLoweringServicesTests
                     return self.box.get();
                 }
 
-                fn free() -> void {
+                fn dispose() -> void {
                 }
             }
 

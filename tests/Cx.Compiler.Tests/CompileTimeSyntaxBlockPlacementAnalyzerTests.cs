@@ -83,7 +83,7 @@ public sealed class CompileTimeSyntaxBlockPlacementAnalyzerTests
         {
             Declarations =
             [
-                structNode with { CompileTimeMembers = [invalid] }
+                structNode.WithCompileTimeMembers([invalid])
             ],
         };
         var diagnostics = new DiagnosticBag();

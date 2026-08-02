@@ -200,15 +200,18 @@ internal abstract class AstRewriter
         {
             GenericConstraints = RewriteGenericConstraints(structNode.GenericConstraints),
             Requirements = structNode.Requirements.Select(RewriteStructRequirement).ToList(),
-            Fields = structNode.Fields.Select(RewriteStructField).ToList(),
-            Methods = structNode.Methods.Select(RewriteFunction).ToList(),
-            MacroInvocations = structNode.MacroInvocationNodes
-                .Select(RewriteMacroInvocationDeclaration)
-                .ToList(),
-            CompileTimeMembers = structNode.CompileTimeMemberNodes
-                .Select(RewriteTypeMember)
-                .ToList(),
+            Members = structNode.Members.Select(RewriteStructMember).ToList(),
             Attributes = RewriteAttributeApplications(structNode.Attributes),
+        };
+
+    private SyntaxNode RewriteStructMember(SyntaxNode member) =>
+        member switch
+        {
+            StructFieldNode field => RewriteStructField(field),
+            FunctionNode method => RewriteFunction(method),
+            MacroInvocationDeclarationNode invocation =>
+                RewriteMacroInvocationDeclaration(invocation),
+            _ => RewriteTypeMember(member),
         };
 
     protected virtual ExtensionNode RewriteExtension(ExtensionNode extension) =>

@@ -89,12 +89,10 @@ internal static class ExtensionMergePass
             return structNode;
         }
 
-        return structNode with
-        {
-            Methods = structNode.Methods
+        return structNode.WithMethods(
+            structNode.Methods
                 .Concat(extensions.SelectMany(extension => extension.Methods))
-                .ToList(),
-        };
+                .ToList());
     }
 
     private static string TargetTypeName(TypeNode? typeNode)

@@ -9,6 +9,52 @@ namespace Cx.Compiler.Tests;
 public sealed class CompileTimeDirectiveExpansionPassTests
 {
     [Fact]
+    public void ExpandProgram_PreservesCanonicalStructMemberOrder()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Ordered {
+                first: int;
+
+                @if(true) {
+                    second: int;
+
+                    fn middle() -> int {
+                        return self.second;
+                    }
+                }
+
+                third: int;
+
+                fn last() -> int {
+                    return self.third;
+                }
+            }
+            """);
+        var parsed = Assert.Single(program.Structs);
+        Assert.Collection(
+            parsed.Members,
+            member => Assert.IsType<StructFieldNode>(member),
+            member => Assert.IsType<CompileTimeIfDeclarationNode>(member),
+            member => Assert.IsType<StructFieldNode>(member),
+            member => Assert.IsType<FunctionNode>(member));
+
+        var (expanded, diagnostics) = Expand(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var structNode = Assert.Single(expanded.Structs);
+        Assert.Collection(
+            structNode.Members,
+            member => Assert.Equal("first", Assert.IsType<StructFieldNode>(member).Name),
+            member => Assert.Equal("second", Assert.IsType<StructFieldNode>(member).Name),
+            member => Assert.Equal("middle", Assert.IsType<FunctionNode>(member).Name),
+            member => Assert.Equal("third", Assert.IsType<StructFieldNode>(member).Name),
+            member => Assert.Equal("last", Assert.IsType<FunctionNode>(member).Name));
+        Assert.Equal(["first", "second", "third"], structNode.Fields.Select(field => field.Name));
+        Assert.Equal(["middle", "last"], structNode.Methods.Select(method => method.Name));
+    }
+
+    [Fact]
     public void ExpandStatementList_ReportsInvalidGeneralizedSyntaxBlockItem()
     {
         var location = Location.Synthetic("<syntax-block-test>");

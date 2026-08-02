@@ -33,11 +33,18 @@ internal static class ImportedDeclarationQualifier
                     Parameters = method.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
                 }).ToList(),
             }).ToList(),
-            Structs = program.Structs.Select(structNode => structNode with
-            {
-                Name = ImportedTypeRewriter.QualifyName(alias, structNode.Name),
-                Fields = structNode.Fields.Select(field => field with { TypeNode = ImportedTypeRewriter.Qualify(field.TypeNode, alias, typeNames) }).ToList(),
-            }).ToList(),
+            Structs = program.Structs.Select(structNode => (structNode with
+                {
+                    Name = ImportedTypeRewriter.QualifyName(alias, structNode.Name),
+                }).WithFields(structNode.Fields
+                    .Select(field => field with
+                    {
+                        TypeNode = ImportedTypeRewriter.Qualify(
+                            field.TypeNode,
+                            alias,
+                            typeNames),
+                    })
+                    .ToList())).ToList(),
             TypeAdapters = program.TypeAdapters.Select(adapter => adapter with
             {
                 Name = ImportedTypeRewriter.QualifyName(alias, adapter.Name),
@@ -105,11 +112,18 @@ internal static class ImportedDeclarationQualifier
                     .Select(field => field with { TypeNode = ImportedTypeRewriter.Qualify(field.TypeNode, alias, typeNames) })
                     .ToList(),
             }).ToList(),
-            Structs = declaration.Structs.Select(structNode => structNode with
-            {
-                Name = ImportedTypeRewriter.QualifyName(alias, structNode.Name),
-                Fields = structNode.Fields.Select(field => field with { TypeNode = ImportedTypeRewriter.Qualify(field.TypeNode, alias, typeNames) }).ToList(),
-            }).ToList(),
+            Structs = declaration.Structs.Select(structNode => (structNode with
+                {
+                    Name = ImportedTypeRewriter.QualifyName(alias, structNode.Name),
+                }).WithFields(structNode.Fields
+                    .Select(field => field with
+                    {
+                        TypeNode = ImportedTypeRewriter.Qualify(
+                            field.TypeNode,
+                            alias,
+                            typeNames),
+                    })
+                    .ToList())).ToList(),
             Unions = declaration.Unions.Select(union => union with
             {
                 Name = ImportedTypeRewriter.QualifyName(alias, union.Name),

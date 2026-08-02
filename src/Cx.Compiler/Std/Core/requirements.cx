@@ -13,7 +13,7 @@ public requires Compare<T> {
 }
 
 public requires Disposable<T> {
-    fn free(self: Self*) -> void;
+    fn dispose() -> void;
 }
 
 static fn int.equals(left: int, right: int) -> bool {

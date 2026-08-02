@@ -1681,30 +1681,15 @@ public sealed partial class Parser
         var genericConstraints = ParseOptionalGenericConstraints(typeParameters);
         Expect(TokenType.LBrace, "Expected '{' before struct body.");
 
-        var fields = new List<StructFieldNode>();
-        var methods = new List<FunctionNode>();
-        var macroInvocations = new List<MacroInvocationDeclarationNode>();
-        var compileTimeMembers = new List<SyntaxNode>();
+        var members = new List<SyntaxNode>();
         while (!IsAtEnd && !Check(TokenType.RBrace))
         {
             var member = ParseSpannedNode(() => ParseStructMember(
                 nameToken?.Value ?? string.Empty,
                 typeParameters));
-            switch (member)
+            if (member is not null)
             {
-                case StructFieldNode field:
-                    fields.Add(field);
-                    break;
-                case FunctionNode method:
-                    methods.Add(method);
-                    break;
-                case MacroInvocationDeclarationNode invocation:
-                    macroInvocations.Add(invocation);
-                    break;
-                case CompileTimeIfDeclarationNode
-                    or CompileTimeForeachDeclarationNode:
-                    compileTimeMembers.Add(member);
-                    break;
+                members.Add(member);
             }
         }
 
@@ -1719,12 +1704,9 @@ public sealed partial class Parser
                 typeParameters,
                 genericConstraints,
                 requirements,
-                fields,
-                methods,
+                members,
                 attributes,
-                IsHeaderDeclaration: isHeaderDeclaration,
-                MacroInvocations: macroInvocations,
-                CompileTimeMembers: compileTimeMembers);
+                IsHeaderDeclaration: isHeaderDeclaration);
     }
 
     private SyntaxNode? ParseStructMember(
@@ -2311,16 +2293,21 @@ public sealed partial class Parser
             allowVariadic: false,
             openMessage: "Expected '(' after requirement function name.",
             closeMessage: "Expected ')' after requirement function parameters.").ToList();
-        if (operatorKind is not null
+        if (!modifiers.IsStatic
             && parameters.FirstOrDefault()?.Name != "self")
         {
+            var selfTypeNode = operatorKind is null
+                ? TypeNode.Pointer(
+                    fnToken?.Location ?? Current.Location,
+                    new NamedTypeSyntaxNode("Self"))
+                : TypeNode.Named(
+                    fnToken?.Location ?? Current.Location,
+                    "Self");
             parameters.Insert(0, new ParameterNode(
                 fnToken?.Location ?? Current.Location,
                 "self",
                 [],
-                TypeNode: TypeNode.Named(
-                    fnToken?.Location ?? Current.Location,
-                    "Self")));
+                TypeNode: selfTypeNode));
         }
 
         Expect(TokenType.Arrow, "Expected '->' before requirement function return type.");

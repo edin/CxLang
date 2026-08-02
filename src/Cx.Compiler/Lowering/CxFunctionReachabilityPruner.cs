@@ -183,10 +183,8 @@ internal static class CxFunctionReachabilityPruner
                 case TestNode:
                     continue;
                 case StructNode structNode:
-                    declarations.Add(structNode with
-                    {
-                        Methods = structNode.Methods.Where(reachable.Contains).ToList(),
-                    });
+                    declarations.Add(structNode.WithMethods(
+                        structNode.Methods.Where(reachable.Contains).ToList()));
                     break;
                 case TypeAdapterNode adapter:
                     declarations.Add(adapter with

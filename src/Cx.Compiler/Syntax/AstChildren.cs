@@ -38,11 +38,8 @@ internal static class AstChildren
         StructNode structNode => Children(
             structNode.GenericConstraints,
             structNode.Requirements,
-            structNode.Fields,
-            structNode.Methods,
-            structNode.Attributes,
-            structNode.MacroInvocations,
-            structNode.CompileTimeMembers),
+            structNode.Members,
+            structNode.Attributes),
         GenericConstraintNode constraint => Children(constraint.Requirements),
         StructRequirementNode requirement => Children(
             requirement.TypeArgumentNodes),

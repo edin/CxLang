@@ -514,7 +514,14 @@ public sealed class RequirementMatcher
             })
             .ToList();
 
-        structNode = new StructNode(definition.Location, loweredType, [], [], [], fields, [], definition.Attributes);
+        structNode = new StructNode(
+            definition.Location,
+            loweredType,
+            [],
+            [],
+            [],
+            fields,
+            definition.Attributes);
         return true;
     }
 

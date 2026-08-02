@@ -386,7 +386,7 @@ public sealed class TypeSystemTests
         var program = ResolveTypes(
             """
             requires Disposable<T> {
-                fn free(self: Self*) -> void;
+                fn dispose() -> void;
             }
 
             struct File: Disposable<File> {
@@ -394,7 +394,7 @@ public sealed class TypeSystemTests
             }
 
             extension File {
-                fn free() -> void {
+                fn dispose() -> void {
                 }
             }
 
@@ -409,14 +409,14 @@ public sealed class TypeSystemTests
 
             extension Option<T>
             where T: Disposable<T> {
-                fn free() -> void {
+                fn dispose() -> void {
                 }
             }
             """);
         var typeSystem = new TypeSystem(program);
 
-        Assert.NotNull(typeSystem.FindMethod(Parse(program, "Option<File>"), "free", isStatic: false, argumentCount: 0));
-        Assert.Null(typeSystem.FindMethod(Parse(program, "Option<Plain>"), "free", isStatic: false, argumentCount: 0));
+        Assert.NotNull(typeSystem.FindMethod(Parse(program, "Option<File>"), "dispose", isStatic: false, argumentCount: 0));
+        Assert.Null(typeSystem.FindMethod(Parse(program, "Option<Plain>"), "dispose", isStatic: false, argumentCount: 0));
     }
 
     private static TypeRef Parse(Cx.Compiler.Syntax.Nodes.ProgramNode program, string type) =>
