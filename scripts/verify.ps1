@@ -69,6 +69,11 @@ try {
         "check", "--generic-raw-audit"
     )
 
+    Invoke-NativeStep "Audit C backend dependencies" "powershell" @(
+        "-ExecutionPolicy", "Bypass",
+        "-File", "scripts/audit-c-backend.ps1"
+    )
+
     Invoke-NativeStep "Check diff hygiene" "git" @(
         "-c", "core.safecrlf=false",
         "diff", "--check"

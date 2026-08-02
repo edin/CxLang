@@ -24,7 +24,7 @@ public sealed partial class Parser
             {
                 _diagnostics.Report(
                     token.Span,
-                    "Declaration modifiers must use the canonical order 'public static implicit'.");
+                    "Declaration modifiers must use the canonical order 'public compile static implicit'.");
             }
 
             modifiers = modifiers.Add(modifier, token);
@@ -53,6 +53,21 @@ public sealed partial class Parser
                     "Implicit conversion functions must be declared with 'static implicit fn'.");
             }
         }
+
+        if (modifiers.IsCompileTime)
+        {
+            foreach (var (modifier, token) in modifiers.Tokens())
+            {
+                if (modifier is not (
+                    DeclarationModifier.Public
+                    or DeclarationModifier.CompileTime))
+                {
+                    _diagnostics.Report(
+                        token.Span,
+                        $"Modifier '{token.Value}' cannot be combined with 'compile'.");
+                }
+            }
+        }
     }
 
     private void ValidateOnlyModifiers(
@@ -79,8 +94,9 @@ public sealed partial class Parser
         (modifier, order) = tokenType switch
         {
             TokenType.Public => (DeclarationModifier.Public, 0),
-            TokenType.Static => (DeclarationModifier.Static, 1),
-            TokenType.Implicit => (DeclarationModifier.Implicit, 2),
+            TokenType.Compile => (DeclarationModifier.CompileTime, 1),
+            TokenType.Static => (DeclarationModifier.Static, 2),
+            TokenType.Implicit => (DeclarationModifier.Implicit, 3),
             _ => (DeclarationModifier.None, -1),
         };
         return modifier != DeclarationModifier.None;
@@ -93,11 +109,13 @@ public sealed partial class Parser
         Public = 1 << 0,
         Static = 1 << 1,
         Implicit = 1 << 2,
+        CompileTime = 1 << 3,
     }
 
     private sealed record ParsedDeclarationModifiers(
         DeclarationModifier Value = DeclarationModifier.None,
         Token? PublicToken = null,
+        Token? CompileTimeToken = null,
         Token? StaticToken = null,
         Token? ImplicitToken = null)
     {
@@ -107,12 +125,15 @@ public sealed partial class Parser
 
         public bool IsImplicit => Contains(DeclarationModifier.Implicit);
 
+        public bool IsCompileTime => Contains(DeclarationModifier.CompileTime);
+
         public Location FunctionLocation(Location fnLocation) =>
-            StaticToken?.Location ?? fnLocation;
+            CompileTimeToken?.Location ?? StaticToken?.Location ?? fnLocation;
 
         public FunctionModifiers FunctionModifiers =>
             (IsStatic ? Cx.Compiler.Syntax.Nodes.FunctionModifiers.Static : Cx.Compiler.Syntax.Nodes.FunctionModifiers.None)
-            | (IsImplicit ? Cx.Compiler.Syntax.Nodes.FunctionModifiers.Implicit : Cx.Compiler.Syntax.Nodes.FunctionModifiers.None);
+            | (IsImplicit ? Cx.Compiler.Syntax.Nodes.FunctionModifiers.Implicit : Cx.Compiler.Syntax.Nodes.FunctionModifiers.None)
+            | (IsCompileTime ? Cx.Compiler.Syntax.Nodes.FunctionModifiers.CompileTime : Cx.Compiler.Syntax.Nodes.FunctionModifiers.None);
 
         public bool Contains(DeclarationModifier modifier) => (Value & modifier) != 0;
 
@@ -123,6 +144,11 @@ public sealed partial class Parser
                 {
                     Value = Value | modifier,
                     PublicToken = token,
+                },
+                DeclarationModifier.CompileTime => this with
+                {
+                    Value = Value | modifier,
+                    CompileTimeToken = token,
                 },
                 DeclarationModifier.Static => this with
                 {
@@ -142,6 +168,10 @@ public sealed partial class Parser
             if (PublicToken is not null)
             {
                 yield return (DeclarationModifier.Public, PublicToken);
+            }
+            if (CompileTimeToken is not null)
+            {
+                yield return (DeclarationModifier.CompileTime, CompileTimeToken);
             }
             if (StaticToken is not null)
             {

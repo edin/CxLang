@@ -100,6 +100,11 @@ public sealed partial class Parser
                     tokens.Add(closeArray);
                 }
             }
+
+            if (Match(TokenType.QuestionMark) is { } nullable)
+            {
+                tokens.Add(nullable);
+            }
         }
 
         return tokens;
@@ -123,7 +128,9 @@ public sealed partial class Parser
         var isConst = Current.Type == TokenType.Const;
         var first = isConst
             ? Advance()
-            : Expect(TokenType.Identifier, "Expected type name.");
+            : Current.Type == TokenType.Type
+                ? Advance()
+                : Expect(TokenType.Identifier, "Expected type name.");
 
         if (first is null)
         {

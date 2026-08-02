@@ -96,6 +96,8 @@ internal static class ImportedTypeRewriter
                 pointer with { Element = Rewrite(pointer.Element, rewriteName) },
             ConstTypeSyntaxNode constType =>
                 constType with { Element = Rewrite(constType.Element, rewriteName) },
+            NullableTypeSyntaxNode nullable =>
+                nullable with { Element = Rewrite(nullable.Element, rewriteName) },
             FixedArrayTypeSyntaxNode array =>
                 array with { Element = Rewrite(array.Element, rewriteName) },
             FunctionTypeSyntaxNode function => function with

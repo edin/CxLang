@@ -10,6 +10,14 @@ public sealed class DiagnosticBag
 
     public bool HasErrors => _diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
 
+    internal int Count => _diagnostics.Count;
+
+    internal void AppendMessage(int index, string suffix)
+    {
+        var diagnostic = _diagnostics[index];
+        _diagnostics[index] = diagnostic with { Message = diagnostic.Message + suffix };
+    }
+
     public void Report(Location location, string message) =>
         _diagnostics.Add(new Diagnostic(location, message, DiagnosticSeverity.Error));
 

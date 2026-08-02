@@ -17,21 +17,38 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     public CompileTimeDirectiveExpansionPass(
         DiagnosticBag diagnostics,
         ICompileTimeReflection? reflection = null,
-        CompileTimeIntrinsicRegistry? intrinsics = null)
+        CompileTimeEnvironment? environment = null)
     {
         _diagnostics = diagnostics;
-        _evaluator = new CompileTimeExpressionEvaluator(diagnostics, intrinsics, reflection);
+        _evaluator = environment is not null
+            ? environment.CreateEvaluator(diagnostics, reflection)
+            : new CompileTimeExpressionEvaluator(
+                diagnostics,
+                reflection: reflection);
     }
 
     public ProgramNode ExpandProgram(
         ProgramNode program,
-        CompileTimeEvaluationContext? context = null) =>
-        WithContext(context ?? new CompileTimeEvaluationContext(), () => RewriteProgram(program));
+        CompileTimeEvaluationContext? context = null,
+        GeneratedSyntaxOrigin? generatedFrom = null) =>
+        WithContext(
+            context ?? new CompileTimeEvaluationContext(),
+            () => WithGeneratedOrigin(generatedFrom, () => RewriteProgram(program)));
 
     public IReadOnlyList<StatementNode> ExpandStatementList(
         IReadOnlyList<StatementNode> statements,
-        CompileTimeEvaluationContext context) =>
-        WithContext(context, () => RewriteStatements(statements));
+        CompileTimeEvaluationContext context,
+        GeneratedSyntaxOrigin? generatedFrom = null) =>
+        WithContext(
+            context,
+            () => WithGeneratedOrigin(generatedFrom, () => RewriteStatements(statements)));
+
+    private T WithGeneratedOrigin<T>(
+        GeneratedSyntaxOrigin? generatedFrom,
+        Func<T> action) =>
+        generatedFrom is null
+            ? action()
+            : _evaluator.WithGeneratedOrigin(generatedFrom, action);
 
     protected override MacroDeclarationNode RewriteMacroDeclaration(MacroDeclarationNode macro) =>
         macro;
@@ -39,6 +56,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     protected override IReadOnlyList<TopLevelNode> RewriteTopLevelNode(TopLevelNode node) =>
         node switch
         {
+            FunctionNode { IsCompileTime: true } => [],
             CompileTimeIfTopLevelNode conditional => ExpandTopLevelIf(conditional),
             CompileTimeForeachTopLevelNode foreachNode => ExpandTopLevelForeach(foreachNode),
             _ => base.RewriteTopLevelNode(node),

@@ -4,6 +4,8 @@ namespace Cx.Compiler.CompileTime;
 
 internal sealed class ModuleCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "Module";
+
     public override Type ReceiverType => typeof(CompileTimeValue.Module);
 
     [CompileTimeProperty("name")]

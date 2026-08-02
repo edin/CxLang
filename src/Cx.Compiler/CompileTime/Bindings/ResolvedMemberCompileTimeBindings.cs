@@ -6,6 +6,8 @@ namespace Cx.Compiler.CompileTime;
 
 internal sealed class ResolvedFieldCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "Field";
+
     public override Type ReceiverType => typeof(CompileTimeValue.ResolvedField);
 
     [CompileTimeProperty("name")]
@@ -38,6 +40,8 @@ internal sealed class ResolvedFieldCompileTimeBinding : CompileTimeTypeBinding
 
 internal sealed class ResolvedMethodCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "Method";
+
     public override Type ReceiverType => typeof(CompileTimeValue.ResolvedMethod);
 
     [CompileTimeProperty("name")]
@@ -116,6 +120,8 @@ internal sealed class ResolvedMethodCompileTimeBinding : CompileTimeTypeBinding
 
 internal sealed class ResolvedParameterCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "Parameter";
+
     public override Type ReceiverType => typeof(CompileTimeValue.ResolvedParameter);
 
     [CompileTimeProperty("name")]

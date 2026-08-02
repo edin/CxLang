@@ -18,7 +18,9 @@ public sealed class CEmitter
     }
 
     public string Emit(ProgramNode program) =>
-        Emit(new CxToCTranslationUnitLowerer(_nameManglerOptions).Lower(program));
+        Emit(CReachabilityPruner.Prune(
+            new CxToCTranslationUnitLowerer(_nameManglerOptions)
+                .Lower(program)));
 
     internal string Emit(CTranslationUnit unit) =>
         new CTranslationUnitEmitter().Emit(unit);

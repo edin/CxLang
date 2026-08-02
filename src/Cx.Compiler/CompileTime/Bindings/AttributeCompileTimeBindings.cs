@@ -6,6 +6,8 @@ internal sealed class AttributeArgumentCompileTimeBinding : CompileTimeTypeBindi
 {
     public override string GlobalName => "AttributeArgument";
 
+    public override string ScriptTypeName => "AttributeArgument";
+
     public override Type ReceiverType => typeof(AttributeArgumentNode);
 
     [CompileTimeProperty("value")]
@@ -59,6 +61,8 @@ internal sealed class AttributeArgumentCompileTimeBinding : CompileTimeTypeBindi
 internal sealed class AttributeCompileTimeBinding : CompileTimeTypeBinding
 {
     public override string GlobalName => "Attribute";
+
+    public override string ScriptTypeName => "Attribute";
 
     public override Type ReceiverType => typeof(AttributeApplicationNode);
 

@@ -4,12 +4,17 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.CompileTime;
 
+internal sealed record CompileTimeExpansionResult(
+    ProgramNode Program,
+    CompileTimeEnvironment Environment);
+
 internal sealed class CompileTimeExpansionPipeline(
     DiagnosticBag diagnostics,
     CompilationProfiler profiler,
-    IReadOnlyDictionary<string, string> moduleNamesByPath)
+    IReadOnlyDictionary<string, string> moduleNamesByPath,
+    IReadOnlyList<ProgramNode> sourcePrograms)
 {
-    public ProgramNode? Expand(
+    public CompileTimeExpansionResult? Expand(
         ProgramNode program,
         bool validateIncompleteMembers)
     {
@@ -22,11 +27,22 @@ internal sealed class CompileTimeExpansionPipeline(
             return null;
         }
 
+        var environment = CompileTimeEnvironment.Create(
+            program,
+            sourcePrograms,
+            moduleNamesByPath);
+        environment.Functions.Validate(diagnostics);
+        if (diagnostics.HasErrors)
+        {
+            return null;
+        }
+
         var macroExpansion = new MacroExpansionPass(
             diagnostics,
             program,
             new ProgramCompileTimeReflection(program, moduleNamesByPath),
-            moduleNamesByPath);
+            moduleNamesByPath,
+            environment: environment);
         program = profiler.Measure(
             "Macro expansion",
             () => macroExpansion.RewriteProgram(program));
@@ -35,9 +51,17 @@ internal sealed class CompileTimeExpansionPipeline(
             return null;
         }
 
+        environment = environment.WithProgram(program);
+        environment.Functions.Validate(diagnostics);
+        if (diagnostics.HasErrors)
+        {
+            return null;
+        }
+
         var directiveExpansion = new CompileTimeDirectiveExpansionPass(
             diagnostics,
-            new ProgramCompileTimeReflection(program, moduleNamesByPath));
+            new ProgramCompileTimeReflection(program, moduleNamesByPath),
+            environment: environment);
         program = profiler.Measure(
             "Compile-time directive expansion",
             () => directiveExpansion.ExpandProgram(program));
@@ -51,13 +75,23 @@ internal sealed class CompileTimeExpansionPipeline(
             () => ValidateResidue(program, validateIncompleteMembers));
         return diagnostics.HasErrors
             ? null
-            : program;
+            : new CompileTimeExpansionResult(program, environment);
     }
 
     private void ValidateResidue(
         ProgramNode program,
         bool validateIncompleteMembers)
     {
+        foreach (var type in program.Declarations
+            .Where(declaration => declaration is not MacroDeclarationNode)
+            .SelectMany(AstTraversal.DescendantsAndSelf<TypeNode>)
+            .Where(type => ContainsNullableType(type.Syntax)))
+        {
+            diagnostics.Report(
+                type.Location,
+                $"Nullable runtime type '{type.ToSourceText()}' is not supported yet; 'T?' is currently limited to compile-time functions.");
+        }
+
         foreach (var list in ExecutableAstTraversal
             .DescendantsAndSelf<ListExpressionNode>(program))
         {
@@ -87,4 +121,20 @@ internal sealed class CompileTimeExpansionPipeline(
                 "Expected member name after '.'.");
         }
     }
+
+    private static bool ContainsNullableType(TypeSyntaxNode syntax) =>
+        syntax switch
+        {
+            NullableTypeSyntaxNode => true,
+            GenericTypeSyntaxNode generic =>
+                ContainsNullableType(generic.Target)
+                || generic.Arguments.Any(ContainsNullableType),
+            PointerTypeSyntaxNode pointer => ContainsNullableType(pointer.Element),
+            ConstTypeSyntaxNode constant => ContainsNullableType(constant.Element),
+            FixedArrayTypeSyntaxNode array => ContainsNullableType(array.Element),
+            FunctionTypeSyntaxNode function =>
+                function.Parameters.Any(ContainsNullableType)
+                || ContainsNullableType(function.ReturnType),
+            _ => false,
+        };
 }

@@ -567,6 +567,8 @@ internal static class GenericTypeRewriter
                 RewriteTypeSyntax(pointer.Element, concreteStructNames)),
             ConstTypeSyntaxNode constType => new ConstTypeSyntaxNode(
                 RewriteTypeSyntax(constType.Element, concreteStructNames)),
+            NullableTypeSyntaxNode nullable => new NullableTypeSyntaxNode(
+                RewriteTypeSyntax(nullable.Element, concreteStructNames)),
             FixedArrayTypeSyntaxNode array => new FixedArrayTypeSyntaxNode(
                 RewriteTypeSyntax(array.Element, concreteStructNames),
                 array.Length),
@@ -585,6 +587,7 @@ internal static class GenericTypeRewriter
             GenericTypeSyntaxNode generic => LowerGenericTypeSyntax(generic),
             PointerTypeSyntaxNode pointer => new PointerTypeSyntaxNode(LowerGenericTypeSyntax(pointer.Element)),
             ConstTypeSyntaxNode constType => new ConstTypeSyntaxNode(LowerGenericTypeSyntax(constType.Element)),
+            NullableTypeSyntaxNode nullable => new NullableTypeSyntaxNode(LowerGenericTypeSyntax(nullable.Element)),
             FixedArrayTypeSyntaxNode array => new FixedArrayTypeSyntaxNode(
                 LowerGenericTypeSyntax(array.Element),
                 array.Length),
@@ -632,6 +635,7 @@ internal static class GenericTypeRewriter
             GenericTypeSyntaxNode generic => LowerGenericTypeName(generic.Target, generic.Arguments),
             PointerTypeSyntaxNode pointer => LowerTypeName(pointer.Element) + "_ptr",
             ConstTypeSyntaxNode constType => "const_" + LowerTypeName(constType.Element),
+            NullableTypeSyntaxNode nullable => LowerTypeName(nullable.Element) + "_nullable",
             FixedArrayTypeSyntaxNode array => $"{LowerTypeName(array.Element)}_{SanitizeTypeName(ArrayLengthFormatter.ToCxString(array.Length))}",
             FunctionTypeSyntaxNode function => SanitizeTypeName(TypeSyntaxFormatter.ToCxString(function)),
             _ => SanitizeTypeName(TypeSyntaxFormatter.ToCxString(type)),

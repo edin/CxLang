@@ -12,6 +12,7 @@ internal static class BuiltInCompileTimeBindings
         new ModuleCompileTimeBinding(),
         new TypeCompileTimeBinding(),
         new SyntaxCompileTimeBinding(),
+        new StructFieldCompileTimeBinding(),
         new FunctionCompileTimeBinding(),
         new ExternFunctionCompileTimeBinding(),
         new StructCompileTimeBinding(),

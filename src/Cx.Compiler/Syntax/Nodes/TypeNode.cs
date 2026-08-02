@@ -39,6 +39,8 @@ public sealed record PointerTypeSyntaxNode(TypeSyntaxNode Element) : TypeSyntaxN
 
 public sealed record ConstTypeSyntaxNode(TypeSyntaxNode Element) : TypeSyntaxNode;
 
+public sealed record NullableTypeSyntaxNode(TypeSyntaxNode Element) : TypeSyntaxNode;
+
 public abstract record ArrayLengthNode
 {
     public sealed record Integer(ulong Value) : ArrayLengthNode;
@@ -101,6 +103,12 @@ public static class TypeSyntaxParser
         if (TryParseFunction(type, out var functionType))
         {
             return functionType;
+        }
+
+        if (type.EndsWith("?", StringComparison.Ordinal))
+        {
+            return new NullableTypeSyntaxNode(
+                Parse(type[..^1]) ?? new NamedTypeSyntaxNode(string.Empty));
         }
 
         if (TryParseFixedArray(type, out var arrayType))
@@ -352,6 +360,7 @@ public static class TypeSyntaxFormatter
             GenericTypeSyntaxNode generic => $"{ToCxString(generic.Target)}<{string.Join(",", generic.Arguments.Select(ToCxString))}>",
             PointerTypeSyntaxNode pointer => ToCxString(pointer.Element) + "*",
             ConstTypeSyntaxNode constType => "const " + ToCxString(constType.Element),
+            NullableTypeSyntaxNode nullable => ToCxString(nullable.Element) + "?",
             FixedArrayTypeSyntaxNode array => $"{ToCxString(array.Element)}[{ArrayLengthFormatter.ToCxString(array.Length)}]",
             FunctionTypeSyntaxNode function => $"fn({FormatFunctionParameters(function)})->{ToCxString(function.ReturnType)}",
             _ => syntax.ToString() ?? string.Empty,

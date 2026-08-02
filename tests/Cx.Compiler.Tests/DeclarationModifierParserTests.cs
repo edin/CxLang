@@ -52,12 +52,31 @@ public sealed class DeclarationModifierParserTests
 
         Assert.Contains(diagnostics.Diagnostics, diagnostic =>
             diagnostic.Message.Contains(
-                "canonical order 'public static implicit'",
+                "canonical order 'public compile static implicit'",
                 StringComparison.Ordinal));
         Assert.Contains(diagnostics.Diagnostics, diagnostic =>
             diagnostic.Message.Contains(
                 "Duplicate declaration modifier 'static'",
                 StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ParseFunction_AllowsPublicCompileTimeFunction()
+    {
+        var diagnostics = new DiagnosticBag();
+        var parser = new CxParser(diagnostics);
+
+        var program = parser.Parse(CompilerTestHelpers.Source(
+            """
+            public compile fn generated_name() -> string {
+                return "name";
+            }
+            """));
+
+        var function = Assert.Single(program.Functions);
+        Assert.True(function.IsPublic);
+        Assert.True(function.IsCompileTime);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 
     [Fact]

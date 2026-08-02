@@ -9,7 +9,7 @@ internal sealed class CxClassifier : IClassifier
 {
     private static readonly HashSet<string> Keywords = new(StringComparer.Ordinal)
     {
-        "as", "break", "case", "const", "continue", "declare", "default", "else", "enum",
+        "as", "break", "case", "compile", "const", "continue", "declare", "default", "else", "enum",
         "extension", "extern", "false", "fn", "for", "foreach", "from", "if", "import",
         "in", "include", "interface", "let", "link", "local", "macro", "match", "module",
         "null", "opaque", "public", "raw", "requires", "return", "static", "struct", "switch",

@@ -61,6 +61,8 @@ internal static class TypeTokenParser
                 .Replace("[ ", "[", StringComparison.Ordinal)
                 .Replace(" ]", "]", StringComparison.Ordinal)
                 .Replace("] ", "]", StringComparison.Ordinal)
+                .Replace(" ?", "?", StringComparison.Ordinal)
+                .Replace("? ", "?", StringComparison.Ordinal)
                 .Trim();
         }
         while (!string.Equals(previous, type, StringComparison.Ordinal));
@@ -119,6 +121,12 @@ internal static class TypeTokenParser
                     type = new FixedArrayTypeSyntaxNode(
                         type,
                         ArrayLengthNode.Parse(TokenText.ToSourceText(lengthTokens)));
+                    continue;
+                }
+
+                if (Match(TokenType.QuestionMark) is not null)
+                {
+                    type = new NullableTypeSyntaxNode(type);
                     continue;
                 }
 
@@ -188,7 +196,7 @@ internal static class TypeTokenParser
             if (Current.Type is TokenType.Struct or TokenType.Enum or TokenType.Union)
             {
                 nameTokens.Add(Advance());
-                if (Current.Type != TokenType.Identifier)
+                if (Current.Type is not TokenType.Identifier and not TokenType.Type)
                 {
                     return null;
                 }

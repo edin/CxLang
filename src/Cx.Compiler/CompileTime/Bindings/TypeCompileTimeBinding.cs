@@ -7,6 +7,8 @@ internal sealed class TypeCompileTimeBinding : CompileTimeTypeBinding
 {
     public override string GlobalName => "Type";
 
+    public override string ScriptTypeName => "type";
+
     public override Type ReceiverType => typeof(CompileTimeValue.Type);
 
     [CompileTimeMethod("from")]

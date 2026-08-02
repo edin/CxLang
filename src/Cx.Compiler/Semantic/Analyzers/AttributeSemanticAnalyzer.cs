@@ -5,15 +5,17 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Analyzers;
 
-internal sealed class AttributeSemanticAnalyzer(DiagnosticBag diagnostics)
+internal sealed class AttributeSemanticAnalyzer(
+    DiagnosticBag diagnostics,
+    CompileTimeEnvironment? environment = null)
 {
     private CompileTimeExpressionEvaluator? _evaluator;
 
     public void Analyze(ProgramNode program)
     {
-        _evaluator = new CompileTimeExpressionEvaluator(
+        _evaluator = (environment ?? CompileTimeEnvironment.Empty).CreateEvaluator(
             diagnostics,
-            reflection: new ProgramCompileTimeReflection(program));
+            new ProgramCompileTimeReflection(program));
         var declarationGroups = program.AttributeDeclarations
             .GroupBy(attribute => attribute.Name, StringComparer.Ordinal)
             .ToList();

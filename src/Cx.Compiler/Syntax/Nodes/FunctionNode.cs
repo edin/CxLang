@@ -9,6 +9,7 @@ public enum FunctionModifiers
     None = 0,
     Static = 1 << 0,
     Implicit = 1 << 1,
+    CompileTime = 1 << 2,
 }
 
 public sealed record FunctionNode(
@@ -40,4 +41,6 @@ public sealed record FunctionNode(
     public bool IsStatic => Modifiers.HasFlag(FunctionModifiers.Static);
 
     public bool IsImplicit => Modifiers.HasFlag(FunctionModifiers.Implicit);
+
+    public bool IsCompileTime => Modifiers.HasFlag(FunctionModifiers.CompileTime);
 }

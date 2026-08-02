@@ -1,4 +1,3 @@
-using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax.Nodes;
 

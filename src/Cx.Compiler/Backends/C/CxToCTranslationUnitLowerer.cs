@@ -5,11 +5,8 @@ using Cx.Compiler.Syntax.Nodes;
 namespace Cx.Compiler.C;
 
 internal sealed class CxToCTranslationUnitLowerer(
-    CNameManglerOptions? nameManglerOptions = null,
-    CEmissionOptions? emissionOptions = null)
+    CNameManglerOptions? nameManglerOptions = null)
 {
-    private readonly CEmissionOptions _emissionOptions = emissionOptions ?? new();
-
     public CTranslationUnit Lower(ProgramNode program)
     {
         var functionsToEmit = CEmitSelection.GetFunctionsToEmit(program);
@@ -178,9 +175,6 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(new CBlankLine());
         }
 
-        var unit = new CTranslationUnit(items);
-        return _emissionOptions.StripUnused
-            ? CReachabilityPruner.Prune(unit, _emissionOptions.EntryPoints)
-            : unit;
+        return new CTranslationUnit(items);
     }
 }

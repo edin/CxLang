@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.CompileTime;
 using Cx.Compiler.Semantic.Analyzers;
 using Cx.Compiler.Semantic.Resolvers;
 using Cx.Compiler.Source;
@@ -12,6 +13,8 @@ public sealed class SemanticAnalyzer(
     IReadOnlyList<ProgramNode>? availablePrograms = null)
 {
     internal FunctionCatalog? FunctionCatalog { get; init; }
+
+    internal CompileTimeEnvironment? CompileTimeEnvironment { get; init; }
 
     private RequirementMatcher? _requirementMatcher;
     private TypeSystem? _typeSystem;
@@ -57,7 +60,9 @@ public sealed class SemanticAnalyzer(
             diagnostics,
             program,
             _requirementMatcher);
-        new AttributeSemanticAnalyzer(diagnostics).Analyze(program);
+        new AttributeSemanticAnalyzer(
+            diagnostics,
+            CompileTimeEnvironment).Analyze(program);
         AnalyzeExternFunctionDeclarations(program);
 
         foreach (var structNode in program.Structs)

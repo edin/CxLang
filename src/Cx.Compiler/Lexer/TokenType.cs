@@ -16,6 +16,8 @@ public enum TokenType
 
     [Keyword("fn")]
     Fn,
+    [Keyword("compile")]
+    Compile,
     [Keyword("static")]
     Static,
     [Keyword("implicit")]

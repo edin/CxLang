@@ -3,6 +3,37 @@ namespace Cx.Compiler.Tests;
 public sealed class AttributeSemanticTests
 {
     [Fact]
+    public void Compile_AllowsCompileTimeFunctionsInAttributeArguments()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            attribute route on fn {
+                path: string;
+            }
+
+            compile fn route_path(resource: string) -> string? {
+                if (resource == "") {
+                    return null;
+                }
+
+                let path: string = concat("/", resource);
+                return path;
+            }
+
+            @route(path: route_path("users"))
+            fn users() -> void {
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.DoesNotContain("route_path", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compile_AcceptsEvaluatorMetadataTypesAndVariableLengthLists()
     {
         var result = CompilerTestHelpers.Compile(

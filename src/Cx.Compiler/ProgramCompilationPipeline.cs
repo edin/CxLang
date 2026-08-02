@@ -81,16 +81,18 @@ internal sealed class ProgramCompilationPipeline(
         var compileTimeExpansion = new CompileTimeExpansionPipeline(
             diagnostics,
             profiler,
-            moduleNamesByPath);
-        var expandedProgram = compileTimeExpansion.Expand(
+            moduleNamesByPath,
+            inputPrograms);
+        var compileTimeResult = compileTimeExpansion.Expand(
             mergedInputProgram,
             validateIncompleteMembers: options.ApplyPostSemanticLowering);
-        if (expandedProgram is null)
+        if (compileTimeResult is null)
         {
             return (null, diagnostics);
         }
 
-        mergedInputProgram = expandedProgram;
+        mergedInputProgram = compileTimeResult.Program;
+        var compileTimeEnvironment = compileTimeResult.Environment;
         var mergedProgram = profiler.Measure(
             "Pre-semantic lowering",
             () => preSemanticLowering.Lower(mergedInputProgram));
@@ -144,6 +146,7 @@ internal sealed class ProgramCompilationPipeline(
             () => new SemanticAnalyzer(diagnostics, inputPrograms)
             {
                 FunctionCatalog = semanticModel.FunctionCatalog,
+                CompileTimeEnvironment = compileTimeEnvironment,
             }.Analyze(mergedProgram));
 
         if (diagnostics.HasErrors)

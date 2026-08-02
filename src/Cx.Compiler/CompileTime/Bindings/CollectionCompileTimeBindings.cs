@@ -6,6 +6,8 @@ namespace Cx.Compiler.CompileTime;
 
 internal sealed class ListCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "list";
+
     public override Type ReceiverType => typeof(CompileTimeValue.List);
 
     [CompileTimeProperty("count")]
@@ -27,6 +29,8 @@ internal sealed class ListCompileTimeBinding : CompileTimeTypeBinding
 internal sealed class ParameterCompileTimeBinding : CompileTimeTypeBinding
 {
     public override string GlobalName => "Parameter";
+
+    public override string ScriptTypeName => "Parameter";
 
     public override Type ReceiverType => typeof(ParameterNode);
 

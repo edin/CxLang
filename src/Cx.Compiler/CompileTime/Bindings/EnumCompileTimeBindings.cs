@@ -5,6 +5,8 @@ namespace Cx.Compiler.CompileTime;
 
 internal sealed class EnumMemberCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "EnumMember";
+
     public override Type ReceiverType => typeof(CompileTimeValue.EnumMember);
 
     [CompileTimeProperty("name")]
@@ -69,6 +71,8 @@ internal sealed class EnumMemberCompileTimeBinding : CompileTimeTypeBinding
 
 internal sealed class EnumMemberDataCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "EnumMemberData";
+
     public override Type ReceiverType => typeof(CompileTimeValue.EnumMemberData);
 
     [CompileTimeProperty("entries")]
@@ -123,6 +127,8 @@ internal sealed class EnumMemberDataCompileTimeBinding : CompileTimeTypeBinding
 
 internal sealed class EnumDataFieldCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "EnumDataField";
+
     public override Type ReceiverType => typeof(CompileTimeValue.EnumDataField);
 
     [CompileTimeProperty("name")]
@@ -184,6 +190,8 @@ internal sealed class EnumDataFieldCompileTimeBinding : CompileTimeTypeBinding
 
 internal sealed class EnumDataEntryCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "EnumDataEntry";
+
     public override Type ReceiverType => typeof(CompileTimeValue.EnumDataEntry);
 
     [CompileTimeProperty("field")]

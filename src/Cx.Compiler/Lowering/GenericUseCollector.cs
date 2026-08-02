@@ -291,14 +291,18 @@ internal sealed class GenericUseCollector
             yield break;
         }
 
-        var targetName = ExpressionNameFacts.GetQualifiedName(member.Target);
-        if (targetName is null)
+        var targetType = _resolver.ResolveTypeRef(
+            member.Target,
+            variables);
+        if (targetType is null)
         {
-            yield break;
-        }
+            var targetName =
+                ExpressionNameFacts.GetQualifiedName(member.Target);
+            if (targetName is null)
+            {
+                yield break;
+            }
 
-        if (!variables.TryGet(targetName, out var targetType))
-        {
             foreach (var function in GenericMethods(
                 new TypeRef.Named(targetName, []),
                 member.MemberName,
@@ -360,14 +364,18 @@ internal sealed class GenericUseCollector
             yield break;
         }
 
-        var targetName = ExpressionNameFacts.GetQualifiedName(member.Target);
-        if (targetName is null)
+        var targetType = _resolver.ResolveTypeRef(
+            member.Target,
+            variables);
+        if (targetType is null)
         {
-            yield break;
-        }
+            var targetName =
+                ExpressionNameFacts.GetQualifiedName(member.Target);
+            if (targetName is null)
+            {
+                yield break;
+            }
 
-        if (!variables.TryGet(targetName, out var targetType))
-        {
             var staticFunction = GenericMethods(
                     new TypeRef.Named(targetName, []),
                     member.MemberName,
@@ -421,6 +429,7 @@ internal sealed class GenericUseCollector
         FunctionLocalBinding binding) =>
         binding.Declaration is
             LetStatement
+            or UsingStatement
             or ForDeclarationInitializerNode
             or ForeachBinding;
 
@@ -537,6 +546,7 @@ internal sealed class GenericUseCollector
                 || generic.Arguments.Any(ContainsSelf),
             PointerTypeSyntaxNode pointer => ContainsSelf(pointer.Element),
             ConstTypeSyntaxNode constType => ContainsSelf(constType.Element),
+            NullableTypeSyntaxNode nullable => ContainsSelf(nullable.Element),
             FixedArrayTypeSyntaxNode fixedArray => ContainsSelf(fixedArray.Element),
             FunctionTypeSyntaxNode function => function.Parameters.Any(ContainsSelf)
                 || ContainsSelf(function.ReturnType),

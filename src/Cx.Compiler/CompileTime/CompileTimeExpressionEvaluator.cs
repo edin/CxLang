@@ -13,7 +13,24 @@ internal sealed class CompileTimeExpressionEvaluator
     private readonly CompileTimeObjectRegistry _objects;
     private readonly CompileTimeMethodRegistry _methods;
     private readonly CompileTimePropertyRegistry _properties;
+    private readonly CompileTimeFunctionRegistry _functions;
     private readonly ICompileTimeReflection _reflection;
+    private readonly CompileTimeEvaluationSession _session;
+
+    public CompileTimeExpressionEvaluator(
+        DiagnosticBag diagnostics,
+        CompileTimeEnvironment environment,
+        ICompileTimeReflection? reflection = null)
+        : this(
+            diagnostics,
+            environment.Intrinsics,
+            reflection,
+            environment.Objects,
+            environment.Methods,
+            environment.Properties,
+            environment.Functions)
+    {
+    }
 
     public CompileTimeExpressionEvaluator(
         DiagnosticBag diagnostics,
@@ -21,7 +38,9 @@ internal sealed class CompileTimeExpressionEvaluator
         ICompileTimeReflection? reflection = null,
         CompileTimeObjectRegistry? objects = null,
         CompileTimeMethodRegistry? methods = null,
-        CompileTimePropertyRegistry? properties = null)
+        CompileTimePropertyRegistry? properties = null,
+        CompileTimeFunctionRegistry? functions = null,
+        CompileTimeEvaluationLimits? limits = null)
     {
         _diagnostics = diagnostics;
         _intrinsics = intrinsics ?? CompileTimeIntrinsicRegistry.CreateDefault();
@@ -29,12 +48,20 @@ internal sealed class CompileTimeExpressionEvaluator
         _objects = objects ?? CompileTimeObjectRegistry.CreateDefault();
         _methods = methods ?? CompileTimeMethodRegistry.Default;
         _properties = properties ?? CompileTimePropertyRegistry.Default;
+        _functions = functions ?? CompileTimeFunctionRegistry.Empty;
+        _session = new CompileTimeEvaluationSession(diagnostics, limits);
     }
 
     public CompileTimeValue? Evaluate(
         ExpressionNode expression,
-        CompileTimeEvaluationContext context) =>
-        expression switch
+        CompileTimeEvaluationContext context)
+    {
+        if (!_session.TryConsumeStep(expression))
+        {
+            return null;
+        }
+
+        return expression switch
         {
             LiteralExpressionNode literal => EvaluateLiteral(literal),
             NameExpressionNode name => EvaluateName(name, context),
@@ -50,8 +77,14 @@ internal sealed class CompileTimeExpressionEvaluator
             ComputedMemberExpressionNode member => EvaluateComputedMember(member, context),
             _ => Unsupported(expression),
         };
+    }
 
     public bool IsKnownObject(string name) => _objects.TryGet(name, out _);
+
+    public T WithGeneratedOrigin<T>(
+        GeneratedSyntaxOrigin origin,
+        Func<T> action) =>
+        _session.WithGeneratedOrigin(origin, action);
 
     private CompileTimeValue? EvaluateTypeLiteral(TypeLiteralExpressionNode typeLiteral)
     {
@@ -410,6 +443,11 @@ internal sealed class CompileTimeExpressionEvaluator
         CallExpressionNode call,
         CompileTimeEvaluationContext context)
     {
+        if (TryEvaluateFunctionCall(call, context, out var functionValue))
+        {
+            return functionValue;
+        }
+
         if (call.Callee is MemberExpressionNode member)
         {
             return EvaluateMethodCall(call, member, context);
@@ -423,17 +461,17 @@ internal sealed class CompileTimeExpressionEvaluator
             return null;
         }
 
+        var arguments = EvaluateArguments(call.Arguments, context);
+        if (arguments is null)
+        {
+            return null;
+        }
+
         if (!_intrinsics.TryGet(name.Name, out var intrinsic))
         {
             _diagnostics.Report(
                 call.Location,
                 $"Unknown compile-time intrinsic '{name.Name}'.");
-            return null;
-        }
-
-        var arguments = EvaluateArguments(call.Arguments, context);
-        if (arguments is null)
-        {
             return null;
         }
 
@@ -443,6 +481,150 @@ internal sealed class CompileTimeExpressionEvaluator
             _reflection,
             _diagnostics,
             expression => Evaluate(expression, context)));
+    }
+
+    private bool TryEvaluateFunctionCall(
+        CallExpressionNode call,
+        CompileTimeEvaluationContext context,
+        out CompileTimeValue? value)
+    {
+        value = null;
+        var requestedName = ExpressionNameFacts.GetQualifiedName(call.Callee);
+        if (requestedName is null)
+        {
+            return false;
+        }
+
+        var callerModule = _session.CurrentModule
+            ?? _functions.ModuleForPath(call.Location.File.Path);
+        var lookup = _functions.Lookup(requestedName, callerModule);
+        switch (lookup)
+        {
+            case CompileTimeSymbolLookup<CompileTimeFunctionSymbol>.NotSymbolReference:
+                return false;
+            case CompileTimeSymbolLookup<CompileTimeFunctionSymbol>.Missing missing
+                when call.Callee is NameExpressionNode
+                    && missing.SuggestedModule is null:
+                return false;
+            case CompileTimeSymbolLookup<CompileTimeFunctionSymbol>.Missing missing:
+                _diagnostics.Report(
+                    call.Location,
+                    missing.SuggestedModule is null
+                        ? $"Unknown compile-time function '{missing.RequestedName}'."
+                        : $"Unknown compile-time function '{missing.RequestedName}'. Did you mean to import {missing.SuggestedModule}?");
+                return true;
+            case CompileTimeSymbolLookup<CompileTimeFunctionSymbol>.Inaccessible inaccessible:
+                _diagnostics.Report(
+                    call.Location,
+                    $"Compile-time function '{inaccessible.RequestedName}' is private to module '{inaccessible.DeclaringModule}'.");
+                return true;
+            case CompileTimeSymbolLookup<CompileTimeFunctionSymbol>.Candidates candidates:
+                var arguments = EvaluateArguments(call.Arguments, context);
+                if (arguments is null)
+                {
+                    return true;
+                }
+
+                value = EvaluateFunctionCall(
+                    call,
+                    requestedName,
+                    arguments,
+                    candidates.Values);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private CompileTimeValue? EvaluateFunctionCall(
+        CallExpressionNode call,
+        string name,
+        IReadOnlyList<CompileTimeValue> arguments,
+        IReadOnlyList<CompileTimeFunctionSymbol> visibleFunctions)
+    {
+        var arityCandidates = visibleFunctions
+            .Where(function =>
+                function.Declaration.Parameters.Count == arguments.Count)
+            .ToList();
+        var candidates = arityCandidates
+            .Where(function => function.Declaration.Parameters
+                .Select(parameter => parameter.TypeNode)
+                .Zip(arguments)
+                .All(pair => _functions.Types.Matches(pair.First, pair.Second)))
+            .ToList();
+
+        if (candidates.Count != 1)
+        {
+            var argumentTypes = string.Join(
+                ", ",
+                arguments.Select(CompileTimeValueFacts.Describe));
+            _diagnostics.Report(
+                call.Location,
+                candidates.Count > 1
+                    ? $"Compile-time call '{name}({argumentTypes})' is ambiguous."
+                    : $"No compile-time function '{name}' accepts ({argumentTypes}).");
+            return null;
+        }
+
+        var functionSymbol = candidates[0];
+        if (!_session.TryEnterFunction(functionSymbol, call))
+        {
+            return null;
+        }
+
+        var function = functionSymbol.Declaration;
+        var functionContext = new CompileTimeEvaluationContext();
+        for (var index = 0; index < function.Parameters.Count; index++)
+        {
+            functionContext.Define(
+                function.Parameters[index].Name,
+                arguments[index],
+                isMutable: false,
+                declaredType: function.Parameters[index].TypeNode);
+        }
+
+        var firstDiagnosticIndex = _diagnostics.Count;
+        try
+        {
+            var execution = new CompileTimeFunctionInterpreter(
+                    _diagnostics,
+                    _functions.Types,
+                    Evaluate,
+                    _session)
+                .Execute(function.Body, functionContext);
+            if (execution is not CompileTimeFunctionExecution.Returned returned)
+            {
+                if (execution is CompileTimeFunctionExecution.Completed)
+                {
+                    _diagnostics.Report(
+                        function.Location,
+                        $"Compile-time function '{function.Name}' completed without returning a value.");
+                }
+                else if (execution is CompileTimeFunctionExecution.Break or CompileTimeFunctionExecution.Continue)
+                {
+                    _diagnostics.Report(
+                        function.Location,
+                        "'break' and 'continue' are only valid inside a compile-time foreach loop.");
+                }
+
+                return null;
+            }
+
+            if (!_functions.Types.Matches(function.ReturnTypeNode, returned.Value))
+            {
+                _diagnostics.Report(
+                    returned.Location,
+                    $"Compile-time function '{function.Name}' declares return type '{CompileTimeScriptTypeRegistry.Display(function.ReturnTypeNode)}' but returned {CompileTimeValueFacts.Describe(returned.Value)}.");
+                return null;
+            }
+
+            return returned.Value;
+        }
+        finally
+        {
+            _session.AnnotateNewErrors(firstDiagnosticIndex);
+            _session.ExitFunction();
+        }
     }
 
     private CompileTimeValue? EvaluateMethodCall(

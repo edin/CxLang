@@ -14,12 +14,27 @@ public sealed class TypeTokenParserTests
     [InlineData("Box < Map < int, float > >", "Box<Map<int,float>>")]
     [InlineData("const char *", "const char*")]
     [InlineData("int [ 10 ]", "int[10]")]
+    [InlineData("Attribute ?", "Attribute?")]
+    [InlineData("list < Attribute ? >", "list<Attribute?>")]
     public void Parse_NormalizesTypeTokenText(string source, string expected)
     {
         var typeNode = Parse(source);
 
         Assert.Equal(expected, typeNode.ToSourceText());
         Assert.NotNull(typeNode.Syntax);
+    }
+
+    [Fact]
+    public void Parse_ProducesNullableTypeSyntax()
+    {
+        var typeNode = Parse("list < Attribute ? >");
+
+        var list = Assert.IsType<GenericTypeSyntaxNode>(typeNode.Syntax);
+        var nullable = Assert.IsType<NullableTypeSyntaxNode>(
+            Assert.Single(list.Arguments));
+        Assert.Equal(
+            "Attribute",
+            Assert.IsType<NamedTypeSyntaxNode>(nullable.Element).Name);
     }
 
     [Fact]

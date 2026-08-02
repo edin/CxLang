@@ -516,6 +516,9 @@ internal sealed class ModuleVisibilityAnalyzer(
             case ConstTypeSyntaxNode constType:
                 CollectTypeNames(constType.Element, names);
                 break;
+            case NullableTypeSyntaxNode nullable:
+                CollectTypeNames(nullable.Element, names);
+                break;
             case FixedArrayTypeSyntaxNode fixedArray:
                 CollectTypeNames(fixedArray.Element, names);
                 break;

@@ -86,7 +86,7 @@
       "patterns": [
         { "name": "keyword.control.cx", "match": "\\b(if|else|for|foreach|while|switch|case|default|return|break|continue|try|in|match)\\b" },
         { "name": "keyword.declaration.cx", "match": "\\b(let|fn|operator|struct|enum|union|interface|extension|type|over|macro|requirement|requires|where|attribute|on|module|import|from|as|include|declare|extern|link|test|provides)\\b" },
-        { "name": "storage.modifier.cx", "match": "\\b(public|static|implicit|const|raw|using|use|expose|opaque)\\b" },
+        { "name": "storage.modifier.cx", "match": "\\b(public|compile|static|implicit|const|raw|using|use|expose|opaque)\\b" },
         { "name": "keyword.operator.word.cx", "match": "\\b(and|or|not|sizeof)\\b" }
       ]
     },

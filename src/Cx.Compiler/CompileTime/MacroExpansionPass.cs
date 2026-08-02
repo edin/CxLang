@@ -18,13 +18,15 @@ internal sealed class MacroExpansionPass : AstRewriter
     private readonly IReadOnlyDictionary<string, string>? _moduleNamesByPath;
     private readonly TypeRefParser _typeRefParser;
     private readonly CompileTimeExpressionEvaluator _argumentEvaluator;
+    private readonly CompileTimeEnvironment _environment;
     private int _expansionDepth;
 
     public MacroExpansionPass(
         DiagnosticBag diagnostics,
         ProgramNode program,
         ICompileTimeReflection? reflection = null,
-        IReadOnlyDictionary<string, string>? moduleNamesByPath = null)
+        IReadOnlyDictionary<string, string>? moduleNamesByPath = null,
+        CompileTimeEnvironment? environment = null)
     {
         _diagnostics = diagnostics;
         _macros = BuildMacroMap(program.Macros);
@@ -38,9 +40,8 @@ internal sealed class MacroExpansionPass : AstRewriter
         _reflection = new ProspectiveCompileTimeReflection(
             reflection ?? new ProgramCompileTimeReflection(program),
             _providedRequirementClaims);
-        _argumentEvaluator = new CompileTimeExpressionEvaluator(
-            diagnostics,
-            reflection: _reflection);
+        _environment = environment ?? CompileTimeEnvironment.Create(program);
+        _argumentEvaluator = _environment.CreateEvaluator(diagnostics, _reflection);
     }
 
     public override ProgramNode RewriteProgram(ProgramNode program)
@@ -55,6 +56,9 @@ internal sealed class MacroExpansionPass : AstRewriter
     }
 
     protected override MacroDeclarationNode RewriteMacroDeclaration(MacroDeclarationNode macro) => macro;
+
+    protected override FunctionNode RewriteFunction(FunctionNode function) =>
+        function.IsCompileTime ? function : base.RewriteFunction(function);
 
     protected override StructNode RewriteStruct(StructNode structNode)
     {
@@ -100,12 +104,19 @@ internal sealed class MacroExpansionPass : AstRewriter
         _expansionDepth++;
         try
         {
+            var invocationSpan = invocation.Span ?? new Cx.Compiler.Source.SourceSpan(invocation.Location, 0);
+            var generatedFrom = new GeneratedSyntaxOrigin(
+                invocationSpan,
+                macro.Template.Span,
+                invocation.GeneratedFrom);
             var templateProgram = new ProgramNode(
                 macro.Template.Location,
                 macro.Template.DeclarationNodes);
-            var expanded = new CompileTimeDirectiveExpansionPass(_diagnostics, _reflection)
-                .ExpandProgram(templateProgram, context);
-            var invocationSpan = invocation.Span ?? new Cx.Compiler.Source.SourceSpan(invocation.Location, 0);
+            var expanded = new CompileTimeDirectiveExpansionPass(
+                    _diagnostics,
+                    _reflection,
+                    environment: _environment)
+                .ExpandProgram(templateProgram, context, generatedFrom);
             foreach (var declaration in expanded.Declarations)
             {
                 declaration.GeneratedFrom = new GeneratedSyntaxOrigin(
@@ -143,9 +154,19 @@ internal sealed class MacroExpansionPass : AstRewriter
         _expansionDepth++;
         try
         {
-            var templatePass = new CompileTimeDirectiveExpansionPass(_diagnostics, _reflection);
-            var expanded = templatePass.ExpandStatementList(macro.Template.Statements, context);
             var invocationSpan = invocation.Span ?? new Cx.Compiler.Source.SourceSpan(invocation.Location, 0);
+            var generatedFrom = new GeneratedSyntaxOrigin(
+                invocationSpan,
+                macro.Template.Span,
+                invocation.GeneratedFrom);
+            var templatePass = new CompileTimeDirectiveExpansionPass(
+                _diagnostics,
+                _reflection,
+                environment: _environment);
+            var expanded = templatePass.ExpandStatementList(
+                macro.Template.Statements,
+                context,
+                generatedFrom);
             foreach (var expandedStatement in expanded)
             {
                 expandedStatement.GeneratedFrom = new GeneratedSyntaxOrigin(

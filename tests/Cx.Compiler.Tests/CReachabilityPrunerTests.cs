@@ -5,6 +5,94 @@ namespace Cx.Compiler.Tests;
 public sealed class CReachabilityPrunerTests
 {
     [Fact]
+    public void Prune_AfterCoreLowering_RemovesUnusedUserDeclarations()
+    {
+        var profiler = new CompilationProfiler();
+        var (program, diagnostics) = new ProgramCompilationPipeline(
+                ProgramCompilationOptions.ForEmission(
+                    pruneUnused: true,
+                    entryPoints: null),
+                profiler)
+            .Compile(
+            [
+                CompilerTestHelpers.Source(
+                    """
+                    struct Used {
+                        value: int;
+                    }
+
+                    struct Unused {
+                        value: int;
+                    }
+
+                    fn helper(value: Used) -> int {
+                        return value.value;
+                    }
+
+                    fn unused(value: Unused) -> int {
+                        return value.value;
+                    }
+
+                    fn main() -> int {
+                        let value = Used { value: 7 };
+                        return helper(value);
+                    }
+                    """),
+            ]);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        Assert.NotNull(program);
+
+        var completeUnit = new CxToCTranslationUnitLowerer()
+            .Lower(program!);
+        var prunedUnit = CReachabilityPruner.Prune(completeUnit);
+
+        Assert.Contains(
+            completeUnit.Items,
+            item => item is CFunctionDefinition
+            {
+                Signature.Name: "unused",
+            });
+        Assert.Contains(
+            completeUnit.Items,
+            item => item is CStructDeclaration
+            {
+                Name: "Unused",
+            });
+        Assert.DoesNotContain(
+            prunedUnit.Items,
+            item => item is CFunctionDefinition
+            {
+                Signature.Name: "unused",
+            });
+        Assert.DoesNotContain(
+            prunedUnit.Items,
+            item => item is CStructDeclaration
+            {
+                Name: "Unused",
+            });
+        Assert.Contains(
+            prunedUnit.Items,
+            item => item is CFunctionDefinition
+            {
+                Signature.Name: "main",
+            });
+        Assert.Contains(
+            prunedUnit.Items,
+            item => item is CFunctionDefinition
+            {
+                Signature.Name: "helper",
+            });
+        Assert.Contains(
+            prunedUnit.Items,
+            item => item is CStructDeclaration
+            {
+                Name: "Used",
+            });
+        Assert.True(prunedUnit.Items.Count < completeUnit.Items.Count);
+    }
+
+    [Fact]
     public void Prune_KeepsTransitiveFunctionAndTypeDependencies()
     {
         var intType = new CNamedTypeRef("int");

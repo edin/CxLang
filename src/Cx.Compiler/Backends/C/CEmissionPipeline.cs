@@ -19,10 +19,17 @@ internal sealed class CEmissionPipeline(
 
         var translationUnit = profiler.Measure(
             "C AST lowering",
-            () => new CxToCTranslationUnitLowerer(
-                nameManglerOptions,
-                emissionOptions)
+            () => new CxToCTranslationUnitLowerer(nameManglerOptions)
                 .Lower(program));
+        if (emissionOptions?.StripUnused ?? true)
+        {
+            translationUnit = profiler.Measure(
+                "C declaration pruning",
+                () => CReachabilityPruner.Prune(
+                    translationUnit,
+                    emissionOptions?.EntryPoints));
+        }
+
         var output = profiler.Measure(
             "C emission",
             () => new CTranslationUnitEmitter().Emit(translationUnit));

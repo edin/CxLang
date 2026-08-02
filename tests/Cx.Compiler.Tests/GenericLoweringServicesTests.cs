@@ -160,6 +160,47 @@ public sealed class GenericLoweringServicesTests
     }
 
     [Fact]
+    public void GenericSpecialization_HandlesNestedMemberReceiversAndUsingBindings()
+    {
+        var result = CompilerTestHelpers.Compile(
+            """
+            struct Box<T> {
+                value: T;
+
+                fn get() -> T {
+                    return self.value;
+                }
+            }
+
+            struct Holder {
+                box: Box<int>;
+
+                static fn create() -> Holder {
+                    return Holder {
+                        box: Box<int> { value: 21 }
+                    };
+                }
+
+                fn read() -> int {
+                    return self.box.get();
+                }
+
+                fn free() -> void {
+                }
+            }
+
+            fn main() -> int {
+                using holder = Holder.create();
+                return holder.box.get() + holder.read();
+            }
+            """);
+
+        CompilerTestHelpers.AssertSuccess(result);
+        Assert.Contains("int Box_get_int(", result.Output);
+        Assert.Contains("int Holder_read(", result.Output);
+    }
+
+    [Fact]
     public void GenericUseCollector_RebindsCatalogResultsToTheCurrentAstDeclaration()
     {
         var program = CompilerTestHelpers.Parse(

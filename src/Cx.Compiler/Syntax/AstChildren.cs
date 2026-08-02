@@ -266,6 +266,7 @@ internal static class AstChildren
                 .SelectMany(TypeChildren),
             PointerTypeSyntaxNode pointer => TypeChildren(pointer.Element),
             ConstTypeSyntaxNode constType => TypeChildren(constType.Element),
+            NullableTypeSyntaxNode nullable => TypeChildren(nullable.Element),
             FixedArrayTypeSyntaxNode array => TypeChildren(array.Element),
             FunctionTypeSyntaxNode function => function.Parameters
                 .Append(function.ReturnType)

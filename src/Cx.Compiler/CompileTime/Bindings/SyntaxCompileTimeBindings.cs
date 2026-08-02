@@ -6,6 +6,8 @@ namespace Cx.Compiler.CompileTime;
 
 internal sealed class SyntaxCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "Syntax";
+
     public override Type ReceiverType => typeof(SyntaxNode);
 
     [CompileTimeProperty("name")]
@@ -96,8 +98,17 @@ internal sealed class SyntaxCompileTimeBinding : CompileTimeTypeBinding
     };
 }
 
+internal sealed class StructFieldCompileTimeBinding : CompileTimeTypeBinding
+{
+    public override string ScriptTypeName => "Field";
+
+    public override Type ReceiverType => typeof(StructFieldNode);
+}
+
 internal sealed class FunctionCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "Function";
+
     public override Type ReceiverType => typeof(FunctionNode);
 
     [CompileTimeProperty("reference")]
@@ -188,6 +199,8 @@ internal sealed class FunctionCompileTimeBinding : CompileTimeTypeBinding
 
 internal sealed class ExternFunctionCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "Function";
+
     public override Type ReceiverType => typeof(ExternFunctionNode);
 
     [CompileTimeProperty("reference")]
@@ -304,6 +317,8 @@ internal static class CompileTimeFunctionReferenceFacts
 
 internal sealed class StructCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "Struct";
+
     public override Type ReceiverType => typeof(StructNode);
 
     [CompileTimeProperty("fields")]
@@ -319,6 +334,8 @@ internal sealed class StructCompileTimeBinding : CompileTimeTypeBinding
 
 internal sealed class RequirementMatchCompileTimeBinding : CompileTimeTypeBinding
 {
+    public override string ScriptTypeName => "RequirementMatch";
+
     public override Type ReceiverType => typeof(CompileTimeValue.RequirementMatch);
 
     [CompileTimeProperty("success")]
