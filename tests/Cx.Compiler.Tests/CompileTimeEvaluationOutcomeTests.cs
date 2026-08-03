@@ -32,4 +32,23 @@ public sealed class CompileTimeEvaluationOutcomeTests
                 "Unknown compile-time name 'missing'",
                 StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void MacroArgumentBinding_PreservesEvaluationOutcome()
+    {
+        var nullValue = new CompileTimeValue.Null();
+
+        var bound = MacroArgumentBindingOutcome.FromEvaluation(
+            new CompileTimeEvaluationOutcome.Value(nullValue));
+        var deferred = MacroArgumentBindingOutcome.FromEvaluation(
+            new CompileTimeEvaluationOutcome.Deferred());
+        var failed = MacroArgumentBindingOutcome.FromEvaluation(
+            new CompileTimeEvaluationOutcome.Failed());
+
+        Assert.Same(
+            nullValue,
+            Assert.IsType<MacroArgumentBindingOutcome.Bound>(bound).Value);
+        Assert.IsType<MacroArgumentBindingOutcome.Deferred>(deferred);
+        Assert.IsType<MacroArgumentBindingOutcome.Failed>(failed);
+    }
 }

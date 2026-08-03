@@ -222,13 +222,22 @@ internal sealed class MacroExpansionPass : AstRewriter
         for (var index = 0; index < macro.Parameters.Count; index++)
         {
             var parameter = macro.Parameters[index];
-            var value = BindArgument(parameter, arguments[index]);
-            if (value is null)
+            var argument = arguments[index];
+            var binding = BindArgument(parameter, argument);
+            if (binding is MacroArgumentBindingOutcome.Bound bound)
             {
-                return false;
+                context.Define(parameter.Name, bound.Value);
+                continue;
             }
 
-            context.Define(parameter.Name, value);
+            if (binding is MacroArgumentBindingOutcome.Deferred)
+            {
+                _diagnostics.Report(
+                    argument.Location,
+                    $"Macro argument for parameter '{parameter.Name}' depends on a compile-time value that is not available during macro expansion.");
+            }
+
+            return false;
         }
 
         if (!context.TryGet("module", out _)
@@ -240,7 +249,9 @@ internal sealed class MacroExpansionPass : AstRewriter
         return true;
     }
 
-    private CompileTimeValue? BindArgument(MacroParameterNode parameter, MacroArgumentNode argument) =>
+    private MacroArgumentBindingOutcome BindArgument(
+        MacroParameterNode parameter,
+        MacroArgumentNode argument) =>
         parameter.Kind switch
         {
             MacroParameterKind.Expression => BindExpression(parameter, argument),
@@ -248,23 +259,25 @@ internal sealed class MacroExpansionPass : AstRewriter
             MacroParameterKind.Type => BindType(parameter, argument),
             MacroParameterKind.Declaration => BindDeclaration(parameter, argument),
             MacroParameterKind.Module => BindModule(parameter, argument),
-            _ => null,
+            _ => new MacroArgumentBindingOutcome.Failed(),
         };
 
-    private CompileTimeValue? BindExpression(
+    private MacroArgumentBindingOutcome BindExpression(
         MacroParameterNode parameter,
         MacroArgumentNode argument)
     {
         if (argument.ExpressionCandidate is { } expression)
         {
-            return new CompileTimeValue.Syntax(expression);
+            return Bound(new CompileTimeValue.Syntax(expression));
         }
 
         _diagnostics.Report(argument.Location, $"Macro parameter '{parameter.Name}' expects an expression argument.");
-        return null;
+        return Failed();
     }
 
-    private CompileTimeValue? BindName(MacroParameterNode parameter, MacroArgumentNode argument)
+    private MacroArgumentBindingOutcome BindName(
+        MacroParameterNode parameter,
+        MacroArgumentNode argument)
     {
         var name = argument.ExpressionCandidate switch
         {
@@ -274,21 +287,23 @@ internal sealed class MacroExpansionPass : AstRewriter
         };
         if (name is not null)
         {
-            return new CompileTimeValue.Name(name);
+            return Bound(new CompileTimeValue.Name(name));
         }
 
         _diagnostics.Report(argument.Location, $"Macro parameter '{parameter.Name}' expects a name argument.");
-        return null;
+        return Failed();
     }
 
-    private CompileTimeValue? BindType(MacroParameterNode parameter, MacroArgumentNode argument)
+    private MacroArgumentBindingOutcome BindType(
+        MacroParameterNode parameter,
+        MacroArgumentNode argument)
     {
         if (argument.TypeCandidate is { } typeNode)
         {
             var type = _typeRefParser.Parse(typeNode);
             if (type is not TypeRef.Unknown)
             {
-                return new CompileTimeValue.Type(type);
+                return Bound(new CompileTimeValue.Type(type));
             }
         }
 
@@ -297,14 +312,14 @@ internal sealed class MacroExpansionPass : AstRewriter
             : ExpressionNameFacts.GetQualifiedName(argument.ExpressionCandidate);
         if (name is not null)
         {
-            return new CompileTimeValue.Type(new TypeRef.Named(name, []));
+            return Bound(new CompileTimeValue.Type(new TypeRef.Named(name, [])));
         }
 
         _diagnostics.Report(argument.Location, $"Macro parameter '{parameter.Name}' expects a type argument.");
-        return null;
+        return Failed();
     }
 
-    private CompileTimeValue? BindDeclaration(
+    private MacroArgumentBindingOutcome BindDeclaration(
         MacroParameterNode parameter,
         MacroArgumentNode argument)
     {
@@ -316,7 +331,7 @@ internal sealed class MacroExpansionPass : AstRewriter
             _diagnostics.Report(
                 argument.Location,
                 $"Macro parameter '{parameter.Name}' expects a named function declaration argument.");
-            return null;
+            return Failed();
         }
 
         if (!_functionDeclarations.TryGetValue(name, out var declarations))
@@ -324,7 +339,7 @@ internal sealed class MacroExpansionPass : AstRewriter
             _diagnostics.Report(
                 argument.Location,
                 $"Macro parameter '{parameter.Name}' could not resolve function declaration '{name}'.");
-            return null;
+            return Failed();
         }
 
         if (declarations.Count != 1)
@@ -332,50 +347,63 @@ internal sealed class MacroExpansionPass : AstRewriter
             _diagnostics.Report(
                 argument.Location,
                 $"Macro parameter '{parameter.Name}' found {declarations.Count} function declarations named '{name}'; declaration arguments must be unambiguous.");
-            return null;
+            return Failed();
         }
 
-        return new CompileTimeValue.Syntax(declarations[0]);
+        return Bound(new CompileTimeValue.Syntax(declarations[0]));
     }
 
-    private CompileTimeValue? BindModule(
+    private MacroArgumentBindingOutcome BindModule(
         MacroParameterNode parameter,
         MacroArgumentNode argument)
     {
         if (argument.ExpressionCandidate is { } expression)
         {
-            var value = _argumentEvaluator.Evaluate(
-                expression,
-                new CompileTimeEvaluationContext());
+            var evaluation = MacroArgumentBindingOutcome.FromEvaluation(
+                _argumentEvaluator.EvaluateOutcome(
+                    expression,
+                    new CompileTimeEvaluationContext()));
+            if (evaluation is MacroArgumentBindingOutcome.Deferred)
+            {
+                return evaluation;
+            }
+
+            if (evaluation is MacroArgumentBindingOutcome.Failed)
+            {
+                return evaluation;
+            }
+
+            var value = ((MacroArgumentBindingOutcome.Bound)evaluation).Value;
             if (value is CompileTimeValue.Module module)
             {
-                return module;
+                return Bound(module);
             }
 
             if (value is CompileTimeValue.String moduleName)
             {
                 if (_reflection.TryGetModule(moduleName.Value, out var reflectedModule))
                 {
-                    return new CompileTimeValue.Module(reflectedModule);
+                    return Bound(new CompileTimeValue.Module(reflectedModule));
                 }
 
                 _diagnostics.Report(
                     argument.Location,
                     $"Macro parameter '{parameter.Name}' could not resolve module '{moduleName.Value}'.");
-                return null;
-            }
-
-            if (value is null)
-            {
-                return null;
+                return Failed();
             }
         }
 
         _diagnostics.Report(
             argument.Location,
             $"Macro parameter '{parameter.Name}' expects a module argument or module-name string.");
-        return null;
+        return Failed();
     }
+
+    private static MacroArgumentBindingOutcome Bound(CompileTimeValue value) =>
+        new MacroArgumentBindingOutcome.Bound(value);
+
+    private static MacroArgumentBindingOutcome Failed() =>
+        new MacroArgumentBindingOutcome.Failed();
 
     private static MacroArgumentNode ReplaceSelfArgument(
         MacroArgumentNode argument,
@@ -446,4 +474,23 @@ internal sealed class MacroExpansionPass : AstRewriter
             }
         }
     }
+}
+
+internal abstract record MacroArgumentBindingOutcome
+{
+    public sealed record Bound(CompileTimeValue Value) : MacroArgumentBindingOutcome;
+
+    public sealed record Deferred : MacroArgumentBindingOutcome;
+
+    public sealed record Failed : MacroArgumentBindingOutcome;
+
+    public static MacroArgumentBindingOutcome FromEvaluation(
+        CompileTimeEvaluationOutcome outcome) =>
+        outcome switch
+        {
+            CompileTimeEvaluationOutcome.Value value => new Bound(value.Result),
+            CompileTimeEvaluationOutcome.Deferred => new Deferred(),
+            CompileTimeEvaluationOutcome.Failed => new Failed(),
+            _ => throw new ArgumentOutOfRangeException(nameof(outcome)),
+        };
 }
