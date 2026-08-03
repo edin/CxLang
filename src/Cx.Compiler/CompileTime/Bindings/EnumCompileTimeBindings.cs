@@ -118,10 +118,7 @@ internal sealed class EnumMemberDataCompileTimeBinding : CompileTimeTypeBinding
             return new CompileTimePropertyResult.Missing();
         }
 
-        var value = context.Evaluate(expression);
-        return value is null
-            ? new CompileTimePropertyResult.Failed()
-            : CompileTimePropertyResult.From(value);
+        return context.Evaluate(expression);
     }
 }
 
@@ -176,10 +173,7 @@ internal sealed class EnumDataFieldCompileTimeBinding : CompileTimeTypeBinding
             return new CompileTimePropertyResult.Failed();
         }
 
-        var value = context.Evaluate(expression);
-        return value is null
-            ? new CompileTimePropertyResult.Failed()
-            : CompileTimePropertyResult.From(value);
+        return context.Evaluate(expression);
     }
 
     [CompileTimeProperty("declaration")]
@@ -241,6 +235,7 @@ internal sealed class EnumDataEntryCompileTimeBinding : CompileTimeTypeBinding
             CompileTimePropertyResult.Found found =>
                 CompileTimePropertyResult.From(
                     new CompileTimeValue.Boolean(found.Value is CompileTimeValue.Null)),
+            CompileTimePropertyResult.Deferred => new CompileTimePropertyResult.Deferred(),
             CompileTimePropertyResult.Failed => new CompileTimePropertyResult.Failed(),
             _ => new CompileTimePropertyResult.Failed(),
         };
@@ -267,9 +262,6 @@ internal sealed class EnumDataEntryCompileTimeBinding : CompileTimeTypeBinding
             return CompileTimePropertyResult.From(new CompileTimeValue.Null());
         }
 
-        var value = context.Evaluate(entry.Value);
-        return value is null
-            ? new CompileTimePropertyResult.Failed()
-            : CompileTimePropertyResult.From(value);
+        return context.Evaluate(entry.Value);
     }
 }

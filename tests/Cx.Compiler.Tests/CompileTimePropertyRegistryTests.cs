@@ -77,7 +77,7 @@ public sealed class CompileTimePropertyRegistryTests
             Location.Synthetic("<test>"),
             UnavailableCompileTimeReflection.Instance,
             diagnostics,
-            _ => null);
+            _ => new CompileTimeEvaluationOutcome.Failed());
 
     private sealed class CustomBinding : CompileTimeTypeBinding
     {

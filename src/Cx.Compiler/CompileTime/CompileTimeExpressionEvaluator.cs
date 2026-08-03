@@ -195,7 +195,7 @@ internal sealed class CompileTimeExpressionEvaluator
             location,
             _reflection,
             _diagnostics,
-            expression => Evaluate(expression, context));
+            expression => EvaluateOutcome(expression, context));
         var property = _properties.Get(
             objectValue,
             propertyName,

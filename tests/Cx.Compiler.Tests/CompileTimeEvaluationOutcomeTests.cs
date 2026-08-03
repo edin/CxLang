@@ -1,5 +1,7 @@
 using Cx.Compiler.CompileTime;
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Source;
+using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
 
@@ -50,5 +52,52 @@ public sealed class CompileTimeEvaluationOutcomeTests
             Assert.IsType<MacroArgumentBindingOutcome.Bound>(bound).Value);
         Assert.IsType<MacroArgumentBindingOutcome.Deferred>(deferred);
         Assert.IsType<MacroArgumentBindingOutcome.Failed>(failed);
+    }
+
+    [Fact]
+    public void ExpressionBackedProperty_PreservesNullDeferredAndFailedOutcomes()
+    {
+        var diagnostics = new DiagnosticBag();
+        var evaluator = new CompileTimeExpressionEvaluator(diagnostics);
+        var context = new CompileTimeEvaluationContext();
+        var location = Location.Synthetic("<test>");
+        context.DefineDeferred("pending");
+        context.Define(
+            "null_argument",
+            new CompileTimeValue.Syntax(new AttributeArgumentNode(
+                location,
+                Name: null,
+                CompilerTestHelpers.ParseTokenExpression("null"))));
+        context.Define(
+            "deferred_argument",
+            new CompileTimeValue.Syntax(new AttributeArgumentNode(
+                location,
+                Name: null,
+                CompilerTestHelpers.ParseTokenExpression("pending"))));
+        context.Define(
+            "failed_argument",
+            new CompileTimeValue.Syntax(new AttributeArgumentNode(
+                location,
+                Name: null,
+                CompilerTestHelpers.ParseTokenExpression("missing"))));
+
+        var nullOutcome = evaluator.EvaluateOutcome(
+            CompilerTestHelpers.ParseTokenExpression("null_argument.value"),
+            context);
+        var deferredOutcome = evaluator.EvaluateOutcome(
+            CompilerTestHelpers.ParseTokenExpression("deferred_argument.value"),
+            context);
+        var failedOutcome = evaluator.EvaluateOutcome(
+            CompilerTestHelpers.ParseTokenExpression("failed_argument.value"),
+            context);
+
+        Assert.IsType<CompileTimeValue.Null>(
+            Assert.IsType<CompileTimeEvaluationOutcome.Value>(nullOutcome).Result);
+        Assert.IsType<CompileTimeEvaluationOutcome.Deferred>(deferredOutcome);
+        Assert.IsType<CompileTimeEvaluationOutcome.Failed>(failedOutcome);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "Unknown compile-time name 'missing'",
+                StringComparison.Ordinal));
     }
 }

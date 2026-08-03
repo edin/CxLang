@@ -13,13 +13,8 @@ internal sealed class AttributeArgumentCompileTimeBinding : CompileTimeTypeBindi
     [CompileTimeProperty("value")]
     private CompileTimePropertyResult Value(
         CompileTimePropertyContext context,
-        AttributeArgumentNode argument)
-    {
-        var value = context.Evaluate(argument.Value);
-        return value is null
-            ? new CompileTimePropertyResult.Failed()
-            : CompileTimePropertyResult.From(value);
-    }
+        AttributeArgumentNode argument) =>
+        context.Evaluate(argument.Value);
 
     [CompileTimeMethod("positional")]
     private CompileTimeMethodResult Positional(
@@ -102,10 +97,7 @@ internal sealed class AttributeCompileTimeBinding : CompileTimeTypeBinding
                 continue;
             }
 
-            var value = context.Evaluate(argument.Value);
-            return value is null
-                ? new CompileTimePropertyResult.Failed()
-                : CompileTimePropertyResult.From(value);
+            return context.Evaluate(argument.Value);
         }
 
         return new CompileTimePropertyResult.Missing();
