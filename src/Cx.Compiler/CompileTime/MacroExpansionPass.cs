@@ -459,7 +459,9 @@ internal sealed class MacroExpansionPass : AstRewriter
 
     private void ValidateProvidedRequirements(ProgramNode expanded)
     {
-        var matcher = new RequirementMatcher(expanded);
+        var matcher = new RequirementMatcher(
+            expanded,
+            moduleNamesByPath: _moduleNamesByPath);
         foreach (var claim in _providedRequirementClaims)
         {
             var match = matcher.MatchTypeRefs(

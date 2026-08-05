@@ -578,7 +578,7 @@ internal sealed class CompileTimeExpressionEvaluator
             arguments,
             _reflection,
             _diagnostics,
-            expression => Evaluate(expression, context)));
+            expression => EvaluateOutcome(expression, context)));
     }
 
     private bool TryEvaluateFunctionCall(

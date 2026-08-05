@@ -189,6 +189,7 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
     private readonly RequirementMatcher _requirementMatcher;
     private readonly TypeSystem _typeSystem;
     private readonly IReadOnlyDictionary<string, string> _moduleNamesByPath;
+    private readonly ProgramDeclarationIndex _declarations;
 
     public ProgramCompileTimeReflection(
         ProgramNode program,
@@ -196,10 +197,15 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
     {
         _program = program;
         _typeRefParser = new TypeRefParser(program);
-        _requirementMatcher = new RequirementMatcher(program);
-        _typeSystem = new TypeSystem(program);
         _moduleNamesByPath = moduleNamesByPath
             ?? BuildFallbackModuleMap(program);
+        _declarations = ProgramDeclarationIndex.Create(
+            program,
+            _moduleNamesByPath);
+        _requirementMatcher = new RequirementMatcher(
+            program,
+            _declarations);
+        _typeSystem = new TypeSystem(program);
     }
 
     public bool TryGetModule(string name, out ReflectedModule module)
@@ -256,14 +262,16 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
 
     public bool TryGetEnumType(string name, out TypeRef type)
     {
-        var enumNode = _program.Enums.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, name, StringComparison.Ordinal));
-        if (enumNode is null)
+        if (_declarations.LookupFromModule<EnumNode>(
+                _program.Module?.Name ?? string.Empty,
+                name)
+            is not ProgramDeclarationLookup<EnumNode>.Found found)
         {
             type = new TypeRef.Unknown();
             return false;
         }
 
+        var enumNode = found.Declaration;
         type = new TypeRef.Named(enumNode.Name, [], enumNode.Semantic.ModuleName);
         return true;
     }
@@ -317,10 +325,7 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             return null;
         }
 
-        var qualifiedName = named.ModuleName is null ? null : $"{named.ModuleName}.{named.Name}";
-        return _program.Enums.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, named.Name, StringComparison.Ordinal)
-            || qualifiedName is not null && string.Equals(candidate.Name, qualifiedName, StringComparison.Ordinal));
+        return ResolveNamedDeclaration<EnumNode>(named);
     }
 
     private static IReadOnlyDictionary<string, ExpressionNode> BuildEnumMetadata(
@@ -432,16 +437,32 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         string name,
         out AttributeDeclarationNode declaration)
     {
-        declaration = _program.AttributeDeclarations.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, name, StringComparison.Ordinal))!;
-        return declaration is not null;
+        if (_declarations.LookupFromModule<AttributeDeclarationNode>(
+                _program.Module?.Name ?? string.Empty,
+                name)
+            is ProgramDeclarationLookup<AttributeDeclarationNode>.Found found)
+        {
+            declaration = found.Declaration;
+            return true;
+        }
+
+        declaration = null!;
+        return false;
     }
 
     public bool TryGetRequirement(string name, out RequirementNode requirement)
     {
-        requirement = _program.Requirements.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, name, StringComparison.Ordinal))!;
-        return requirement is not null;
+        if (_declarations.LookupFromModule<RequirementNode>(
+                _program.Module?.Name ?? string.Empty,
+                name)
+            is ProgramDeclarationLookup<RequirementNode>.Found found)
+        {
+            requirement = found.Declaration;
+            return true;
+        }
+
+        requirement = null!;
+        return false;
     }
 
     public bool TryMatchRequirement(
@@ -494,13 +515,33 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             return false;
         }
 
-        var qualifiedName = named.ModuleName is null ? null : $"{named.ModuleName}.{named.Name}";
-        var resolvedName = named.Name;
-        structNode = _program.Structs.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, resolvedName, StringComparison.Ordinal)
-            || qualifiedName is not null
-            && string.Equals(candidate.Name, qualifiedName, StringComparison.Ordinal))!;
+        structNode = ResolveNamedDeclaration<StructNode>(named)!;
         return structNode is not null;
+    }
+
+    private T? ResolveNamedDeclaration<T>(TypeRef.Named named)
+        where T : TopLevelNode
+    {
+        if (named.ModuleName is not null)
+        {
+            var moduleLookup = _declarations.LookupInModule<T>(
+                named.ModuleName,
+                named.Name);
+            if (moduleLookup is ProgramDeclarationLookup<T>.Found moduleDeclaration)
+            {
+                return moduleDeclaration.Declaration;
+            }
+
+            if (moduleLookup is ProgramDeclarationLookup<T>.Ambiguous)
+            {
+                return null;
+            }
+        }
+
+        return _declarations.Lookup<T>(named.Name)
+            is ProgramDeclarationLookup<T>.Found declaration
+                ? declaration.Declaration
+                : null;
     }
 
     private static TypeRef SubstituteType(

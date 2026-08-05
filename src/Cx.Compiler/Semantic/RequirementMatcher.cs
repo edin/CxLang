@@ -9,15 +9,33 @@ public sealed class RequirementMatcher
     private readonly TypeResolver _typeResolver;
     private readonly ResolvedTypeMemberResolver _memberResolver;
     private readonly OperatorCapabilityResolver _operatorCapabilities;
+    private readonly ProgramDeclarationIndex _declarations;
+    private readonly string _currentModuleName;
     private readonly IReadOnlyDictionary<string, StructNode> _concreteStructs;
     private readonly IReadOnlyDictionary<string, TypeRef> _typeAliases;
 
-    public RequirementMatcher(ProgramNode program, IReadOnlyList<StructNode>? concreteStructs = null)
+    public RequirementMatcher(
+        ProgramNode program,
+        IReadOnlyList<StructNode>? concreteStructs = null,
+        IReadOnlyDictionary<string, string>? moduleNamesByPath = null)
+        : this(
+            program,
+            ProgramDeclarationIndex.Create(program, moduleNamesByPath),
+            concreteStructs)
+    {
+    }
+
+    internal RequirementMatcher(
+        ProgramNode program,
+        ProgramDeclarationIndex declarations,
+        IReadOnlyList<StructNode>? concreteStructs = null)
     {
         _program = program;
         _typeRefParser = new TypeRefParser(program);
         _typeResolver = new TypeResolver(program);
         _memberResolver = new ResolvedTypeMemberResolver(program);
+        _declarations = declarations;
+        _currentModuleName = program.Module?.Name ?? string.Empty;
         _operatorCapabilities = new OperatorCapabilityResolver(
             new IntrinsicOperatorResolver(_typeRefParser),
             _typeResolver,
@@ -53,18 +71,46 @@ public sealed class RequirementMatcher
         IReadOnlyList<TypeRef>? requirementArguments,
         HashSet<string> activeMatches)
     {
-        var requirement = _program.Requirements.FirstOrDefault(requirement => requirement.Name == requirementName);
-        if (requirement is null)
+        var requirementLookup = _declarations.LookupFromModule<RequirementNode>(
+            _currentModuleName,
+            requirementName);
+        if (requirementLookup
+            is ProgramDeclarationLookup<RequirementNode>.Ambiguous ambiguousRequirements)
         {
-            var interfaceNode = _program.Interfaces.FirstOrDefault(interfaceNode => interfaceNode.Name == requirementName);
-            if (interfaceNode is not null)
+            return RequirementMatch.Failed(
+                concreteTypeRef,
+                requirementName,
+                [$"Requirement '{requirementName}' is ambiguous because it has {ambiguousRequirements.Declarations.Count} declarations."]);
+        }
+
+        if (requirementLookup
+            is not ProgramDeclarationLookup<RequirementNode>.Found requirementMatch)
+        {
+            var interfaceLookup = _declarations.LookupFromModule<InterfaceNode>(
+                _currentModuleName,
+                requirementName);
+            if (interfaceLookup
+                is ProgramDeclarationLookup<InterfaceNode>.Found interfaceMatch)
             {
-                return MatchInterface(concreteTypeRef, interfaceNode, requirementArguments);
+                return MatchInterface(
+                    concreteTypeRef,
+                    interfaceMatch.Declaration,
+                    requirementArguments);
+            }
+
+            if (interfaceLookup
+                is ProgramDeclarationLookup<InterfaceNode>.Ambiguous ambiguousInterfaces)
+            {
+                return RequirementMatch.Failed(
+                    concreteTypeRef,
+                    requirementName,
+                    [$"Interface requirement '{requirementName}' is ambiguous because it has {ambiguousInterfaces.Declarations.Count} declarations."]);
             }
 
             return RequirementMatch.Failed(concreteTypeRef, requirementName, [$"Unknown requirement '{requirementName}'."]);
         }
 
+        var requirement = requirementMatch.Declaration;
         var bindings = new TypeBindings();
         bindings.Set("Self", NormalizeSelfTypeRef(concreteTypeRef));
         var selfType = GetBinding(bindings, "Self");

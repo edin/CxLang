@@ -192,7 +192,9 @@ internal sealed class ReflectionCompileTimeIntrinsics : CompileTimeIntrinsicBind
     private CompileTimeValue? Value(
         CompileTimeIntrinsicContext context,
         AttributeArgumentNode argument) =>
-        context.Evaluate(argument.Value);
+        context.EvaluateOutcome(argument.Value) is CompileTimeEvaluationOutcome.Value value
+            ? value.Result
+            : null;
 
     private static bool HasAttribute(
         IReadOnlyList<AttributeApplicationNode> attributes,

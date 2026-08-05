@@ -6,6 +6,27 @@ namespace Cx.Compiler.Tests;
 public sealed class RequirementMatcherResolvedTypeTests
 {
     [Fact]
+    public void Match_ReportsAmbiguousRequirementDeclarations()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            requires Marker {
+            }
+
+            requires Marker {
+            }
+            """);
+
+        var match = new RequirementMatcher(program).Match("int", "Marker");
+
+        Assert.False(match.Success);
+        Assert.Contains(match.Failures, failure =>
+            failure.Contains(
+                "ambiguous because it has 2 declarations",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Match_OperatorRequirement_UsesTypedOperatorIdentity()
     {
         var program = CompilerTestHelpers.Parse(

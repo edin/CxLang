@@ -10,7 +10,7 @@ internal sealed record CompileTimeIntrinsicContext(
     IReadOnlyList<CompileTimeValue> Arguments,
     ICompileTimeReflection Reflection,
     DiagnosticBag Diagnostics,
-    Func<ExpressionNode, CompileTimeValue?> Evaluate);
+    Func<ExpressionNode, CompileTimeEvaluationOutcome> EvaluateOutcome);
 
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 internal sealed class CompileTimeIntrinsicAttribute(string name) : Attribute
