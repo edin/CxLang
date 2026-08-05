@@ -98,11 +98,13 @@ public sealed class RequirementMatcher
         string currentModuleName,
         HashSet<string> activeMatches)
     {
-        var (
-            requirementLookup,
-            interfaceLookup) = ResolveRequirementLookups(
+        var namespaceLookup =
+            _declarations.LookupRequirementFromModule(
                 currentModuleName,
                 requirementName);
+        var requirementLookup =
+            namespaceLookup.Requirement;
+        var interfaceLookup = namespaceLookup.Interface;
         if (requirementLookup
             is ProgramDeclarationLookup<RequirementNode>.Ambiguous ambiguousRequirements)
         {
@@ -208,35 +210,6 @@ public sealed class RequirementMatcher
         return failures.Count == 0
             ? RequirementMatch.Succeeded(concreteTypeRef, requirementName, bindings)
             : RequirementMatch.Failed(concreteTypeRef, requirementName, failures, bindings);
-    }
-
-    private (
-        ProgramDeclarationLookup<RequirementNode> Requirement,
-        ProgramDeclarationLookup<InterfaceNode> Interface)
-        ResolveRequirementLookups(
-            string currentModuleName,
-            string requirementName)
-    {
-        var localRequirement =
-            _declarations.LookupInModule<RequirementNode>(
-                currentModuleName,
-                requirementName);
-        var localInterface =
-            _declarations.LookupInModule<InterfaceNode>(
-                currentModuleName,
-                requirementName);
-        var hasLocalDeclaration =
-            localRequirement
-                is not ProgramDeclarationLookup<RequirementNode>.Missing
-            || localInterface
-                is not ProgramDeclarationLookup<InterfaceNode>.Missing;
-        return hasLocalDeclaration
-            ? (localRequirement, localInterface)
-            : (
-                _declarations.Lookup<RequirementNode>(
-                    requirementName),
-                _declarations.Lookup<InterfaceNode>(
-                    requirementName));
     }
 
     private RequirementMatch MatchInterface(

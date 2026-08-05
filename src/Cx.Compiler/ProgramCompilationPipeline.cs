@@ -34,6 +34,13 @@ internal sealed class ProgramCompilationPipeline(
             return (null, diagnostics);
         }
 
+        corePrograms = ModuleUnit.FromPrograms(corePrograms)
+            .Select(unit => unit.Program)
+            .ToList();
+        userPrograms = ModuleUnit.FromPrograms(userPrograms)
+            .Select(unit => unit.Program)
+            .ToList();
+
         if (options.BuildTests)
         {
             var userProgramPaths = userPrograms
@@ -59,10 +66,20 @@ internal sealed class ProgramCompilationPipeline(
         }
 
         var inputPrograms = corePrograms.Concat(userPrograms).ToList();
-        var rootProgram = ModuleProgramFacts.GetRootProgram(userPrograms);
+        var inputUnits =
+            ModuleUnit.FromPrograms(inputPrograms);
+        var userUnits =
+            ModuleUnit.FromPrograms(userPrograms);
+        inputPrograms = inputUnits
+            .Select(unit => unit.Program)
+            .ToList();
+        var rootUnit =
+            ModuleProgramFacts.GetRootUnit(userUnits);
         profiler.Measure(
             "Module visibility analysis",
-            () => new ModuleVisibilityAnalyzer(diagnostics, inputPrograms).Analyze(userPrograms));
+            () => new ModuleVisibilityAnalyzer(
+                diagnostics,
+                inputUnits).Analyze(userUnits));
         if (diagnostics.HasErrors)
         {
             return (null, diagnostics);
@@ -72,12 +89,14 @@ internal sealed class ProgramCompilationPipeline(
         var postSemanticLowering = new CxPostSemanticLoweringPipeline(diagnostics);
         var moduleNamesByPath = profiler.Measure(
             "Module index construction",
-            () => inputPrograms
-                .GroupBy(program => program.Location.File.Path, StringComparer.Ordinal)
-                .ToDictionary(group => group.Key, group => ModuleProgramFacts.GetModuleName(group.Last()), StringComparer.Ordinal));
+            () => ModuleProgramFacts
+                .BuildUnambiguousModuleNamesByPath(
+                    inputUnits));
         var mergedInputProgram = profiler.Measure(
             "Program merge",
-            () => ModuleProgramProjector.Project(inputPrograms, rootProgram));
+            () => ModuleProgramProjector.Project(
+                inputUnits,
+                rootUnit));
         var compileTimeExpansion = new CompileTimeExpansionPipeline(
             diagnostics,
             profiler,

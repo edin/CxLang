@@ -99,6 +99,108 @@ public sealed class CompileTimeSymbolResolverTests
         Assert.NotEqual(first, second);
     }
 
+    [Fact]
+    public void ModuleContext_UsesDeclarationOwnershipWithinOneFile()
+    {
+        var program = Parse(
+            """
+            fn first() -> int {
+                return 1;
+            }
+
+            fn second() -> int {
+                return 2;
+            }
+            """,
+            "shared.cx");
+        var first = program.Functions.Single(
+            function => function.Name == "first");
+        var second = program.Functions.Single(
+            function => function.Name == "second");
+        first.Semantic.ModuleName = "lib.first";
+        second.Semantic.ModuleName = "lib.second";
+
+        var modules = CompileTimeModuleContext.Create(
+            [program]);
+
+        Assert.Equal(
+            "lib.first",
+            modules.ModuleFor(first));
+        Assert.Equal(
+            "lib.second",
+            modules.ModuleFor(second));
+        var registry =
+            CompileTimeFunctionRegistry.Create(
+                program,
+                modules: modules);
+        var secondValue =
+            Assert.IsType<
+                Cx.Compiler.Syntax.Nodes.ReturnStatement>(
+                Assert.Single(second.Body))
+            .Expression!;
+        Assert.Equal(
+            "lib.second",
+            registry.ModuleFor(secondValue));
+        var unimported = Assert.IsType<
+            CompileTimeSymbolReference.Unimported>(
+            modules.ResolveReference(
+                "lib.second.value",
+                "lib.first"));
+        Assert.Equal(
+            "lib.second",
+            unimported.ModuleName);
+    }
+
+    [Fact]
+    public void ModuleContext_KeepsOwnedImportsIndependentWithinOneFile()
+    {
+        var program = Parse(
+            """
+            import lib.alpha as shared;
+            from lib.alpha import route as selected;
+
+            import lib.beta as shared;
+            from lib.beta import route as selected;
+            """,
+            "shared.cx");
+        var imports = program.Imports;
+        var symbolImports = program.SymbolImports;
+        imports[0].Semantic.ModuleName = "app.first";
+        symbolImports[0].Semantic.ModuleName =
+            "app.first";
+        imports[1].Semantic.ModuleName = "app.second";
+        symbolImports[1].Semantic.ModuleName =
+            "app.second";
+
+        var modules = CompileTimeModuleContext.Create(
+            [program]);
+
+        var first = Assert.IsType<
+            CompileTimeSymbolReference.Qualified>(
+            modules.ResolveReference(
+                "shared.value",
+                "app.first"));
+        var second = Assert.IsType<
+            CompileTimeSymbolReference.Qualified>(
+            modules.ResolveReference(
+                "shared.value",
+                "app.second"));
+        Assert.Equal("lib.alpha", first.ModuleName);
+        Assert.Equal("lib.beta", second.ModuleName);
+        Assert.True(modules.TryResolveSymbolImport(
+            "app.first",
+            "selected",
+            out var firstSymbolModule,
+            out _));
+        Assert.True(modules.TryResolveSymbolImport(
+            "app.second",
+            "selected",
+            out var secondSymbolModule,
+            out _));
+        Assert.Equal("lib.alpha", firstSymbolModule);
+        Assert.Equal("lib.beta", secondSymbolModule);
+    }
+
     private static CompileTimeModuleContext CreateModules(
         string mainSource,
         string librarySource)

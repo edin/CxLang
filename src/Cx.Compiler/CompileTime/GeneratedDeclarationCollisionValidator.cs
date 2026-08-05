@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Modules;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Source;
 using Cx.Compiler.Syntax;
@@ -12,8 +13,10 @@ internal sealed class GeneratedDeclarationCollisionValidator(
     IReadOnlyDictionary<string, string>? moduleNamesByPath = null)
 {
     private readonly TypeRefParser _typeRefParser = new(program);
-    private readonly IReadOnlyDictionary<string, string> _moduleNamesByPath =
-        moduleNamesByPath ?? new Dictionary<string, string>(StringComparer.Ordinal);
+    private readonly ModuleOwnership _moduleOwnership =
+        ModuleOwnership.Create(
+            program,
+            moduleNamesByPath);
 
     public void Validate()
     {
@@ -136,12 +139,8 @@ internal sealed class GeneratedDeclarationCollisionValidator(
     }
 
     private string ModuleScope(Candidate candidate)
-    {
-        var path = (candidate.Origin?.InvocationSpan.File ?? candidate.Node.Location.File).Path;
-        return _moduleNamesByPath.TryGetValue(path, out var moduleName)
-            ? moduleName
-            : path;
-    }
+        => _moduleOwnership.GetModuleName(
+            candidate.Node);
 
     private static string Describe(Candidate candidate)
     {

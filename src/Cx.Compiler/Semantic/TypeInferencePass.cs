@@ -957,7 +957,8 @@ internal sealed class TypeInferencePass(
 
         var ownerType = TypeRefOrUnknown(function.OwnerTypeNode);
         if (ownerType is TypeRef.Named { Arguments.Count: 0 } named
-            && GetOwnerTypeParameters(named.Name) is { Count: > 0 } typeParameters)
+            && GetOwnerTypeParameters(named)
+                is { Count: > 0 } typeParameters)
         {
             return named with
             {
@@ -970,16 +971,23 @@ internal sealed class TypeInferencePass(
         return ownerType is TypeRef.Unknown ? null : ownerType;
     }
 
-    private IReadOnlyList<string> GetOwnerTypeParameters(string ownerName)
+    private IReadOnlyList<string> GetOwnerTypeParameters(
+        TypeRef.Named ownerType)
     {
-        if (_program is null)
+        if (_typeSystem is null)
         {
             return [];
         }
 
-        return _program.Structs.FirstOrDefault(structNode => structNode.Name == ownerName)?.TypeParameters
-            ?? _program.TypeAdapters.FirstOrDefault(adapter => adapter.Name == ownerName)?.TypeParameters
-            ?? [];
+        return _typeSystem.ResolveDefinition(ownerType).Symbol
+            switch
+            {
+                TypeSymbol.Struct structSymbol =>
+                    structSymbol.Declaration.TypeParameters,
+                TypeSymbol.Adapter adapterSymbol =>
+                    adapterSymbol.Declaration.TypeParameters,
+                _ => [],
+            };
     }
 
     private static TypeRef SubstituteSelf(TypeRef type, TypeRef? selfType) =>

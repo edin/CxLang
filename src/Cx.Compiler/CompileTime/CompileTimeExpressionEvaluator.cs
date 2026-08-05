@@ -346,7 +346,7 @@ internal sealed class CompileTimeExpressionEvaluator
         }
 
         var callerModule = _session.CurrentModule
-            ?? _functions.ModuleForPath(expression.Location.File.Path);
+            ?? _functions.ModuleFor(expression);
         var lookup = _constants.Lookup(requestedName, callerModule);
         switch (lookup)
         {
@@ -594,7 +594,7 @@ internal sealed class CompileTimeExpressionEvaluator
         }
 
         var callerModule = _session.CurrentModule
-            ?? _functions.ModuleForPath(call.Location.File.Path);
+            ?? _functions.ModuleFor(call);
         var lookup = _functions.Lookup(requestedName, callerModule);
         switch (lookup)
         {

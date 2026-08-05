@@ -176,8 +176,12 @@ internal sealed class ProspectiveCompileTimeReflection(
     public bool TryGetModule(string name, out ReflectedModule module) =>
         inner.TryGetModule(name, out module);
 
-    public bool TryGetModuleForFile(string path, out ReflectedModule module) =>
-        inner.TryGetModuleForFile(path, out module);
+    public bool TryGetModuleForSyntax(
+        SyntaxNode syntax,
+        out ReflectedModule module) =>
+        inner.TryGetModuleForSyntax(
+            syntax,
+            out module);
 
     public bool TryGetOwnerType(FunctionNode function, out TypeRef ownerType) =>
         inner.TryGetOwnerType(function, out ownerType);

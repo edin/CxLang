@@ -413,7 +413,12 @@ internal sealed class TypeResolutionPass(
 
     private void ResolveType(SyntaxNode node, TypeNode? typeNode)
     {
-        var resolvedType = typeNode is null ? new TypeRef.Unknown() : ResolveType(typeNode);
+        var resolvedType = typeNode is null
+            ? new TypeRef.Unknown()
+            : ResolveType(
+                typeNode,
+                node.Semantic.ModuleName
+                ?? typeNode.Semantic.ModuleName);
         node.Semantic.Type = resolvedType;
         if (typeNode is not null)
         {
@@ -429,7 +434,9 @@ internal sealed class TypeResolutionPass(
         }
     }
 
-    private TypeRef ResolveType(TypeNode typeNode)
+    private TypeRef ResolveType(
+        TypeNode typeNode,
+        string? currentModuleName)
     {
         if (_typeSyntaxConverter is null)
         {
@@ -437,7 +444,9 @@ internal sealed class TypeResolutionPass(
             return new TypeRef.Unknown();
         }
 
-        return _typeSyntaxConverter.Convert(typeNode);
+        return _typeSyntaxConverter.Convert(
+            typeNode,
+            currentModuleName);
     }
 
 }

@@ -1,6 +1,7 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lowering;
 using Cx.Compiler.Semantic;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 using Cx.Compiler.Source;
 
@@ -482,5 +483,206 @@ public sealed class CoreCxValidatorTests
         new CoreCxValidator(diagnostics).Validate(program);
 
         CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void Validate_DoesNotTreatSameNamedStructAsEnumAcrossModules()
+    {
+        var first = CompilerTestHelpers.Parse(
+            """
+            module lib.first;
+
+            enum State {
+                Ready
+            }
+            """,
+            "first.cx");
+        var second = CompilerTestHelpers.Parse(
+            """
+            module lib.second;
+
+            struct State {}
+
+            fn inspect() -> void {
+                State.missing;
+            }
+            """,
+            "second.cx");
+        var program = first with
+        {
+            Declarations = first.Declarations
+                .Concat(second.Declarations)
+                .ToList(),
+        };
+        Cx.Compiler.Modules.ModuleProgramFacts
+            .AnnotateModuleNames(
+                program,
+                new Dictionary<string, string>(
+                    StringComparer.Ordinal)
+                {
+                    ["first.cx"] = "lib.first",
+                    ["second.cx"] = "lib.second",
+                });
+        var diagnostics = new DiagnosticBag();
+
+        new CoreCxValidator(diagnostics).Validate(program);
+
+        Assert.DoesNotContain(
+            diagnostics.Diagnostics,
+            diagnostic => diagnostic.Message.Contains(
+                "static member reference 'missing'",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_UsesInterfaceFromTargetModule()
+    {
+        var program = CreateModuleProgram(
+            """
+            module lib.first;
+
+            interface Service {
+                fn remote() -> void;
+            }
+            """,
+            """
+            module lib.second;
+
+            interface Service {
+                fn local() -> void;
+            }
+
+            fn inspect(value: Service*) -> void {
+                value.remote();
+            }
+            """);
+        var call = Assert.Single(
+            AstTraversal
+                .DescendantsAndSelf(
+                    program.Functions.Single(function =>
+                        function.Name == "inspect"))
+                .OfType<CallExpressionNode>());
+        var member = Assert.IsType<MemberExpressionNode>(
+            call.Callee);
+        member.Target.Semantic.Type = new TypeRef.Pointer(
+            new TypeRef.Named(
+                "Service",
+                [],
+                "lib.second"));
+        var diagnostics = new DiagnosticBag();
+
+        new CoreCxValidator(diagnostics).Validate(program);
+
+        Assert.DoesNotContain(
+            diagnostics.Diagnostics,
+            diagnostic => diagnostic.Message.Contains(
+                "interface call has no resolved interface slot",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_DoesNotSuppressStructMemberDiagnosticForRemoteUnion()
+    {
+        var program = CreateModuleProgram(
+            """
+            module lib.first;
+
+            union Result {
+                Ok: int;
+            }
+            """,
+            """
+            module lib.second;
+
+            struct Result {}
+
+            fn inspect(value: Result*) -> void {
+                value.missing();
+            }
+            """);
+        var call = Assert.Single(
+            AstTraversal
+                .DescendantsAndSelf(
+                    program.Functions.Single(function =>
+                        function.Name == "inspect"))
+                .OfType<CallExpressionNode>());
+        var member = Assert.IsType<MemberExpressionNode>(
+            call.Callee);
+        member.Target.Semantic.Type = new TypeRef.Pointer(
+            new TypeRef.Named(
+                "Result",
+                [],
+                "lib.second"));
+        var diagnostics = new DiagnosticBag();
+
+        new CoreCxValidator(diagnostics).Validate(program);
+
+        Assert.Contains(
+            diagnostics.Diagnostics,
+            diagnostic => diagnostic.Message.Contains(
+                "typed member call 'missing'",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_KeepsImportAliasesInTheirDeclaringModule()
+    {
+        var program = CreateModuleProgram(
+            """
+            module lib.first;
+
+            import tools as util;
+
+            fn inspect_first() -> void {
+                util.missing;
+            }
+            """,
+            """
+            module lib.second;
+
+            fn inspect_second() -> void {
+                util.missing;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+
+        new CoreCxValidator(diagnostics).Validate(program);
+
+        var diagnostic = Assert.Single(
+            diagnostics.Diagnostics,
+            diagnostic => diagnostic.Message.Contains(
+                "static member reference 'missing'",
+                StringComparison.Ordinal));
+        Assert.Equal(
+            "first.cx",
+            diagnostic.Location.File.Path);
+    }
+
+    private static ProgramNode CreateModuleProgram(
+        string firstSource,
+        string secondSource)
+    {
+        var first = CompilerTestHelpers.Parse(
+            firstSource,
+            "first.cx");
+        var second = CompilerTestHelpers.Parse(
+            secondSource,
+            "second.cx");
+        var program = first with
+        {
+            Declarations = first.Declarations
+                .Concat(second.Declarations)
+                .ToList(),
+        };
+        Cx.Compiler.Modules.ModuleProgramFacts
+            .AnnotateModuleNames(
+                program,
+                new Dictionary<string, string>(
+                    StringComparer.Ordinal)
+                {
+                    ["first.cx"] = "lib.first",
+                    ["second.cx"] = "lib.second",
+                });
+        return program;
     }
 }

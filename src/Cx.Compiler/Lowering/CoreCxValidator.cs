@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Modules;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
@@ -11,30 +12,37 @@ namespace Cx.Compiler.Lowering;
 /// </summary>
 internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
 {
-    private IReadOnlyDictionary<string, InterfaceNode> _interfaces =
-        new Dictionary<string, InterfaceNode>(StringComparer.Ordinal);
-    private IReadOnlySet<string> _taggedUnionNames =
-        new HashSet<string>(StringComparer.Ordinal);
-    private IReadOnlySet<string> _enumNames =
-        new HashSet<string>(StringComparer.Ordinal);
-    private IReadOnlySet<string> _moduleQualifiers =
-        new HashSet<string>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlySet<string>>
+        _moduleQualifiersByModule =
+            new Dictionary<string, IReadOnlySet<string>>(
+                StringComparer.Ordinal);
+    private TypeRefParser? _typeRefParser;
+    private ProgramDeclarationIndex? _declarations;
+    private ModuleOwnership? _moduleOwnership;
 
     public void Validate(ProgramNode program)
     {
         program.Semantic.IsCoreCxValidated = false;
-        _interfaces = program.Interfaces.ToDictionary(
-            interfaceNode => interfaceNode.Name,
-            StringComparer.Ordinal);
-        _taggedUnionNames = program.TaggedUnions
-            .Select(union => union.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        _enumNames = program.Enums
-            .Select(enumNode => enumNode.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        _moduleQualifiers = program.Imports
-            .Select(import => import.Alias ?? import.ModuleName)
-            .ToHashSet(StringComparer.Ordinal);
+        _moduleOwnership =
+            ModuleOwnership.Create(program);
+        _declarations = ProgramDeclarationIndex.Create(
+            program,
+            _moduleOwnership);
+        _typeRefParser = new TypeRefParser(
+            program,
+            _declarations);
+        _moduleQualifiersByModule = program.Imports
+            .GroupBy(
+                import => GetModuleName(import),
+                StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlySet<string>)group
+                    .Select(import =>
+                        import.Alias
+                        ?? import.ModuleName)
+                    .ToHashSet(StringComparer.Ordinal),
+                StringComparer.Ordinal);
         ValidateDataEnums(program);
         ValidateLinkedDeclarations(program);
         var coreFunctions = CoreFunctions(program).ToList();
@@ -447,9 +455,27 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
             return false;
         }
 
-        return _enumNames.Contains(targetName)
-            || _moduleQualifiers.Contains(targetName);
+        return _typeRefParser?.IsEnum(
+                new TypeRef.Named(targetName, []),
+                GetModuleName(member))
+            == true
+            || IsModuleQualifier(
+                targetName,
+                member);
     }
+
+    private bool IsModuleQualifier(
+        string name,
+        SyntaxNode context) =>
+        _moduleQualifiersByModule
+            .GetValueOrDefault(
+                GetModuleName(context))
+            ?.Contains(name)
+        == true;
+
+    private string GetModuleName(SyntaxNode node) =>
+        _moduleOwnership?.GetModuleName(node)
+        ?? string.Empty;
 
     private static bool HasCoreCallTarget(CallExpressionNode call) =>
         call.Semantic.CoreDirectCall is not null
@@ -485,9 +511,9 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
             return false;
         }
 
-        var normalizedTarget = TypeRefFacts.StripPointersAndAliases(targetType);
-        return TypeRefFacts.GetBaseName(normalizedTarget) is not { } targetName
-            || !_taggedUnionNames.Contains(targetName);
+        return ResolveTypeDeclaration(
+            targetType,
+            member) is not TaggedUnionNode;
     }
 
     private bool IsInterfaceSlot(
@@ -499,19 +525,34 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
             return false;
         }
 
-        var type = TypeRefFacts.UnwrapAlias(targetType);
-        if (type is TypeRef.Pointer pointer)
-        {
-            type = TypeRefFacts.UnwrapAlias(pointer.Element);
-        }
-
-        return TypeRefFacts.GetBaseName(type) is { } name
-            && _interfaces.TryGetValue(name, out var interfaceNode)
+        return ResolveTypeDeclaration(
+                targetType,
+                member) is InterfaceNode interfaceNode
             && interfaceNode.Methods.Any(method =>
                 string.Equals(
                     method.Name,
                     member.MemberName,
                     StringComparison.Ordinal)
                 && method.Parameters.Count == call.Arguments.Count);
+    }
+
+    private TopLevelNode? ResolveTypeDeclaration(
+        TypeRef type,
+        SyntaxNode context)
+    {
+        if (_declarations is null
+            || !TypeRefFacts.TryGetNamed(
+                type,
+                out var named))
+        {
+            return null;
+        }
+
+        return _declarations.LookupTypeFromModule(
+                GetModuleName(context),
+                named)
+            is ProgramTypeDeclarationLookup.Found found
+                ? found.Declaration
+                : null;
     }
 }

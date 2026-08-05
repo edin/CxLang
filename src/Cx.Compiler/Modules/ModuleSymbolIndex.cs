@@ -14,20 +14,26 @@ internal sealed class ModuleSymbolIndex
     }
 
     public static ModuleSymbolIndex From(
-        IEnumerable<ProgramNode> programs) =>
-        new(programs
+        IEnumerable<ModuleUnit> units) =>
+        new(units
             .GroupBy(
-                program => program.Module?.Name ?? string.Empty,
+                unit => unit.Name,
                 StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
-                group => ModuleSymbols.From(group),
+                group => ModuleSymbols.From(
+                    group.Select(unit =>
+                        unit.Program)),
                 StringComparer.Ordinal));
 
     public ModuleVisibilityContext VisibilityFor(
         string moduleName,
-        IEnumerable<ProgramNode> programs) =>
-        ModuleVisibilityContext.From(moduleName, programs, _modules);
+        IEnumerable<ModuleUnit> units) =>
+        ModuleVisibilityContext.From(
+            moduleName,
+            units.Select(unit =>
+                unit.Program),
+            _modules);
 }
 
 internal sealed record ModuleVisibilityContext(

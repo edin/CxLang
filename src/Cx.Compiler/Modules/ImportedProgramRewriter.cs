@@ -5,12 +5,13 @@ namespace Cx.Compiler.Modules;
 internal static class ImportedProgramRewriter
 {
     public static ProgramNode Rewrite(
-        ProgramNode program,
+        ModuleUnit unit,
         ModuleImportMap imports,
-        ProgramNode rootProgram)
+        ModuleUnit rootUnit)
     {
-        var moduleName = ModuleProgramFacts.GetModuleName(program);
-        if (IsDirectlyVisible(moduleName, rootProgram, imports))
+        var program = unit.Program;
+        var moduleName = unit.Name;
+        if (IsDirectlyVisible(moduleName, rootUnit, imports))
         {
             return imports.TryGetSymbols(moduleName, out var symbols)
                 ? Merge(program, SymbolImportProjector.Project(program, symbols))
@@ -36,11 +37,11 @@ internal static class ImportedProgramRewriter
 
     private static bool IsDirectlyVisible(
         string moduleName,
-        ProgramNode rootProgram,
+        ModuleUnit rootUnit,
         ModuleImportMap imports) =>
         string.Equals(
             moduleName,
-            ModuleProgramFacts.GetModuleName(rootProgram),
+            rootUnit.Name,
             StringComparison.Ordinal)
         || moduleName.Length == 0
         || imports.IsUnaliased(moduleName);

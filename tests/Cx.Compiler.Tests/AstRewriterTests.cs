@@ -107,6 +107,29 @@ public sealed class AstRewriterTests
         Assert.Equal(["main", "main_copy"], rewritten.Functions.Select(function => function.Name));
     }
 
+    [Fact]
+    public void RewriteProgram_RewritesDeclarationsInsideModuleBlocks()
+    {
+        var location = Location.Synthetic("<ast-rewriter-test>");
+        var function = Assert.Single(ProgramWithBody([
+            new ReturnStatement(location, new NameExpressionNode(location, "value")),
+        ]).Functions);
+        var program = new ProgramNode(
+            location,
+            [new ModuleBlockNode(location, "sample", [function])]);
+
+        var rewritten = new RenameExpressionRewriter("value", "renamed")
+            .RewriteProgram(program);
+
+        var module = Assert.Single(rewritten.ModuleBlocks);
+        var rewrittenFunction = Assert.Single(module.Declarations.OfType<FunctionNode>());
+        var returnStatement = Assert.IsType<ReturnStatement>(
+            Assert.Single(rewrittenFunction.Body));
+        Assert.Equal(
+            "renamed",
+            Assert.IsType<NameExpressionNode>(returnStatement.Expression).Name);
+    }
+
     private static ProgramNode ProgramWithBody(IReadOnlyList<StatementNode> body)
     {
         var location = Location.Synthetic("<ast-rewriter-test>");

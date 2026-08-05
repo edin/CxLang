@@ -845,6 +845,183 @@ public sealed class IndexedSemanticAnalyzerTests
         CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 
+    [Fact]
+    public void TypeInference_UsesTypeParametersFromResolvedOwnerModule()
+    {
+        var (program, _) = CreateProgram(
+            """
+            module lib.first;
+
+            struct Box<A> {
+                first: A;
+            }
+            """,
+            """
+            module lib.second;
+
+            struct Box<A, B> {
+                first: A;
+                second: B;
+
+                fn second_value() -> B {
+                    let result = self.second;
+                    return result;
+                }
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        var model = new SemanticModel();
+        new ScopeResolver(diagnostics, model).Resolve(program);
+        new TypeResolutionPass(
+            diagnostics,
+            model).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+
+        var inferred = new TypeInferencePass(
+            diagnostics,
+            model).Apply(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var secondBox = Assert.Single(
+            inferred.Structs,
+            structNode =>
+                structNode.Name == "Box"
+                && structNode.Semantic.ModuleName
+                    == "lib.second");
+        var method = Assert.Single(
+            secondBox.Methods,
+            candidate =>
+                candidate.Name == "second_value");
+        var local = Assert.IsType<LetStatement>(
+            method.Body[0]);
+        Assert.Equal(
+            "B",
+            local.TypeNode?.ToSourceText());
+    }
+
+    [Fact]
+    public void TypeRefParser_UsesAliasFromCurrentModule()
+    {
+        var (program, modules) = CreateProgram(
+            """
+            module lib.first;
+
+            struct First {}
+            type Selected = First;
+            """,
+            """
+            module lib.second;
+
+            struct Second {}
+            type Selected = Second;
+            """);
+        var diagnostics = new DiagnosticBag();
+        new TypeResolutionPass(diagnostics).Resolve(program);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        var declarations = ProgramDeclarationIndex.Create(
+            program,
+            modules);
+        var parser = new TypeRefParser(
+            program,
+            declarations,
+            "lib.second");
+
+        var alias = Assert.IsType<TypeRef.Alias>(
+            parser.Parse("Selected"));
+
+        Assert.Equal(
+            "Second",
+            TypeRefFormatter.ToCxString(alias.Target));
+    }
+
+    [Fact]
+    public void TypeResolver_ResolvesAliasTargetInDeclaringModule()
+    {
+        var (program, modules) = CreateProgram(
+            """
+            module lib.first;
+
+            struct Model {
+                first: int;
+            }
+            """,
+            """
+            module lib.second;
+
+            struct Model {
+                second: bool;
+            }
+
+            type Selected = Model;
+            """);
+        var declarations = ProgramDeclarationIndex.Create(
+            program,
+            modules);
+        var resolver = new TypeResolver(
+            program,
+            declarationIndex: declarations,
+            currentModuleName: "lib.first");
+
+        var resolved = resolver.ResolveDefinition(
+            new TypeRef.Named(
+                "Selected",
+                [],
+                "lib.second"));
+
+        var symbol = Assert.IsType<TypeSymbol.Struct>(
+            resolved.Symbol);
+        Assert.Equal(
+            "lib.second",
+            symbol.Declaration.Semantic.ModuleName);
+        Assert.Equal(
+            "second",
+            Assert.IsType<StructFieldNode>(
+                Assert.Single(symbol.Declaration.Members)).Name);
+    }
+
+    [Fact]
+    public void TypeRefParser_ClassifiesEnumsInCurrentModule()
+    {
+        var (program, modules) = CreateProgram(
+            """
+            module lib.first;
+
+            enum State {
+                Ready
+            }
+            """,
+            """
+            module lib.second;
+
+            struct State {}
+            """);
+        var declarations = ProgramDeclarationIndex.Create(
+            program,
+            modules);
+        var firstParser = new TypeRefParser(
+            program,
+            declarations,
+            "lib.first");
+        var secondParser = new TypeRefParser(
+            program,
+            declarations,
+            "lib.second");
+
+        Assert.True(firstParser.IsEnumName("State"));
+        Assert.False(secondParser.IsEnumName("State"));
+        Assert.True(secondParser.IsEnum(
+            new TypeRef.Named(
+                "State",
+                [],
+                "lib.first")));
+
+        var compatibility = new TypeCompatibility(secondParser);
+        Assert.False(compatibility.CanAssign(
+            new TypeRef.Named("State", []),
+            TypeRef.Int,
+            out _));
+    }
+
     private static (
         ProgramNode Program,
         IReadOnlyDictionary<string, string> Modules) CreateProgram(

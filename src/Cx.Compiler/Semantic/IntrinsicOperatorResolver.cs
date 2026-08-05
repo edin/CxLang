@@ -63,7 +63,6 @@ internal sealed class IntrinsicOperatorResolver
         var normalizedRight = TypeRefFacts.UnwrapAlias(rightType);
         return (TypeIdentity.ResolvedEquals(normalizedLeft, normalizedRight)
                 || TypeIdentity.SourceReferenceMatches(normalizedLeft, normalizedRight))
-            && TypeRefFacts.GetBaseName(normalizedLeft) is { } enumName
-            && _typeRefParser.IsEnumName(enumName);
+            && _typeRefParser.IsEnum(normalizedLeft);
     }
 }

@@ -443,7 +443,10 @@ internal sealed class TypeResolver(
 
     public ResolvedType Resolve(string? type)
     {
-        var parser = new TypeRefParser(program);
+        var parser = new TypeRefParser(
+            program,
+            _declarations,
+            _currentModuleName);
         return Resolve(parser.Parse(type));
     }
 
@@ -468,15 +471,45 @@ internal sealed class TypeResolver(
             return resolved;
         }
 
+        var aliasModuleName =
+            aliasSymbol.Declaration.Semantic.ModuleName
+            ?? (resolved.Type as TypeRef.Named)?.ModuleName
+            ?? _currentModuleName;
         var target = type is TypeRef.Alias alias
             ? alias.Target
-            : aliasSymbol.Declaration.TargetTypeNode.ToTypeRef(new TypeRefParser(program));
-        return ResolveDefinition(target);
+            : aliasSymbol.Declaration.TargetTypeNode.ToTypeRef(
+                new TypeRefParser(
+                    program,
+                    _declarations,
+                    aliasModuleName));
+        var resolver = string.Equals(
+            aliasModuleName,
+            _currentModuleName,
+            StringComparison.Ordinal)
+                ? this
+                : new TypeResolver(
+                    program,
+                    _genericParameters.ToList(),
+                    _declarations,
+                    aliasModuleName);
+        return resolver.ResolveDefinition(target);
     }
 
     private ResolvedType ResolveAlias(TypeRef.Alias alias)
     {
-        var declaration = FindTypeAlias(alias.Name);
+        var typeLookup = _declarations.LookupTypeFromModule(
+            _currentModuleName,
+            new TypeRef.Named(alias.Name, []));
+        var declaration = typeLookup
+            is ProgramTypeDeclarationLookup.Found
+            {
+                Declaration: TypeAliasNode sourceAlias,
+            }
+                ? sourceAlias
+                : typeLookup
+                    is ProgramTypeDeclarationLookup.Missing
+                        ? FindCTypeAlias(alias.Name)
+                        : null;
         var symbol = declaration is null
             ? null
             : new TypeSymbol.Alias(alias.Name, declaration);
@@ -490,196 +523,145 @@ internal sealed class TypeResolver(
             return new ResolvedType(named, new TypeSymbol.GenericParameter(named.Name), EmptySubstitutions());
         }
 
-        var lookupScope = ResolveLookupScope(named);
-        if (FindStruct(named.Name, lookupScope) is { } structNode)
+        var typeLookup = _declarations.LookupTypeFromModule(
+            _currentModuleName,
+            named);
+        if (typeLookup
+            is ProgramTypeDeclarationLookup.Ambiguous)
         {
-            var resolvedType = WithDeclarationModule(
+            return new ResolvedType(
                 named,
-                structNode,
-                lookupScope);
-            return new ResolvedType(
-                resolvedType,
-                new TypeSymbol.Struct(named.Name, structNode),
-                BuildSubstitutions(
-                    structNode.TypeParameters,
-                    resolvedType.Arguments));
-        }
-
-        if (FindTypeAdapter(named.Name, lookupScope) is { } adapter)
-        {
-            var resolvedType = WithDeclarationModule(
-                named,
-                adapter,
-                lookupScope);
-            return new ResolvedType(
-                resolvedType,
-                new TypeSymbol.Adapter(named.Name, adapter),
-                BuildSubstitutions(
-                    adapter.TypeParameters,
-                    resolvedType.Arguments));
-        }
-
-        if (FindInterface(named.Name, lookupScope) is { } interfaceNode)
-        {
-            return new ResolvedType(
-                WithDeclarationModule(
-                    named,
-                    interfaceNode,
-                    lookupScope),
-                new TypeSymbol.Interface(
-                    named.Name,
-                    interfaceNode),
+                Symbol: null,
                 EmptySubstitutions());
         }
 
-        if (FindTaggedUnion(named.Name, lookupScope) is { } taggedUnion)
+        if (typeLookup
+            is ProgramTypeDeclarationLookup.Found found)
+        {
+            return ResolveSourceDeclaration(
+                named,
+                found.Declaration,
+                found.ModuleName);
+        }
+
+        if (FindCStruct(named.Name) is { } structNode)
         {
             return new ResolvedType(
-                WithDeclarationModule(
-                    named,
-                    taggedUnion,
-                    lookupScope),
+                named,
+                new TypeSymbol.Struct(
+                    named.Name,
+                    structNode),
+                BuildSubstitutions(
+                    structNode.TypeParameters,
+                    named.Arguments));
+        }
+
+        if (FindCTaggedUnion(named.Name)
+            is { } taggedUnion)
+        {
+            return new ResolvedType(
+                named,
                 new TypeSymbol.TaggedUnion(
                     named.Name,
                     taggedUnion),
                 EmptySubstitutions());
         }
 
-        if (FindEnum(named.Name, lookupScope) is { } enumNode)
+        if (FindCEnum(named.Name) is { } enumNode)
         {
             return new ResolvedType(
-                WithDeclarationModule(
-                    named,
-                    enumNode,
-                    lookupScope),
+                named,
                 new TypeSymbol.Enum(named.Name, enumNode),
                 EmptySubstitutions());
         }
 
-        if (FindTypeAlias(named.Name, lookupScope) is { } alias)
+        if (FindCTypeAlias(named.Name) is { } alias)
         {
             return new ResolvedType(
-                WithDeclarationModule(
-                    named,
-                    alias,
-                    lookupScope),
+                named,
                 new TypeSymbol.Alias(named.Name, alias),
                 EmptySubstitutions());
         }
 
         return new ResolvedType(
             named,
-            BuiltinTypes.IsBuiltin(named.Name) ? new TypeSymbol.Builtin(named.Name) : null,
+            BuiltinTypes.IsBuiltin(named.Name)
+                ? new TypeSymbol.Builtin(named.Name)
+                : null,
             EmptySubstitutions());
+    }
+
+    private static ResolvedType ResolveSourceDeclaration(
+        TypeRef.Named named,
+        TopLevelNode declaration,
+        string? moduleName)
+    {
+        var resolvedType = named.ModuleName is not null
+            ? named
+            : named with { ModuleName = moduleName };
+        return declaration switch
+        {
+            StructNode structNode => new ResolvedType(
+                resolvedType,
+                new TypeSymbol.Struct(named.Name, structNode),
+                BuildSubstitutions(
+                    structNode.TypeParameters,
+                    resolvedType.Arguments)),
+            TypeAdapterNode adapter => new ResolvedType(
+                resolvedType,
+                new TypeSymbol.Adapter(named.Name, adapter),
+                BuildSubstitutions(
+                    adapter.TypeParameters,
+                    resolvedType.Arguments)),
+            InterfaceNode interfaceNode => new ResolvedType(
+                resolvedType,
+                new TypeSymbol.Interface(
+                    named.Name,
+                    interfaceNode),
+                EmptySubstitutions()),
+            TaggedUnionNode taggedUnion => new ResolvedType(
+                resolvedType,
+                new TypeSymbol.TaggedUnion(
+                    named.Name,
+                    taggedUnion),
+                EmptySubstitutions()),
+            EnumNode enumNode => new ResolvedType(
+                resolvedType,
+                new TypeSymbol.Enum(named.Name, enumNode),
+                EmptySubstitutions()),
+            TypeAliasNode alias => new ResolvedType(
+                resolvedType,
+                new TypeSymbol.Alias(named.Name, alias),
+                EmptySubstitutions()),
+            _ => new ResolvedType(
+                resolvedType,
+                Symbol: null,
+                EmptySubstitutions()),
+        };
     }
 
     private static ResolvedType ResolveContainer(TypeRef type) =>
         new(type, Symbol: null, Substitutions: EmptySubstitutions());
 
-    private TypeAliasNode? FindTypeAlias(string name) =>
-        FindTypeAlias(
-            name,
-            ResolveLookupScope(
-                new TypeRef.Named(name, [])));
-
-    private TypeAliasNode? FindTypeAlias(
-        string name,
-        TypeLookupScope scope) =>
-        Lookup<TypeAliasNode>(name, scope)
-        ?? program.CDeclarations
+    private TypeAliasNode? FindCTypeAlias(string name) =>
+        program.CDeclarations
             .SelectMany(declaration => declaration.TypeAliases)
             .FirstOrDefault(alias => string.Equals(alias.Name, name, StringComparison.Ordinal));
 
-    private StructNode? FindStruct(
-        string name,
-        TypeLookupScope scope) =>
-        Lookup<StructNode>(name, scope)
-        ?? program.CDeclarations
+    private StructNode? FindCStruct(string name) =>
+        program.CDeclarations
             .SelectMany(declaration => declaration.Structs)
             .FirstOrDefault(structNode => string.Equals(structNode.Name, name, StringComparison.Ordinal));
 
-    private TypeAdapterNode? FindTypeAdapter(
-        string name,
-        TypeLookupScope scope) =>
-        Lookup<TypeAdapterNode>(name, scope);
-
-    private InterfaceNode? FindInterface(
-        string name,
-        TypeLookupScope scope) =>
-        Lookup<InterfaceNode>(name, scope);
-
-    private TaggedUnionNode? FindTaggedUnion(
-        string name,
-        TypeLookupScope scope) =>
-        Lookup<TaggedUnionNode>(name, scope)
-        ?? program.CDeclarations
+    private TaggedUnionNode? FindCTaggedUnion(string name) =>
+        program.CDeclarations
             .SelectMany(declaration => declaration.Unions)
             .FirstOrDefault(union => string.Equals(union.Name, name, StringComparison.Ordinal));
 
-    private EnumNode? FindEnum(
-        string name,
-        TypeLookupScope scope) =>
-        Lookup<EnumNode>(name, scope)
-        ?? program.CDeclarations
+    private EnumNode? FindCEnum(string name) =>
+        program.CDeclarations
             .SelectMany(declaration => declaration.Enums)
             .FirstOrDefault(enumNode => string.Equals(enumNode.Name, name, StringComparison.Ordinal));
-
-    private T? Lookup<T>(
-        string name,
-        TypeLookupScope scope)
-        where T : TopLevelNode =>
-        scope.ModuleName is { } moduleName
-            ? _declarations
-                .LookupInModule<T>(moduleName, name)
-                .Unique()
-            : _declarations.Lookup<T>(name).Unique();
-
-    private TypeLookupScope ResolveLookupScope(
-        TypeRef.Named named)
-    {
-        if (named.ModuleName is not null)
-        {
-            return new TypeLookupScope(named.ModuleName);
-        }
-
-        return HasTypeDeclarationInModule(
-            _currentModuleName,
-            named.Name)
-                ? new TypeLookupScope(_currentModuleName)
-                : new TypeLookupScope(ModuleName: null);
-    }
-
-    private bool HasTypeDeclarationInModule(
-        string moduleName,
-        string name) =>
-        HasInModule<TypeAliasNode>(moduleName, name)
-        || HasInModule<StructNode>(moduleName, name)
-        || HasInModule<TypeAdapterNode>(moduleName, name)
-        || HasInModule<InterfaceNode>(moduleName, name)
-        || HasInModule<TaggedUnionNode>(moduleName, name)
-        || HasInModule<EnumNode>(moduleName, name);
-
-    private bool HasInModule<T>(
-        string moduleName,
-        string name)
-        where T : TopLevelNode =>
-        _declarations.LookupInModule<T>(moduleName, name)
-            is not ProgramDeclarationLookup<T>.Missing;
-
-    private static TypeRef.Named WithDeclarationModule(
-        TypeRef.Named named,
-        TopLevelNode declaration,
-        TypeLookupScope scope) =>
-        named.ModuleName is not null
-            ? named
-            : named with
-            {
-                ModuleName =
-                    declaration.Semantic.ModuleName
-                    ?? scope.ModuleName,
-            };
-
-    private sealed record TypeLookupScope(string? ModuleName);
 
     private static IReadOnlyDictionary<string, TypeRef> BuildSubstitutions(
         IReadOnlyList<string> parameters,

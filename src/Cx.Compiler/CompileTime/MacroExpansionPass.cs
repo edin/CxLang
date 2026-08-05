@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lowering;
+using Cx.Compiler.Modules;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
@@ -19,6 +20,7 @@ internal sealed class MacroExpansionPass : AstRewriter
     private readonly TypeRefParser _typeRefParser;
     private readonly CompileTimeExpressionEvaluator _argumentEvaluator;
     private readonly CompileTimeEnvironment _environment;
+    private readonly ModuleOwnership _moduleOwnership;
     private int _expansionDepth;
 
     public MacroExpansionPass(
@@ -33,6 +35,9 @@ internal sealed class MacroExpansionPass : AstRewriter
         _functionDeclarations = BuildFunctionDeclarationMap(program);
         _typeRefParser = new TypeRefParser(program);
         _moduleNamesByPath = moduleNamesByPath;
+        _moduleOwnership = ModuleOwnership.Create(
+            program,
+            moduleNamesByPath);
         _providedRequirementClaims = MacroProvidedRequirementCollector.Collect(
             program,
             _macros,
@@ -93,7 +98,7 @@ internal sealed class MacroExpansionPass : AstRewriter
         if (!TryPrepareExpansion(
                 invocation.MacroName,
                 invocation.Arguments,
-                invocation.Location,
+                invocation,
                 MacroExpansionKind.Declarations,
                 out var macro,
                 out var context))
@@ -123,6 +128,9 @@ internal sealed class MacroExpansionPass : AstRewriter
                     invocationSpan,
                     declaration.Span,
                     invocation.GeneratedFrom);
+                declaration.Semantic.ModuleName =
+                    _moduleOwnership.GetModuleName(
+                        invocation);
             }
 
             return expanded.Declarations.SelectMany(RewriteTopLevelNode).ToList();
@@ -143,7 +151,7 @@ internal sealed class MacroExpansionPass : AstRewriter
         if (!TryPrepareExpansion(
                 invocation.MacroName,
                 invocation.Arguments,
-                invocation.Location,
+                invocation,
                 MacroExpansionKind.Statements,
                 out var macro,
                 out var context))
@@ -186,11 +194,12 @@ internal sealed class MacroExpansionPass : AstRewriter
     private bool TryPrepareExpansion(
         string macroName,
         IReadOnlyList<MacroArgumentNode> arguments,
-        Cx.Compiler.Source.Location location,
+        SyntaxNode invocation,
         MacroExpansionKind expectedKind,
         out MacroDeclarationNode macro,
         out CompileTimeEvaluationContext context)
     {
+        var location = invocation.Location;
         context = new CompileTimeEvaluationContext();
         if (!_macros.TryGetValue(macroName, out macro!))
         {
@@ -241,7 +250,9 @@ internal sealed class MacroExpansionPass : AstRewriter
         }
 
         if (!context.TryGet("module", out _)
-            && _reflection.TryGetModuleForFile(location.File.Path, out var reflectedModule))
+            && _reflection.TryGetModuleForSyntax(
+                invocation,
+                out var reflectedModule))
         {
             context.Define("module", new CompileTimeValue.Module(reflectedModule));
         }

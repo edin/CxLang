@@ -8,6 +8,14 @@ namespace Cx.Compiler.Parser;
 
 public sealed partial class Parser
 {
+    private enum ModuleSyntaxMode
+    {
+        None,
+        UnmoduledDeclarations,
+        FileModule,
+        ModuleBlocks,
+    }
+
     private readonly DiagnosticBag _diagnostics;
     private TokenStream? _tokens;
     private int _pendingTypeCloseAngles;
@@ -29,6 +37,7 @@ public sealed partial class Parser
 
         var declarations = new List<TopLevelNode>();
         var location = new Location(sourceFile, 0, 1, 1);
+        var moduleSyntaxMode = ModuleSyntaxMode.None;
 
         while (!IsAtEnd)
         {
@@ -36,6 +45,7 @@ public sealed partial class Parser
 
             if (Check(TokenType.At) && PeekType() == TokenType.If)
             {
+                RegisterNonModuleDeclaration(ref moduleSyntaxMode);
                 if (ParseCompileTimeIfTopLevel() is { } conditional)
                 {
                     AddSpannedNode(
@@ -50,6 +60,7 @@ public sealed partial class Parser
 
             if (Check(TokenType.At) && PeekType() == TokenType.Foreach)
             {
+                RegisterNonModuleDeclaration(ref moduleSyntaxMode);
                 if (ParseCompileTimeForeachTopLevel() is { } foreachNode)
                 {
                     AddSpannedNode(
@@ -87,13 +98,16 @@ public sealed partial class Parser
             if (Check(TokenType.Module))
             {
                 ReportUnexpectedAttributes(attributes, "module declarations");
-                if (ParseModuleDeclaration() is { } module)
+                if (ParseModuleDeclarationOrBlock() is { } module)
                 {
+                    RegisterModuleSyntax(module, ref moduleSyntaxMode);
                     AddSpannedNode(declarations, module, declarationStart, visibility);
                 }
 
                 continue;
             }
+
+            RegisterNonModuleDeclaration(ref moduleSyntaxMode);
 
             if (Check(TokenType.Import))
             {
@@ -754,13 +768,109 @@ public sealed partial class Parser
             : new TestNode(testToken.Location, nameToken?.Value.Trim('"') ?? string.Empty, body, attributes);
     }
 
-    private ModuleDeclarationNode? ParseModuleDeclaration()
+    private TopLevelNode? ParseModuleDeclarationOrBlock()
     {
         var moduleToken = Expect(TokenType.Module, "Expected 'module'.");
         var name = ParseModulePath();
-        Expect(TokenType.Semicolon, "Expected ';' after module declaration.");
+        if (moduleToken is null)
+        {
+            return null;
+        }
 
-        return moduleToken is null ? null : new ModuleDeclarationNode(moduleToken.Location, name);
+        if (ConsumeOptional(TokenType.Semicolon))
+        {
+            return new ModuleDeclarationNode(moduleToken.Location, name);
+        }
+
+        if (Expect(TokenType.LBrace, "Expected ';' or '{' after module name.") is null)
+        {
+            return new ModuleDeclarationNode(moduleToken.Location, name);
+        }
+
+        var bodyTokens = Tokens.ReadBalancedUntil(TokenType.RBrace).ToList();
+        var closeBrace = Expect(TokenType.RBrace, "Expected '}' after module block.");
+        var eofLocation = closeBrace?.Location ?? Current.Location;
+        bodyTokens.Add(new Token(TokenType.Eof, eofLocation, 0));
+
+        var body = new Parser(_diagnostics)
+            .Parse(moduleToken.Location.File, bodyTokens)
+            .Declarations;
+        var declarations = new List<TopLevelNode>();
+        foreach (var declaration in body)
+        {
+            if (declaration is ModuleDeclarationNode or ModuleBlockNode)
+            {
+                _diagnostics.Report(
+                    declaration.Location,
+                    "Modules cannot be declared inside another module block.");
+                continue;
+            }
+
+            declarations.Add(declaration);
+        }
+
+        return new ModuleBlockNode(moduleToken.Location, name, declarations);
+    }
+
+    private void RegisterModuleSyntax(
+        TopLevelNode module,
+        ref ModuleSyntaxMode mode)
+    {
+        if (module is ModuleBlockNode)
+        {
+            if (mode is ModuleSyntaxMode.FileModule)
+            {
+                _diagnostics.Report(
+                    module.Location,
+                    "Module-block syntax cannot be mixed with a file-level 'module Name;' declaration.");
+            }
+            else if (mode is ModuleSyntaxMode.UnmoduledDeclarations)
+            {
+                _diagnostics.Report(
+                    module.Location,
+                    "Module blocks cannot be mixed with declarations outside module blocks.");
+            }
+
+            mode = ModuleSyntaxMode.ModuleBlocks;
+            return;
+        }
+
+        if (mode is ModuleSyntaxMode.ModuleBlocks)
+        {
+            _diagnostics.Report(
+                module.Location,
+                "A file-level 'module Name;' declaration cannot be mixed with module blocks.");
+        }
+        else if (mode is ModuleSyntaxMode.UnmoduledDeclarations)
+        {
+            _diagnostics.Report(
+                module.Location,
+                "A file-level module declaration must precede all other declarations.");
+        }
+        else if (mode is ModuleSyntaxMode.FileModule)
+        {
+            _diagnostics.Report(
+                module.Location,
+                "A file can contain only one file-level module declaration.");
+        }
+
+        mode = ModuleSyntaxMode.FileModule;
+    }
+
+    private void RegisterNonModuleDeclaration(ref ModuleSyntaxMode mode)
+    {
+        if (mode is ModuleSyntaxMode.ModuleBlocks)
+        {
+            _diagnostics.Report(
+                Current.Location,
+                "Declarations outside module blocks are not allowed in a module-block file.");
+            return;
+        }
+
+        if (mode is ModuleSyntaxMode.None)
+        {
+            mode = ModuleSyntaxMode.UnmoduledDeclarations;
+        }
     }
 
     private ImportNode? ParseImport()

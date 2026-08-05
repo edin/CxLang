@@ -37,6 +37,7 @@ internal abstract class AstRewriter
     protected virtual IReadOnlyList<TopLevelNode> RewriteTopLevelNode(TopLevelNode node) =>
         node switch
         {
+            ModuleBlockNode module => [RewriteModuleBlock(module)],
             AttributeDeclarationNode attribute => [RewriteAttributeDeclaration(attribute)],
             CDeclareNode cDeclare => [RewriteCDeclare(cDeclare)],
             TypeAliasNode alias => [RewriteTypeAlias(alias)],
@@ -58,6 +59,14 @@ internal abstract class AstRewriter
             TestNode test => [RewriteTest(test)],
             ExternFunctionNode externFunction => [RewriteExternFunction(externFunction)],
             _ => [node],
+        };
+
+    protected virtual ModuleBlockNode RewriteModuleBlock(ModuleBlockNode module) =>
+        module with
+        {
+            Declarations = module.Declarations
+                .SelectMany(RewriteTopLevelNode)
+                .ToList(),
         };
 
     protected virtual IReadOnlyList<TopLevelNode> RewriteCompileTimeScriptDeclaration(

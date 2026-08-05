@@ -40,21 +40,50 @@ internal abstract record TypeRef
     public sealed record Function(IReadOnlyList<TypeRef> Parameters, TypeRef ReturnType, bool IsVariadic = false) : TypeRef;
 }
 
-internal sealed class TypeRefParser(ProgramNode program)
+internal sealed class TypeRefParser(
+    ProgramNode program,
+    ProgramDeclarationIndex? declarationIndex = null,
+    string? currentModuleName = null)
 {
-    private readonly IReadOnlyDictionary<string, TypeNode?> _aliasNodes = program.TypeAliases
-        .GroupBy(alias => alias.Name, StringComparer.Ordinal)
-        .ToDictionary(group => group.Key, group => group.First().TargetTypeNode, StringComparer.Ordinal);
-    private readonly IReadOnlySet<string> _enumNames = program.Enums
-        .Where(enumNode => !string.IsNullOrWhiteSpace(enumNode.Name))
-        .Select(enumNode => enumNode.Name)
-        .Concat(program.CDeclarations
-            .SelectMany(declaration => declaration.Enums)
-            .Where(enumNode => !string.IsNullOrWhiteSpace(enumNode.Name))
-            .Select(enumNode => enumNode.Name))
-        .ToHashSet(StringComparer.Ordinal);
+    private readonly ProgramDeclarationIndex _declarations =
+        declarationIndex ?? ProgramDeclarationIndex.Create(program);
+    private readonly string _currentModuleName =
+        currentModuleName ?? program.Module?.Name ?? string.Empty;
 
-    public bool IsEnumName(string name) => _enumNames.Contains(name);
+    public bool IsEnumName(string name) =>
+        IsEnum(new TypeRef.Named(name, []));
+
+    public bool IsEnum(
+        TypeRef type,
+        string? currentModuleName = null)
+    {
+        var unwrapped = TypeRefFacts.UnwrapConst(
+            TypeRefFacts.UnwrapAlias(type));
+        if (unwrapped is not TypeRef.Named named)
+        {
+            return false;
+        }
+
+        var lookup = _declarations.LookupTypeFromModule(
+            currentModuleName ?? _currentModuleName,
+            named);
+        if (lookup
+            is ProgramTypeDeclarationLookup.Found
+            {
+                Declaration: EnumNode,
+            })
+        {
+            return true;
+        }
+
+        return lookup is ProgramTypeDeclarationLookup.Missing
+            && program.CDeclarations
+                .SelectMany(declaration => declaration.Enums)
+                .Any(enumNode => string.Equals(
+                    enumNode.Name,
+                    named.Name,
+                    StringComparison.Ordinal));
+    }
 
     public TypeRef Parse(TypeNode? typeNode)
     {
@@ -73,38 +102,52 @@ internal sealed class TypeRefParser(ProgramNode program)
             return new TypeRef.Unknown();
         }
 
-        return Parse(typeNode.Syntax, []);
+        return Parse(typeNode.Syntax, [], _currentModuleName);
     }
 
     public TypeRef Parse(string? type)
     {
         var syntax = TypeSyntaxParser.Parse(type);
-        if (syntax is null)
-        {
-            return new TypeRef.Unknown();
-        }
-
-        return Parse(syntax, []);
+        return ParseSyntax(syntax);
     }
 
-    private TypeRef Parse(TypeSyntaxNode syntax, HashSet<string> resolvingAliases) =>
+    public TypeRef ParseSyntax(
+        TypeSyntaxNode? syntax,
+        string? currentModuleName = null) =>
+        syntax is null
+            ? new TypeRef.Unknown()
+            : Parse(
+                syntax,
+                [],
+                currentModuleName ?? _currentModuleName);
+
+    private TypeRef Parse(
+        TypeSyntaxNode syntax,
+        HashSet<(string ModuleName, string Name)> resolvingAliases,
+        string currentModuleName) =>
         syntax switch
         {
-            NamedTypeSyntaxNode named => ParseNamedSyntax(named, resolvingAliases),
-            GenericTypeSyntaxNode generic => ParseGenericSyntax(generic, resolvingAliases),
-            PointerTypeSyntaxNode pointer => new TypeRef.Pointer(Parse(pointer.Element, resolvingAliases)),
-            ConstTypeSyntaxNode constType => new TypeRef.Const(Parse(constType.Element, resolvingAliases)),
-            FixedArrayTypeSyntaxNode array => new TypeRef.FixedArray(Parse(array.Element, resolvingAliases), array.Length),
+            NamedTypeSyntaxNode named => ParseNamedSyntax(named, resolvingAliases, currentModuleName),
+            GenericTypeSyntaxNode generic => ParseGenericSyntax(generic, resolvingAliases, currentModuleName),
+            PointerTypeSyntaxNode pointer => new TypeRef.Pointer(Parse(pointer.Element, resolvingAliases, currentModuleName)),
+            ConstTypeSyntaxNode constType => new TypeRef.Const(Parse(constType.Element, resolvingAliases, currentModuleName)),
+            FixedArrayTypeSyntaxNode array => new TypeRef.FixedArray(Parse(array.Element, resolvingAliases, currentModuleName), array.Length),
             FunctionTypeSyntaxNode function => new TypeRef.Function(
                 function.Parameters
-                    .Select(parameter => Parse(parameter, new HashSet<string>(resolvingAliases, StringComparer.Ordinal)))
+                    .Select(parameter => Parse(
+                        parameter,
+                        new HashSet<(string ModuleName, string Name)>(resolvingAliases),
+                        currentModuleName))
                     .ToList(),
-                Parse(function.ReturnType, resolvingAliases),
+                Parse(function.ReturnType, resolvingAliases, currentModuleName),
                 function.IsVariadic),
             _ => new TypeRef.Unknown(),
         };
 
-    private TypeRef ParseNamedSyntax(NamedTypeSyntaxNode named, HashSet<string> resolvingAliases)
+    private TypeRef ParseNamedSyntax(
+        NamedTypeSyntaxNode named,
+        HashSet<(string ModuleName, string Name)> resolvingAliases,
+        string currentModuleName)
     {
         if (string.IsNullOrWhiteSpace(named.Name))
         {
@@ -116,25 +159,85 @@ internal sealed class TypeRefParser(ProgramNode program)
             return new TypeRef.Null();
         }
 
-        if (!_aliasNodes.TryGetValue(named.Name, out var targetType))
+        var lookup = _declarations.LookupTypeFromModule(
+            currentModuleName,
+            new TypeRef.Named(named.Name, []));
+        if (!TrySelectAlias(
+                lookup,
+                out var alias,
+                out var declaredModuleName))
         {
             return new TypeRef.Named(named.Name, []);
         }
 
-        if (!resolvingAliases.Add(named.Name))
+        var aliasModuleName =
+            declaredModuleName
+            ?? alias.Semantic.ModuleName
+            ?? currentModuleName;
+        var aliasIdentity = (aliasModuleName, named.Name);
+        if (!resolvingAliases.Add(aliasIdentity))
         {
             return new TypeRef.Named(named.Name, []);
         }
 
-        var target = ParseAliasTarget(named.Name, targetType, resolvingAliases);
-        resolvingAliases.Remove(named.Name);
+        var target = ParseAliasTarget(
+            alias.TargetTypeNode,
+            resolvingAliases,
+            aliasModuleName);
+        resolvingAliases.Remove(aliasIdentity);
         return new TypeRef.Alias(named.Name, target);
     }
 
+    private static bool TrySelectAlias(
+        ProgramTypeDeclarationLookup lookup,
+        out TypeAliasNode alias,
+        out string? moduleName)
+    {
+        if (lookup
+            is ProgramTypeDeclarationLookup.Found
+            {
+                Declaration: TypeAliasNode foundAlias,
+                ModuleName: var foundModuleName,
+            })
+        {
+            alias = foundAlias;
+            moduleName = foundModuleName;
+            return true;
+        }
+
+        if (lookup
+            is ProgramTypeDeclarationLookup.Ambiguous
+            {
+                Declarations: var declarations,
+            }
+            && declarations.All(
+                declaration =>
+                    declaration is TypeAliasNode
+                    {
+                        IsHeaderDeclaration: true,
+                        TargetTypeNode: not null,
+                    })
+            && declarations
+                .Cast<TypeAliasNode>()
+                .Select(declaration =>
+                    declaration.TargetTypeNode!.Syntax)
+                .Distinct()
+                .Count() == 1)
+        {
+            alias = (TypeAliasNode)declarations[0];
+            moduleName = alias.Semantic.ModuleName;
+            return true;
+        }
+
+        alias = null!;
+        moduleName = null;
+        return false;
+    }
+
     private TypeRef ParseAliasTarget(
-        string aliasName,
         TypeNode? targetType,
-        HashSet<string> resolvingAliases)
+        HashSet<(string ModuleName, string Name)> resolvingAliases,
+        string currentModuleName)
     {
         if (targetType is null || string.IsNullOrWhiteSpace(targetType.ToSourceText()))
         {
@@ -146,16 +249,26 @@ internal sealed class TypeRefParser(ProgramNode program)
             return semanticType;
         }
 
-        return Parse(targetType.Syntax, resolvingAliases);
+        return Parse(
+            targetType.Syntax,
+            resolvingAliases,
+            currentModuleName);
     }
 
-    private TypeRef ParseGenericSyntax(GenericTypeSyntaxNode generic, HashSet<string> resolvingAliases)
+    private TypeRef ParseGenericSyntax(
+        GenericTypeSyntaxNode generic,
+        HashSet<(string ModuleName, string Name)> resolvingAliases,
+        string currentModuleName)
     {
         var name = TypeSyntaxFormatter.ToCxString(generic.Target);
         return new TypeRef.Named(
             name,
             generic.Arguments
-                .Select(argument => Parse(argument, new HashSet<string>(resolvingAliases, StringComparer.Ordinal)))
+                .Select(argument => Parse(
+                    argument,
+                    new HashSet<(string ModuleName, string Name)>(
+                        resolvingAliases),
+                    currentModuleName))
                 .ToList());
     }
 
@@ -224,7 +337,8 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
 
         if (target is TypeRef.Named targetNamed && source is TypeRef.Named sourceNamed)
         {
-            if (IsIntegerCompatible(targetNamed.Name) && IsIntegerCompatible(sourceNamed.Name))
+            if (IsIntegerCompatible(targetNamed)
+                && IsIntegerCompatible(sourceNamed))
             {
                 return true;
             }
@@ -296,10 +410,9 @@ internal sealed class TypeCompatibility(TypeRefParser parser)
         return type;
     }
 
-    private bool IsIntegerCompatible(string name)
-    {
-        return BuiltinTypes.IsNumeric(name) || parser.IsEnumName(name);
-    }
+    private bool IsIntegerCompatible(TypeRef.Named type) =>
+        BuiltinTypes.IsNumeric(type.Name)
+        || parser.IsEnum(type);
 
     private static TypeRef UnwrapConst(TypeRef type) =>
         type is TypeRef.Const constType ? constType.Element : type;

@@ -28,6 +28,11 @@ internal static class CompilerTestHelpers
         CEmissionOptions? emissionOptions = null) =>
         new CxCompiler().CompileToC(sources, nameManglerOptions, emissionOptions);
 
+    public static CompilationVerifier VerifyCompilation(
+        string source,
+        string path = "main.cx") =>
+        new(Compile(source, path));
+
     public static ProgramNode Parse(string source, string path = "main.cx")
     {
         var diagnostics = new DiagnosticBag();
@@ -83,4 +88,26 @@ internal static class CompilerTestHelpers
             diagnostics.HasErrors,
             string.Join(Environment.NewLine, diagnostics.Diagnostics.Select(diagnostic => diagnostic.ToString())));
     }
+}
+
+internal sealed class CompilationVerifier(CompilationResult result)
+{
+    public CompilationResult Result => result;
+
+    public void SucceedsWith(params string[] outputFragments)
+    {
+        CompilerTestHelpers.AssertSuccess(result);
+        foreach (var fragment in outputFragments)
+        {
+            Assert.Contains(
+                fragment,
+                result.Output,
+                StringComparison.Ordinal);
+        }
+    }
+
+    public void FailsWith(params string[] diagnosticFragments) =>
+        CompilerTestHelpers.AssertDiagnosticContains(
+            result,
+            diagnosticFragments);
 }

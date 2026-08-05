@@ -676,6 +676,68 @@ public sealed class MacroExpansionPassTests
     }
 
     [Fact]
+    public void ExpandProgram_AssignsInvocationModuleToGeneratedDeclaration()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            macro Generate() -> declarations {
+                fn generated() -> int {
+                    return 1;
+                }
+            }
+
+            use Generate();
+            """,
+            "shared.cx");
+        var invocation = Assert.Single(
+            program.Declarations
+                .OfType<MacroInvocationDeclarationNode>());
+        invocation.Semantic.ModuleName = "lib.caller";
+        var diagnostics = new DiagnosticBag();
+
+        var expanded = new MacroExpansionPass(
+            diagnostics,
+            program).RewriteProgram(program);
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+        Assert.Equal(
+            "lib.caller",
+            Assert.Single(expanded.Functions)
+                .Semantic.ModuleName);
+    }
+
+    [Fact]
+    public void CollisionValidation_UsesDeclarationOwnershipWithinOneFile()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn same() -> int {
+                return 1;
+            }
+
+            fn same() -> int {
+                return 2;
+            }
+            """,
+            "shared.cx");
+        var first = program.Functions[0];
+        var generated = program.Functions[1];
+        first.Semantic.ModuleName = "lib.first";
+        generated.Semantic.ModuleName = "lib.second";
+        generated.GeneratedFrom =
+            new GeneratedSyntaxOrigin(
+                generated.Span!,
+                generated.Span);
+        var diagnostics = new DiagnosticBag();
+
+        new GeneratedDeclarationCollisionValidator(
+            diagnostics,
+            program).Validate();
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
     public void CompileToC_ReportsGeneratedExtensionMethodCollidingWithOwnedMethod()
     {
         var result = CompilerTestHelpers.Compile(

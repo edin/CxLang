@@ -8,20 +8,27 @@ namespace Cx.Compiler.Semantic.Analyzers;
 
 internal sealed class ModuleVisibilityAnalyzer(
     DiagnosticBag diagnostics,
-    IReadOnlyList<ProgramNode> availablePrograms)
+    IReadOnlyList<ModuleUnit> availableUnits)
 {
     private readonly ModuleSymbolIndex _modules =
-        ModuleSymbolIndex.From(availablePrograms);
+        ModuleSymbolIndex.From(availableUnits);
 
-    public void Analyze(IReadOnlyList<ProgramNode> userPrograms)
+    public void Analyze(
+        IReadOnlyList<ModuleUnit> userUnits)
     {
-        foreach (var group in userPrograms.GroupBy(program => program.Module?.Name ?? string.Empty, StringComparer.Ordinal))
+        foreach (var group in userUnits.GroupBy(
+            unit => unit.Name,
+            StringComparer.Ordinal))
         {
             var module = group.Key;
-            var visibility = _modules.VisibilityFor(module, group);
-            foreach (var program in group)
+            var visibility = _modules.VisibilityFor(
+                module,
+                group);
+            foreach (var unit in group)
             {
-                AnalyzeProgram(program, visibility);
+                AnalyzeProgram(
+                    unit.Program,
+                    visibility);
             }
         }
     }

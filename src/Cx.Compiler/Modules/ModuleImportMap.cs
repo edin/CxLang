@@ -19,19 +19,19 @@ internal sealed class ModuleImportMap
     }
 
     public static ModuleImportMap Create(
-        IReadOnlyList<ProgramNode> programs,
+        IReadOnlyList<ModuleUnit> units,
         IReadOnlySet<string> visibleModules)
     {
-        var visiblePrograms = programs
-            .Where(program => ModuleProgramFacts.IsVisibleProgram(
-                program,
+        var visibleUnits = units
+            .Where(unit => ModuleProgramFacts.IsVisibleUnit(
+                unit,
                 visibleModules))
             .ToList();
 
         return new(
-            BuildAliases(visiblePrograms),
-            BuildSymbolImports(visiblePrograms),
-            BuildUnaliasedModules(visiblePrograms));
+            BuildAliases(visibleUnits),
+            BuildSymbolImports(visibleUnits),
+            BuildUnaliasedModules(visibleUnits));
     }
 
     public bool IsUnaliased(string moduleName) =>
@@ -46,9 +46,9 @@ internal sealed class ModuleImportMap
         _symbols.TryGetValue(moduleName, out symbols!);
 
     private static IReadOnlyDictionary<string, string> BuildAliases(
-        IReadOnlyList<ProgramNode> programs) =>
-        programs
-            .SelectMany(program => program.Imports
+        IReadOnlyList<ModuleUnit> units) =>
+        units
+            .SelectMany(unit => unit.Imports
                 .Where(import => import.Alias is not null)
                 .Select(import => (import.ModuleName, Alias: import.Alias!)))
             .GroupBy(item => item.ModuleName, StringComparer.Ordinal)
@@ -58,18 +58,18 @@ internal sealed class ModuleImportMap
                 StringComparer.Ordinal);
 
     private static IReadOnlySet<string> BuildUnaliasedModules(
-        IReadOnlyList<ProgramNode> programs) =>
-        programs
-            .SelectMany(program => program.Imports
+        IReadOnlyList<ModuleUnit> units) =>
+        units
+            .SelectMany(unit => unit.Imports
                 .Where(import => import.Alias is null)
                 .Select(import => import.ModuleName))
             .Append("std.core")
             .ToHashSet(StringComparer.Ordinal);
 
     private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>
-        BuildSymbolImports(IReadOnlyList<ProgramNode> programs) =>
-        programs
-            .SelectMany(program => program.SymbolImports.SelectMany(import =>
+        BuildSymbolImports(IReadOnlyList<ModuleUnit> units) =>
+        units
+            .SelectMany(unit => unit.SymbolImports.SelectMany(import =>
                 import.Symbols.Select(symbol => new
                 {
                     import.ModuleName,

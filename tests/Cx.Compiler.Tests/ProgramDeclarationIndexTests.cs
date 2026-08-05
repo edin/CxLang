@@ -133,4 +133,138 @@ public sealed class ProgramDeclarationIndexTests
 
         Assert.IsType<ProgramDeclarationLookup<RequirementNode>.Found>(lookup);
     }
+
+    [Fact]
+    public void CompileTimeReflection_UsesDeclarationOwnershipWithinOneFile()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn first() -> int {
+                return 1;
+            }
+
+            fn second() -> int {
+                return 2;
+            }
+            """,
+            "shared.cx");
+        program.Functions.Single(
+                function => function.Name == "first")
+            .Semantic.ModuleName = "lib.first";
+        program.Functions.Single(
+                function => function.Name == "second")
+            .Semantic.ModuleName = "lib.second";
+        var reflection =
+            new ProgramCompileTimeReflection(program);
+
+        Assert.True(reflection.TryGetModule(
+            "lib.first",
+            out var first));
+        Assert.True(reflection.TryGetModule(
+            "lib.second",
+            out var second));
+        Assert.Equal(
+            "first",
+            Assert.IsType<FunctionNode>(
+                Assert.Single(first.Functions)).Name);
+        Assert.Equal(
+            "second",
+            Assert.IsType<FunctionNode>(
+                Assert.Single(second.Functions)).Name);
+        var secondFunction = program.Functions.Single(
+            function => function.Name == "second");
+        var secondValue = Assert.IsType<ReturnStatement>(
+            Assert.Single(secondFunction.Body))
+            .Expression!;
+        Assert.True(
+            reflection.TryGetModuleForSyntax(
+                secondValue,
+                out var reflectedOwner));
+        Assert.Equal(
+            "lib.second",
+            reflectedOwner.Name);
+    }
+
+    [Fact]
+    public void NamespaceLookups_ApplyLocalPrecedenceAcrossDeclarationKinds()
+    {
+        var first = CompilerTestHelpers.Parse(
+            """
+            module lib.first;
+
+            struct Service {}
+
+            requires Marker<T> {}
+            """,
+            "first.cx");
+        var second = CompilerTestHelpers.Parse(
+            """
+            module lib.second;
+
+            interface Service {}
+
+            interface Marker {}
+            """,
+            "second.cx");
+        var program = first with
+        {
+            Declarations = first.Declarations
+                .Concat(second.Declarations)
+                .ToList(),
+        };
+        var modules = new Dictionary<string, string>(
+            StringComparer.Ordinal)
+        {
+            ["first.cx"] = "lib.first",
+            ["second.cx"] = "lib.second",
+        };
+        var index = ProgramDeclarationIndex.Create(
+            program,
+            modules);
+
+        var typeLookup =
+            index.LookupTypeFromModule(
+                "lib.second",
+                new TypeRef.Named("Service", []));
+        var requirementLookup =
+            index.LookupRequirementFromModule(
+                "lib.second",
+                "Marker");
+
+        var service = Assert.IsType<
+            ProgramTypeDeclarationLookup.Found>(
+            typeLookup);
+        Assert.IsType<InterfaceNode>(
+            service.Declaration);
+        Assert.Equal("lib.second", service.ModuleName);
+        Assert.IsType<
+            ProgramDeclarationLookup<RequirementNode>.Missing>(
+            requirementLookup.Requirement);
+        Assert.IsType<
+            ProgramDeclarationLookup<InterfaceNode>.Found>(
+            requirementLookup.Interface);
+    }
+
+    [Fact]
+    public void TypeNamespaceLookup_PreservesCrossKindAmbiguity()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Value {}
+
+            enum Value {
+                Item
+            }
+            """);
+        var index = ProgramDeclarationIndex.Create(program);
+
+        var lookup = index.LookupTypeFromModule(
+            string.Empty,
+            new TypeRef.Named("Value", []));
+
+        var ambiguous = Assert.IsType<
+            ProgramTypeDeclarationLookup.Ambiguous>(
+            lookup);
+        Assert.Equal(2, ambiguous.Declarations.Count);
+    }
 }

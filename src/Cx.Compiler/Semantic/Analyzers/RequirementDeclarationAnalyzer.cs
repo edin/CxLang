@@ -74,27 +74,13 @@ internal sealed class RequirementDeclarationAnalyzer(
         bool allowInferredTypeArguments,
         string currentModuleName)
     {
-        var localRequirement =
-            declarations.LookupInModule<RequirementNode>(
+        var namespaceLookup =
+            declarations.LookupRequirementFromModule(
                 currentModuleName,
                 reference.Name);
-        var localInterface =
-            declarations.LookupInModule<InterfaceNode>(
-                currentModuleName,
-                reference.Name);
-        var hasLocalDeclaration =
-            localRequirement
-                is not ProgramDeclarationLookup<RequirementNode>.Missing
-            || localInterface
-                is not ProgramDeclarationLookup<InterfaceNode>.Missing;
-        var requirementLookup = hasLocalDeclaration
-            ? localRequirement
-            : declarations.Lookup<RequirementNode>(
-                reference.Name);
-        var interfaceLookup = hasLocalDeclaration
-            ? localInterface
-            : declarations.Lookup<InterfaceNode>(
-                reference.Name);
+        var requirementLookup =
+            namespaceLookup.Requirement;
+        var interfaceLookup = namespaceLookup.Interface;
         if (requirementLookup
             is ProgramDeclarationLookup<RequirementNode>.Ambiguous ambiguousRequirements)
         {

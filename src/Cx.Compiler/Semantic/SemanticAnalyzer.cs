@@ -135,7 +135,8 @@ public sealed class SemanticAnalyzer(
             var functionModuleName = DeclaringModuleName(
                 function,
                 program);
-            var effectiveGenericConstraints = GetEffectiveGenericConstraints(program, function);
+            var effectiveGenericConstraints =
+                GetEffectiveGenericConstraints(function);
             requirementDeclarations.AnalyzeGenericConstraints(
                 function.TypeParameters,
                 effectiveGenericConstraints,
@@ -237,19 +238,17 @@ public sealed class SemanticAnalyzer(
     }
 
     private IReadOnlyList<GenericConstraintNode> GetEffectiveGenericConstraints(
-        ProgramNode program,
         FunctionNode function)
     {
         var constraints = new List<GenericConstraintNode>();
-        var ownerType = OwnerType(function);
-        if (ownerType is not null)
+        var ownerType = TypeRefOrUnknown(
+            function.OwnerTypeNode);
+        if (ownerType is not TypeRef.Unknown
+            && _typeSystem?.ResolveDefinition(ownerType).Symbol
+                is TypeSymbol.Struct structSymbol)
         {
-            var owner = program.Structs.FirstOrDefault(structNode =>
-                string.Equals(structNode.Name, ownerType, StringComparison.Ordinal));
-            if (owner is not null)
-            {
-                constraints.AddRange(owner.GenericConstraints);
-            }
+            constraints.AddRange(
+                structSymbol.Declaration.GenericConstraints);
         }
 
         constraints.AddRange(function.GenericConstraints);

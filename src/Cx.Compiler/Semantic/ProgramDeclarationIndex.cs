@@ -1,4 +1,5 @@
 using Cx.Compiler.Source;
+using Cx.Compiler.Modules;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -29,6 +30,23 @@ internal abstract record ProgramDeclarationLookup<T>
     }
 }
 
+internal abstract record ProgramTypeDeclarationLookup
+{
+    public sealed record Found(
+        TopLevelNode Declaration,
+        string? ModuleName) : ProgramTypeDeclarationLookup;
+
+    public sealed record Missing : ProgramTypeDeclarationLookup;
+
+    public sealed record Ambiguous(
+        IReadOnlyList<TopLevelNode> Declarations) :
+        ProgramTypeDeclarationLookup;
+}
+
+internal sealed record ProgramRequirementNamespaceLookup(
+    ProgramDeclarationLookup<RequirementNode> Requirement,
+    ProgramDeclarationLookup<InterfaceNode> Interface);
+
 /// <summary>
 /// Typed inventory for named, non-callable declarations in one projected
 /// program. Function and method lookup remains owned by <see cref="FunctionCatalog"/>.
@@ -57,6 +75,15 @@ internal sealed class ProgramDeclarationIndex
     public static ProgramDeclarationIndex Create(
         ProgramNode program,
         IReadOnlyDictionary<string, string>? moduleNamesByPath = null)
+        => Create(
+            program,
+            ModuleOwnership.Create(
+                program,
+                moduleNamesByPath));
+
+    public static ProgramDeclarationIndex Create(
+        ProgramNode program,
+        ModuleOwnership moduleOwnership)
     {
         var byName = new Dictionary<
             (Type Type, string Name),
@@ -74,10 +101,9 @@ internal sealed class ProgramDeclarationIndex
 
             Add(byName, (declaration.GetType(), name), declaration);
 
-            var moduleName = GetModuleName(
-                declaration,
-                program,
-                moduleNamesByPath);
+            var moduleName =
+                moduleOwnership.GetDeclarationModuleName(
+                    declaration);
             Add(
                 byModuleAndName,
                 (declaration.GetType(), moduleName, SimpleName(name)),
@@ -146,6 +172,56 @@ internal sealed class ProgramDeclarationIndex
             ? LookupNamed<T>(named)
             : LookupFromModule<T>(currentModuleName, named.Name);
 
+    public ProgramTypeDeclarationLookup LookupTypeFromModule(
+        string currentModuleName,
+        TypeRef.Named named)
+    {
+        if (named.ModuleName is not null)
+        {
+            return ToTypeLookup(
+                TypeDeclarationsInModule(
+                    named.ModuleName,
+                    named.Name),
+                named.ModuleName);
+        }
+
+        var local = TypeDeclarationsInModule(
+            currentModuleName,
+            named.Name);
+        return local.Count > 0
+            ? ToTypeLookup(local, currentModuleName)
+            : ToTypeLookup(
+                TypeDeclarations(named.Name),
+                moduleName: null);
+    }
+
+    public ProgramRequirementNamespaceLookup
+        LookupRequirementFromModule(
+            string currentModuleName,
+            string name)
+    {
+        var localRequirement =
+            LookupInModule<RequirementNode>(
+                currentModuleName,
+                name);
+        var localInterface =
+            LookupInModule<InterfaceNode>(
+                currentModuleName,
+                name);
+        var hasLocalDeclaration =
+            localRequirement
+                is not ProgramDeclarationLookup<RequirementNode>.Missing
+            || localInterface
+                is not ProgramDeclarationLookup<InterfaceNode>.Missing;
+        return hasLocalDeclaration
+            ? new ProgramRequirementNamespaceLookup(
+                localRequirement,
+                localInterface)
+            : new ProgramRequirementNamespaceLookup(
+                Lookup<RequirementNode>(name),
+                Lookup<InterfaceNode>(name));
+    }
+
     private static ProgramDeclarationLookup<T> ToLookup<T>(
         IReadOnlyList<TopLevelNode> declarations)
         where T : TopLevelNode =>
@@ -156,6 +232,52 @@ internal sealed class ProgramDeclarationIndex
             _ => new ProgramDeclarationLookup<T>.Ambiguous(
                 declarations.Cast<T>().ToList()),
         };
+
+    private IReadOnlyList<TopLevelNode>
+        TypeDeclarationsInModule(
+            string moduleName,
+            string name) =>
+        TypeDeclarationTypes
+            .SelectMany(type =>
+                _declarationsByModuleAndName
+                    .GetValueOrDefault(
+                        (type, moduleName, SimpleName(name)))
+                ?? [])
+            .ToList();
+
+    private IReadOnlyList<TopLevelNode> TypeDeclarations(
+        string name) =>
+        TypeDeclarationTypes
+            .SelectMany(type =>
+                _declarationsByName.GetValueOrDefault(
+                    (type, name))
+                ?? [])
+            .ToList();
+
+    private static ProgramTypeDeclarationLookup ToTypeLookup(
+        IReadOnlyList<TopLevelNode> declarations,
+        string? moduleName) =>
+        declarations.Count switch
+        {
+            0 => new ProgramTypeDeclarationLookup.Missing(),
+            1 => new ProgramTypeDeclarationLookup.Found(
+                declarations[0],
+                moduleName
+                ?? declarations[0].Semantic.ModuleName),
+            _ => new ProgramTypeDeclarationLookup.Ambiguous(
+                declarations),
+        };
+
+    private static IReadOnlyList<Type>
+        TypeDeclarationTypes { get; } =
+        [
+            typeof(TypeAliasNode),
+            typeof(StructNode),
+            typeof(TypeAdapterNode),
+            typeof(InterfaceNode),
+            typeof(TaggedUnionNode),
+            typeof(EnumNode),
+        ];
 
     private static void Add<TKey>(
         IDictionary<TKey, List<TopLevelNode>> declarations,
@@ -218,24 +340,6 @@ internal sealed class ProgramDeclarationIndex
         declarations.ToDictionary(
             item => item.Key,
             item => (IReadOnlyList<TopLevelNode>)item.Value.ToArray());
-
-    private static string GetModuleName(
-        TopLevelNode declaration,
-        ProgramNode program,
-        IReadOnlyDictionary<string, string>? moduleNamesByPath)
-    {
-        if (!string.IsNullOrWhiteSpace(declaration.Semantic.ModuleName))
-        {
-            return declaration.Semantic.ModuleName;
-        }
-
-        return moduleNamesByPath is not null
-            && moduleNamesByPath.TryGetValue(
-                declaration.Location.File.Path,
-                out var moduleName)
-                ? moduleName
-                : program.Module?.Name ?? string.Empty;
-    }
 
     private static string SimpleName(string name)
     {

@@ -5,25 +5,34 @@ namespace Cx.Compiler.Modules;
 internal static class ModuleProgramProjector
 {
     public static ProgramNode Project(
-        IEnumerable<ProgramNode> programs,
-        ProgramNode rootProgram)
+        IEnumerable<ModuleUnit> units,
+        ModuleUnit rootUnit)
     {
-        var allPrograms = programs.ToList();
+        var allUnits = units.ToList();
+        foreach (var unit in allUnits)
+        {
+            unit.AnnotateOwnership();
+        }
+
         var visibleModules = ModuleProgramFacts.SelectVisibleModules(
-            allPrograms,
-            rootProgram);
-        var imports = ModuleImportMap.Create(allPrograms, visibleModules);
-        var projectedPrograms = allPrograms
-            .Where(program => ModuleProgramFacts.IsVisibleProgram(
-                program,
+            allUnits,
+            rootUnit);
+        var imports = ModuleImportMap.Create(
+            allUnits,
+            visibleModules);
+        var projectedPrograms = allUnits
+            .Where(unit => ModuleProgramFacts.IsVisibleUnit(
+                unit,
                 visibleModules))
-            .Select(program => ImportedProgramRewriter.Rewrite(
-                program,
+            .Select(unit => ImportedProgramRewriter.Rewrite(
+                unit,
                 imports,
-                rootProgram))
+                rootUnit))
             .ToList();
 
-        return Merge(rootProgram, projectedPrograms);
+        return Merge(
+            rootUnit.Program,
+            projectedPrograms);
     }
 
     private static ProgramNode Merge(

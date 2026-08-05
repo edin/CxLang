@@ -67,6 +67,12 @@ public sealed record ProgramNode(
         init => Declarations = ReplaceSingle(Declarations, value);
     }
 
+    public IReadOnlyList<ModuleBlockNode> ModuleBlocks
+    {
+        get => Declarations.OfType<ModuleBlockNode>().ToList();
+        init => Declarations = ReplaceAll(Declarations, value);
+    }
+
     public IReadOnlyList<ImportNode> Imports
     {
         get => Declarations.OfType<ImportNode>().ToList();

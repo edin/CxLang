@@ -275,7 +275,9 @@ internal static class CompileTimeFunctionReferenceFacts
         SyntaxNode function,
         CompileTimePropertyContext context)
     {
-        if (!context.Reflection.TryGetModuleForFile(function.Location.File.Path, out var module))
+        if (!context.Reflection.TryGetModuleForSyntax(
+                function,
+                out var module))
         {
             context.Diagnostics.Report(
                 context.Location,

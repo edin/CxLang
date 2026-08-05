@@ -1,5 +1,6 @@
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Lowering;
+using Cx.Compiler.Modules;
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
@@ -21,7 +22,9 @@ internal interface ICompileTimeReflection
 
     bool TryGetModule(string name, out ReflectedModule module);
 
-    bool TryGetModuleForFile(string path, out ReflectedModule module);
+    bool TryGetModuleForSyntax(
+        SyntaxNode syntax,
+        out ReflectedModule module);
 
     bool TryGetOwnerType(FunctionNode function, out TypeRef ownerType);
 
@@ -123,7 +126,9 @@ internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
         return false;
     }
 
-    public bool TryGetModuleForFile(string path, out ReflectedModule module)
+    public bool TryGetModuleForSyntax(
+        SyntaxNode syntax,
+        out ReflectedModule module)
     {
         module = null!;
         return false;
@@ -189,6 +194,8 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
     private readonly RequirementMatcher _requirementMatcher;
     private readonly TypeSystem _typeSystem;
     private readonly IReadOnlyDictionary<string, string> _moduleNamesByPath;
+    private readonly IReadOnlySet<string> _moduleNames;
+    private readonly ModuleOwnership _moduleOwnership;
     private readonly ProgramDeclarationIndex _declarations;
 
     public ProgramCompileTimeReflection(
@@ -199,9 +206,17 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         _typeRefParser = new TypeRefParser(program);
         _moduleNamesByPath = moduleNamesByPath
             ?? BuildFallbackModuleMap(program);
-        _declarations = ProgramDeclarationIndex.Create(
+        _moduleOwnership = ModuleOwnership.Create(
             program,
             _moduleNamesByPath);
+        _moduleNames = program.Declarations
+            .Select(_moduleOwnership
+                .GetDeclarationModuleName)
+            .Concat(_moduleNamesByPath.Values)
+            .ToHashSet(StringComparer.Ordinal);
+        _declarations = ProgramDeclarationIndex.Create(
+            program,
+            _moduleOwnership);
         _requirementMatcher = new RequirementMatcher(
             program,
             _declarations);
@@ -210,7 +225,7 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
 
     public bool TryGetModule(string name, out ReflectedModule module)
     {
-        if (!_moduleNamesByPath.Values.Contains(name, StringComparer.Ordinal))
+        if (!_moduleNames.Contains(name))
         {
             module = null!;
             return false;
@@ -220,17 +235,12 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         return true;
     }
 
-    public bool TryGetModuleForFile(string path, out ReflectedModule module)
-    {
-        if (!_moduleNamesByPath.TryGetValue(path, out var moduleName))
-        {
-            module = null!;
-            return false;
-        }
-
-        module = BuildModule(moduleName);
-        return true;
-    }
+    public bool TryGetModuleForSyntax(
+        SyntaxNode syntax,
+        out ReflectedModule module) =>
+        TryGetModule(
+            _moduleOwnership.GetModuleName(syntax),
+            out module);
 
     public bool IsAvailable => true;
 
@@ -582,8 +592,10 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
     }
 
     private bool IsInModule(SyntaxNode syntax, string moduleName) =>
-        _moduleNamesByPath.TryGetValue(syntax.Location.File.Path, out var declaredModule)
-        && string.Equals(declaredModule, moduleName, StringComparison.Ordinal);
+        string.Equals(
+            _moduleOwnership.GetModuleName(syntax),
+            moduleName,
+            StringComparison.Ordinal);
 
     private static ReflectedModuleType? ToReflectedType(
         TopLevelNode declaration,

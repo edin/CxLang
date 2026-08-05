@@ -1,5 +1,6 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Modules;
+using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.CompileTime;
@@ -20,11 +21,13 @@ internal sealed class CompileTimeFunctionRegistry
     private readonly CompileTimeModuleContext _modules;
     private readonly CompileTimeSymbolResolver<CompileTimeFunctionSymbol> _resolver;
     private readonly CompileTimeScriptTypeRegistry _types;
+    private readonly ModuleOwnership? _moduleOwnership;
 
     private CompileTimeFunctionRegistry(
         IReadOnlyList<CompileTimeFunctionSymbol> functions,
         CompileTimeModuleContext modules,
-        CompileTimeScriptTypeRegistry types)
+        CompileTimeScriptTypeRegistry types,
+        ModuleOwnership? moduleOwnership)
     {
         _functions = functions;
         _modules = modules;
@@ -32,13 +35,15 @@ internal sealed class CompileTimeFunctionRegistry
             functions,
             modules);
         _types = types;
+        _moduleOwnership = moduleOwnership;
     }
 
     public static CompileTimeFunctionRegistry Empty { get; } =
         new(
             [],
             CompileTimeModuleContext.Empty,
-            CompileTimeScriptTypeRegistry.Default);
+            CompileTimeScriptTypeRegistry.Default,
+            moduleOwnership: null);
 
     public static CompileTimeFunctionRegistry Create(
         ProgramNode program,
@@ -55,7 +60,8 @@ internal sealed class CompileTimeFunctionRegistry
         return new CompileTimeFunctionRegistry(
             functions,
             moduleContext,
-            types ?? CompileTimeScriptTypeRegistry.Default);
+            types ?? CompileTimeScriptTypeRegistry.Default,
+            ModuleOwnership.Create(program));
     }
 
     public CompileTimeScriptTypeRegistry Types => _types;
@@ -65,8 +71,14 @@ internal sealed class CompileTimeFunctionRegistry
     public string ModuleFor(FunctionNode function) =>
         _modules.ModuleFor(function);
 
-    public string ModuleForPath(string path) =>
-        _modules.ModuleForPath(path);
+    public string ModuleFor(SyntaxNode syntax) =>
+        _moduleOwnership is not null
+        && _moduleOwnership.TryGetOwnedModuleName(
+            syntax,
+            out var moduleName)
+            ? moduleName
+            : _modules.ModuleForPath(
+                syntax.Location.File.Path);
 
     public CompileTimeSymbolLookup<CompileTimeFunctionSymbol> Lookup(
         string requestedName,
@@ -267,6 +279,8 @@ internal sealed class CompileTimeFunctionRegistry
 internal sealed class CompileTimeModuleContext
 {
     private readonly IReadOnlyDictionary<string, string> _moduleNamesByPath;
+    private readonly IReadOnlyDictionary<SourceIdentity, string>
+        _modulesByDeclaration;
     private readonly IReadOnlyDictionary<SourceIdentity, TopLevelNode>
         _originalDeclarations;
     private readonly IReadOnlyDictionary<string, ModuleImports> _importsByModule;
@@ -274,11 +288,13 @@ internal sealed class CompileTimeModuleContext
 
     private CompileTimeModuleContext(
         IReadOnlyDictionary<string, string> moduleNamesByPath,
+        IReadOnlyDictionary<SourceIdentity, string> modulesByDeclaration,
         IReadOnlyDictionary<SourceIdentity, TopLevelNode> originalDeclarations,
         IReadOnlyDictionary<string, ModuleImports> importsByModule,
         IReadOnlySet<string> moduleNames)
     {
         _moduleNamesByPath = moduleNamesByPath;
+        _modulesByDeclaration = modulesByDeclaration;
         _originalDeclarations = originalDeclarations;
         _importsByModule = importsByModule;
         _moduleNames = moduleNames;
@@ -291,12 +307,9 @@ internal sealed class CompileTimeModuleContext
         IReadOnlyDictionary<string, string>? moduleNamesByPath = null)
     {
         var paths = moduleNamesByPath
-            ?? programs
-                .GroupBy(program => program.Location.File.Path, StringComparer.Ordinal)
-                .ToDictionary(
-                    group => group.Key,
-                    group => ModuleProgramFacts.GetModuleName(group.Last()),
-                    StringComparer.Ordinal);
+            ?? ModuleProgramFacts
+                .BuildUnambiguousModuleNamesByPath(
+                    ModuleUnit.FromPrograms(programs));
         var originalDeclarations = programs
             .SelectMany(program => program.Declarations.Select(declaration => new
             {
@@ -309,18 +322,67 @@ internal sealed class CompileTimeModuleContext
             .ToDictionary(
                 group => group.Key,
                 group => group.First().Value);
-        var imports = programs
-            .GroupBy(ModuleProgramFacts.GetModuleName, StringComparer.Ordinal)
+        var modulesByDeclaration = programs
+            .SelectMany(program =>
+            {
+                var ownership = ModuleOwnership.Create(
+                    program,
+                    paths);
+                return program.Declarations.Select(
+                    declaration => new
+                    {
+                        Key = new SourceIdentity(
+                            declaration.Location.File.Path,
+                            declaration.Location.Position),
+                        Module = ownership
+                            .GetDeclarationModuleName(
+                                declaration),
+                    });
+            })
+            .GroupBy(item => item.Key)
             .ToDictionary(
                 group => group.Key,
-                group => ModuleImports.Create(group),
+                group => group
+                    .Select(item => item.Module)
+                    .Distinct(StringComparer.Ordinal)
+                    .Single());
+        var ownedImports = programs
+            .SelectMany(program =>
+            {
+                var ownership = ModuleOwnership.Create(
+                    program,
+                    paths);
+                return program.Declarations
+                    .Where(declaration => declaration
+                        is ImportNode
+                        or SymbolImportNode)
+                    .Select(declaration => new
+                    {
+                        Module = ownership
+                            .GetDeclarationModuleName(
+                                declaration),
+                        Declaration = declaration,
+                    });
+            })
+            .ToList();
+        var imports = ownedImports
+            .GroupBy(
+                item => item.Module,
+                StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => ModuleImports.Create(
+                    group.Select(item =>
+                        item.Declaration)),
                 StringComparer.Ordinal);
         var modules = programs
             .Select(ModuleProgramFacts.GetModuleName)
+            .Concat(modulesByDeclaration.Values)
             .Append("std.core")
             .ToHashSet(StringComparer.Ordinal);
         return new CompileTimeModuleContext(
             paths,
+            modulesByDeclaration,
             originalDeclarations,
             imports,
             modules);
@@ -345,10 +407,27 @@ internal sealed class CompileTimeModuleContext
         return false;
     }
 
-    public string ModuleFor(TopLevelNode declaration) =>
-        declaration.GeneratedFrom is { } generated
-            ? ModuleForPath(generated.InvocationSpan.Location.File.Path)
-            : ModuleForPath(declaration.Location.File.Path);
+    public string ModuleFor(TopLevelNode declaration)
+    {
+        if (!string.IsNullOrWhiteSpace(
+            declaration.Semantic.ModuleName))
+        {
+            return declaration.Semantic.ModuleName;
+        }
+
+        if (declaration.GeneratedFrom is { } generated)
+        {
+            return ModuleForPath(
+                generated.InvocationSpan.Location.File.Path);
+        }
+
+        var source = new SourceIdentity(
+            declaration.Location.File.Path,
+            declaration.Location.Position);
+        return _modulesByDeclaration.GetValueOrDefault(
+            source,
+            ModuleForPath(declaration.Location.File.Path));
+    }
 
     public string ModuleForPath(string path) =>
         _moduleNamesByPath.GetValueOrDefault(path, string.Empty);
@@ -455,25 +534,28 @@ internal sealed class CompileTimeModuleContext
             new Dictionary<string, string>(StringComparer.Ordinal),
             new Dictionary<string, ImportedCompileTimeSymbol>(StringComparer.Ordinal));
 
-        public static ModuleImports Create(IEnumerable<ProgramNode> programs)
+        public static ModuleImports Create(
+            IEnumerable<TopLevelNode> declarations)
         {
-            var programList = programs.ToList();
+            var declarationList =
+                declarations.ToList();
+            var imports = declarationList
+                .OfType<ImportNode>()
+                .ToList();
             return new ModuleImports(
-                programList
-                    .SelectMany(program => program.Imports)
+                imports
                     .Where(import => import.Alias is null)
                     .Select(import => import.ModuleName)
                     .ToHashSet(StringComparer.Ordinal),
-                programList
-                    .SelectMany(program => program.Imports)
+                imports
                     .Where(import => import.Alias is not null)
                     .GroupBy(import => import.Alias!, StringComparer.Ordinal)
                     .ToDictionary(
                         group => group.Key,
                         group => group.Last().ModuleName,
                         StringComparer.Ordinal),
-                programList
-                    .SelectMany(program => program.SymbolImports)
+                declarationList
+                    .OfType<SymbolImportNode>()
                     .SelectMany(import => import.Symbols.Select(symbol => new
                     {
                         VisibleName = symbol.Alias ?? symbol.Name,
