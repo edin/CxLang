@@ -92,7 +92,8 @@ internal sealed record ResolvedMethod(
 internal sealed class ResolvedTypeMemberResolver(
     ProgramNode program,
     ProgramDeclarationIndex? declarationIndex = null,
-    string? currentModuleName = null)
+    string? currentModuleName = null,
+    FunctionCatalog? functionCatalog = null)
 {
     private readonly TypeRefParser _parser = new(program);
     private readonly GenericConstraintMatcher _genericConstraintMatcher = new(program);
@@ -100,6 +101,8 @@ internal sealed class ResolvedTypeMemberResolver(
         declarationIndex ?? ProgramDeclarationIndex.Create(program);
     private readonly string _currentModuleName =
         currentModuleName ?? program.Module?.Name ?? string.Empty;
+    private readonly FunctionCatalog? _functionCatalog =
+        functionCatalog;
     private readonly Dictionary<string, TypeResolver>
         _typeResolversByModule = new(StringComparer.Ordinal);
 
@@ -163,15 +166,25 @@ internal sealed class ResolvedTypeMemberResolver(
                         pair => pair.Second,
                         StringComparer.Ordinal),
             };
-        var methods = methodOwner.Methods
-            .Concat(program.Extensions
-                .Where(extension =>
-                    HasOwnerName(extension.TargetTypeNode, methodOwner.Name)
-                    && ExtensionConstraintsSatisfied(extension, methodType))
-                .SelectMany(extension => extension.Methods))
-            .Concat(program.Functions.Where(function =>
-                HasOwnerName(function.OwnerTypeNode, methodOwner.Name)))
-            .Distinct((IEqualityComparer<FunctionNode>)ReferenceEqualityComparer.Instance)
+        var methods = ResolveCatalogMethods(methodType.Type)
+            ?? methodOwner.Methods
+                .Concat(program.Extensions
+                    .Where(extension =>
+                        HasOwnerName(
+                            extension.TargetTypeNode,
+                            methodOwner.Name)
+                        && ExtensionConstraintsSatisfied(
+                            extension,
+                            methodType))
+                    .SelectMany(extension => extension.Methods))
+                .Concat(program.Functions.Where(function =>
+                    HasOwnerName(
+                        function.OwnerTypeNode,
+                        methodOwner.Name)))
+                .Distinct(
+                    (IEqualityComparer<FunctionNode>)
+                    ReferenceEqualityComparer.Instance);
+        methods = methods
             .Where(method => FunctionConstraintsSatisfied(method, methodType));
         return methods
             .Select(method => ResolveMethod(
@@ -191,13 +204,21 @@ internal sealed class ResolvedTypeMemberResolver(
             return [];
         }
 
-        return program.Extensions
-            .Where(extension =>
-                HasOwnerName(extension.TargetTypeNode, ownerName)
-                && ExtensionConstraintsSatisfied(extension, type))
-            .SelectMany(extension => extension.Methods)
-            .Concat(program.Functions.Where(function =>
-                HasOwnerName(function.OwnerTypeNode, ownerName)))
+        var methods = ResolveCatalogMethods(type.Type)
+            ?? program.Extensions
+                .Where(extension =>
+                    HasOwnerName(
+                        extension.TargetTypeNode,
+                        ownerName)
+                    && ExtensionConstraintsSatisfied(
+                        extension,
+                        type))
+                .SelectMany(extension => extension.Methods)
+                .Concat(program.Functions.Where(function =>
+                    HasOwnerName(
+                        function.OwnerTypeNode,
+                        ownerName)));
+        return methods
             .Where(method => FunctionConstraintsSatisfied(method, type))
             .Select(method => ResolveMethod(method, type.Type, type.Substitutions))
             .GroupBy(ResolvedMethodIdentity, StringComparer.Ordinal)
@@ -288,6 +309,15 @@ internal sealed class ResolvedTypeMemberResolver(
         return $"{method.Declaration.IsStatic}:{method.Name}({parameters})->{TypeIdentity.SpecializationKey(method.ReturnType)}";
     }
 
+    private IEnumerable<FunctionNode>? ResolveCatalogMethods(
+        TypeRef receiverType) =>
+        _functionCatalog?.Query(
+                new FunctionQuery
+                {
+                    ReceiverType = receiverType,
+                })
+            .Select(symbol => symbol.Declaration);
+
     private ResolvedMethod ResolveMethod(
         FunctionNode method,
         TypeRef ownerType,
@@ -321,14 +351,16 @@ internal sealed class ResolvedTypeMemberResolver(
         ExtensionNode extension,
         ResolvedType type)
     {
-        if (extension.TypeParameters.Count != type.Substitutions.Count)
+        if (extension.TypeParameters.Count
+            != type.Substitutions.Count)
         {
             return extension.GenericConstraints.Count == 0;
         }
 
         foreach (var constraint in extension.GenericConstraints)
         {
-            if (!type.Substitutions.ContainsKey(constraint.TypeParameter))
+            if (!type.Substitutions.ContainsKey(
+                constraint.TypeParameter))
             {
                 return false;
             }
@@ -380,13 +412,20 @@ internal sealed class ResolvedTypeMemberResolver(
         type switch
         {
             TypeRef.Alias alias => GetOwnerName(alias.Target),
-            TypeRef.Const constType => GetOwnerName(constType.Element),
+            TypeRef.Const constType =>
+                GetOwnerName(constType.Element),
             TypeRef.Named named => named.Name,
             _ => null,
         };
 
-    private bool HasOwnerName(TypeNode? ownerTypeNode, string ownerName) =>
-        string.Equals(GetOwnerName(ownerTypeNode.ToTypeRef(_parser)), ownerName, StringComparison.Ordinal);
+    private bool HasOwnerName(
+        TypeNode? ownerTypeNode,
+        string ownerName) =>
+        string.Equals(
+            GetOwnerName(ownerTypeNode.ToTypeRef(_parser)),
+            ownerName,
+            StringComparison.Ordinal);
+
 }
 
 internal sealed class TypeResolver(
@@ -454,38 +493,78 @@ internal sealed class TypeResolver(
         var lookupScope = ResolveLookupScope(named);
         if (FindStruct(named.Name, lookupScope) is { } structNode)
         {
-            return new ResolvedType(
+            var resolvedType = WithDeclarationModule(
                 named,
+                structNode,
+                lookupScope);
+            return new ResolvedType(
+                resolvedType,
                 new TypeSymbol.Struct(named.Name, structNode),
-                BuildSubstitutions(structNode.TypeParameters, named.Arguments));
+                BuildSubstitutions(
+                    structNode.TypeParameters,
+                    resolvedType.Arguments));
         }
 
         if (FindTypeAdapter(named.Name, lookupScope) is { } adapter)
         {
-            return new ResolvedType(
+            var resolvedType = WithDeclarationModule(
                 named,
+                adapter,
+                lookupScope);
+            return new ResolvedType(
+                resolvedType,
                 new TypeSymbol.Adapter(named.Name, adapter),
-                BuildSubstitutions(adapter.TypeParameters, named.Arguments));
+                BuildSubstitutions(
+                    adapter.TypeParameters,
+                    resolvedType.Arguments));
         }
 
         if (FindInterface(named.Name, lookupScope) is { } interfaceNode)
         {
-            return new ResolvedType(named, new TypeSymbol.Interface(named.Name, interfaceNode), EmptySubstitutions());
+            return new ResolvedType(
+                WithDeclarationModule(
+                    named,
+                    interfaceNode,
+                    lookupScope),
+                new TypeSymbol.Interface(
+                    named.Name,
+                    interfaceNode),
+                EmptySubstitutions());
         }
 
         if (FindTaggedUnion(named.Name, lookupScope) is { } taggedUnion)
         {
-            return new ResolvedType(named, new TypeSymbol.TaggedUnion(named.Name, taggedUnion), EmptySubstitutions());
+            return new ResolvedType(
+                WithDeclarationModule(
+                    named,
+                    taggedUnion,
+                    lookupScope),
+                new TypeSymbol.TaggedUnion(
+                    named.Name,
+                    taggedUnion),
+                EmptySubstitutions());
         }
 
         if (FindEnum(named.Name, lookupScope) is { } enumNode)
         {
-            return new ResolvedType(named, new TypeSymbol.Enum(named.Name, enumNode), EmptySubstitutions());
+            return new ResolvedType(
+                WithDeclarationModule(
+                    named,
+                    enumNode,
+                    lookupScope),
+                new TypeSymbol.Enum(named.Name, enumNode),
+                EmptySubstitutions());
         }
 
         if (FindTypeAlias(named.Name, lookupScope) is { } alias)
         {
-            return new ResolvedType(named, new TypeSymbol.Alias(named.Name, alias), EmptySubstitutions());
+            return new ResolvedType(
+                WithDeclarationModule(
+                    named,
+                    alias,
+                    lookupScope),
+                new TypeSymbol.Alias(named.Name, alias),
+                EmptySubstitutions());
         }
 
         return new ResolvedType(
@@ -586,6 +665,19 @@ internal sealed class TypeResolver(
         where T : TopLevelNode =>
         _declarations.LookupInModule<T>(moduleName, name)
             is not ProgramDeclarationLookup<T>.Missing;
+
+    private static TypeRef.Named WithDeclarationModule(
+        TypeRef.Named named,
+        TopLevelNode declaration,
+        TypeLookupScope scope) =>
+        named.ModuleName is not null
+            ? named
+            : named with
+            {
+                ModuleName =
+                    declaration.Semantic.ModuleName
+                    ?? scope.ModuleName,
+            };
 
     private sealed record TypeLookupScope(string? ModuleName);
 

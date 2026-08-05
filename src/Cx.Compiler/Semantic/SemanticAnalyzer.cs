@@ -41,10 +41,12 @@ public sealed class SemanticAnalyzer(
         _declarationIndex = ProgramDeclarationIndex.Create(program);
         _typeSystem = new TypeSystem(
             program,
-            declarationIndex: _declarationIndex);
+            declarationIndex: _declarationIndex,
+            functionCatalog: FunctionCatalog);
         _requirementMatcher = new RequirementMatcher(
             program,
-            _declarationIndex);
+            _declarationIndex,
+            functionCatalog: FunctionCatalog);
         _expressionTypeResolver = new ExpressionTypeResolver(
             program,
             functionCatalog: FunctionCatalog,
@@ -101,8 +103,6 @@ public sealed class SemanticAnalyzer(
         var typeRefParser = _typeRefParser ?? throw new InvalidOperationException("Semantic analyzer has no TypeRef parser.");
         var globalTypeEnvironment = BuildGlobalTypeEnvironment(program.GlobalVariables);
         AnalyzeDataEnums(program, globalTypeEnvironment);
-        var returnFlow = new ReturnFlowAnalyzer(program, _expressionTypeResolver);
-        var definiteAssignment = new DefiniteAssignmentAnalyzer(diagnostics, program, _expressionTypeResolver, returnFlow);
         AnalyzeImplicitConversionDeclarations(program, typeRefParser);
         new OperatorDeclarationAnalyzer(
             diagnostics,
@@ -193,6 +193,15 @@ public sealed class SemanticAnalyzer(
             _matchAnalyzer = CreateMatchAnalyzer();
             _foreachAnalyzer = CreateForeachAnalyzer();
             _expressionAnalyzer = CreateExpressionAnalyzer();
+            var returnFlow = new ReturnFlowAnalyzer(
+                _declarationIndex,
+                functionModuleName,
+                _expressionTypeResolver);
+            var definiteAssignment =
+                new DefiniteAssignmentAnalyzer(
+                    diagnostics,
+                    program,
+                    returnFlow);
 
             var functionReturnType = TypeRefOrUnknown(function.ReturnTypeNode);
             if (function.OwnerTypeNode is not null)

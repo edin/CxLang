@@ -158,7 +158,8 @@ internal sealed class FunctionCatalog
             var receiverType = ResolveReceiverType(
                 candidate.Function,
                 candidate.FallbackReceiverType,
-                typeRefParser);
+                typeRefParser,
+                candidate.DeclaringModule);
             var symbol = new FunctionSymbol(
                 new FunctionId(symbols.Count),
                 candidate.Function.Name,
@@ -194,7 +195,8 @@ internal sealed class FunctionCatalog
             var receiverType = ResolveReceiverType(
                 function.Declaration,
                 function.ReceiverType,
-                typeRefParser);
+                typeRefParser,
+                function.DeclaringModule);
             function.RefreshTypes(
                 receiverType,
                 CreateSignature(
@@ -374,7 +376,10 @@ internal sealed class FunctionCatalog
             switch (declaration)
             {
                 case FunctionNode function:
-                    yield return new FunctionCandidate(function, null, fallbackModule);
+                    yield return new FunctionCandidate(
+                        function,
+                        null,
+                        ModuleName(function, fallbackModule));
                     break;
 
                 case StructNode structNode:
@@ -430,13 +435,18 @@ internal sealed class FunctionCatalog
 
                 case ExtensionNode extension:
                 {
-                    var ownerType = extension.TargetTypeNode.ToTypeRef(typeRefParser);
+                    var extensionModule =
+                        ModuleName(extension, fallbackModule);
+                    var ownerType = QualifyReceiverType(
+                        extension.TargetTypeNode.ToTypeRef(
+                            typeRefParser),
+                        extensionModule);
                     foreach (var method in extension.Methods)
                     {
                         yield return new FunctionCandidate(
                             method,
                             ownerType,
-                            ModuleName(extension, fallbackModule));
+                            extensionModule);
                     }
 
                     break;
@@ -448,16 +458,32 @@ internal sealed class FunctionCatalog
     private static TypeRef? ResolveReceiverType(
         FunctionNode function,
         TypeRef? fallbackReceiverType,
-        TypeRefParser typeRefParser)
+        TypeRefParser typeRefParser,
+        string declaringModule)
     {
         if (function.OwnerTypeNode?.Semantic.Type is { } resolvedOwnerType)
         {
             return resolvedOwnerType;
         }
 
-        return fallbackReceiverType
+        var receiverType = fallbackReceiverType
             ?? function.OwnerTypeNode?.ToTypeRef(typeRefParser);
+        return receiverType is null
+            ? null
+            : QualifyReceiverType(
+                receiverType,
+                declaringModule);
     }
+
+    private static TypeRef QualifyReceiverType(
+        TypeRef receiverType,
+        string declaringModule) =>
+        receiverType is TypeRef.Named
+        {
+            ModuleName: null,
+        } named
+            ? named with { ModuleName = declaringModule }
+            : receiverType;
 
     private static FunctionSignature CreateSignature(
         FunctionNode function,

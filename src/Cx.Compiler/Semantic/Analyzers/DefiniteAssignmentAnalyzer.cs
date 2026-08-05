@@ -8,7 +8,6 @@ namespace Cx.Compiler.Semantic.Analyzers;
 internal sealed class DefiniteAssignmentAnalyzer(
     DiagnosticBag diagnostics,
     ProgramNode program,
-    ExpressionTypeResolver expressionTypeResolver,
     ReturnFlowAnalyzer returnFlow)
 {
     private readonly TypeRefParser _typeRefParser = new(program);
@@ -457,36 +456,10 @@ internal sealed class DefiniteAssignmentAnalyzer(
 
     private bool IsSwitchExhaustive(
         SwitchStatement switchStatement,
-        TypeEnvironment variables)
-    {
-        var expressionType = expressionTypeResolver.ResolveTypeRef(switchStatement.Expression, variables);
-        var enumType = TypeRefFacts.GetBaseName(expressionType);
-        if (enumType is null)
-        {
-            return false;
-        }
-
-        var enumNode = program.Enums.FirstOrDefault(node =>
-            string.Equals(node.Name, enumType, StringComparison.Ordinal));
-        if (enumNode is null || enumNode.Members.Count == 0)
-        {
-            return false;
-        }
-
-        var covered = switchStatement.Cases
-            .Select(switchCase => GetSwitchCaseMemberName(switchCase.Pattern))
-            .Where(name => name is not null)
-            .ToHashSet(StringComparer.Ordinal);
-        return enumNode.Members.All(member => covered.Contains(member.Name));
-    }
-
-    private static string? GetSwitchCaseMemberName(ExpressionNode pattern) =>
-        pattern switch
-        {
-            NameExpressionNode name => name.Name,
-            MemberExpressionNode member => member.MemberName,
-            _ => null,
-        };
+        TypeEnvironment variables) =>
+        returnFlow.IsSwitchExhaustive(
+            switchStatement,
+            variables);
 
     private IEnumerable<(string Name, TypeRef Type)> CollectLocalVariables(
         IEnumerable<StatementNode> statements) =>

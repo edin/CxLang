@@ -28,7 +28,8 @@ public sealed class RequirementMatcher
     internal RequirementMatcher(
         ProgramNode program,
         ProgramDeclarationIndex declarations,
-        IReadOnlyList<StructNode>? concreteStructs = null)
+        IReadOnlyList<StructNode>? concreteStructs = null,
+        FunctionCatalog? functionCatalog = null)
     {
         _program = program;
         _typeRefParser = new TypeRefParser(program);
@@ -37,7 +38,8 @@ public sealed class RequirementMatcher
             declarationIndex: declarations);
         _memberResolver = new ResolvedTypeMemberResolver(
             program,
-            declarations);
+            declarations,
+            functionCatalog: functionCatalog);
         _declarations = declarations;
         _currentModuleName = program.Module?.Name ?? string.Empty;
         _operatorCapabilities = new OperatorCapabilityResolver(

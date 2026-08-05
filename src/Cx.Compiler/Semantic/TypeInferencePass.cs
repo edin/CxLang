@@ -39,7 +39,8 @@ internal sealed class TypeInferencePass(
             declarationIndex: _declarationIndex);
         _typeSystem = new TypeSystem(
             program,
-            declarationIndex: _declarationIndex);
+            declarationIndex: _declarationIndex,
+            functionCatalog: FunctionCatalog);
         var globalVariables = InferGlobalVariables(program.GlobalVariables);
         var programWithGlobals = program with { GlobalVariables = globalVariables };
         _program = programWithGlobals;
@@ -53,7 +54,8 @@ internal sealed class TypeInferencePass(
             declarationIndex: _declarationIndex);
         _typeSystem = new TypeSystem(
             programWithGlobals,
-            declarationIndex: _declarationIndex);
+            declarationIndex: _declarationIndex,
+            functionCatalog: FunctionCatalog);
         _globalTypeEnvironment = BuildGlobalTypeEnvironment(globalVariables);
 
         return programWithGlobals with

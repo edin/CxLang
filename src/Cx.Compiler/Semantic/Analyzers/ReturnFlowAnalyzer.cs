@@ -3,7 +3,10 @@ using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Semantic.Analyzers;
 
-internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeResolver expressionTypeResolver)
+internal sealed class ReturnFlowAnalyzer(
+    ProgramDeclarationIndex declarations,
+    string currentModuleName,
+    ExpressionTypeResolver expressionTypeResolver)
 {
     public bool StatementsAlwaysReturn(
         IReadOnlyList<StatementNode> statements,
@@ -105,7 +108,7 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
         && (switchStatement.DefaultBody.Count == 0 || StatementsAlwaysReturn(switchStatement.DefaultBody, variables))
         && switchStatement.Cases.All(switchCase => StatementsAlwaysReturn(switchCase.Body, variables));
 
-    private bool IsSwitchExhaustive(
+    public bool IsSwitchExhaustive(
         SwitchStatement switchStatement,
         TypeEnvironment variables)
     {
@@ -115,14 +118,18 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
 
     private bool IsSwitchExhaustive(SwitchStatement switchStatement, TypeRef? expressionType)
     {
-        var enumType = TypeRefFacts.GetBaseName(expressionType);
-        if (enumType is null)
+        if (!TypeRefFacts.TryGetNamed(
+            expressionType,
+            out var enumType))
         {
             return false;
         }
 
-        var enumNode = program.Enums.FirstOrDefault(node =>
-            string.Equals(node.Name, enumType, StringComparison.Ordinal));
+        var enumNode = declarations
+            .LookupNamedFromModule<EnumNode>(
+                currentModuleName,
+                enumType)
+            .Unique();
         if (enumNode is null || enumNode.Members.Count == 0)
         {
             return false;
@@ -151,14 +158,18 @@ internal sealed class ReturnFlowAnalyzer(ProgramNode program, ExpressionTypeReso
 
     private TaggedUnionNode? ResolveTaggedUnion(TypeRef? expressionType)
     {
-        var normalizedType = TypeRefFacts.GetBaseName(expressionType);
-        if (normalizedType is null)
+        if (!TypeRefFacts.TryGetNamed(
+            expressionType,
+            out var namedType))
         {
             return null;
         }
 
-        return program.TaggedUnions.FirstOrDefault(union =>
-            string.Equals(union.Name, normalizedType, StringComparison.Ordinal));
+        return declarations
+            .LookupNamedFromModule<TaggedUnionNode>(
+                currentModuleName,
+                namedType)
+            .Unique();
     }
 
     private static bool IsMatchExhaustive(MatchStatement matchStatement, TaggedUnionNode? taggedUnion)

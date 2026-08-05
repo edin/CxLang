@@ -602,7 +602,9 @@ public sealed class IndexedSemanticAnalyzerTests
             new ResolvedTypeMemberResolver(
                 program,
                 declarations,
-                currentModuleName: "lib.first");
+                currentModuleName: "lib.first",
+                functionCatalog:
+                    FunctionCatalog.Build(program));
         var adapterType = typeResolver.ResolveDefinition(
             new TypeRef.Named(
                 "View",
@@ -627,6 +629,220 @@ public sealed class IndexedSemanticAnalyzerTests
             Assert.IsType<ResolvedMethodTarget.Exposed>(
                 method.Target)
                 .Adapter.Semantic.ModuleName);
+    }
+
+    [Fact]
+    public void MemberResolver_UsesExtensionsAndOwnerFunctionsForResolvedModule()
+    {
+        var (program, modules) = CreateProgram(
+            """
+            module lib.first;
+
+            struct Gadget {}
+
+            extension Gadget {
+                fn extended() -> int {
+                    return 1;
+                }
+            }
+
+            fn Gadget.owned(self: Gadget*) -> int {
+                return 1;
+            }
+            """,
+            """
+            module lib.second;
+
+            struct Gadget {}
+
+            extension Gadget {
+                fn extended() -> bool {
+                    return true;
+                }
+            }
+
+            fn Gadget.owned(self: Gadget*) -> bool {
+                return true;
+            }
+            """);
+        var declarations = ProgramDeclarationIndex.Create(
+            program,
+            modules);
+        var catalog = FunctionCatalog.Build(program);
+        var typeResolver = new TypeResolver(
+            program,
+            declarationIndex: declarations,
+            currentModuleName: "lib.second");
+        var memberResolver =
+            new ResolvedTypeMemberResolver(
+                program,
+                declarations,
+                functionCatalog: catalog);
+        var gadgetType = typeResolver.ResolveDefinition(
+            new TypeRef.Named(
+                "Gadget",
+                [],
+                "lib.second"));
+
+        var methods = memberResolver.GetMethods(gadgetType);
+
+        var extended = Assert.Single(
+            methods,
+            candidate => candidate.Name == "extended");
+        var owned = Assert.Single(
+            methods,
+            candidate => candidate.Name == "owned");
+        Assert.Equal(
+            "bool",
+            TypeRefFormatter.ToCxString(
+                extended.ReturnType));
+        Assert.Equal(
+            "bool",
+            TypeRefFormatter.ToCxString(
+                owned.ReturnType));
+        Assert.All(
+            [extended, owned],
+            method => Assert.Equal(
+                "lib.second",
+                method.Declaration.Semantic.ModuleName));
+    }
+
+    [Fact]
+    public void ReturnFlow_UsesEnumAndUnionFromCurrentModule()
+    {
+        var (program, modules) = CreateProgram(
+            """
+            module lib.first;
+
+            enum State {
+                First,
+                Other
+            }
+
+            union Result {
+                First: int;
+                Other: int;
+            }
+            """,
+            """
+            module lib.second;
+
+            enum State {
+                Second
+            }
+
+            union Result {
+                Second: int;
+            }
+
+            fn choose(state: State) -> int {
+                switch (state) {
+                    case State.Second:
+                        return 1;
+                }
+            }
+
+            fn unwrap(result: Result) -> int {
+                match result {
+                    Second: value => {
+                        return value;
+                    }
+                }
+            }
+            """);
+        var declarations = ProgramDeclarationIndex.Create(
+            program,
+            modules);
+        var resolver = new ExpressionTypeResolver(
+            program,
+            declarationIndex: declarations);
+        var returnFlow = new ReturnFlowAnalyzer(
+            declarations,
+            "lib.second",
+            resolver);
+        var choose = Assert.Single(
+            program.Functions,
+            function => function.Name == "choose");
+        var unwrap = Assert.Single(
+            program.Functions,
+            function => function.Name == "unwrap");
+        var chooseEnvironment = new TypeEnvironment();
+        chooseEnvironment.Set(
+            "state",
+            new TypeRef.Named(
+                "State",
+                [],
+                "lib.second"));
+        var unwrapEnvironment = new TypeEnvironment();
+        unwrapEnvironment.Set(
+            "result",
+            new TypeRef.Named(
+                "Result",
+                [],
+                "lib.second"));
+
+        Assert.True(
+            returnFlow.StatementsAlwaysReturn(
+                choose.Body,
+                chooseEnvironment));
+        Assert.True(
+            returnFlow.StatementsAlwaysReturn(
+                unwrap.Body,
+                unwrapEnvironment));
+    }
+
+    [Fact]
+    public void DefiniteAssignment_UsesExhaustiveEnumFromFunctionModule()
+    {
+        var (program, modules) = CreateProgram(
+            """
+            module lib.first;
+
+            enum State {
+                First,
+                Other
+            }
+            """,
+            """
+            module lib.second;
+
+            enum State {
+                Second
+            }
+
+            fn inspect(state: State) -> int {
+                let value: int;
+                switch (state) {
+                    case State.Second:
+                        value = 1;
+                }
+                return value;
+            }
+            """);
+        var diagnostics = new DiagnosticBag();
+        var declarations = ProgramDeclarationIndex.Create(
+            program,
+            modules);
+        var resolver = new ExpressionTypeResolver(
+            program,
+            declarationIndex: declarations);
+        var returnFlow = new ReturnFlowAnalyzer(
+            declarations,
+            "lib.second",
+            resolver);
+        var analyzer = new DefiniteAssignmentAnalyzer(
+            diagnostics,
+            program,
+            returnFlow);
+        var function = Assert.Single(
+            program.Functions,
+            candidate => candidate.Name == "inspect");
+
+        analyzer.AnalyzeFunction(
+            function,
+            new TypeEnvironment());
+
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
 
     private static (

@@ -17,7 +17,8 @@ internal sealed class TypeSystem
         IReadOnlyList<string>? genericParameters = null,
         IReadOnlyList<StructNode>? concreteStructs = null,
         ProgramDeclarationIndex? declarationIndex = null,
-        string? currentModuleName = null)
+        string? currentModuleName = null,
+        FunctionCatalog? functionCatalog = null)
     {
         _program = program;
         var declarations =
@@ -31,13 +32,15 @@ internal sealed class TypeSystem
         _memberResolver = new ResolvedTypeMemberResolver(
             program,
             declarations,
-            currentModuleName);
+            currentModuleName,
+            functionCatalog);
         _requirementMatcher =
             new Lazy<RequirementMatcher>(() =>
                 new RequirementMatcher(
                     _program,
                     declarations,
-                    concreteStructs));
+                    concreteStructs,
+                    functionCatalog));
     }
 
     public ResolvedType Resolve(TypeRef type) =>

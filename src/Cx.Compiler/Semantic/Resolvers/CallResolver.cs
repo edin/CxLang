@@ -33,10 +33,16 @@ internal sealed class CallResolver(
     private readonly GenericConstraintMatcher _genericConstraintMatcher = new(
         program,
         currentGenericConstraints);
-    private readonly TypeSystem _typeSystem = new(program, currentTypeParameters);
+    private readonly TypeSystem _typeSystem = new(
+        program,
+        currentTypeParameters,
+        functionCatalog: functionCatalog);
     private readonly MethodCallResolver _methodCallResolver = new(
         program,
-        new TypeSystem(program, currentTypeParameters));
+        new TypeSystem(
+            program,
+            currentTypeParameters,
+            functionCatalog: functionCatalog));
     private readonly FunctionCatalog _functionCatalog =
         functionCatalog ?? FunctionCatalog.Build(program);
     private readonly Dictionary<string, List<ExternFunctionNode>> _externFunctionsByName = program.ExternFunctions
