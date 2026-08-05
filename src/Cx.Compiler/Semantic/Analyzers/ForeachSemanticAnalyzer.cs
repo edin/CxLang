@@ -10,7 +10,8 @@ internal sealed record ForeachAnalysisResult(
 
 internal sealed class ForeachSemanticAnalyzer(
     DiagnosticBag diagnostics,
-    ProgramNode program,
+    ProgramDeclarationIndex declarations,
+    string currentModuleName,
     TypeSystem typeSystem,
     TypeCompatibility typeCompatibility,
     ExpressionTypeResolver expressionTypeResolver,
@@ -151,7 +152,9 @@ internal sealed class ForeachSemanticAnalyzer(
             return false;
         }
 
-        var enumNode = program.Enums.FirstOrDefault(candidate => candidate.IsDataEnum && candidate.Name == name);
+        var enumNode = declarations
+            .LookupFromModule<EnumNode>(currentModuleName, name)
+            .Unique(candidate => candidate.IsDataEnum);
         if (enumNode is null)
         {
             return false;

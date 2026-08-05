@@ -8,7 +8,8 @@ internal sealed record MatchArmBinding(MatchArmNode Arm, TypeRef? Type);
 
 internal sealed class MatchSemanticAnalyzer(
     DiagnosticBag diagnostics,
-    ProgramNode program,
+    ProgramDeclarationIndex declarations,
+    string currentModuleName,
     ExpressionTypeResolver expressionTypeResolver,
     TypeRefParser typeRefParser,
     Func<string, bool> isKnownTypeName)
@@ -18,17 +19,17 @@ internal sealed class MatchSemanticAnalyzer(
         TypeEnvironment typeEnvironment)
     {
         var matchExpressionType = expressionTypeResolver.ResolveTypeRef(matchStatement.Expression, typeEnvironment);
+        var resolvedTaggedUnion = ResolveMatchedTaggedUnion(
+            matchExpressionType);
         TaggedUnionNode? matchedTaggedUnion = null;
         InterfaceNode? matchedInterface = null;
-        var matchedTypeName = TypeRefFacts.GetBaseName(matchExpressionType);
-        if (matchedTypeName is not null
-            && program.TaggedUnions.FirstOrDefault(union => union.Name == matchedTypeName) is { IsRaw: true })
+        if (resolvedTaggedUnion is { IsRaw: true })
         {
             diagnostics.Report(
                 matchStatement.Location,
                 $"Cannot pattern match raw union type '{TypeRefFormatter.ToCxString(matchExpressionType!)}'.");
         }
-        else if (ResolveMatchedTaggedUnion(matchExpressionType) is { } taggedUnion)
+        else if (resolvedTaggedUnion is { } taggedUnion)
         {
             matchedTaggedUnion = taggedUnion;
             AnalyzeTaggedUnionMatchArms(matchStatement, taggedUnion);
@@ -59,9 +60,16 @@ internal sealed class MatchSemanticAnalyzer(
             return variant.TypeNode.ToTypeRef(typeRefParser);
         }
 
-        if (matchedInterface is not null && InterfaceImplementationExists(arm.Pattern, matchedInterface.Name))
+        if (matchedInterface is not null
+            && ResolveInterfaceImplementation(
+                arm.Pattern,
+                matchedInterface) is { } implementation)
         {
-            return new TypeRef.Pointer(new TypeRef.Named(arm.Pattern, []));
+            return new TypeRef.Pointer(
+                new TypeRef.Named(
+                    implementation.Name,
+                    [],
+                    implementation.Semantic.ModuleName));
         }
 
         return null;
@@ -134,26 +142,30 @@ internal sealed class MatchSemanticAnalyzer(
 
     private TaggedUnionNode? ResolveMatchedTaggedUnion(TypeRef? matchExpressionType)
     {
-        var normalizedType = TypeRefFacts.GetBaseName(matchExpressionType);
-        if (normalizedType is null)
+        if (!TypeRefFacts.TryGetNamed(
+            matchExpressionType,
+            out var namedType))
         {
             return null;
         }
 
-        return program.TaggedUnions.FirstOrDefault(union =>
-            string.Equals(union.Name, normalizedType, StringComparison.Ordinal));
+        return declarations
+            .LookupNamed<TaggedUnionNode>(namedType)
+            .Unique();
     }
 
     private InterfaceNode? ResolveMatchedInterface(TypeRef? matchExpressionType)
     {
-        var normalizedType = TypeRefFacts.GetBaseName(matchExpressionType);
-        if (normalizedType is null)
+        if (!TypeRefFacts.TryGetNamed(
+            matchExpressionType,
+            out var namedType))
         {
             return null;
         }
 
-        return program.Interfaces.FirstOrDefault(interfaceNode =>
-            string.Equals(interfaceNode.Name, normalizedType, StringComparison.Ordinal));
+        return declarations
+            .LookupNamed<InterfaceNode>(namedType)
+            .Unique();
     }
 
     private void AnalyzeInterfaceMatchArms(MatchStatement matchStatement, InterfaceNode interfaceNode)
@@ -166,7 +178,9 @@ internal sealed class MatchSemanticAnalyzer(
                 continue;
             }
 
-            if (!InterfaceImplementationExists(arm.Pattern, interfaceNode.Name))
+            if (ResolveInterfaceImplementation(
+                arm.Pattern,
+                interfaceNode) is null)
             {
                 var message = isKnownTypeName(arm.Pattern)
                     ? $"Type '{arm.Pattern}' does not implement interface '{interfaceNode.Name}'."
@@ -186,10 +200,22 @@ internal sealed class MatchSemanticAnalyzer(
         }
     }
 
-    private bool InterfaceImplementationExists(string structName, string interfaceName) =>
-        program.Structs.Any(structNode =>
-            string.Equals(structNode.Name, structName, StringComparison.Ordinal)
-            && structNode.Requirements.Any(requirement =>
-                string.Equals(requirement.Name, interfaceName, StringComparison.Ordinal)));
+    private StructNode? ResolveInterfaceImplementation(
+        string structName,
+        InterfaceNode interfaceNode)
+    {
+        var structNode = declarations
+            .LookupFromModule<StructNode>(
+                currentModuleName,
+                structName)
+            .Unique();
+        return structNode?.Requirements.Any(requirement =>
+            string.Equals(
+                requirement.Name,
+                interfaceNode.Name,
+                StringComparison.Ordinal)) == true
+                ? structNode
+                : null;
+    }
 
 }

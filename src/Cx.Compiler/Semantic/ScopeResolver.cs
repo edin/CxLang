@@ -11,6 +11,7 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     private FunctionCatalog? _functionCatalog;
     private CallResolver? _callResolver;
     private TypeRefParser? _typeRefParser;
+    private ProgramDeclarationIndex? _declarationIndex;
     private ProgramNode? _program;
     private GenericConstraintMatcher? _genericConstraintMatcher;
     private string _currentModuleName = string.Empty;
@@ -19,9 +20,11 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
     {
         _program = program;
         _functionCatalog = model.GetOrCreateFunctionCatalog(program);
+        _declarationIndex = model.GetOrCreateDeclarationIndex(program);
         var expressionTypeResolver = new ExpressionTypeResolver(
             program,
-            functionCatalog: FunctionCatalog);
+            functionCatalog: FunctionCatalog,
+            declarationIndex: DeclarationIndex);
         _callResolver = new CallResolver(
             program,
             expressionTypeResolver.ResolveTypeRef,
@@ -135,7 +138,8 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
             Program,
             function.TypeParameters,
             function.GenericConstraints,
-            FunctionCatalog);
+            FunctionCatalog,
+            DeclarationIndex);
         _callResolver = new CallResolver(
             Program,
             expressionTypeResolver.ResolveTypeRef,
@@ -839,6 +843,11 @@ internal sealed class ScopeResolver(DiagnosticBag diagnostics, SemanticModel mod
 
     private ProgramNode Program =>
         _program ?? throw new InvalidOperationException("Scope resolver has no program.");
+
+    private ProgramDeclarationIndex DeclarationIndex =>
+        _declarationIndex
+        ?? throw new InvalidOperationException(
+            "Scope resolver has no declaration index.");
 
     private GenericConstraintMatcher GenericConstraintMatcher =>
         _genericConstraintMatcher

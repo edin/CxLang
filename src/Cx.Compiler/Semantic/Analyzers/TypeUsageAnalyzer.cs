@@ -7,6 +7,7 @@ namespace Cx.Compiler.Semantic.Analyzers;
 internal sealed class TypeUsageAnalyzer(
     DiagnosticBag diagnostics,
     ProgramNode program,
+    ProgramDeclarationIndex declarations,
     RequirementMatcher requirementMatcher,
     Func<string, bool> isKnownTypeName,
     Func<string, string?> findAliasSuggestionForType,
@@ -18,7 +19,8 @@ internal sealed class TypeUsageAnalyzer(
     public void Analyze(
         TypeNode? typeNode,
         Location location,
-        IReadOnlyList<string> inScopeTypeParameters)
+        IReadOnlyList<string> inScopeTypeParameters,
+        string currentModuleName)
     {
         if (typeNode is null)
         {
@@ -29,14 +31,16 @@ internal sealed class TypeUsageAnalyzer(
             typeNode.Syntax,
             typeNode.ToTypeRef(_typeRefParser),
             location,
-            inScopeTypeParameters);
+            inScopeTypeParameters,
+            currentModuleName);
     }
 
     private void Analyze(
         TypeSyntaxNode? syntax,
         TypeRef type,
         Location location,
-        IReadOnlyList<string> inScopeTypeParameters)
+        IReadOnlyList<string> inScopeTypeParameters,
+        string currentModuleName)
     {
         foreach (var typeName in FindTypeNames(syntax)
             .Where(typeName => !inScopeTypeParameters.Contains(typeName, StringComparer.Ordinal))
@@ -63,16 +67,20 @@ internal sealed class TypeUsageAnalyzer(
 
         foreach (var use in FindGenericStructUses(type))
         {
-            var definition = program.Structs.FirstOrDefault(structNode =>
-                structNode.Name == use.Name
-                && structNode.TypeParameters.Count == use.Arguments.Count);
+            var definition = declarations
+                .LookupNamedFromModule<StructNode>(
+                    currentModuleName,
+                    use.Type)
+                .Unique(structNode =>
+                    structNode.TypeParameters.Count
+                    == use.Type.Arguments.Count);
             if (definition is null || definition.GenericConstraints.Count == 0)
             {
                 continue;
             }
 
             var substitutions = definition.TypeParameters
-                .Zip(use.Arguments)
+                .Zip(use.Type.Arguments)
                 .ToDictionary(pair => pair.First, pair => pair.Second, StringComparer.Ordinal);
             foreach (var constraint in definition.GenericConstraints)
             {
@@ -93,7 +101,13 @@ internal sealed class TypeUsageAnalyzer(
                         .Select(typeNode => typeNode.ToTypeRef(_typeRefParser))
                         .Select(argument => TypeRefRewriter.Substitute(argument, substitutions))
                         .ToList();
-                    var match = requirementMatcher.MatchTypeRefs(concreteTypeRef, requirement.Name, arguments);
+                    var match =
+                        requirementMatcher.MatchTypeRefsFromModule(
+                            concreteTypeRef,
+                            requirement.Name,
+                            definition.Semantic.ModuleName
+                                ?? currentModuleName,
+                            arguments);
                     if (match.Success)
                     {
                         continue;
@@ -107,7 +121,8 @@ internal sealed class TypeUsageAnalyzer(
         }
     }
 
-    private static IReadOnlyList<GenericStructUse> FindGenericStructUses(TypeRef type)
+    private static IReadOnlyList<GenericStructUse> FindGenericStructUses(
+        TypeRef type)
     {
         var uses = new List<GenericStructUse>();
         CollectGenericStructUses(type, uses);
@@ -132,7 +147,7 @@ internal sealed class TypeUsageAnalyzer(
             case TypeRef.Named named:
                 if (named.Arguments.Count > 0)
                 {
-                    uses.Add(new GenericStructUse(named.Name, named.Arguments));
+                    uses.Add(new GenericStructUse(named));
                 }
 
                 foreach (var argument in named.Arguments)
@@ -210,5 +225,5 @@ internal sealed class TypeUsageAnalyzer(
         TypeRefFacts.UnwrapAlias(type) is TypeRef.Named { Arguments.Count: 0 } named
         && inScopeTypeParameters.Contains(named.Name, StringComparer.Ordinal);
 
-    private sealed record GenericStructUse(string Name, IReadOnlyList<TypeRef> Arguments);
+    private sealed record GenericStructUse(TypeRef.Named Type);
 }

@@ -6,12 +6,15 @@ internal sealed class ExpressionTypeResolver(
     ProgramNode program,
     IReadOnlyList<string>? currentTypeParameters = null,
     IReadOnlyList<GenericConstraintNode>? currentGenericConstraints = null,
-    FunctionCatalog? functionCatalog = null)
+    FunctionCatalog? functionCatalog = null,
+    ProgramDeclarationIndex? declarationIndex = null)
 {
     private readonly IReadOnlyList<string> _currentTypeParameters = currentTypeParameters ?? [];
     private readonly IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = currentGenericConstraints ?? [];
     private readonly TypeSyntaxTypeRefConverter _typeSyntaxConverter = new(program);
     private readonly IntrinsicOperatorResolver _intrinsicOperators = new(program);
+    private readonly ProgramDeclarationIndex _declarations =
+        declarationIndex ?? ProgramDeclarationIndex.Create(program);
     private CallResolver? _callResolver;
     private BinaryOperatorResolver? _binaryOperatorResolver;
 
@@ -303,18 +306,21 @@ internal sealed class ExpressionTypeResolver(
             }
 
             var qualifiedName = ExpressionNameFacts.GetQualifiedName(member);
-            var global = program.GlobalVariables.FirstOrDefault(global =>
-                string.Equals(global.Name, qualifiedName, StringComparison.Ordinal));
+            var global = qualifiedName is null
+                ? null
+                : _declarations
+                    .Lookup<GlobalVariableNode>(qualifiedName)
+                    .Unique();
             return ResolveTypeNode(global?.TypeNode);
         }
 
         var normalizedType = TypeRefFacts.StripPointersAndAliases(targetType);
-        var normalizedTypeText = TypeRefFormatter.ToCxString(normalizedType);
-        var normalizedTypeName = TypeRefFacts.GetBaseName(normalizedType);
 
-        var dataEnum = program.Enums.FirstOrDefault(enumNode =>
-            enumNode.IsDataEnum
-            && string.Equals(enumNode.Name, normalizedTypeName, StringComparison.Ordinal));
+        var dataEnum = TypeRefFacts.TryGetNamed(normalizedType, out var namedType)
+            ? ResolveNamedDeclaration<EnumNode>(
+                namedType,
+                enumNode => enumNode.IsDataEnum)
+            : null;
         var dataField = dataEnum?.DataFields?.FirstOrDefault(field => field.Name == member.MemberName);
         if (dataField is not null)
         {
@@ -328,14 +334,18 @@ internal sealed class ExpressionTypeResolver(
             return ResolveTypeNode(field.TypeNode);
         }
 
-        var union = program.TaggedUnions.FirstOrDefault(union => union.Name == normalizedTypeName);
+        var union = TypeRefFacts.TryGetNamed(normalizedType, out namedType)
+            ? ResolveNamedDeclaration<TaggedUnionNode>(namedType)
+            : null;
         var variant = union?.Variants.FirstOrDefault(variant => variant.Name == member.MemberName);
         if (variant is not null)
         {
             return ResolveTypeNode(variant.TypeNode);
         }
 
-        var interfaceNode = program.Interfaces.FirstOrDefault(interfaceNode => interfaceNode.Name == normalizedTypeName);
+        var interfaceNode = TypeRefFacts.TryGetNamed(normalizedType, out namedType)
+            ? ResolveNamedDeclaration<InterfaceNode>(namedType)
+            : null;
         if (interfaceNode is not null)
         {
             if (member.MemberName == "state")
@@ -366,9 +376,10 @@ internal sealed class ExpressionTypeResolver(
             return null;
         }
 
-        var enumNode = program.Enums.FirstOrDefault(candidate =>
-            string.Equals(candidate.Name, enumName, StringComparison.Ordinal)
-            && candidate.Members.Any(enumMember => enumMember.Name == member.MemberName));
+        var enumNode = _declarations
+            .Lookup<EnumNode>(enumName)
+            .Unique(candidate => candidate.Members.Any(enumMember =>
+                enumMember.Name == member.MemberName));
         return enumNode is null
             ? null
             : new TypeRef.Named(enumNode.Name, [], enumNode.Semantic.ModuleName);
@@ -613,9 +624,11 @@ internal sealed class ExpressionTypeResolver(
         if (TypeRefFacts.TryGetNamed(type, out var namedType)
             && namedType.Arguments.Count > 0)
         {
-            var definition = program.Structs.FirstOrDefault(structNode =>
-                structNode.Name == namedType.Name
-                && structNode.TypeParameters.Count == namedType.Arguments.Count);
+            var definition = ResolveNamedDeclaration<StructNode>(
+                namedType,
+                structNode =>
+                    structNode.TypeParameters.Count
+                    == namedType.Arguments.Count);
             if (definition is null)
             {
                 return null;
@@ -639,19 +652,22 @@ internal sealed class ExpressionTypeResolver(
                     .ToList());
         }
 
-        var typeName = TypeRefFacts.GetBaseName(type);
-        var structNode = program.Structs.FirstOrDefault(structNode =>
-            structNode.Name == typeName
-            && structNode.TypeParameters.Count == 0);
+        var structNode = TypeRefFacts.TryGetNamed(type, out var concreteType)
+            ? ResolveNamedDeclaration<StructNode>(
+                concreteType,
+                candidate => candidate.TypeParameters.Count == 0)
+            : null;
         if (structNode is not null)
         {
             return structNode;
         }
 
         if (TypeRefFacts.TryGetNamed(type, out var adapterType)
-            && program.TypeAdapters.FirstOrDefault(adapter =>
-                adapter.Name == adapterType.Name
-                && adapter.TypeParameters.Count == adapterType.Arguments.Count) is { } adapter
+            && ResolveNamedDeclaration<TypeAdapterNode>(
+                adapterType,
+                adapter =>
+                    adapter.TypeParameters.Count
+                    == adapterType.Arguments.Count) is { } adapter
             && ResolveTypeNode(adapter.BaseTypeNode) is { } baseType)
         {
             var substitutions = adapter.TypeParameters
@@ -661,6 +677,16 @@ internal sealed class ExpressionTypeResolver(
         }
 
         return null;
+    }
+
+    private T? ResolveNamedDeclaration<T>(
+        TypeRef.Named named,
+        Func<T, bool>? predicate = null)
+        where T : TopLevelNode
+    {
+        return _declarations
+            .LookupNamed<T>(named)
+            .Unique(predicate);
     }
 
     private static TypeRef? UnwrapPointer(TypeRef type) =>

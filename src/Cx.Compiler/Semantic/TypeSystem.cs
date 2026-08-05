@@ -15,12 +15,29 @@ internal sealed class TypeSystem
     public TypeSystem(
         ProgramNode program,
         IReadOnlyList<string>? genericParameters = null,
-        IReadOnlyList<StructNode>? concreteStructs = null)
+        IReadOnlyList<StructNode>? concreteStructs = null,
+        ProgramDeclarationIndex? declarationIndex = null,
+        string? currentModuleName = null)
     {
         _program = program;
-        _resolver = new TypeResolver(program, genericParameters);
-        _memberResolver = new ResolvedTypeMemberResolver(program);
-        _requirementMatcher = new Lazy<RequirementMatcher>(() => new RequirementMatcher(_program, concreteStructs));
+        var declarations =
+            declarationIndex
+            ?? ProgramDeclarationIndex.Create(program);
+        _resolver = new TypeResolver(
+            program,
+            genericParameters,
+            declarations,
+            currentModuleName);
+        _memberResolver = new ResolvedTypeMemberResolver(
+            program,
+            declarations,
+            currentModuleName);
+        _requirementMatcher =
+            new Lazy<RequirementMatcher>(() =>
+                new RequirementMatcher(
+                    _program,
+                    declarations,
+                    concreteStructs));
     }
 
     public ResolvedType Resolve(TypeRef type) =>

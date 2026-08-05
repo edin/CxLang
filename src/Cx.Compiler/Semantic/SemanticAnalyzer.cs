@@ -21,6 +21,7 @@ public sealed class SemanticAnalyzer(
     private ExpressionTypeResolver? _expressionTypeResolver;
     private TypeCompatibility? _typeCompatibility;
     private TypeRefParser? _typeRefParser;
+    private ProgramDeclarationIndex? _declarationIndex;
     private TypeUsageAnalyzer? _typeUsageAnalyzer;
     private AssignmentSemanticAnalyzer? _assignmentAnalyzer;
     private ReturnSemanticAnalyzer? _returnAnalyzer;
@@ -31,26 +32,35 @@ public sealed class SemanticAnalyzer(
     private ProgramNode? _program;
     private IReadOnlyList<string> _currentTypeParameters = [];
     private IReadOnlyList<GenericConstraintNode> _currentGenericConstraints = [];
+    private string _currentModuleName = string.Empty;
 
     public void Analyze(ProgramNode program)
     {
         _program = program;
-        _requirementMatcher = new RequirementMatcher(program);
-        _typeSystem = new TypeSystem(program);
+        _currentModuleName = program.Module?.Name ?? string.Empty;
+        _declarationIndex = ProgramDeclarationIndex.Create(program);
+        _typeSystem = new TypeSystem(
+            program,
+            declarationIndex: _declarationIndex);
+        _requirementMatcher = new RequirementMatcher(
+            program,
+            _declarationIndex);
         _expressionTypeResolver = new ExpressionTypeResolver(
             program,
-            functionCatalog: FunctionCatalog);
+            functionCatalog: FunctionCatalog,
+            declarationIndex: _declarationIndex);
         _typeRefParser = new TypeRefParser(program);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
         _symbolSuggestions = new SymbolSuggestionService(program, availablePrograms, OwnerType);
-        _assignmentAnalyzer = CreateAssignmentAnalyzer(program);
+        _assignmentAnalyzer = CreateAssignmentAnalyzer();
         _returnAnalyzer = CreateReturnAnalyzer();
-        _matchAnalyzer = CreateMatchAnalyzer(program);
+        _matchAnalyzer = CreateMatchAnalyzer();
         _foreachAnalyzer = CreateForeachAnalyzer();
         _expressionAnalyzer = CreateExpressionAnalyzer();
         _typeUsageAnalyzer = new TypeUsageAnalyzer(
             diagnostics,
             program,
+            _declarationIndex,
             _requirementMatcher,
             IsKnownTypeName,
             _symbolSuggestions.FindAliasSuggestionForType,
@@ -59,6 +69,7 @@ public sealed class SemanticAnalyzer(
         var requirementDeclarations = new RequirementDeclarationAnalyzer(
             diagnostics,
             program,
+            _declarationIndex,
             _requirementMatcher);
         new AttributeSemanticAnalyzer(
             diagnostics,
@@ -67,10 +78,21 @@ public sealed class SemanticAnalyzer(
 
         foreach (var structNode in program.Structs)
         {
-            requirementDeclarations.AnalyzeGenericConstraints(structNode.TypeParameters, structNode.GenericConstraints, structNode.Location);
+            var structModuleName = DeclaringModuleName(
+                structNode,
+                program);
+            requirementDeclarations.AnalyzeGenericConstraints(
+                structNode.TypeParameters,
+                structNode.GenericConstraints,
+                structNode.Location,
+                structModuleName);
             foreach (var field in structNode.Fields)
             {
-                AnalyzeType(field.TypeNode, field.Location, program, structNode.TypeParameters);
+                AnalyzeType(
+                    field.TypeNode,
+                    field.Location,
+                    structNode.TypeParameters,
+                    structModuleName);
             }
 
             requirementDeclarations.AnalyzeStructRequirements(structNode);
@@ -89,7 +111,11 @@ public sealed class SemanticAnalyzer(
         {
             var globalTypeRef = TypeRefOrUnknown(global.TypeNode);
             var globalType = TypeText(globalTypeRef);
-            AnalyzeType(global.TypeNode, global.Location, program, []);
+            AnalyzeType(
+                global.TypeNode,
+                global.Location,
+                [],
+                DeclaringModuleName(global, program));
             AnalyzeExpression(global.Initializer, global.Location, globalTypeEnvironment, null);
             if (global.Initializer is not null && SemanticFacts.IsBareNull(global.Initializer) && !SemanticFacts.IsNullableType(globalTypeRef))
             {
@@ -106,9 +132,20 @@ public sealed class SemanticAnalyzer(
 
         foreach (var function in program.Functions)
         {
+            var functionModuleName = DeclaringModuleName(
+                function,
+                program);
             var effectiveGenericConstraints = GetEffectiveGenericConstraints(program, function);
-            requirementDeclarations.AnalyzeGenericConstraints(function.TypeParameters, effectiveGenericConstraints, function.Location);
-            AnalyzeType(function.ReturnTypeNode, function.Location, program, function.TypeParameters);
+            requirementDeclarations.AnalyzeGenericConstraints(
+                function.TypeParameters,
+                effectiveGenericConstraints,
+                function.Location,
+                functionModuleName);
+            AnalyzeType(
+                function.ReturnTypeNode,
+                function.Location,
+                function.TypeParameters,
+                functionModuleName);
             var typeEnvironment = globalTypeEnvironment.Clone();
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
@@ -121,7 +158,11 @@ public sealed class SemanticAnalyzer(
             }
             foreach (var parameter in function.Parameters.Where(parameter => !parameter.IsVariadic))
             {
-                AnalyzeType(parameter.TypeNode, parameter.Location, program, function.TypeParameters);
+                AnalyzeType(
+                    parameter.TypeNode,
+                    parameter.Location,
+                    function.TypeParameters,
+                    functionModuleName);
             }
 
             var mutability = typeEnvironment.Types.Keys.ToDictionary(name => name, _ => LocalMutability.Mutable, StringComparer.Ordinal);
@@ -137,16 +178,19 @@ public sealed class SemanticAnalyzer(
 
             var previousTypeParameters = _currentTypeParameters;
             var previousGenericConstraints = _currentGenericConstraints;
+            var previousModuleName = _currentModuleName;
             _currentTypeParameters = function.TypeParameters;
             _currentGenericConstraints = effectiveGenericConstraints;
+            _currentModuleName = functionModuleName;
             _expressionTypeResolver = new ExpressionTypeResolver(
                 program,
                 _currentTypeParameters,
                 _currentGenericConstraints,
-                FunctionCatalog);
-            _assignmentAnalyzer = CreateAssignmentAnalyzer(program);
+                FunctionCatalog,
+                _declarationIndex);
+            _assignmentAnalyzer = CreateAssignmentAnalyzer();
             _returnAnalyzer = CreateReturnAnalyzer();
-            _matchAnalyzer = CreateMatchAnalyzer(program);
+            _matchAnalyzer = CreateMatchAnalyzer();
             _foreachAnalyzer = CreateForeachAnalyzer();
             _expressionAnalyzer = CreateExpressionAnalyzer();
 
@@ -161,14 +205,16 @@ public sealed class SemanticAnalyzer(
 
             _currentTypeParameters = previousTypeParameters;
             _currentGenericConstraints = previousGenericConstraints;
+            _currentModuleName = previousModuleName;
             _expressionTypeResolver = new ExpressionTypeResolver(
                 program,
                 _currentTypeParameters,
                 _currentGenericConstraints,
-                FunctionCatalog);
-            _assignmentAnalyzer = CreateAssignmentAnalyzer(program);
+                FunctionCatalog,
+                _declarationIndex);
+            _assignmentAnalyzer = CreateAssignmentAnalyzer();
             _returnAnalyzer = CreateReturnAnalyzer();
-            _matchAnalyzer = CreateMatchAnalyzer(program);
+            _matchAnalyzer = CreateMatchAnalyzer();
             _foreachAnalyzer = CreateForeachAnalyzer();
             _expressionAnalyzer = CreateExpressionAnalyzer();
             definiteAssignment.AnalyzeFunction(function, globalTypeEnvironment);
@@ -201,12 +247,12 @@ public sealed class SemanticAnalyzer(
         return constraints;
     }
 
-    private AssignmentSemanticAnalyzer? CreateAssignmentAnalyzer(ProgramNode program) =>
-        _expressionTypeResolver is null || _typeCompatibility is null || _typeSystem is null || _typeRefParser is null
+    private AssignmentSemanticAnalyzer? CreateAssignmentAnalyzer() =>
+        _declarationIndex is null || _expressionTypeResolver is null || _typeCompatibility is null || _typeSystem is null || _typeRefParser is null
             ? null
             : new AssignmentSemanticAnalyzer(
                 diagnostics,
-                program,
+                _declarationIndex,
                 _expressionTypeResolver,
                 _typeCompatibility,
                 _typeSystem,
@@ -217,22 +263,24 @@ public sealed class SemanticAnalyzer(
             ? null
             : new ReturnSemanticAnalyzer(diagnostics, _assignmentAnalyzer);
 
-    private MatchSemanticAnalyzer? CreateMatchAnalyzer(ProgramNode program) =>
-        _expressionTypeResolver is null || _typeRefParser is null
+    private MatchSemanticAnalyzer? CreateMatchAnalyzer() =>
+        _declarationIndex is null || _expressionTypeResolver is null || _typeRefParser is null
             ? null
             : new MatchSemanticAnalyzer(
                 diagnostics,
-                program,
+                _declarationIndex,
+                _currentModuleName,
                 _expressionTypeResolver,
                 _typeRefParser,
                 IsKnownTypeName);
 
     private ForeachSemanticAnalyzer? CreateForeachAnalyzer() =>
-        _program is null || _typeSystem is null || _typeCompatibility is null || _expressionTypeResolver is null || _typeRefParser is null
+        _declarationIndex is null || _typeSystem is null || _typeCompatibility is null || _expressionTypeResolver is null || _typeRefParser is null
             ? null
             : new ForeachSemanticAnalyzer(
                 diagnostics,
-                _program,
+                _declarationIndex,
+                _currentModuleName,
                 _typeSystem,
                 _typeCompatibility,
                 _expressionTypeResolver,
@@ -380,7 +428,11 @@ public sealed class SemanticAnalyzer(
 
             foreach (var field in fields)
             {
-                AnalyzeType(field.TypeNode, field.Location, program, []);
+                AnalyzeType(
+                    field.TypeNode,
+                    field.Location,
+                    [],
+                    DeclaringModuleName(enumNode, program));
                 AnalyzeEnumDataExpression(field.DefaultValue, field.TypeNode, field.Location, typeEnvironment, $"default for enum data field '{field.Name}'");
             }
 
@@ -469,7 +521,11 @@ public sealed class SemanticAnalyzer(
             case LetStatement let:
                 var letTypeRef = TypeRefOrUnknown(let.TypeNode);
                 var letType = TypeText(letTypeRef);
-                AnalyzeType(let.TypeNode, let.Location, program, inScopeTypeParameters);
+                AnalyzeType(
+                    let.TypeNode,
+                    let.Location,
+                    inScopeTypeParameters,
+                    _currentModuleName);
                 AnalyzeExpression(let.Initializer, let.Location, typeEnvironment, mutability);
                 if (let.Initializer is not null && SemanticFacts.IsBareNull(let.Initializer) && !SemanticFacts.IsNullableType(letTypeRef))
                 {
@@ -613,11 +669,14 @@ public sealed class SemanticAnalyzer(
     private void AnalyzeType(
         TypeNode? typeNode,
         Location location,
-        ProgramNode program,
-        IReadOnlyList<string> inScopeTypeParameters)
+        IReadOnlyList<string> inScopeTypeParameters,
+        string currentModuleName)
     {
-        _ = program;
-        _typeUsageAnalyzer?.Analyze(typeNode, location, inScopeTypeParameters);
+        _typeUsageAnalyzer?.Analyze(
+            typeNode,
+            location,
+            inScopeTypeParameters,
+            currentModuleName);
     }
 
     private void AnalyzeForInitializer(
@@ -632,7 +691,11 @@ public sealed class SemanticAnalyzer(
             case ForDeclarationInitializerNode declaration:
                 var declarationTypeRef = TypeRefOrUnknown(declaration.TypeNode);
                 var declarationType = TypeText(declarationTypeRef);
-                AnalyzeType(declaration.TypeNode, declaration.Location, program, inScopeTypeParameters);
+                AnalyzeType(
+                    declaration.TypeNode,
+                    declaration.Location,
+                    inScopeTypeParameters,
+                    _currentModuleName);
                 AnalyzeExpression(declaration.Initializer, declaration.Location, typeEnvironment, mutability);
                 if (declaration.Initializer is not null
                     && SemanticFacts.IsBareNull(declaration.Initializer)
@@ -810,6 +873,13 @@ public sealed class SemanticAnalyzer(
 
     private string? OwnerType(FunctionNode function) =>
         TypeRefFacts.GetBaseName(TypeRefOrUnknown(function.OwnerTypeNode));
+
+    private static string DeclaringModuleName(
+        TopLevelNode declaration,
+        ProgramNode program) =>
+        string.IsNullOrWhiteSpace(declaration.Semantic.ModuleName)
+            ? program.Module?.Name ?? string.Empty
+            : declaration.Semantic.ModuleName;
 
     private static string TypeText(TypeRef type) =>
         type is TypeRef.Unknown ? string.Empty : TypeRefFormatter.ToCxString(type);

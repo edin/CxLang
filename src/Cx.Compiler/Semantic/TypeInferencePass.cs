@@ -15,6 +15,7 @@ internal sealed class TypeInferencePass(
     private TypeRefParser? _typeRefParser;
     private TypeCompatibility? _typeCompatibility;
     private FunctionCatalog? _functionCatalog;
+    private ProgramDeclarationIndex? _declarationIndex;
     private readonly Dictionary<FunctionNode, FunctionNode> _inferredFunctions =
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FunctionId, FunctionNode> _inferredFunctionSymbols = [];
@@ -30,19 +31,29 @@ internal sealed class TypeInferencePass(
         _program = program;
         _typeRefParser = new TypeRefParser(program);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
+        _declarationIndex = semanticModel?.GetOrCreateDeclarationIndex(program)
+            ?? ProgramDeclarationIndex.Create(program);
         _resolver = new ExpressionTypeResolver(
             program,
-            functionCatalog: FunctionCatalog);
-        _typeSystem = new TypeSystem(program);
+            functionCatalog: FunctionCatalog,
+            declarationIndex: _declarationIndex);
+        _typeSystem = new TypeSystem(
+            program,
+            declarationIndex: _declarationIndex);
         var globalVariables = InferGlobalVariables(program.GlobalVariables);
         var programWithGlobals = program with { GlobalVariables = globalVariables };
         _program = programWithGlobals;
         _typeRefParser = new TypeRefParser(programWithGlobals);
         _typeCompatibility = new TypeCompatibility(_typeRefParser);
+        _declarationIndex = ProgramDeclarationIndex.Create(
+            programWithGlobals);
         _resolver = new ExpressionTypeResolver(
             programWithGlobals,
-            functionCatalog: FunctionCatalog);
-        _typeSystem = new TypeSystem(programWithGlobals);
+            functionCatalog: FunctionCatalog,
+            declarationIndex: _declarationIndex);
+        _typeSystem = new TypeSystem(
+            programWithGlobals,
+            declarationIndex: _declarationIndex);
         _globalTypeEnvironment = BuildGlobalTypeEnvironment(globalVariables);
 
         return programWithGlobals with

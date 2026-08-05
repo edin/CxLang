@@ -7,7 +7,7 @@ namespace Cx.Compiler.Semantic.Analyzers;
 
 internal sealed class AssignmentSemanticAnalyzer(
     DiagnosticBag diagnostics,
-    ProgramNode program,
+    ProgramDeclarationIndex declarations,
     ExpressionTypeResolver expressionTypeResolver,
     TypeCompatibility typeCompatibility,
     TypeSystem typeSystem,
@@ -134,8 +134,12 @@ internal sealed class AssignmentSemanticAnalyzer(
 
         if (target is MemberExpressionNode member
             && expressionTypeResolver.ResolveTypeRef(member.Target, typeEnvironment) is { } targetType
-            && TypeRefFacts.GetBaseName(TypeRefFacts.StripPointersAndAliases(targetType)) is { } enumName
-            && program.Enums.FirstOrDefault(candidate => candidate.Name == enumName && candidate.IsDataEnum) is { } enumNode
+            && TypeRefFacts.TryGetNamed(
+                TypeRefFacts.StripPointersAndAliases(targetType),
+                out var enumType)
+            && declarations
+                .LookupNamed<EnumNode>(enumType)
+                .Unique(candidate => candidate.IsDataEnum) is { } enumNode
             && enumNode.DataFields?.Any(field => field.Name == member.MemberName) == true)
         {
             fieldName = member.MemberName;
@@ -206,10 +210,11 @@ internal sealed class AssignmentSemanticAnalyzer(
             return false;
         }
 
-        var targetTypeName = TypeRefFacts.GetBaseName(targetType);
-        var taggedUnion = program.TaggedUnions.FirstOrDefault(union =>
-            !union.IsRaw
-            && string.Equals(union.Name, targetTypeName, StringComparison.Ordinal));
+        var taggedUnion = TypeRefFacts.TryGetNamed(targetType, out var namedType)
+            ? declarations
+                .LookupNamed<TaggedUnionNode>(namedType)
+                .Unique(union => !union.IsRaw)
+            : null;
         return taggedUnion is not null
             && taggedUnion.Variants.Any(variant => SameType(variant.TypeNode?.ToTypeRef(typeRefParser), sourceType));
     }

@@ -13,6 +13,20 @@ internal abstract record ProgramDeclarationLookup<T>
 
     public sealed record Ambiguous(
         IReadOnlyList<T> Declarations) : ProgramDeclarationLookup<T>;
+
+    public T? Unique(Func<T, bool>? predicate = null)
+    {
+        var declarations = this switch
+        {
+            Found found => (IReadOnlyList<T>)[found.Declaration],
+            Ambiguous ambiguous => ambiguous.Declarations,
+            _ => [],
+        };
+        var matches = predicate is null
+            ? declarations
+            : declarations.Where(predicate).ToList();
+        return matches.Count == 1 ? matches[0] : null;
+    }
 }
 
 /// <summary>
@@ -105,6 +119,32 @@ internal sealed class ProgramDeclarationIndex
             ? Lookup<T>(name)
             : local;
     }
+
+    public ProgramDeclarationLookup<T> LookupNamed<T>(
+        TypeRef.Named named)
+        where T : TopLevelNode
+    {
+        if (named.ModuleName is not null)
+        {
+            var moduleLookup = LookupInModule<T>(
+                named.ModuleName,
+                named.Name);
+            if (moduleLookup is not ProgramDeclarationLookup<T>.Missing)
+            {
+                return moduleLookup;
+            }
+        }
+
+        return Lookup<T>(named.Name);
+    }
+
+    public ProgramDeclarationLookup<T> LookupNamedFromModule<T>(
+        string currentModuleName,
+        TypeRef.Named named)
+        where T : TopLevelNode =>
+        named.ModuleName is not null
+            ? LookupNamed<T>(named)
+            : LookupFromModule<T>(currentModuleName, named.Name);
 
     private static ProgramDeclarationLookup<T> ToLookup<T>(
         IReadOnlyList<TopLevelNode> declarations)

@@ -89,10 +89,19 @@ internal sealed record ResolvedMethod(
             : ResolvedMethodKind.Direct;
 }
 
-internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
+internal sealed class ResolvedTypeMemberResolver(
+    ProgramNode program,
+    ProgramDeclarationIndex? declarationIndex = null,
+    string? currentModuleName = null)
 {
     private readonly TypeRefParser _parser = new(program);
     private readonly GenericConstraintMatcher _genericConstraintMatcher = new(program);
+    private readonly ProgramDeclarationIndex _declarations =
+        declarationIndex ?? ProgramDeclarationIndex.Create(program);
+    private readonly string _currentModuleName =
+        currentModuleName ?? program.Module?.Name ?? string.Empty;
+    private readonly Dictionary<string, TypeResolver>
+        _typeResolversByModule = new(StringComparer.Ordinal);
 
     public IReadOnlyList<ResolvedField> GetFields(ResolvedType type) =>
         type.Symbol switch
@@ -132,7 +141,8 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         ResolvedType type)
     {
         var baseType = ResolveAdapterBaseType(declaration, type.Substitutions);
-        var baseResolvedType = new TypeResolver(program).ResolveDefinition(baseType);
+        var baseResolvedType = TypeResolverFor(declaration)
+            .ResolveDefinition(baseType);
         return GetFields(baseResolvedType);
     }
 
@@ -215,7 +225,8 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         ResolvedType type)
     {
         var baseType = ResolveAdapterBaseType(declaration, type.Substitutions);
-        var baseResolvedType = new TypeResolver(program).ResolveDefinition(baseType);
+        var baseResolvedType = TypeResolverFor(declaration)
+            .ResolveDefinition(baseType);
         var baseMethods = GetMethods(baseResolvedType);
         var selfType = type.Type;
         var exposed = new List<ResolvedMethod>();
@@ -343,6 +354,28 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
         return TypeRefRewriter.Substitute(baseType, substitutions);
     }
 
+    private TypeResolver TypeResolverFor(
+        TypeAdapterNode declaration)
+    {
+        var moduleName =
+            string.IsNullOrWhiteSpace(
+                declaration.Semantic.ModuleName)
+                ? _currentModuleName
+                : declaration.Semantic.ModuleName;
+        if (!_typeResolversByModule.TryGetValue(
+            moduleName,
+            out var resolver))
+        {
+            resolver = new TypeResolver(
+                program,
+                declarationIndex: _declarations,
+                currentModuleName: moduleName);
+            _typeResolversByModule.Add(moduleName, resolver);
+        }
+
+        return resolver;
+    }
+
     private static string? GetOwnerName(TypeRef type) =>
         type switch
         {
@@ -358,10 +391,16 @@ internal sealed class ResolvedTypeMemberResolver(ProgramNode program)
 
 internal sealed class TypeResolver(
     ProgramNode program,
-    IReadOnlyList<string>? genericParameters = null)
+    IReadOnlyList<string>? genericParameters = null,
+    ProgramDeclarationIndex? declarationIndex = null,
+    string? currentModuleName = null)
 {
     private readonly IReadOnlySet<string> _genericParameters = (genericParameters ?? [])
         .ToHashSet(StringComparer.Ordinal);
+    private readonly ProgramDeclarationIndex _declarations =
+        declarationIndex ?? ProgramDeclarationIndex.Create(program);
+    private readonly string _currentModuleName =
+        currentModuleName ?? program.Module?.Name ?? string.Empty;
 
     public ResolvedType Resolve(string? type)
     {
@@ -412,7 +451,8 @@ internal sealed class TypeResolver(
             return new ResolvedType(named, new TypeSymbol.GenericParameter(named.Name), EmptySubstitutions());
         }
 
-        if (FindStruct(named.Name) is { } structNode)
+        var lookupScope = ResolveLookupScope(named);
+        if (FindStruct(named.Name, lookupScope) is { } structNode)
         {
             return new ResolvedType(
                 named,
@@ -420,7 +460,7 @@ internal sealed class TypeResolver(
                 BuildSubstitutions(structNode.TypeParameters, named.Arguments));
         }
 
-        if (FindTypeAdapter(named.Name) is { } adapter)
+        if (FindTypeAdapter(named.Name, lookupScope) is { } adapter)
         {
             return new ResolvedType(
                 named,
@@ -428,22 +468,22 @@ internal sealed class TypeResolver(
                 BuildSubstitutions(adapter.TypeParameters, named.Arguments));
         }
 
-        if (FindInterface(named.Name) is { } interfaceNode)
+        if (FindInterface(named.Name, lookupScope) is { } interfaceNode)
         {
             return new ResolvedType(named, new TypeSymbol.Interface(named.Name, interfaceNode), EmptySubstitutions());
         }
 
-        if (FindTaggedUnion(named.Name) is { } taggedUnion)
+        if (FindTaggedUnion(named.Name, lookupScope) is { } taggedUnion)
         {
             return new ResolvedType(named, new TypeSymbol.TaggedUnion(named.Name, taggedUnion), EmptySubstitutions());
         }
 
-        if (FindEnum(named.Name) is { } enumNode)
+        if (FindEnum(named.Name, lookupScope) is { } enumNode)
         {
             return new ResolvedType(named, new TypeSymbol.Enum(named.Name, enumNode), EmptySubstitutions());
         }
 
-        if (FindTypeAlias(named.Name) is { } alias)
+        if (FindTypeAlias(named.Name, lookupScope) is { } alias)
         {
             return new ResolvedType(named, new TypeSymbol.Alias(named.Name, alias), EmptySubstitutions());
         }
@@ -458,34 +498,96 @@ internal sealed class TypeResolver(
         new(type, Symbol: null, Substitutions: EmptySubstitutions());
 
     private TypeAliasNode? FindTypeAlias(string name) =>
-        program.TypeAliases.FirstOrDefault(alias => string.Equals(alias.Name, name, StringComparison.Ordinal))
+        FindTypeAlias(
+            name,
+            ResolveLookupScope(
+                new TypeRef.Named(name, [])));
+
+    private TypeAliasNode? FindTypeAlias(
+        string name,
+        TypeLookupScope scope) =>
+        Lookup<TypeAliasNode>(name, scope)
         ?? program.CDeclarations
             .SelectMany(declaration => declaration.TypeAliases)
             .FirstOrDefault(alias => string.Equals(alias.Name, name, StringComparison.Ordinal));
 
-    private StructNode? FindStruct(string name) =>
-        program.Structs.FirstOrDefault(structNode => string.Equals(structNode.Name, name, StringComparison.Ordinal))
+    private StructNode? FindStruct(
+        string name,
+        TypeLookupScope scope) =>
+        Lookup<StructNode>(name, scope)
         ?? program.CDeclarations
             .SelectMany(declaration => declaration.Structs)
             .FirstOrDefault(structNode => string.Equals(structNode.Name, name, StringComparison.Ordinal));
 
-    private TypeAdapterNode? FindTypeAdapter(string name) =>
-        program.TypeAdapters.FirstOrDefault(adapter => string.Equals(adapter.Name, name, StringComparison.Ordinal));
+    private TypeAdapterNode? FindTypeAdapter(
+        string name,
+        TypeLookupScope scope) =>
+        Lookup<TypeAdapterNode>(name, scope);
 
-    private InterfaceNode? FindInterface(string name) =>
-        program.Interfaces.FirstOrDefault(interfaceNode => string.Equals(interfaceNode.Name, name, StringComparison.Ordinal));
+    private InterfaceNode? FindInterface(
+        string name,
+        TypeLookupScope scope) =>
+        Lookup<InterfaceNode>(name, scope);
 
-    private TaggedUnionNode? FindTaggedUnion(string name) =>
-        program.TaggedUnions.FirstOrDefault(union => string.Equals(union.Name, name, StringComparison.Ordinal))
+    private TaggedUnionNode? FindTaggedUnion(
+        string name,
+        TypeLookupScope scope) =>
+        Lookup<TaggedUnionNode>(name, scope)
         ?? program.CDeclarations
             .SelectMany(declaration => declaration.Unions)
             .FirstOrDefault(union => string.Equals(union.Name, name, StringComparison.Ordinal));
 
-    private EnumNode? FindEnum(string name) =>
-        program.Enums.FirstOrDefault(enumNode => string.Equals(enumNode.Name, name, StringComparison.Ordinal))
+    private EnumNode? FindEnum(
+        string name,
+        TypeLookupScope scope) =>
+        Lookup<EnumNode>(name, scope)
         ?? program.CDeclarations
             .SelectMany(declaration => declaration.Enums)
             .FirstOrDefault(enumNode => string.Equals(enumNode.Name, name, StringComparison.Ordinal));
+
+    private T? Lookup<T>(
+        string name,
+        TypeLookupScope scope)
+        where T : TopLevelNode =>
+        scope.ModuleName is { } moduleName
+            ? _declarations
+                .LookupInModule<T>(moduleName, name)
+                .Unique()
+            : _declarations.Lookup<T>(name).Unique();
+
+    private TypeLookupScope ResolveLookupScope(
+        TypeRef.Named named)
+    {
+        if (named.ModuleName is not null)
+        {
+            return new TypeLookupScope(named.ModuleName);
+        }
+
+        return HasTypeDeclarationInModule(
+            _currentModuleName,
+            named.Name)
+                ? new TypeLookupScope(_currentModuleName)
+                : new TypeLookupScope(ModuleName: null);
+    }
+
+    private bool HasTypeDeclarationInModule(
+        string moduleName,
+        string name) =>
+        HasInModule<TypeAliasNode>(moduleName, name)
+        || HasInModule<StructNode>(moduleName, name)
+        || HasInModule<TypeAdapterNode>(moduleName, name)
+        || HasInModule<InterfaceNode>(moduleName, name)
+        || HasInModule<TaggedUnionNode>(moduleName, name)
+        || HasInModule<EnumNode>(moduleName, name);
+
+    private bool HasInModule<T>(
+        string moduleName,
+        string name)
+        where T : TopLevelNode =>
+        _declarations.LookupInModule<T>(moduleName, name)
+            is not ProgramDeclarationLookup<T>.Missing;
+
+    private sealed record TypeLookupScope(string? ModuleName);
 
     private static IReadOnlyDictionary<string, TypeRef> BuildSubstitutions(
         IReadOnlyList<string> parameters,

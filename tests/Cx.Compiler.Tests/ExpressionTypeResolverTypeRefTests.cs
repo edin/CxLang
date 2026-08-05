@@ -249,6 +249,79 @@ public sealed class ExpressionTypeResolverTypeRefTests
         Assert.Equal("u8", TypeRefFormatter.ToCxString(resolved!));
     }
 
+    [Fact]
+    public void ResolveTypeRef_UsesDeclaringModuleForSameNamedStructs()
+    {
+        var first = CompilerTestHelpers.Parse(
+            """
+            module lib.first;
+
+            struct Model {
+                value: int;
+            }
+            """,
+            "first.cx");
+        var second = CompilerTestHelpers.Parse(
+            """
+            module lib.second;
+
+            struct Model {
+                value: bool;
+            }
+            """,
+            "second.cx");
+        var program = first with
+        {
+            Declarations = first.Declarations
+                .Concat(second.Declarations)
+                .ToList(),
+        };
+        var modules = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["first.cx"] = "lib.first",
+            ["second.cx"] = "lib.second",
+        };
+        var declarations = ProgramDeclarationIndex.Create(program, modules);
+        var resolver = new ExpressionTypeResolver(
+            program,
+            declarationIndex: declarations);
+        var expression = CompilerTestHelpers.ParseTokenExpression(
+            "model.value");
+        var environment = TypeEnvironment(
+            ("model", new TypeRef.Named(
+                "Model",
+                [],
+                "lib.second")));
+
+        var resolved = resolver.ResolveTypeRef(expression, environment);
+
+        Assert.Equal("bool", TypeRefFormatter.ToCxString(resolved!));
+    }
+
+    [Fact]
+    public void ResolveTypeRef_DoesNotSelectAmbiguousStructByOrder()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            struct Model {
+                value: int;
+            }
+
+            struct Model {
+                value: bool;
+            }
+            """);
+        var resolver = new ExpressionTypeResolver(program);
+        var expression = CompilerTestHelpers.ParseTokenExpression(
+            "model.value");
+        var environment = TypeEnvironment(
+            ("model", new TypeRef.Named("Model", [])));
+
+        var resolved = resolver.ResolveTypeRef(expression, environment);
+
+        Assert.Null(resolved);
+    }
+
     private static TypeEnvironment TypeEnvironment(ProgramNode? resolverProgram, params (string Name, string Type)[] variables)
     {
         var parser = new TypeRefParser(resolverProgram ?? CompilerTestHelpers.Parse("fn main() -> int { return 0; }"));

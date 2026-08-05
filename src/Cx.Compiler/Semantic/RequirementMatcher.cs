@@ -32,8 +32,12 @@ public sealed class RequirementMatcher
     {
         _program = program;
         _typeRefParser = new TypeRefParser(program);
-        _typeResolver = new TypeResolver(program);
-        _memberResolver = new ResolvedTypeMemberResolver(program);
+        _typeResolver = new TypeResolver(
+            program,
+            declarationIndex: declarations);
+        _memberResolver = new ResolvedTypeMemberResolver(
+            program,
+            declarations);
         _declarations = declarations;
         _currentModuleName = program.Module?.Name ?? string.Empty;
         _operatorCapabilities = new OperatorCapabilityResolver(
@@ -41,7 +45,6 @@ public sealed class RequirementMatcher
             _typeResolver,
             _memberResolver);
         _concreteStructs = (concreteStructs ?? [])
-            .Concat(program.Structs.Where(structNode => structNode.TypeParameters.Count == 0))
             .GroupBy(structNode => structNode.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         _typeAliases = program.TypeAliases
@@ -56,24 +59,48 @@ public sealed class RequirementMatcher
     {
         var concreteTypeRef = _typeRefParser.Parse(concreteType);
         var argumentRefs = requirementArguments?.Select(_typeRefParser.Parse).ToList();
-        return Match(concreteTypeRef, requirementName, argumentRefs, new HashSet<string>(StringComparer.Ordinal));
+        return Match(
+            concreteTypeRef,
+            requirementName,
+            argumentRefs,
+            _currentModuleName,
+            new HashSet<string>(StringComparer.Ordinal));
     }
 
     internal RequirementMatch MatchTypeRefs(
         TypeRef concreteType,
         string requirementName,
         IReadOnlyList<TypeRef>? requirementArguments = null) =>
-        Match(concreteType, requirementName, requirementArguments, new HashSet<string>(StringComparer.Ordinal));
+        MatchTypeRefsFromModule(
+            concreteType,
+            requirementName,
+            _currentModuleName,
+            requirementArguments);
+
+    internal RequirementMatch MatchTypeRefsFromModule(
+        TypeRef concreteType,
+        string requirementName,
+        string currentModuleName,
+        IReadOnlyList<TypeRef>? requirementArguments = null) =>
+        Match(
+            concreteType,
+            requirementName,
+            requirementArguments,
+            currentModuleName,
+            new HashSet<string>(StringComparer.Ordinal));
 
     private RequirementMatch Match(
         TypeRef concreteTypeRef,
         string requirementName,
         IReadOnlyList<TypeRef>? requirementArguments,
+        string currentModuleName,
         HashSet<string> activeMatches)
     {
-        var requirementLookup = _declarations.LookupFromModule<RequirementNode>(
-            _currentModuleName,
-            requirementName);
+        var (
+            requirementLookup,
+            interfaceLookup) = ResolveRequirementLookups(
+                currentModuleName,
+                requirementName);
         if (requirementLookup
             is ProgramDeclarationLookup<RequirementNode>.Ambiguous ambiguousRequirements)
         {
@@ -86,9 +113,6 @@ public sealed class RequirementMatcher
         if (requirementLookup
             is not ProgramDeclarationLookup<RequirementNode>.Found requirementMatch)
         {
-            var interfaceLookup = _declarations.LookupFromModule<InterfaceNode>(
-                _currentModuleName,
-                requirementName);
             if (interfaceLookup
                 is ProgramDeclarationLookup<InterfaceNode>.Found interfaceMatch)
             {
@@ -134,7 +158,10 @@ public sealed class RequirementMatcher
         }
 
         var hasStructMembers = requirement.Members.Any(member => member is RequirementFieldNode);
-        var hasStructType = TryResolveStructMembers(concreteTypeRef, out var fields);
+        var hasStructType = TryResolveStructMembers(
+            concreteTypeRef,
+            currentModuleName,
+            out var fields);
         if (hasStructMembers && !hasStructType)
         {
             activeMatches.Remove(matchKey);
@@ -166,7 +193,12 @@ public sealed class RequirementMatcher
 
         if (failures.Count == 0)
         {
-            MatchRequirementConstraints(requirement, bindings, failures, activeMatches);
+            MatchRequirementConstraints(
+                requirement,
+                bindings,
+                failures,
+                currentModuleName,
+                activeMatches);
         }
 
         activeMatches.Remove(matchKey);
@@ -174,6 +206,35 @@ public sealed class RequirementMatcher
         return failures.Count == 0
             ? RequirementMatch.Succeeded(concreteTypeRef, requirementName, bindings)
             : RequirementMatch.Failed(concreteTypeRef, requirementName, failures, bindings);
+    }
+
+    private (
+        ProgramDeclarationLookup<RequirementNode> Requirement,
+        ProgramDeclarationLookup<InterfaceNode> Interface)
+        ResolveRequirementLookups(
+            string currentModuleName,
+            string requirementName)
+    {
+        var localRequirement =
+            _declarations.LookupInModule<RequirementNode>(
+                currentModuleName,
+                requirementName);
+        var localInterface =
+            _declarations.LookupInModule<InterfaceNode>(
+                currentModuleName,
+                requirementName);
+        var hasLocalDeclaration =
+            localRequirement
+                is not ProgramDeclarationLookup<RequirementNode>.Missing
+            || localInterface
+                is not ProgramDeclarationLookup<InterfaceNode>.Missing;
+        return hasLocalDeclaration
+            ? (localRequirement, localInterface)
+            : (
+                _declarations.Lookup<RequirementNode>(
+                    requirementName),
+                _declarations.Lookup<InterfaceNode>(
+                    requirementName));
     }
 
     private RequirementMatch MatchInterface(
@@ -255,6 +316,7 @@ public sealed class RequirementMatcher
         RequirementNode requirement,
         TypeBindings bindings,
         List<string> failures,
+        string currentModuleName,
         HashSet<string> activeMatches)
     {
         foreach (var constraint in requirement.GenericConstraints)
@@ -270,7 +332,12 @@ public sealed class RequirementMatcher
                 var arguments = TypeArgumentRefs(required.TypeArgumentNodes)
                     .Select(argument => TypeRefRewriter.Substitute(argument, bindings.Bindings))
                     .ToList();
-                var match = Match(constrainedTypeRef, required.Name, arguments, activeMatches);
+                var match = Match(
+                    constrainedTypeRef,
+                    required.Name,
+                    arguments,
+                    currentModuleName,
+                    activeMatches);
                 if (match.Success)
                 {
                     MergeBindings(bindings, match.TypedTypeBindings);
@@ -517,7 +584,10 @@ public sealed class RequirementMatcher
         return Unify(TypeRefOrUnknown(requirement.ReturnTypeNode), TypeRefOrUnknown(candidate.ReturnTypeNode), bindings);
     }
 
-    private bool TryResolveStruct(TypeRef type, out StructNode structNode)
+    private bool TryResolveStruct(
+        TypeRef type,
+        string currentModuleName,
+        out StructNode structNode)
     {
         var resolvedTypeRef = TypeRefFacts.StripPointersAndAliases(
             ResolveAlias(type, new HashSet<string>(StringComparer.Ordinal)));
@@ -527,18 +597,22 @@ public sealed class RequirementMatcher
             return true;
         }
 
-        if (!TypeRefFacts.TryGetNamed(resolvedTypeRef, out var namedType)
-            || namedType.Arguments.Count == 0)
+        if (!TypeRefFacts.TryGetNamed(
+            resolvedTypeRef,
+            out var namedType))
         {
             structNode = null!;
             return false;
         }
 
-        var definition = _program.Structs.FirstOrDefault(structNode =>
-            !structNode.IsHeaderDeclaration
-            &&
-            structNode.Name == namedType.Name
-            && structNode.TypeParameters.Count == namedType.Arguments.Count);
+        var definition = _declarations
+            .LookupNamedFromModule<StructNode>(
+                currentModuleName,
+                namedType)
+            .Unique(candidate =>
+                !candidate.IsHeaderDeclaration
+                && candidate.TypeParameters.Count
+                    == namedType.Arguments.Count);
         if (definition is null)
         {
             structNode = null!;
@@ -568,23 +642,34 @@ public sealed class RequirementMatcher
             [],
             fields,
             definition.Attributes);
+        structNode.Semantic.ModuleName =
+            definition.Semantic.ModuleName;
         return true;
     }
 
-    private bool TryResolveStructMembers(TypeRef type, out IReadOnlyList<ResolvedField> fields)
+    private bool TryResolveStructMembers(
+        TypeRef type,
+        string currentModuleName,
+        out IReadOnlyList<ResolvedField> fields)
     {
+        if (TryResolveStruct(
+            type,
+            currentModuleName,
+            out var structNode))
+        {
+            fields = structNode.Fields
+                .Select(field => new ResolvedField(
+                    field.Name,
+                    field.TypeNode.ToTypeRef(_typeRefParser),
+                    field))
+                .ToList();
+            return true;
+        }
+
         var resolvedType = ResolveConcreteDefinition(type);
         if (resolvedType.Symbol is TypeSymbol.Struct)
         {
             fields = _memberResolver.GetFields(resolvedType);
-            return true;
-        }
-
-        if (TryResolveStruct(type, out var structNode))
-        {
-            fields = structNode.Fields
-                .Select(field => new ResolvedField(field.Name, field.TypeNode.ToTypeRef(_typeRefParser), field))
-                .ToList();
             return true;
         }
 
