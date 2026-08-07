@@ -33,6 +33,10 @@ internal static class CompilerTestHelpers
         string path = "main.cx") =>
         new(Compile(source, path));
 
+    public static CompilationVerifier VerifyCompilation(
+        IEnumerable<SourceFile> sources) =>
+        new(Compile(sources));
+
     public static ProgramNode Parse(string source, string path = "main.cx")
     {
         var diagnostics = new DiagnosticBag();
@@ -94,9 +98,63 @@ internal sealed class CompilationVerifier(CompilationResult result)
 {
     public CompilationResult Result => result;
 
-    public void SucceedsWith(params string[] outputFragments)
+    public CompilationVerifier Succeeds()
     {
         CompilerTestHelpers.AssertSuccess(result);
+        return this;
+    }
+
+    public CompilationVerifier Fails()
+    {
+        Assert.False(result.Success);
+        return this;
+    }
+
+    public CompilationVerifier OutputContains(params string[] fragments)
+    {
+        Succeeds();
+        Assert.NotNull(result.Output);
+        foreach (var fragment in fragments)
+        {
+            Assert.Contains(
+                fragment,
+                result.Output,
+                StringComparison.Ordinal);
+        }
+
+        return this;
+    }
+
+    public CompilationVerifier OutputOmits(params string[] fragments)
+    {
+        Succeeds();
+        Assert.NotNull(result.Output);
+        foreach (var fragment in fragments)
+        {
+            Assert.DoesNotContain(
+                fragment,
+                result.Output,
+                StringComparison.Ordinal);
+        }
+
+        return this;
+    }
+
+    public CompilationVerifier HasDiagnostic(params string[] fragments)
+    {
+        Fails();
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => fragments.All(fragment =>
+                diagnostic.Message.Contains(
+                    fragment,
+                    StringComparison.Ordinal)));
+        return this;
+    }
+
+    public CompilationVerifier SucceedsWith(params string[] outputFragments)
+    {
+        Succeeds();
         foreach (var fragment in outputFragments)
         {
             Assert.Contains(
@@ -104,10 +162,10 @@ internal sealed class CompilationVerifier(CompilationResult result)
                 result.Output,
                 StringComparison.Ordinal);
         }
+
+        return this;
     }
 
-    public void FailsWith(params string[] diagnosticFragments) =>
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            diagnosticFragments);
+    public CompilationVerifier FailsWith(params string[] diagnosticFragments) =>
+        HasDiagnostic(diagnosticFragments);
 }

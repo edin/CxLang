@@ -23,315 +23,276 @@ public sealed class PublicVisibilityTests
     [Fact]
     public void CompileToC_AllowsPublicFunctionFromAnotherModule()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.math as math;
 
                 fn main() -> int {
                     return math.answer();
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.math;
+            }
 
+            module lib.math {
                 public fn answer() -> int {
                     return 42;
                 }
-                """,
-                "math.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            }
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void CompileToC_LowersQualifiedExternCallFromSemanticIdentity()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import native.api as native;
 
                 fn main() -> int {
                     return native.write(10);
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module native.api;
+            }
 
+            module native.api {
                 public extern fn write(value: int) -> int;
-                """,
-                "native.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return write(10);", result.Output);
-        Assert.DoesNotContain("native.write", result.Output);
+            }
+            """)
+            .Succeeds()
+            .OutputContains("return write(10);")
+            .OutputOmits("native.write");
     }
 
     [Fact]
     public void CompileToC_RejectsPrivateFunctionFromAnotherModule()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.math as math;
 
                 fn main() -> int {
                     return math.answer();
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.math;
+            }
 
+            module lib.math {
                 fn answer() -> int {
                     return 42;
                 }
-                """,
-                "math.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "function 'math.answer'", "private", "lib.math");
+            }
+            """)
+            .HasDiagnostic(
+                "function 'math.answer'",
+                "private",
+                "lib.math");
     }
 
     [Fact]
     public void CompileToC_RejectsPrivateFunctionThroughFullyQualifiedModuleName()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.math;
 
                 fn main() -> int {
                     return lib.math.answer();
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.math;
+            }
 
+            module lib.math {
                 fn answer() -> int {
                     return 42;
                 }
-                """,
-                "math.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "function 'lib.math.answer'", "private", "lib.math");
+            }
+            """)
+            .HasDiagnostic(
+                "function 'lib.math.answer'",
+                "private",
+                "lib.math");
     }
 
     [Fact]
     public void CompileToC_RejectsPrivateSymbolImport()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 from lib.math import answer;
 
                 fn main() -> int {
                     return answer();
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.math;
+            }
 
+            module lib.math {
                 fn answer() -> int {
                     return 42;
                 }
-                """,
-                "math.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "function 'answer'", "private", "lib.math");
+            }
+            """)
+            .HasDiagnostic(
+                "function 'answer'",
+                "private",
+                "lib.math");
     }
 
     [Fact]
     public void CompileToC_AllowsPrivateFunctionAcrossFilesInSameModule()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            [
+                CompilerTestHelpers.Source(
+                    """
+                    module app.main;
 
-                fn main() -> int {
-                    return helper();
-                }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+                    fn main() -> int {
+                        return helper();
+                    }
+                    """),
+                CompilerTestHelpers.Source(
+                    """
+                    module app.main;
 
-                fn helper() -> int {
-                    return 7;
-                }
-                """,
-                "helper.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
+                    fn helper() -> int {
+                        return 7;
+                    }
+                    """,
+                    "helper.cx"),
+            ])
+            .Succeeds();
     }
 
     [Fact]
     public void CompileToC_RejectsPrivateTypeFromAnotherModule()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.model as model;
 
                 fn consume(value: model.Item) -> int {
                     return value.value;
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.model;
+            }
 
+            module lib.model {
                 struct Item {
                     value: int;
                 }
-                """,
-                "model.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "type 'model.Item'", "private", "lib.model");
+            }
+            """)
+            .HasDiagnostic(
+                "type 'model.Item'",
+                "private",
+                "lib.model");
     }
 
     [Fact]
     public void CompileToC_AllowsPublicTypeFromAnotherModule()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.model as model;
 
                 fn consume(value: model.Item) -> int {
                     return value.value;
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.model;
+            }
 
+            module lib.model {
                 public struct Item {
                     value: int;
                 }
-                """,
-                "model.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            }
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void CompileToC_RejectsPrivateGlobalFromAnotherModule()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.values as values;
 
                 fn main() -> int {
                     return values.answer;
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.values;
-                const answer: int = 42;
-                """,
-                "values.cx"),
-        ]);
+            }
 
-        CompilerTestHelpers.AssertDiagnosticContains(result, "symbol 'values.answer'", "private", "lib.values");
+            module lib.values {
+                const answer: int = 42;
+            }
+            """)
+            .HasDiagnostic(
+                "symbol 'values.answer'",
+                "private",
+                "lib.values");
     }
 
     [Fact]
     public void CompileToC_AllowsPublicGlobalFromAnotherModule()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.values as values;
 
                 fn main() -> int {
                     return values.answer;
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.values;
-                public const answer: int = 42;
-                """,
-                "values.cx"),
-        ]);
+            }
 
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("const int answer = 42;", result.Output);
-        Assert.Contains("return answer;", result.Output);
-        Assert.DoesNotContain("values.answer", result.Output);
+            module lib.values {
+                public const answer: int = 42;
+            }
+            """)
+            .Succeeds()
+            .OutputContains(
+                "const int answer = 42;",
+                "return answer;")
+            .OutputOmits("values.answer");
     }
 
     [Fact]
     public void CompileToC_RejectsPublicApiThatExposesPrivateType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
-            module lib.model;
+            module lib.model {
+                struct Hidden {
+                    value: int;
+                }
 
-            struct Hidden {
-                value: int;
+                public fn reveal(value: Hidden) -> Hidden {
+                    return value;
+                }
             }
-
-            public fn reveal(value: Hidden) -> Hidden {
-                return value;
-            }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Public declaration exposes private type 'Hidden'");
+            """)
+            .HasDiagnostic(
+                "Public declaration exposes private type 'Hidden'");
     }
 
     [Fact]
     public void CompileToC_RejectsPublicModifierOnImport()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 public import lib.math;
 
                 fn main() -> int {
                     return 0;
                 }
-                """),
-            CompilerTestHelpers.Source("module lib.math;", "math.cx"),
-        ]);
+            }
 
-        CompilerTestHelpers.AssertDiagnosticContains(result, "'import' cannot be declared public");
+            module lib.math {}
+            """)
+            .HasDiagnostic("'import' cannot be declared public");
     }
 }

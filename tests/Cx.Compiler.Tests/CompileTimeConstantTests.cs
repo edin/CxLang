@@ -124,11 +124,9 @@ public sealed class CompileTimeConstantTests
     [Fact]
     public void Compile_ResolvesPublicConstantThroughModuleAlias()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.api as api;
 
                 extern fn consume(value: const char*) -> void;
@@ -141,28 +139,21 @@ public sealed class CompileTimeConstantTests
                     use emit_path();
                     return 0;
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.api;
+            }
 
+            module lib.api {
                 public compile const prefix: string = "/api";
-                """,
-                "api.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"/api\"", result.Output, StringComparison.Ordinal);
+            }
+            """)
+            .SucceedsWith("\"/api\"");
     }
 
     [Fact]
     public void Compile_ResolvesConstantThroughAliasedSymbolImport()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 from lib.api import prefix as api_prefix;
 
                 extern fn consume(value: const char*) -> void;
@@ -175,18 +166,13 @@ public sealed class CompileTimeConstantTests
                     use emit_path();
                     return 0;
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.api;
+            }
 
+            module lib.api {
                 public compile const prefix: string = "/api";
-                """,
-                "api.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"/api\"", result.Output, StringComparison.Ordinal);
+            }
+            """)
+            .SucceedsWith("\"/api\"");
     }
 
     [Fact]
@@ -216,11 +202,9 @@ public sealed class CompileTimeConstantTests
     [Fact]
     public void Compile_RejectsPrivateConstantFromAnotherModule()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.api as api;
 
                 macro emit_path() -> statements {
@@ -231,21 +215,16 @@ public sealed class CompileTimeConstantTests
                     use emit_path();
                     return 0;
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.api;
+            }
 
+            module lib.api {
                 compile const prefix: string = "/api";
-                """,
-                "api.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "constant 'api.prefix'",
-            "private",
-            "lib.api");
+            }
+            """)
+            .FailsWith(
+                "constant 'api.prefix'",
+                "private",
+                "lib.api");
     }
 
     [Fact]
