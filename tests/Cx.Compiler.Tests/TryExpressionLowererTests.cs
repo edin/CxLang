@@ -5,7 +5,7 @@ public sealed class TryExpressionLowererTests
     [Fact]
     public void CompileToC_PropagatesCommonErrorAndCleansUsingBindings()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn read_value(success: bool) -> Result<int, Error> {
                 if (success) {
@@ -25,18 +25,18 @@ public sealed class TryExpressionLowererTests
                 let result: Result<int, Error> = increment(true);
                 return result.unwrap_or(0);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("__cx_try_", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("Vec_dispose_u8(&buffer);", result.Output, StringComparison.Ordinal);
-        Assert.Contains(".error", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "__cx_try_",
+                "Vec_dispose_u8(&buffer);",
+                ".error");
     }
 
     [Fact]
     public void CompileToC_TryFallbackDoesNotRequireResultReturnType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn read_value(success: bool) -> Result<int, Error> {
                 if (success) {
@@ -54,17 +54,16 @@ public sealed class TryExpressionLowererTests
             fn main() -> int {
                 return value_or_default(false);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("?", result.Output!, StringComparison.Ordinal);
-        Assert.DoesNotContain("Result_err_int_Error(&__cx_try_", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("?")
+            .OutputOmits("Result_err_int_Error(&__cx_try_");
     }
 
     [Fact]
     public void CompileToC_NestedTryFallbackChainInfersValueType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn read_value(value: int, success: bool) -> Result<int, Error> {
                 if (success) {
@@ -85,17 +84,15 @@ public sealed class TryExpressionLowererTests
             fn main() -> int {
                 return value_or_default();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("__cx_try_value_", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("else", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("__cx_try_value_", "else");
     }
 
     [Fact]
     public void Compile_RejectsPropagationFromNonResultReturningFunction()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn read_value() -> Result<int, Error> {
                 return Result.ok<int, Error>(1);
@@ -105,10 +102,8 @@ public sealed class TryExpressionLowererTests
                 let value: int = try read_value();
                 return value;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "requires the containing function to return Result<T, Error>");
+            """)
+            .Fails()
+            .HasDiagnostic("requires the containing function to return Result<T, Error>");
     }
 }

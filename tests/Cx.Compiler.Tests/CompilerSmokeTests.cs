@@ -78,36 +78,33 @@ public sealed class CompilerSmokeTests
     [Fact]
     public void CompileToC_AcceptsCxSourceFile()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int main()", result.Output);
-        Assert.Contains("return 0;", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("int main()", "return 0;");
     }
 
     [Fact]
     public void CompileToC_EmitsTypedFunctionSignature()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn add(left: int, right: int) -> int {
                 return left + right;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int add(int left, int right)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("int add(int left, int right)");
     }
 
     [Fact]
     public void CompileToC_EmitsTypedVariableDeclarations()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let local: int = 1;
@@ -116,17 +113,15 @@ public sealed class CompilerSmokeTests
                 }
                 return local;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int local = 1;", result.Output);
-        Assert.Contains("for (int i = 0;", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("int local = 1;", "for (int i = 0;");
     }
 
     [Fact]
     public void CompileToC_EmitsTypedStructAndTaggedUnionFields()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Point {
                 x: int;
@@ -140,17 +135,15 @@ public sealed class CompilerSmokeTests
                 return 0;
             }
             """,
-            new CEmissionOptions(StripUnused: false));
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int x;", result.Output);
-        Assert.Contains("int number;", result.Output);
+            new CEmissionOptions(StripUnused: false))
+            .Succeeds()
+            .OutputContains("int x;", "int number;");
     }
 
     [Fact]
     public void CompileToC_EmitsLoweredForeachWithoutEmitterFallback()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn sum(values: int[4]) -> int {
                 let total: int = 0;
@@ -159,19 +152,19 @@ public sealed class CompilerSmokeTests
                 }
                 return total;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.DoesNotContain("foreach should be lowered before C emission", result.Output);
-        Assert.Contains("__cx_foreach_data_", result.Output);
-        Assert.Contains("__cx_foreach_length_", result.Output);
-        Assert.Contains("__cx_foreach_index_", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "__cx_foreach_data_",
+                "__cx_foreach_length_",
+                "__cx_foreach_index_")
+            .OutputOmits("foreach should be lowered before C emission");
     }
 
     [Fact]
     public void CompileToC_NamedModuleDoesNotPrefixCNamesYet()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             module app.main;
 
@@ -182,75 +175,59 @@ public sealed class CompilerSmokeTests
             fn main() -> int {
                 return helper();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int helper()", result.Output);
-        Assert.Contains("return helper();", result.Output);
-        Assert.DoesNotContain("app_main_helper", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("int helper()", "return helper();")
+            .OutputOmits("app_main_helper");
     }
 
     [Fact]
     public void CompileToC_DefaultManglingDisambiguatesModuleFunctionCollisions()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
-
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.a;
                 import lib.b;
 
                 fn main() -> int {
                     return lib.a.helper() + lib.b.helper();
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.a;
+            }
 
+            module lib.a {
                 public fn helper() -> int {
                     return 1;
                 }
-                """,
-                "lib-a.cx"),
-            CompilerTestHelpers.Source(
-                """
-                module lib.b;
+            }
 
+            module lib.b {
                 public fn helper() -> int {
                     return 2;
                 }
-                """,
-                "lib-b.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int lib_a_helper()", result.Output);
-        Assert.Contains("int lib_b_helper()", result.Output);
-        Assert.Contains("return lib_a_helper() + lib_b_helper();", result.Output);
+            }
+            """)
+            .Succeeds()
+            .OutputContains(
+                "int lib_a_helper()",
+                "int lib_b_helper()",
+                "return lib_a_helper() + lib_b_helper();");
     }
 
     [Fact]
     public void CompileToC_QualifiedImportRewritesNestedTypeSyntax()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app.main;
-
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
                 import lib.types as types;
 
                 fn main() -> int {
                     return 0;
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module lib.types;
+            }
 
+            module lib.types {
                 struct Item {
                     value: int;
                 }
@@ -266,17 +243,15 @@ public sealed class CompilerSmokeTests
                 fn transform(callback: fn(Item*) -> Box<Item>*) -> fn(Item*) -> Box<Item>* {
                     return callback;
                 }
-                """,
-                "lib-types.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            }
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void CompileToC_LowersDirectFunctionReferences()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn add(left: int, right: int) -> int {
                 return left + right;
@@ -296,17 +271,17 @@ public sealed class CompilerSmokeTests
                 let box: Box = make(op(1, 2));
                 return box.value;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("(*op)(int, int) = add;", result.Output);
-        Assert.Contains("(*make)(int) = Box_create;", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "(*op)(int, int) = add;",
+                "(*make)(int) = Box_create;");
     }
 
     [Fact]
     public void CompileToC_EmitsStructuredFunctionPointerParameters()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn add(left: int, right: int) -> int {
                 return left + right;
@@ -320,17 +295,17 @@ public sealed class CompilerSmokeTests
             fn main() -> int {
                 return invoke(add);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int invoke(int (*op)(int, int))", result.Output);
-        Assert.Contains("int (*local)(int, int) = op;", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "int invoke(int (*op)(int, int))",
+                "int (*local)(int, int) = op;");
     }
 
     [Fact]
     public void CompileToC_KeepsAliasSpellingForGenericCNames()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type usize = unsigned long long;
 
@@ -343,18 +318,16 @@ public sealed class CompilerSmokeTests
                 let value: Maybe<usize> = Maybe<usize>(false, 0);
                 return value;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Maybe_usize size()", result.Output);
-        Assert.Contains("Maybe_usize value =", result.Output);
-        Assert.DoesNotContain("Maybe_unsignedlonglong", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("Maybe_usize size()", "Maybe_usize value =")
+            .OutputOmits("Maybe_unsignedlonglong");
     }
 
     [Fact]
     public void CompileToC_LowersAdapterExposedInstanceCallsThroughResolvedCallInfo()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type usize = unsigned long long;
 
@@ -375,18 +348,18 @@ public sealed class CompilerSmokeTests
                 stack.push(10);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("MiniVec_int stack = (MiniVec_int){ 0 };", result.Output);
-        Assert.Contains("MiniVec_add_int(&stack, 10);", result.Output);
-        Assert.DoesNotContain("MiniVec_add(stack", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "MiniVec_int stack = (MiniVec_int){ 0 };",
+                "MiniVec_add_int(&stack, 10);")
+            .OutputOmits("MiniVec_add(stack");
     }
 
     [Fact]
     public void CompileToC_LowersChainedAdapterExposedInstanceCallsThroughResolvedCallInfo()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type usize = unsigned long long;
             type u8 = unsigned char;
@@ -412,18 +385,18 @@ public sealed class CompilerSmokeTests
                 builder.write_u8(65);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("MiniVec_u8 builder = (MiniVec_u8){ 0 };", result.Output);
-        Assert.Contains("MiniVec_add_u8(&builder, 65);", result.Output);
-        Assert.DoesNotContain("MiniVec_add(builder", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "MiniVec_u8 builder = (MiniVec_u8){ 0 };",
+                "MiniVec_add_u8(&builder, 65);")
+            .OutputOmits("MiniVec_add(builder");
     }
 
     [Fact]
     public void CompileToC_LowersChainedAdapterExposedSelfCallsInsideAdapterMethods()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type u8 = unsigned char;
 
@@ -451,17 +424,16 @@ public sealed class CompilerSmokeTests
                 let builder: MiniStringBuilder = MiniStringBuilder {};
                 return builder.append_byte((u8)65) ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return MiniVec_add_u8(self, value);", result.Output);
-        Assert.DoesNotContain("self->write_u8", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("return MiniVec_add_u8(self, value);")
+            .OutputOmits("self->write_u8");
     }
 
     [Fact]
     public void CompileToC_LowersStaticAdapterExposedCallsThroughResolvedCallInfo()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type usize = unsigned long long;
 
@@ -481,17 +453,16 @@ public sealed class CompilerSmokeTests
                 let stack: MiniIntStack = MiniIntStack.create();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("MiniVec_int stack = MiniVec_create_int();", result.Output);
-        Assert.DoesNotContain("MiniIntStack.create", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("MiniVec_int stack = MiniVec_create_int();")
+            .OutputOmits("MiniIntStack.create");
     }
 
     [Fact]
     public void CompileToC_LowersChainedStaticAdapterExposedCallsThroughResolvedCallInfo()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type usize = unsigned long long;
             type u8 = unsigned char;
@@ -516,11 +487,10 @@ public sealed class CompilerSmokeTests
                 let builder: MiniStringBuilder = MiniStringBuilder.with_capacity(8);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("MiniVec_u8 builder = MiniVec_with_capacity_u8(8);", result.Output);
-        Assert.DoesNotContain("MiniStringBuilder.with_capacity", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("MiniVec_u8 builder = MiniVec_with_capacity_u8(8);")
+            .OutputOmits("MiniStringBuilder.with_capacity");
     }
 
     [Fact]
@@ -558,14 +528,14 @@ public sealed class CompilerSmokeTests
     [Fact]
     public void CompileToC_UnknownCFunctionSuggestsImport()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 clock();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Unknown function 'clock'", "import c.time");
+            """)
+            .Fails()
+            .HasDiagnostic("Unknown function 'clock'", "import c.time");
     }
 }

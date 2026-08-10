@@ -5,7 +5,7 @@ public sealed class AttributeSemanticTests
     [Fact]
     public void Compile_AllowsCompileTimeFunctionsInAttributeArguments()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             attribute route on fn {
                 path: string;
@@ -27,16 +27,15 @@ public sealed class AttributeSemanticTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.DoesNotContain("route_path", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputOmits("route_path");
     }
 
     [Fact]
     public void Compile_AcceptsEvaluatorMetadataTypesAndVariableLengthLists()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             attribute metadata on field {
                 aliases: list<string>;
@@ -58,15 +57,14 @@ public sealed class AttributeSemanticTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void Compile_AcceptsDifferentListLengthsPerAttributeApplication()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             attribute aliases on field {
                 values: list<string>;
@@ -83,15 +81,14 @@ public sealed class AttributeSemanticTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void Compile_RejectsAttributeListWithWrongElementType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             attribute aliases on field {
                 values: list<string>;
@@ -105,18 +102,16 @@ public sealed class AttributeSemanticTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "expects metadata type 'list<string>'",
-            "received list");
+            """)
+            .FailsWith(
+                "expects metadata type 'list<string>'",
+                "received list");
     }
 
     [Fact]
     public void Compile_RejectsRuntimeTypeInAttributeSchema()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             attribute invalid on field {
                 value: char*;
@@ -125,17 +120,15 @@ public sealed class AttributeSemanticTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Unsupported attribute metadata type 'char'");
+            """)
+            .FailsWith(
+                "Unsupported attribute metadata type 'char'");
     }
 
     [Fact]
     public void Compile_DeriveAttribute_IsNotBuiltIn()
     {
-        var result = CompilerTestHelpers.Compile("""
+        CompilerTestHelpers.VerifyCompilation("""
             @derive(Debug)
             struct Item {
                 value: int;
@@ -144,15 +137,14 @@ public sealed class AttributeSemanticTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Unknown attribute 'derive'.");
+            """)
+            .FailsWith("Unknown attribute 'derive'.");
     }
 
     [Fact]
     public void Compile_ValidatesAttributesOnNestedMethods()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Item {
                 @unknown
@@ -162,10 +154,7 @@ public sealed class AttributeSemanticTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Unknown attribute 'unknown'.");
+            """)
+            .FailsWith("Unknown attribute 'unknown'.");
     }
 }

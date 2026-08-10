@@ -137,23 +137,22 @@ public sealed class ProgramDeclarationIndexTests
     [Fact]
     public void CompileTimeReflection_UsesDeclarationOwnershipWithinOneFile()
     {
-        var program = CompilerTestHelpers.Parse(
+        var test = CompilerTestHelpers.VerifyProgram(
             """
-            fn first() -> int {
-                return 1;
+            module lib.first {
+                fn first() -> int {
+                    return 1;
+                }
             }
 
-            fn second() -> int {
-                return 2;
+            module lib.second {
+                fn second() -> int {
+                    return 2;
+                }
             }
-            """,
-            "shared.cx");
-        program.Functions.Single(
-                function => function.Name == "first")
-            .Semantic.ModuleName = "lib.first";
-        program.Functions.Single(
-                function => function.Name == "second")
-            .Semantic.ModuleName = "lib.second";
+            """)
+            .MergeModuleContributions();
+        var program = test.Program;
         var reflection =
             new ProgramCompileTimeReflection(program);
 
@@ -171,8 +170,9 @@ public sealed class ProgramDeclarationIndexTests
             "second",
             Assert.IsType<FunctionNode>(
                 Assert.Single(second.Functions)).Name);
-        var secondFunction = program.Functions.Single(
-            function => function.Name == "second");
+        var secondFunction = test.Function(
+            "second",
+            "lib.second");
         var secondValue = Assert.IsType<ReturnStatement>(
             Assert.Single(secondFunction.Body))
             .Expression!;

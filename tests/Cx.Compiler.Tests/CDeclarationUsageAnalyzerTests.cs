@@ -5,7 +5,7 @@ public sealed class CDeclarationUsageAnalyzerTests
     [Fact]
     public void CompileToC_IncludesOnlyHeaderWithReferencedLocalType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             declare <used.h> {
                 struct HeaderValue {
@@ -23,17 +23,16 @@ public sealed class CDeclarationUsageAnalyzerTests
                 let value: HeaderValue* = null;
                 return value == null ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("#include <used.h>", result.Output);
-        Assert.DoesNotContain("#include <unused.h>", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("#include <used.h>")
+            .OutputOmits("#include <unused.h>");
     }
 
     [Fact]
     public void CompileToC_FindsHeaderTypeInsideCastAndSizeOf()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             declare <types.h> {
                 struct HeaderValue {
@@ -45,9 +44,8 @@ public sealed class CDeclarationUsageAnalyzerTests
                 let size = sizeof(HeaderValue);
                 return (int)size;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("#include <types.h>", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("#include <types.h>");
     }
 }

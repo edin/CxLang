@@ -103,17 +103,17 @@ public sealed class AnalysisTests
     [Fact]
     public void CompileToC_RejectsIncompleteMemberExpression()
     {
-        var result = new CxCompiler().CompileToC("""
-            struct Point { x: int; }
-            fn main() -> int {
-                let p = Point { x: 10 };
-                let value = p.;
-                return 0;
-            }
-            """);
-
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Message == "Expected member name after '.'.");
+        CompilerTestHelpers.VerifyCompilation(
+                """
+                struct Point { x: int; }
+                fn main() -> int {
+                    let p = Point { x: 10 };
+                    let value = p.;
+                    return 0;
+                }
+                """)
+            .Fails()
+            .SingleDiagnostic("Expected member name after '.'.");
     }
 
     [Fact]

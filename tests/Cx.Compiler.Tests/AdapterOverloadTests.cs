@@ -116,7 +116,7 @@ public sealed class AdapterOverloadTests
     [Fact]
     public void Compile_ResolvesEveryMethodExposedFromAnOverloadSet()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             struct AdapterOverloadStorage<T> {
                 fn add(value: T) -> int {
@@ -136,11 +136,10 @@ public sealed class AdapterOverloadTests
                 let stack: AdapterOverloadView<int> = AdapterOverloadView<int> {};
                 return stack.push(10) + stack.push("text");
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
         var emittedOverloadNames = Regex.Matches(
-                result.Output!,
+                test.Result.Output!,
                 @"AdapterOverloadStorage_add[A-Za-z0-9_]*")
             .Select(match => match.Value)
             .Distinct(StringComparer.Ordinal)
@@ -153,7 +152,7 @@ public sealed class AdapterOverloadTests
     [Fact]
     public void Compile_ReportsAmbiguousAdapterExposedOverload()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct AdapterOverloadStorage<T> {
                 fn add(value: char) -> int {
@@ -173,20 +172,18 @@ public sealed class AdapterOverloadTests
                 let stack: AdapterOverloadView<int> = AdapterOverloadView<int> {};
                 return stack.push(10);
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Ambiguous call",
-            "push",
-            "AdapterOverloadStorage.add(char)",
-            "AdapterOverloadStorage.add(long)");
+            """)
+            .FailsWith(
+                "Ambiguous call",
+                "push",
+                "AdapterOverloadStorage.add(char)",
+                "AdapterOverloadStorage.add(long)");
     }
 
     [Fact]
     public void Compile_ResolvesStaticAdapterExposedOverloads()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             struct AdapterFactoryStorage<T> {
                 static fn create(value: T) -> int {
@@ -206,11 +203,10 @@ public sealed class AdapterOverloadTests
                 return AdapterFactoryView<int>.make(10)
                     + AdapterFactoryView<int>.make("text");
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
         var emittedOverloadNames = Regex.Matches(
-                result.Output!,
+                test.Result.Output!,
                 @"AdapterFactoryStorage_create[A-Za-z0-9_]*")
             .Select(match => match.Value)
             .Distinct(StringComparer.Ordinal)

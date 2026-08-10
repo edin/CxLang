@@ -5,7 +5,7 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
     [Fact]
     public void Compile_DeclaresInterfaceBeforeStructContainingInterfacePointer()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             interface AllocatorHandle {
                 fn allocate(self: Self*, size: usize) -> void*;
@@ -23,23 +23,16 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
                 };
                 return buffer.data == null ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        var interfaceDeclaration = result.Output!.IndexOf(
-            "typedef struct AllocatorHandle",
-            StringComparison.Ordinal);
-        var bufferDeclaration = result.Output.IndexOf(
-            "} Buffer;",
-            StringComparison.Ordinal);
-        Assert.True(interfaceDeclaration >= 0);
-        Assert.True(bufferDeclaration > interfaceDeclaration);
+            """)
+            .OutputAppearsInOrder(
+                "typedef struct AllocatorHandle",
+                "} Buffer;");
     }
 
     [Fact]
     public void Compile_AllowsStructToInterfaceBindingThroughTypeSystem()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             interface ScratchAllocator {
                 fn allocate(size: usize, align: usize) -> void*;
@@ -60,21 +53,18 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
                 let allocator: ScratchAllocator = arena;
                 return allocator.state == null;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains(".state = &arena", result.Output);
-        Assert.Contains(
-            ".vtable = &Arena_ScratchAllocator_vtable",
-            result.Output);
-        Assert.Contains(".allocate =", result.Output);
-        Assert.Contains("Arena_allocate", result.Output);
+            """)
+            .OutputContains(
+                ".state = &arena",
+                ".vtable = &Arena_ScratchAllocator_vtable",
+                ".allocate =",
+                "Arena_allocate");
     }
 
     [Fact]
     public void Compile_LowersInterfaceConversionsOutsideLocalInitializers()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             interface ScratchAllocator {
                 fn allocate(size: usize, align: usize) -> void*;
@@ -104,11 +94,10 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
                 allocator = arena;
                 return consume(allocator) && forward(arena).state != null ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
         Assert.True(
-            result.Output!.Split(
+            test.Result.Output!.Split(
                 ".vtable = &Arena_ScratchAllocator_vtable",
                 StringSplitOptions.None).Length >= 4);
     }
@@ -116,7 +105,7 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
     [Fact]
     public void Compile_AllowsAliasSourceToInterfaceBindingThroughTypeSystem()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type MyArena = Arena;
 
@@ -139,19 +128,16 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
                 let allocator: ScratchAllocator = arena;
                 return allocator.state == null;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains(".state = &arena", result.Output);
-        Assert.Contains(
-            ".vtable = &Arena_ScratchAllocator_vtable",
-            result.Output);
+            """)
+            .OutputContains(
+                ".state = &arena",
+                ".vtable = &Arena_ScratchAllocator_vtable");
     }
 
     [Fact]
     public void Compile_ReportsStructThatDoesNotImplementInterface()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             interface ScratchAllocator {
                 fn allocate(size: usize, align: usize) -> void*;
@@ -166,8 +152,9 @@ public sealed class SemanticInterfaceBindingTypeSystemTests
                 let allocator: ScratchAllocator = arena;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Type mismatch for local 'allocator'", "cannot assign 'Arena' to 'ScratchAllocator'");
+            """)
+            .FailsWith(
+                "Type mismatch for local 'allocator'",
+                "cannot assign 'Arena' to 'ScratchAllocator'");
     }
 }

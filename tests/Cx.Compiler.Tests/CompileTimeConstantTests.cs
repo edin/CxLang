@@ -1,7 +1,6 @@
 using Cx.Compiler.Syntax.Nodes;
 using Cx.Compiler.CompileTime;
 using Cx.Compiler.Diagnostics;
-using CxParser = Cx.Compiler.Parser.Parser;
 
 namespace Cx.Compiler.Tests;
 
@@ -51,27 +50,19 @@ public sealed class CompileTimeConstantTests
     [Fact]
     public void Parse_RequiresConstantTypeAndInitializer()
     {
-        var diagnostics = new DiagnosticBag();
-        new CxParser(diagnostics).Parse(CompilerTestHelpers.Source(
+        CompilerTestHelpers.VerifyProgram(
             """
             compile const missing_type = 1;
             compile const missing_value: int;
-            """));
-
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains(
-                "Compile-time constants require an explicit type",
-                StringComparison.Ordinal));
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains(
-                "Compile-time constants require an initializer",
-                StringComparison.Ordinal));
+            """)
+            .HasDiagnostic("Compile-time constants require an explicit type")
+            .HasDiagnostic("Compile-time constants require an initializer");
     }
 
     [Fact]
     public void Compile_EvaluatesConstantAndRemovesDeclarationFromOutput()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -85,17 +76,16 @@ public sealed class CompileTimeConstantTests
                 use emit_greeting();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("consume(\"hello\")", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("greeting", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("consume(\"hello\")")
+            .OutputOmits("greeting");
     }
 
     [Fact]
     public void Compile_ConstantsCanDependOnConstantsAndBeUsedByFunctions()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -115,10 +105,8 @@ public sealed class CompileTimeConstantTests
                 use emit_name();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"field_name\"", result.Output, StringComparison.Ordinal);
+            """)
+            .SucceedsWith("\"field_name\"");
     }
 
     [Fact]
@@ -178,7 +166,7 @@ public sealed class CompileTimeConstantTests
     [Fact]
     public void Compile_UsesConstantInAttributeArgument()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             attribute route on fn {
                 path: string;
@@ -194,9 +182,8 @@ public sealed class CompileTimeConstantTests
             fn main() -> int {
                 return users();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
@@ -230,7 +217,7 @@ public sealed class CompileTimeConstantTests
     [Fact]
     public void Compile_ReportsCircularConstantDependency()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             compile const first: string = second;
             compile const second: string = first;
@@ -243,18 +230,16 @@ public sealed class CompileTimeConstantTests
                 use evaluate();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Circular compile-time constant dependency",
-            "first -> second -> first");
+            """)
+            .FailsWith(
+                "Circular compile-time constant dependency",
+                "first -> second -> first");
     }
 
     [Fact]
     public void Compile_ReportsConstantTypeMismatchWhenUsed()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             compile const invalid: int = "text";
 
@@ -266,18 +251,16 @@ public sealed class CompileTimeConstantTests
                 use evaluate();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Compile-time constant 'invalid' declares type 'int'",
-            "evaluated to string");
+            """)
+            .FailsWith(
+                "Compile-time constant 'invalid' declares type 'int'",
+                "evaluated to string");
     }
 
     [Fact]
     public void Compile_RejectsDuplicateConstantInSameModule()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             compile const value: int = 1;
             compile const value: int = 2;
@@ -285,17 +268,15 @@ public sealed class CompileTimeConstantTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Compile-time constant 'value' is already declared");
+            """)
+            .FailsWith(
+                "Compile-time constant 'value' is already declared");
     }
 
     [Fact]
     public void Compile_ConstantListsAreReadOnly()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             compile const names: list<string> = ["first"];
 
@@ -307,10 +288,8 @@ public sealed class CompileTimeConstantTests
                 use mutate();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Compile-time constant list values are read-only");
+            """)
+            .FailsWith(
+                "Compile-time constant list values are read-only");
     }
 }

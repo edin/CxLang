@@ -104,7 +104,7 @@ public sealed class CompileTimeFunctionEvaluationTests
     [Fact]
     public void Compile_CallStackIncludesMacroInvocationOrigin()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             compile fn invalid() -> string {
                 return missing;
@@ -118,9 +118,10 @@ public sealed class CompileTimeFunctionEvaluationTests
                 use emit_invalid();
                 return 0;
             }
-            """);
+            """)
+            .Fails();
 
-        var diagnostic = Assert.Single(result.Diagnostics, item =>
+        var diagnostic = Assert.Single(test.Result.Diagnostics, item =>
             item.Message.Contains("Unknown compile-time name 'missing'", StringComparison.Ordinal));
         Assert.Contains(
             "expanded from macro invocation at",

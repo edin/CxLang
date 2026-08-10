@@ -37,35 +37,35 @@ public sealed class ScopeResolverTests
     [Fact]
     public void CompileToC_DuplicateLocalInSameScopeReportsDiagnostic()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let value: int = 1;
                 let value: int = 2;
                 return value;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Duplicate local 'value'");
+            """)
+            .Fails()
+            .HasDiagnostic("Duplicate local 'value'");
     }
 
     [Fact]
     public void CompileToC_DuplicateParameterReportsDiagnostic()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn add(value: int, value: int) -> int {
                 return value;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Duplicate parameter 'value'");
+            """)
+            .Fails()
+            .HasDiagnostic("Duplicate parameter 'value'");
     }
 
     [Fact]
     public void CompileToC_LocalCanShadowOuterLocalInNestedScope()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let value: int = 1;
@@ -75,9 +75,8 @@ public sealed class ScopeResolverTests
 
                 return value;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]

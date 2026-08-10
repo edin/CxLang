@@ -139,6 +139,23 @@ again.
 
 ## Verification
 
+### Test Style
+
+- Prefer `CompilerTestHelpers.VerifyCompilation(source)` for end-to-end source
+  tests, chaining `Succeeds`, `Fails`, `OutputContains`, `OutputOmits`, or
+  `HasDiagnostic` so the behavior under test is immediately visible.
+- Prefer `VerifyProgram(source)` when a test needs parsed declarations, module
+  ownership, or a parser diagnostic. Keep direct parser/pass setup when the
+  test asserts recovery nodes, exact phase boundaries, or detailed semantic
+  state.
+- Use multiple `module name { ... }` blocks for independent modules in one
+  source string. When physical source paths are part of the behavior, use
+  `VerifyCompilationFiles` or `VerifyProgramFiles` with test-only
+  `// file: path.cx` markers. These markers are not CX syntax.
+- Keep direct compiler results for timing assertions, specialized APIs such as
+  test-runner compilation and completion, and assertions that need result data
+  beyond the fluent verifier.
+
 Fast iteration:
 
 ```powershell

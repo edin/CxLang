@@ -142,26 +142,22 @@ public sealed class PublicVisibilityTests
     [Fact]
     public void CompileToC_AllowsPrivateFunctionAcrossFilesInSameModule()
     {
-        CompilerTestHelpers.VerifyCompilation(
-            [
-                CompilerTestHelpers.Source(
-                    """
-                    module app.main;
+        CompilerTestHelpers.VerifyCompilationFiles(
+            """
+            // file: main.cx
+            module app.main;
 
-                    fn main() -> int {
-                        return helper();
-                    }
-                    """),
-                CompilerTestHelpers.Source(
-                    """
-                    module app.main;
+            fn main() -> int {
+                return helper();
+            }
 
-                    fn helper() -> int {
-                        return 7;
-                    }
-                    """,
-                    "helper.cx"),
-            ])
+            // file: helper.cx
+            module app.main;
+
+            fn helper() -> int {
+                return 7;
+            }
+            """)
             .Succeeds();
     }
 

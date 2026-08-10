@@ -162,7 +162,7 @@ public sealed class GenericLoweringServicesTests
     [Fact]
     public void GenericSpecialization_HandlesNestedMemberReceiversAndUsingBindings()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Box<T> {
                 value: T;
@@ -193,11 +193,9 @@ public sealed class GenericLoweringServicesTests
                 using holder = Holder.create();
                 return holder.box.get() + holder.read();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int Box_get_int(", result.Output);
-        Assert.Contains("int Holder_read(", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("int Box_get_int(", "int Holder_read(");
     }
 
     [Fact]

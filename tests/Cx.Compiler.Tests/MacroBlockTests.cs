@@ -1,8 +1,5 @@
-using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lowering;
-using Cx.Compiler.Parser;
 using Cx.Compiler.Syntax.Nodes;
-using CxParser = Cx.Compiler.Parser.Parser;
 
 namespace Cx.Compiler.Tests;
 
@@ -47,7 +44,7 @@ public sealed class MacroBlockTests
     [Fact]
     public void CompileToC_AllowsPlaceholderInsideUnusedMacroTemplate()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             macro trace(value: expression) -> statements {
                 log(@{value});
@@ -56,10 +53,9 @@ public sealed class MacroBlockTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.DoesNotContain("trace", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputOmits("trace");
     }
 
     [Fact]
@@ -84,14 +80,10 @@ public sealed class MacroBlockTests
     [Fact]
     public void Parse_ReportsUnsupportedExpansionKind()
     {
-        var diagnostics = new DiagnosticBag();
-        _ = new CxParser(diagnostics).Parse(CompilerTestHelpers.Source(
-            "macro sample(value: expression) -> expression { return @{value}; }"));
-
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains(
-                "Unsupported macro expansion kind 'expression'. Expected 'statements' or 'declarations'.",
-                StringComparison.Ordinal));
+        CompilerTestHelpers.VerifyProgram(
+                "macro sample(value: expression) -> expression { return @{value}; }")
+            .HasDiagnostic(
+                "Unsupported macro expansion kind 'expression'. Expected 'statements' or 'declarations'.");
     }
 
     [Fact]

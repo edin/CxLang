@@ -1,7 +1,5 @@
-using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Lowering;
 using Cx.Compiler.Syntax.Nodes;
-using CxParser = Cx.Compiler.Parser.Parser;
 
 namespace Cx.Compiler.Tests;
 
@@ -29,22 +27,18 @@ public sealed class AttributeExpressionTests
     [Fact]
     public void Parse_ReportsAttributeArgumentThatIsNotACompleteExpression()
     {
-        var diagnostics = new DiagnosticBag();
-        var program = new CxParser(diagnostics).Parse(CompilerTestHelpers.Source(
+        var test = CompilerTestHelpers.VerifyProgram(
             """
             @meta(value +)
             fn main() -> int {
                 return 0;
             }
-            """));
+            """)
+            .HasDiagnostic("Expected a valid expression for attribute argument value");
 
         var argument = Assert.Single(
-            Assert.Single(Assert.Single(program.Functions).Attributes).Arguments);
+            Assert.Single(Assert.Single(test.Program.Functions).Attributes).Arguments);
         Assert.IsType<ErrorExpressionNode>(argument.Value);
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains(
-                "Expected a valid expression for attribute argument value",
-                StringComparison.Ordinal));
     }
 
     private sealed class RenameRewriter : AstRewriter

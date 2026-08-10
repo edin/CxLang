@@ -5,7 +5,7 @@ public sealed class CEmitterTests
     [Fact]
     public void Emit_LowersFunctionTypeAliasesThroughTypeRef()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Callback = fn(int, char*, ...) -> double;
 
@@ -13,9 +13,8 @@ public sealed class CEmitterTests
                 return 0;
             }
             """,
-            new CEmissionOptions(StripUnused: false));
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("typedef double (*Callback)(int, char*, ...);", result.Output);
+            new CEmissionOptions(StripUnused: false))
+            .Succeeds()
+            .OutputContains("typedef double (*Callback)(int, char*, ...);");
     }
 }

@@ -561,7 +561,7 @@ public sealed class CallResolverTests
     [Fact]
     public void Compiler_SpecializesMethodWithReceiverAndInferredMethodGenericArguments()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Box<T> {
                 value: T;
@@ -576,10 +576,9 @@ public sealed class CallResolverTests
                 let text: char* = box.map("text");
                 return text == null ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Box_map_int_char_ptr", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("Box_map_int_char_ptr");
     }
 
     [Fact]
@@ -708,7 +707,7 @@ public sealed class CallResolverTests
     [Fact]
     public void Compiler_RejectsConstrainedExtensionCallForUnsatisfiedReceiver()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Disposable<T> {
                 fn dispose() -> void;
@@ -732,17 +731,15 @@ public sealed class CallResolverTests
                 box.dispose_all();
                 return 0;
             }
-            """);
-
-        Assert.False(result.Success, result.Output);
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("dispose_all", StringComparison.Ordinal));
+            """)
+            .Fails()
+            .HasDiagnostic("dispose_all");
     }
 
     [Fact]
     public void Compiler_ReportsAmbiguousOverloadDiagnostic()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn convert(value: char) -> int {
                 return 1;
@@ -755,19 +752,18 @@ public sealed class CallResolverTests
             fn main() -> int {
                 return convert(10);
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Ambiguous call to 'convert'",
-            "convert(char)",
-            "convert(long)");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Ambiguous call to 'convert'",
+                "convert(char)",
+                "convert(long)");
     }
 
     [Fact]
     public void Compiler_EmitsDistinctNamesForReachableOverloads()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Value {
                 static fn create(value: int) -> int {
@@ -783,11 +779,9 @@ public sealed class CallResolverTests
                 let number: int = Value.create(10);
                 return number + Value.create("text");
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Value_create_int", result.Output);
-        Assert.Contains("Value_create_char_ptr", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("Value_create_int", "Value_create_char_ptr");
     }
 
     private static ProgramNode ParseAndResolveTypes(string source)

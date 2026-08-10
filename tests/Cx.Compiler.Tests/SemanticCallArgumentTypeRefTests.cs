@@ -5,7 +5,7 @@ public sealed class SemanticCallArgumentTypeRefTests
     [Fact]
     public void Compile_AllowsNullArgumentForAliasPointerParameter()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Bytes = char*;
 
@@ -16,15 +16,14 @@ public sealed class SemanticCallArgumentTypeRefTests
             fn main() -> int {
                 return accept(null);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void Compile_ReportsArgumentMismatchUsingAliasTypeRef()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Bytes = char*;
 
@@ -35,15 +34,16 @@ public sealed class SemanticCallArgumentTypeRefTests
             fn main() -> int {
                 return accept(10);
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Argument 1 for call to 'accept'", "cannot assign 'int' to 'Bytes'");
+            """)
+            .FailsWith(
+                "Argument 1 for call to 'accept'",
+                "cannot assign 'int' to 'Bytes'");
     }
 
     [Fact]
     public void Compile_ChecksFunctionPointerCallArgumentsWithTypeRefs()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Bytes = char*;
 
@@ -55,15 +55,16 @@ public sealed class SemanticCallArgumentTypeRefTests
                 let op: fn(Bytes) -> int = accept;
                 return op(10);
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Argument 1 for call to 'op'", "cannot assign 'int' to 'Bytes'");
+            """)
+            .FailsWith(
+                "Argument 1 for call to 'op'",
+                "cannot assign 'int' to 'Bytes'");
     }
 
     [Fact]
     public void Compile_ChecksInstanceMethodArgumentsThroughTypeSystemSignature()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Box<T> {
                 value: T;
@@ -80,15 +81,16 @@ public sealed class SemanticCallArgumentTypeRefTests
                 box.set("bad");
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Argument 1 for call to 'Box<int>.set'", "cannot assign 'char*' to 'int'");
+            """)
+            .FailsWith(
+                "Argument 1 for call to 'Box<int>.set'",
+                "cannot assign 'char*' to 'int'");
     }
 
     [Fact]
     public void Compile_ChecksStaticMethodArgumentsThroughTypeSystemSignature()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Box<T> {
                 value: T;
@@ -104,8 +106,9 @@ public sealed class SemanticCallArgumentTypeRefTests
                 let box: Box<int> = Box<int>.create("bad");
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Argument 1 for call to 'Box<int>.create'", "cannot assign 'char*' to 'int'");
+            """)
+            .FailsWith(
+                "Argument 1 for call to 'Box<int>.create'",
+                "cannot assign 'char*' to 'int'");
     }
 }

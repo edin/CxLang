@@ -39,7 +39,7 @@ public sealed class DataEnumTests
     [Fact]
     public void CompileDataEnum_SpecializesContextualDefaultsForEachMember()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenType(
                 name: const char* = member.name,
@@ -54,65 +54,53 @@ public sealed class DataEnumTests
                 let kind: TokenType = TokenType.Plus;
                 return kind.index;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains(
-            "[TokenType_Identifier] = { .name = \"Identifier\", .index = 0 }",
-            result.Output);
-        Assert.Contains(
-            "[TokenType_Number] = { .name = \"Number\", .index = 1 }",
-            result.Output);
-        Assert.Contains(
-            "[TokenType_Plus] = { .name = \"Plus\", .index = 10 }",
-            result.Output);
+            """)
+            .OutputContains(
+                "[TokenType_Identifier] = { .name = \"Identifier\", .index = 0 }",
+                "[TokenType_Number] = { .name = \"Number\", .index = 1 }",
+                "[TokenType_Plus] = { .name = \"Plus\", .index = 10 }");
     }
 
     [Fact]
     public void CompileDataEnum_RejectsMemberContextOutsideFieldDefaults()
     {
-        var explicitValue = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenType(index: int = 0) {
                 Identifier { index: member.index },
             }
             fn main() -> int { return 0; }
-            """);
-        var functionValue = CompilerTestHelpers.Compile(
+            """)
+            .FailsWith(
+                "'member' is only available inside data-enum field default expressions.");
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 return member.index;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            explicitValue,
-            "'member' is only available inside data-enum field default expressions.");
-        CompilerTestHelpers.AssertDiagnosticContains(
-            functionValue,
-            "'member' is only available inside data-enum field default expressions.");
+            """)
+            .FailsWith(
+                "'member' is only available inside data-enum field default expressions.");
     }
 
     [Fact]
     public void CompileDataEnum_RejectsUnknownContextualMemberProperty()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenType(value: int = member.value) {
                 Identifier {},
             }
             fn main() -> int { return 0; }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Unknown data-enum member context property 'value'. Expected 'name' or 'index'.");
+            """)
+            .FailsWith(
+                "Unknown data-enum member context property 'value'. Expected 'name' or 'index'.");
     }
 
     [Fact]
     public void CompileDataEnum_EmitsTypedTableAndLowersMetadataAccess()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum Associativity {
                 None,
@@ -132,20 +120,19 @@ public sealed class DataEnumTests
                 let kind: TokenKind = TokenKind.Plus;
                 return kind.precedence;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("TokenKind_COUNT", result.Output);
-        Assert.Contains("typedef struct TokenKind_Data", result.Output);
-        Assert.Contains("static const TokenKind_Data TokenKind_data[TokenKind_COUNT]", result.Output);
-        Assert.Contains("[TokenKind_Plus] = { .text = \"+\", .precedence = 90, .associativity = Associativity_Left }", result.Output);
-        Assert.Contains("return TokenKind_data[kind].precedence;", result.Output);
+            """)
+            .OutputContains(
+                "TokenKind_COUNT",
+                "typedef struct TokenKind_Data",
+                "static const TokenKind_Data TokenKind_data[TokenKind_COUNT]",
+                "[TokenKind_Plus] = { .text = \"+\", .precedence = 90, .associativity = Associativity_Left }",
+                "return TokenKind_data[kind].precedence;");
     }
 
     [Fact]
     public void CompileDataEnum_StoresNullableFunctionReferencesAndInvokesThem()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn increment(value: int) -> int {
                 return value + 1;
@@ -164,21 +151,20 @@ public sealed class DataEnumTests
 
                 return operation.handler(41);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int (*handler)(int);", result.Output);
-        Assert.Contains("[Operation_None] = { .handler = NULL }", result.Output);
-        Assert.Contains("[Operation_Increment] = { .handler = increment }", result.Output);
-        Assert.Contains("int increment(int value)", result.Output);
-        Assert.Contains("if (Operation_data[operation].handler == NULL)", result.Output);
-        Assert.Contains("return Operation_data[operation].handler(41);", result.Output);
+            """)
+            .OutputContains(
+                "int (*handler)(int);",
+                "[Operation_None] = { .handler = NULL }",
+                "[Operation_Increment] = { .handler = increment }",
+                "int increment(int value)",
+                "if (Operation_data[operation].handler == NULL)",
+                "return Operation_data[operation].handler(41);");
     }
 
     [Fact]
     public void CompileDataEnum_DeclaresHandlerTypesAndFunctionsBeforeInitializedTable()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Lexer {
                 position: int;
@@ -206,29 +192,18 @@ public sealed class DataEnumTests
                 }
                 return lexer.position - 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        var output = result.Output!;
-        var lexerType = output.IndexOf("} Lexer;", StringComparison.Ordinal);
-        var dataType = output.IndexOf("} TokenType_Data;", StringComparison.Ordinal);
-        var handlerDeclaration = output.IndexOf(
-            "bool match_identifier(Lexer* lexer);",
-            StringComparison.Ordinal);
-        var initializedTable = output.IndexOf(
-            "static const TokenType_Data TokenType_data",
-            StringComparison.Ordinal);
-
-        Assert.True(lexerType >= 0);
-        Assert.True(dataType > lexerType);
-        Assert.True(handlerDeclaration > dataType);
-        Assert.True(initializedTable > handlerDeclaration);
+            """)
+            .OutputAppearsInOrder(
+                "} Lexer;",
+                "} TokenType_Data;",
+                "bool match_identifier(Lexer* lexer);",
+                "static const TokenType_Data TokenType_data");
     }
 
     [Fact]
     public void CompileDataEnum_ReportsUnknownDuplicateAndMissingFields()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             enum Example(required: int, optional: int = 1) {
                 Bad { required: 1, required: 2, unknown: 3 },
@@ -238,15 +213,15 @@ public sealed class DataEnumTests
             fn main() -> int { return 0; }
             """);
 
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Duplicate value", "required");
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Unknown data field", "unknown");
-        CompilerTestHelpers.AssertDiagnosticContains(result, "must provide data field", "required");
+        test.HasDiagnostic("Duplicate value", "required")
+            .HasDiagnostic("Unknown data field", "unknown")
+            .HasDiagnostic("must provide data field", "required");
     }
 
     [Fact]
     public void CompileDataEnum_RejectsMetadataMutation()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenKind(precedence: int = 0) {
                 Plus { precedence: 90 },
@@ -257,27 +232,25 @@ public sealed class DataEnumTests
                 kind.precedence = 10;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "enum metadata is immutable", "precedence");
+            """)
+            .FailsWith("enum metadata is immutable", "precedence");
     }
 
     [Fact]
     public void CompileDataEnum_RejectsEmptySchema()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum Empty() { Value {} }
             fn main() -> int { return 0; }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "must declare at least one data field");
+            """)
+            .FailsWith("must declare at least one data field");
     }
 
     [Fact]
     public void CompileDataEnum_SupportsRuntimeForeachInDeclarationOrder()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenKind(precedence: int = 0) {
                 Identifier {},
@@ -291,18 +264,17 @@ public sealed class DataEnumTests
                 }
                 return total;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("< TokenKind_COUNT", result.Output);
-        Assert.Contains("TokenKind kind = (TokenKind)", result.Output);
-        Assert.Contains("TokenKind_data[kind].precedence", result.Output);
+            """)
+            .OutputContains(
+                "< TokenKind_COUNT",
+                "TokenKind kind = (TokenKind)",
+                "TokenKind_data[kind].precedence");
     }
 
     [Fact]
     public void CompileDataEnum_RejectsReferenceForeachBinding()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenKind(precedence: int = 0) { Value {} }
 
@@ -310,15 +282,14 @@ public sealed class DataEnumTests
                 foreach &kind in TokenKind {}
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "cannot be bound by reference");
+            """)
+            .FailsWith("cannot be bound by reference");
     }
 
     [Fact]
     public void CompileDataEnum_ExpandsCompileTimeMemberIteration()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenKind(precedence: int = 0) {
                 Identifier {},
@@ -336,17 +307,16 @@ public sealed class DataEnumTests
                 }
                 return total;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("consume(TokenKind_Identifier)", result.Output);
-        Assert.Contains("consume(TokenKind_Plus)", result.Output);
+            """)
+            .OutputContains(
+                "consume(TokenKind_Identifier)",
+                "consume(TokenKind_Plus)");
     }
 
     [Fact]
     public void CompileTimeDiagnosticWarning_UsesReflectedEnumMemberLocation()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenKind(value: int = 0) {
                 Identifier {},
@@ -361,11 +331,10 @@ public sealed class DataEnumTests
                 }
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        var warning = Assert.Single(result.Diagnostics, diagnostic =>
-            diagnostic.Message == "Identifier is intentionally metadata-only.");
+            """)
+            .Succeeds();
+        var warning = test.SingleDiagnostic(
+            "Identifier is intentionally metadata-only.");
         Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
         Assert.Equal(2, warning.Location.Line);
     }
@@ -373,7 +342,7 @@ public sealed class DataEnumTests
     [Fact]
     public void CompileTimeDiagnostic_FormatsVariadicValues()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 Diagnostic.error(
@@ -384,17 +353,15 @@ public sealed class DataEnumTests
                     null);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Value 42, type int, enabled true, missing null, braces {ok}.");
+            """)
+            .FailsWith(
+                "Value 42, type int, enabled true, missing null, braces {ok}.");
     }
 
     [Fact]
     public void CompileTimeDiagnostic_FormatsAnchoredWarningAtReflectedLocation()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenKind(value: int = 10) {
                 Identifier {},
@@ -410,11 +377,10 @@ public sealed class DataEnumTests
                 }
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        var warning = Assert.Single(result.Diagnostics, diagnostic =>
-            diagnostic.Message == "Member 'Identifier' has value 10.");
+            """)
+            .Succeeds();
+        var warning = test.SingleDiagnostic(
+            "Member 'Identifier' has value 10.");
         Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
         Assert.Equal(2, warning.Location.Line);
     }
@@ -422,32 +388,28 @@ public sealed class DataEnumTests
     [Fact]
     public void CompileTimeDiagnostic_ReportsMalformedFormatString()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 Diagnostic.error("Missing argument {1}.", 42);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Invalid compile-time diagnostic format string");
+            """)
+            .FailsWith(
+                "Invalid compile-time diagnostic format string");
     }
 
     [Fact]
     public void CompileTimeDiagnosticError_StopsCompilation()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 Diagnostic.error("This program is rejected at compile time.");
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "This program is rejected at compile time.");
+            """)
+            .FailsWith(
+                "This program is rejected at compile time.");
     }
 }

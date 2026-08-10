@@ -89,32 +89,28 @@ public sealed class PlaceholderExpressionTests
     [Fact]
     public void CompileToC_RejectsPlaceholderOutsideMacroTemplate()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let value: int = 1;
                 return @{value};
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Compile-time placeholders are only valid inside macro templates");
+            """)
+            .Fails()
+            .HasDiagnostic("Compile-time placeholders are only valid inside macro templates");
     }
 
     [Fact]
     public void CompileToC_RejectsComputedFunctionNameOutsideMacroTemplate()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn @{as_name("generated")}() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Compile-time placeholders are only valid inside macro templates");
+            """)
+            .Fails()
+            .HasDiagnostic("Compile-time placeholders are only valid inside macro templates");
     }
 
     private sealed class RenameRewriter : AstRewriter

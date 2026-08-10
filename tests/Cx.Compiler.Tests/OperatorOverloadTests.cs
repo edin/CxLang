@@ -1,6 +1,4 @@
-using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Syntax.Nodes;
-using CxParser = Cx.Compiler.Parser.Parser;
 
 namespace Cx.Compiler.Tests;
 
@@ -86,7 +84,7 @@ public sealed class OperatorOverloadTests
     [Fact]
     public void CompileOperatorFunction_LowersInfixAndExplicitCallsToSameFunction()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             struct Vec2 {
                 x: int;
@@ -103,19 +101,19 @@ public sealed class OperatorOverloadTests
                 let explicit: Vec2 = left.operator +(right);
                 return infix.x + explicit.x;
             }
-            """);
+            """)
+            .Succeeds()
+            .OutputContains("Vec2_operator_add(left, right)");
 
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Vec2_operator_add(left, right)", result.Output);
         Assert.Equal(
             2,
-            CountOccurrences(result.Output!, "Vec2_operator_add(left, right)"));
+            CountOccurrences(test.Result.Output!, "Vec2_operator_add(left, right)"));
     }
 
     [Fact]
     public void CompileGenericOperatorFunction_SpecializesResolvedInfixCall()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Add<T> {
                 fn operator +(other: T) -> T;
@@ -136,17 +134,15 @@ public sealed class OperatorOverloadTests
                 let sum: Box<int> = left + right;
                 return sum.value;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("operator_add", result.Output);
-        Assert.Contains("(left, right)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("operator_add", "(left, right)");
     }
 
     [Fact]
     public void CompileConstrainedGenericOperator_RetargetsToConcreteOperator()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Add<T> {
                 fn operator +(other: T) -> T;
@@ -171,16 +167,15 @@ public sealed class OperatorOverloadTests
                 let result = sum(left, right);
                 return result.x;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Vec2_operator_add(left, right)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("Vec2_operator_add(left, right)");
     }
 
     [Fact]
     public void CompileConstrainedGenericSpaceship_RetargetsToConcreteOperator()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Compare<T> {
                 fn operator <=>(other: T) -> int;
@@ -204,16 +199,15 @@ public sealed class OperatorOverloadTests
                 let right = Score { value: 20 };
                 return compare_values(left, right);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Score_operator_compare(left, right)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("Score_operator_compare(left, right)");
     }
 
     [Fact]
     public void CompileGenericOperatorWithoutRequirement_ReportsDiagnostic()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn sum<T>(left: T, right: T) -> T {
                 return left + right;
@@ -222,18 +216,17 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return sum(10, 20);
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '+' is not defined",
-            "'T' and 'T'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Operator '+' is not defined",
+                "'T' and 'T'");
     }
 
     [Fact]
     public void CompileMathOperatorFunctions_LowersEveryInfixAndExplicitCall()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             struct Number {
                 value: int;
@@ -275,57 +268,47 @@ public sealed class OperatorOverloadTests
                     + modulo.value
                     + modulo_explicit.value;
             }
-            """);
+            """)
+            .Succeeds();
 
-        CompilerTestHelpers.AssertSuccess(result);
         foreach (var name in new[] { "subtract", "multiply", "divide", "modulo" })
         {
             Assert.Equal(
                 2,
-                CountOccurrences(result.Output!, $"Number_operator_{name}(left, right)"));
+                CountOccurrences(test.Result.Output!, $"Number_operator_{name}(left, right)"));
         }
     }
 
     [Fact]
     public void ParseOperatorFunction_RequiresTypeOwner()
     {
-        var diagnostics = new DiagnosticBag();
-        new CxParser(diagnostics).Parse(CompilerTestHelpers.Source(
+        CompilerTestHelpers.VerifyProgram(
             """
             fn operator +(right: int) -> int {
                 return right;
             }
-            """));
-
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains(
-                "must be declared inside a type or extension",
-                StringComparison.Ordinal));
+            """)
+            .HasDiagnostic("must be declared inside a type or extension");
     }
 
     [Fact]
     public void ParseOperatorFunction_RejectsPointerReceiver()
     {
-        var diagnostics = new DiagnosticBag();
-        new CxParser(diagnostics).Parse(CompilerTestHelpers.Source(
+        CompilerTestHelpers.VerifyProgram(
             """
             struct Vec2 {
                 fn operator +(self: Self*, right: Vec2) -> Vec2 {
                     return right;
                 }
             }
-            """));
-
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains(
-                "receivers must be passed by value",
-                StringComparison.Ordinal));
+            """)
+            .HasDiagnostic("receivers must be passed by value");
     }
 
     [Fact]
     public void CompileMathExpression_ReportsMissingOperatorForOperandTypes()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Vec2 {
                 x: int;
@@ -337,18 +320,17 @@ public sealed class OperatorOverloadTests
                 let sum = left + right;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '+' is not defined",
-            "'Vec2' and 'Vec2'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Operator '+' is not defined",
+                "'Vec2' and 'Vec2'");
     }
 
     [Fact]
     public void CompileMathExpression_ReportsAmbiguousOperatorCandidates()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Number {
                 value: int;
@@ -367,19 +349,18 @@ public sealed class OperatorOverloadTests
                 let result = number + 10;
                 return result.value;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Ambiguous operator '+'",
-            "Number.operator_add(char)",
-            "Number.operator_add(long)");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Ambiguous operator '+'",
+                "Number.operator_add(char)",
+                "Number.operator_add(long)");
     }
 
     [Fact]
     public void CompileMathExpression_ReportsMixedSignedness()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let signed: i32 = 10;
@@ -387,69 +368,64 @@ public sealed class OperatorOverloadTests
                 let value = signed + unsigned;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "cannot implicitly combine signed type 'i32' and unsigned type 'u32'",
-            "Use an explicit cast");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "cannot implicitly combine signed type 'i32' and unsigned type 'u32'",
+                "Use an explicit cast");
     }
 
     [Fact]
     public void CompileMathExpression_RejectsBooleanArithmetic()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let value = true + false;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '+' is not defined for primitive operands 'bool' and 'bool'");
+            """)
+            .Fails()
+            .HasDiagnostic("Operator '+' is not defined for primitive operands 'bool' and 'bool'");
     }
 
     [Fact]
     public void CompileMathExpression_RejectsFloatingPointModulo()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let value = 5.0 % 2.0;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '%' requires integer operands",
-            "'double' and 'double'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Operator '%' requires integer operands",
+                "'double' and 'double'");
     }
 
     [Fact]
     public void CompileMathExpression_ReportsIntegerLiteralOutsideTargetRange()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let value: u8 = 10;
                 let invalid = value + 300;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Integer literal '300' cannot be represented by 'u8'",
-            "Use an explicit cast or a wider type");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Integer literal '300' cannot be represented by 'u8'",
+                "Use an explicit cast or a wider type");
     }
 
     [Fact]
     public void CompileOperatorFunction_RejectsIntrinsicPrimitiveRedefinition()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extension int {
                 fn operator +(other: int) -> int {
@@ -460,18 +436,17 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return 1 + 2;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '+' cannot be redefined for operands 'int' and 'int'",
-            "compiler already provides 'int + int -> int'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Operator '+' cannot be redefined for operands 'int' and 'int'",
+                "compiler already provides 'int + int -> int'");
     }
 
     [Fact]
     public void CompileOperatorFunction_ReportsIntrinsicMixedTypeResult()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extension int {
                 fn operator +(other: float) -> int {
@@ -482,18 +457,17 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '+' cannot be redefined for operands 'int' and 'float'",
-            "compiler already provides 'int + float -> float'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Operator '+' cannot be redefined for operands 'int' and 'float'",
+                "compiler already provides 'int + float -> float'");
     }
 
     [Fact]
     public void CompileOperatorFunction_AllowsPrimitiveAndUserTypeCombination()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Offset {
                 value: int;
@@ -509,16 +483,15 @@ public sealed class OperatorOverloadTests
                 let offset = Offset { value: 2 };
                 return 1 + offset;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int_operator_add(1, offset)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("int_operator_add(1, offset)");
     }
 
     [Fact]
     public void CompileOperatorFunction_LowersExplicitSpaceshipOperator()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Score {
                 value: int;
@@ -533,16 +506,15 @@ public sealed class OperatorOverloadTests
                 let right = Score { value: 20 };
                 return left <=> right;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Score_operator_compare(left, right)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("Score_operator_compare(left, right)");
     }
 
     [Fact]
     public void CompileOperatorFunction_RequiresSpaceshipToReturnInt()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Score {
                 value: int;
@@ -555,18 +527,17 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '<=>' must return 'int'",
-            "returns 'bool'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Operator '<=>' must return 'int'",
+                "returns 'bool'");
     }
 
     [Fact]
     public void CompileOperatorFunction_LowersExplicitComparisonOperators()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Value {
                 data: int;
@@ -590,21 +561,21 @@ public sealed class OperatorOverloadTests
                 let greater_or_equal = left >= right;
                 return equal || !not_equal || !less || !less_or_equal || greater || greater_or_equal;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Value_operator_equal(left, right)", result.Output);
-        Assert.Contains("Value_operator_not_equal(left, right)", result.Output);
-        Assert.Contains("Value_operator_less_than(left, right)", result.Output);
-        Assert.Contains("Value_operator_less_than_or_equal(left, right)", result.Output);
-        Assert.Contains("Value_operator_greater_than(left, right)", result.Output);
-        Assert.Contains("Value_operator_greater_than_or_equal(left, right)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "Value_operator_equal(left, right)",
+                "Value_operator_not_equal(left, right)",
+                "Value_operator_less_than(left, right)",
+                "Value_operator_less_than_or_equal(left, right)",
+                "Value_operator_greater_than(left, right)",
+                "Value_operator_greater_than_or_equal(left, right)");
     }
 
     [Fact]
     public void CompileOperatorFunction_RequiresComparisonToReturnBool()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Value {
                 data: int;
@@ -617,18 +588,17 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '<' must return 'bool'",
-            "returns 'int'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Operator '<' must return 'bool'",
+                "returns 'int'");
     }
 
     [Fact]
     public void CompileOperatorFunction_RejectsIntrinsicComparisonRedefinition()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extension int {
                 fn operator ==(other: int) -> bool {
@@ -639,18 +609,17 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '==' cannot be redefined for operands 'int' and 'int'",
-            "compiler already provides 'int == int -> bool'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Operator '==' cannot be redefined for operands 'int' and 'int'",
+                "compiler already provides 'int == int -> bool'");
     }
 
     [Fact]
     public void CompileComparisonOperators_DerivesFromSpaceship()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Value {
                 data: int;
@@ -671,21 +640,21 @@ public sealed class OperatorOverloadTests
                 let greater_or_equal = left >= right;
                 return equal || not_equal || less || less_or_equal || greater || greater_or_equal;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("(Value_operator_compare(left, right)) == 0", result.Output);
-        Assert.Contains("(Value_operator_compare(left, right)) != 0", result.Output);
-        Assert.Contains("(Value_operator_compare(left, right)) < 0", result.Output);
-        Assert.Contains("(Value_operator_compare(left, right)) <= 0", result.Output);
-        Assert.Contains("(Value_operator_compare(left, right)) > 0", result.Output);
-        Assert.Contains("(Value_operator_compare(left, right)) >= 0", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "(Value_operator_compare(left, right)) == 0",
+                "(Value_operator_compare(left, right)) != 0",
+                "(Value_operator_compare(left, right)) < 0",
+                "(Value_operator_compare(left, right)) <= 0",
+                "(Value_operator_compare(left, right)) > 0",
+                "(Value_operator_compare(left, right)) >= 0");
     }
 
     [Fact]
     public void CompileComparisonOperators_PrefersExactAndDerivesNotEqualFromEqual()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Value {
                 data: int;
@@ -704,19 +673,19 @@ public sealed class OperatorOverloadTests
                 let less_or_equal = left <= right;
                 return equal || not_equal || less || less_or_equal;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Value_operator_equal(left, right)", result.Output);
-        Assert.Contains("!(Value_operator_equal(left, right))", result.Output);
-        Assert.Contains("Value_operator_less_than(left, right)", result.Output);
-        Assert.Contains("(Value_operator_compare(left, right)) <= 0", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "Value_operator_equal(left, right)",
+                "!(Value_operator_equal(left, right))",
+                "Value_operator_less_than(left, right)",
+                "(Value_operator_compare(left, right)) <= 0");
     }
 
     [Fact]
     public void CompileConstrainedGenericComparison_DerivesAndRetargetsSpaceship()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Compare<T> {
                 fn operator <=>(other: T) -> int;
@@ -740,16 +709,15 @@ public sealed class OperatorOverloadTests
                 let right = Score { value: 20 };
                 return is_less(left, right);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("(Score_operator_compare(left, right)) < 0", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("(Score_operator_compare(left, right)) < 0");
     }
 
     [Fact]
     public void CompileConstrainedGenericComparison_RetargetsPrimitiveToIntrinsicOperator()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Compare<T> {
                 fn operator <=>(other: T) -> int;
@@ -763,17 +731,16 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return is_less(10, 20);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return left < right;", result.Output);
-        Assert.DoesNotContain("int_operator_compare(left, right)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("return left < right;")
+            .OutputOmits("int_operator_compare(left, right)");
     }
 
     [Fact]
     public void CompileDerivedComparison_EvaluatesEachOperandOnce()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             struct Value {
                 data: int;
@@ -789,16 +756,14 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return make_left() < make_right();
             }
-            """);
+            """)
+            .Succeeds()
+            .OutputContains("(Value_operator_compare(make_left(), make_right())) < 0");
 
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains(
-            "(Value_operator_compare(make_left(), make_right())) < 0",
-            result.Output);
         Assert.Equal(
             1,
             CountOccurrences(
-                result.Output!,
+                test.Result.Output!,
                 "Value_operator_compare(make_left(), make_right())"));
     }
 
@@ -811,7 +776,7 @@ public sealed class OperatorOverloadTests
     [InlineData(">=")]
     public void CompileStructComparison_RequiresOperatorOrSpaceship(string comparison)
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             $$"""
             struct Value {
                 data: int;
@@ -822,11 +787,10 @@ public sealed class OperatorOverloadTests
                 let right = Value { data: 20 };
                 return left {{comparison}} right;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            $"Operator '{comparison}' is not defined for operands 'Value' and 'Value'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                $"Operator '{comparison}' is not defined for operands 'Value' and 'Value'");
     }
 
     [Theory]
@@ -838,7 +802,7 @@ public sealed class OperatorOverloadTests
     [InlineData(">=")]
     public void CompileEnumComparison_RemainsIntrinsic(string comparison)
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             $$"""
             enum Color {
                 Red,
@@ -851,16 +815,15 @@ public sealed class OperatorOverloadTests
                 let right = Color.Green;
                 return left {{comparison}} right;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains($"return left {comparison} right;", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains($"return left {comparison} right;");
     }
 
     [Fact]
     public void CompileConstrainedGenericEquality_AcceptsIntrinsicEnumOperator()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires EqualityOperator<T> {
                 fn operator ==(other: T) -> bool;
@@ -880,16 +843,15 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return are_equal(Color.Red, Color.Green);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return left == right;", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("return left == right;");
     }
 
     [Fact]
     public void CompileConstrainedGenericEquality_AcceptsSpaceshipCapability()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires EqualityOperator<T> {
                 fn operator ==(other: T) -> bool;
@@ -913,16 +875,15 @@ public sealed class OperatorOverloadTests
                 let right = Score { value: 20 };
                 return are_equal(left, right);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("(Score_operator_compare(left, right)) == 0", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("(Score_operator_compare(left, right)) == 0");
     }
 
     [Fact]
     public void CompileStandardEqualRequirement_UsesEqualityOperator()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn are_equal<T>(left: T, right: T) -> bool
             where T: Equal<T> {
@@ -934,17 +895,17 @@ public sealed class OperatorOverloadTests
                 let right = StringView.from_cstr("cx");
                 return are_equal(10, 10) && are_equal(left, right);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return left == right;", result.Output);
-        Assert.Contains("StringView_operator_equal(left, right)", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "return left == right;",
+                "StringView_operator_equal(left, right)");
     }
 
     [Fact]
     public void CompileStandardCompareRequirement_UsesSpaceshipOperator()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn compare_values<T>(left: T, right: T) -> int
             where T: Compare<T> {
@@ -954,10 +915,9 @@ public sealed class OperatorOverloadTests
             fn main() -> int {
                 return compare_values(10, 20);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return int_operator_compare(left, right);", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("return int_operator_compare(left, right);");
     }
 
     private static int CountOccurrences(string text, string value)

@@ -5,7 +5,7 @@ public sealed class SemanticAssignmentTypeRefTests
     [Fact]
     public void Compile_AllowsNullAssignmentToAliasPointerType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Bytes = char*;
 
@@ -13,15 +13,14 @@ public sealed class SemanticAssignmentTypeRefTests
                 let bytes: Bytes = null;
                 return bytes == null;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void Compile_AllowsNullAssignmentToFunctionType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Handler = fn(int) -> int;
 
@@ -36,18 +35,17 @@ public sealed class SemanticAssignmentTypeRefTests
                 handler = null;
                 return value;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Handler handler = NULL;", result.Output);
-        Assert.Contains("handler = increment;", result.Output);
-        Assert.Contains("handler = NULL;", result.Output);
+            """)
+            .OutputContains(
+                "Handler handler = NULL;",
+                "handler = increment;",
+                "handler = NULL;");
     }
 
     [Fact]
     public void Compile_ReportsAssignmentMismatchUsingAliasTypeRef()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Bytes = char*;
 
@@ -56,15 +54,16 @@ public sealed class SemanticAssignmentTypeRefTests
                 bytes = 10;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Type mismatch for assignment", "cannot assign 'int' to 'Bytes'");
+            """)
+            .FailsWith(
+                "Type mismatch for assignment",
+                "cannot assign 'int' to 'Bytes'");
     }
 
     [Fact]
     public void Compile_ReportsFunctionPointerVariadicMismatch()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type VariadicFn = fn(const char*, ...) -> int;
             type PlainFn = fn(const char*) -> int;
@@ -78,8 +77,7 @@ public sealed class SemanticAssignmentTypeRefTests
                 let other: VariadicFn = value;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Type mismatch for local 'other'");
+            """)
+            .FailsWith("Type mismatch for local 'other'");
     }
 }

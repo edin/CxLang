@@ -13,6 +13,9 @@ internal static class CompilerTestHelpers
     public static SourceFile Source(string text, string path = "main.cx") =>
         new(path, text);
 
+    public static IReadOnlyList<SourceFile> Sources(string sourceSet) =>
+        TestSourceSet.Parse(sourceSet);
+
     public static CompilationResult Compile(string source, string path = "main.cx") =>
         new CxCompiler().CompileToC([Source(source, path)]);
 
@@ -34,8 +37,27 @@ internal static class CompilerTestHelpers
         new(Compile(source, path));
 
     public static CompilationVerifier VerifyCompilation(
+        string source,
+        CEmissionOptions emissionOptions,
+        string path = "main.cx") =>
+        new(Compile(source, emissionOptions, path));
+
+    public static CompilationVerifier VerifyCompilation(
         IEnumerable<SourceFile> sources) =>
         new(Compile(sources));
+
+    public static CompilationVerifier VerifyCompilationFiles(
+        string sourceSet) =>
+        VerifyCompilation(Sources(sourceSet));
+
+    public static ProgramVerifier VerifyProgram(
+        string source,
+        string path = "main.cx") =>
+        new(Source(source, path));
+
+    public static ProgramVerifier VerifyProgramFiles(
+        string sourceSet) =>
+        new(Sources(sourceSet));
 
     public static ProgramNode Parse(string source, string path = "main.cx")
     {
@@ -77,13 +99,6 @@ internal static class CompilerTestHelpers
             result.Success,
             string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.ToString())));
         Assert.NotNull(result.Output);
-    }
-
-    public static void AssertDiagnosticContains(CompilationResult result, params string[] parts)
-    {
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            parts.All(part => diagnostic.Message.Contains(part, StringComparison.Ordinal)));
     }
 
     public static void AssertNoErrors(DiagnosticBag diagnostics)
@@ -140,6 +155,26 @@ internal sealed class CompilationVerifier(CompilationResult result)
         return this;
     }
 
+    public CompilationVerifier OutputAppearsInOrder(params string[] fragments)
+    {
+        Succeeds();
+        Assert.NotNull(result.Output);
+        var position = 0;
+        foreach (var fragment in fragments)
+        {
+            var next = result.Output.IndexOf(
+                fragment,
+                position,
+                StringComparison.Ordinal);
+            Assert.True(
+                next >= 0,
+                $"Expected emitted C fragment '{fragment}' after position {position}.");
+            position = next + fragment.Length;
+        }
+
+        return this;
+    }
+
     public CompilationVerifier HasDiagnostic(params string[] fragments)
     {
         Fails();
@@ -151,6 +186,14 @@ internal sealed class CompilationVerifier(CompilationResult result)
                     StringComparison.Ordinal)));
         return this;
     }
+
+    public Diagnostic SingleDiagnostic(string message) =>
+        Assert.Single(
+            result.Diagnostics,
+            diagnostic => string.Equals(
+                diagnostic.Message,
+                message,
+                StringComparison.Ordinal));
 
     public CompilationVerifier SucceedsWith(params string[] outputFragments)
     {

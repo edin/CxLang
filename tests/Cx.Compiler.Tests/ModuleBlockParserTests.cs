@@ -43,25 +43,21 @@ public sealed class ModuleBlockParserTests
     [Fact]
     public void Parse_RejectsDeclarationsOutsideModuleBlocks()
     {
-        var diagnostics = ParseWithDiagnostics(
+        CompilerTestHelpers.VerifyProgram(
             """
             module app {
                 fn inside() -> void {}
             }
 
             fn outside() -> void {}
-            """);
-
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains(
-                "Declarations outside module blocks",
-                StringComparison.Ordinal));
+            """)
+            .HasDiagnostic("Declarations outside module blocks");
     }
 
     [Fact]
     public void Parse_RejectsMixingFileModuleAndModuleBlocks()
     {
-        var diagnostics = ParseWithDiagnostics(
+        CompilerTestHelpers.VerifyProgram(
             """
             module app;
 
@@ -70,12 +66,8 @@ public sealed class ModuleBlockParserTests
                     return 42;
                 }
             }
-            """);
-
-        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains(
-                "cannot be mixed",
-                StringComparison.Ordinal));
+            """)
+            .HasDiagnostic("cannot be mixed");
     }
 
     [Fact]
@@ -109,7 +101,7 @@ public sealed class ModuleBlockParserTests
     [Fact]
     public void Compile_ProjectsModuleBlocksAsIndependentModules()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             module app.main {
                 import lib.values;
@@ -124,11 +116,9 @@ public sealed class ModuleBlockParserTests
                     return 42;
                 }
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("int main(", result.Output, StringComparison.Ordinal);
-        Assert.Contains("int value(", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("int main(", "int value(");
     }
 
     [Fact]
@@ -174,10 +164,4 @@ public sealed class ModuleBlockParserTests
             StringComparison.Ordinal);
     }
 
-    private static DiagnosticBag ParseWithDiagnostics(string source)
-    {
-        var diagnostics = new DiagnosticBag();
-        new CxParser(diagnostics).Parse(CompilerTestHelpers.Source(source));
-        return diagnostics;
-    }
 }

@@ -1,5 +1,4 @@
 using Cx.Compiler.Diagnostics;
-using Cx.Compiler.Modules;
 using Cx.Compiler.Semantic;
 using Cx.Compiler.Semantic.Analyzers;
 using Cx.Compiler.Semantic.Resolvers;
@@ -14,17 +13,16 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            enum TokenKind(value: int = 0) {
-                First {}
+            module lib.first {
+                enum TokenKind(value: int = 0) {
+                    First {}
+                }
             }
-            """,
-            """
-            module lib.second;
 
-            enum TokenKind(label: int = 0) {
-                Second {}
+            module lib.second {
+                enum TokenKind(label: int = 0) {
+                    Second {}
+                }
             }
             """);
         var diagnostics = new DiagnosticBag();
@@ -77,21 +75,20 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            enum TokenKind(value: int = 0) {
-                First {}
-            }
-            """,
-            """
-            module lib.second;
-
-            enum TokenKind(label: int = 0) {
-                Second {}
+            module lib.first {
+                enum TokenKind(value: int = 0) {
+                    First {}
+                }
             }
 
-            fn inspect() -> void {
-                foreach item in TokenKind {}
+            module lib.second {
+                enum TokenKind(label: int = 0) {
+                    Second {}
+                }
+
+                fn inspect() -> void {
+                    foreach item in TokenKind {}
+                }
             }
             """);
         var diagnostics = new DiagnosticBag();
@@ -131,22 +128,21 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            union Result {
-                First: int;
-            }
-            """,
-            """
-            module lib.second;
-
-            union Result {
-                Second: bool;
+            module lib.first {
+                union Result {
+                    First: int;
+                }
             }
 
-            fn inspect(result: Result) -> void {
-                match result {
-                    Second: value => {}
+            module lib.second {
+                union Result {
+                    Second: bool;
+                }
+
+                fn inspect(result: Result) -> void {
+                    match result {
+                        Second: value => {}
+                    }
                 }
             }
             """);
@@ -186,22 +182,21 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
+            module lib.first {
+                interface Service {}
 
-            interface Service {}
+                struct Handler: Service {}
+            }
 
-            struct Handler: Service {}
-            """,
-            """
-            module lib.second;
+            module lib.second {
+                interface Service {}
 
-            interface Service {}
+                struct Handler {}
 
-            struct Handler {}
-
-            fn inspect(service: Service) -> void {
-                match service {
-                    Handler: value => {}
+                fn inspect(service: Service) -> void {
+                    match service {
+                        Handler: value => {}
+                    }
                 }
             }
             """);
@@ -242,17 +237,16 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
+            module lib.first {
+                requires Marker<T> {}
+            }
 
-            requires Marker<T> {}
-            """,
-            """
-            module lib.second;
+            module lib.second {
+                requires Marker {}
 
-            requires Marker {}
-
-            fn inspect<T>() -> void
-            where T: Marker {}
+                fn inspect<T>() -> void
+                where T: Marker {}
+            }
             """);
         var diagnostics = new DiagnosticBag();
         var declarations = ProgramDeclarationIndex.Create(program, modules);
@@ -279,17 +273,16 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
+            module lib.first {
+                requires Marker<T> {}
+            }
 
-            requires Marker<T> {}
-            """,
-            """
-            module lib.second;
+            module lib.second {
+                interface Marker {}
 
-            interface Marker {}
-
-            fn inspect<T>() -> void
-            where T: Marker<int> {}
+                fn inspect<T>() -> void
+                where T: Marker<int> {}
+            }
             """);
         var diagnostics = new DiagnosticBag();
         var declarations = ProgramDeclarationIndex.Create(program, modules);
@@ -321,18 +314,17 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            requires Marker {
-                value: int;
+            module lib.first {
+                requires Marker {
+                    value: int;
+                }
             }
-            """,
-            """
-            module lib.second;
 
-            requires Marker {}
+            module lib.second {
+                requires Marker {}
 
-            struct Value: Marker {}
+                struct Value: Marker {}
+            }
             """);
         var diagnostics = new DiagnosticBag();
         var declarations = ProgramDeclarationIndex.Create(program, modules);
@@ -357,24 +349,23 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            struct Box<T> {
-                value: T;
-            }
-            """,
-            """
-            module lib.second;
-
-            requires Marker {
-                value: int;
+            module lib.first {
+                struct Box<T> {
+                    value: T;
+                }
             }
 
-            struct Box<T> where T: Marker {
-                value: T;
-            }
+            module lib.second {
+                requires Marker {
+                    value: int;
+                }
 
-            fn inspect(value: Box<int>) -> void {}
+                struct Box<T> where T: Marker {
+                    value: T;
+                }
+
+                fn inspect(value: Box<int>) -> void {}
+            }
             """);
         var diagnostics = new DiagnosticBag();
         var declarations = ProgramDeclarationIndex.Create(program, modules);
@@ -414,21 +405,20 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            struct Box<T> {
-                value: int;
-            }
-            """,
-            """
-            module lib.second;
-
-            requires HasValue {
-                value: bool;
+            module lib.first {
+                struct Box<T> {
+                    value: int;
+                }
             }
 
-            struct Box<T> {
-                value: bool;
+            module lib.second {
+                requires HasValue {
+                    value: bool;
+                }
+
+                struct Box<T> {
+                    value: bool;
+                }
             }
             """);
         var declarations = ProgramDeclarationIndex.Create(
@@ -456,17 +446,16 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            struct Model {
-                first: int;
+            module lib.first {
+                struct Model {
+                    first: int;
+                }
             }
-            """,
-            """
-            module lib.second;
 
-            struct Model {
-                second: bool;
+            module lib.second {
+                struct Model {
+                    second: bool;
+                }
             }
             """);
         var declarations = ProgramDeclarationIndex.Create(
@@ -495,14 +484,13 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
+            module lib.first {
+                struct Service {}
+            }
 
-            struct Service {}
-            """,
-            """
-            module lib.second;
-
-            interface Service {}
+            module lib.second {
+                interface Service {}
+            }
             """);
         var declarations = ProgramDeclarationIndex.Create(
             program,
@@ -527,17 +515,16 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            enum State {
-                First
+            module lib.first {
+                enum State {
+                    First
+                }
             }
-            """,
-            """
-            module lib.second;
 
-            enum State {
-                Second
+            module lib.second {
+                enum State {
+                    Second
+                }
             }
             """);
         var declarations = ProgramDeclarationIndex.Create(
@@ -566,29 +553,28 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
+            module lib.first {
+                struct Storage<T> {
+                    first: int;
 
-            struct Storage<T> {
-                first: int;
-
-                fn add(value: T) -> int {
-                    return 0;
-                }
-            }
-            """,
-            """
-            module lib.second;
-
-            struct Storage<T> {
-                second: T;
-
-                fn add(value: T) -> bool {
-                    return true;
+                    fn add(value: T) -> int {
+                        return 0;
+                    }
                 }
             }
 
-            type View<T> using Storage<T> {
-                expose add as push;
+            module lib.second {
+                struct Storage<T> {
+                    second: T;
+
+                    fn add(value: T) -> bool {
+                        return true;
+                    }
+                }
+
+                type View<T> using Storage<T> {
+                    expose add as push;
+                }
             }
             """);
         var declarations = ProgramDeclarationIndex.Create(
@@ -636,33 +622,32 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
+            module lib.first {
+                struct Gadget {}
 
-            struct Gadget {}
+                extension Gadget {
+                    fn extended() -> int {
+                        return 1;
+                    }
+                }
 
-            extension Gadget {
-                fn extended() -> int {
+                fn Gadget.owned(self: Gadget*) -> int {
                     return 1;
                 }
             }
 
-            fn Gadget.owned(self: Gadget*) -> int {
-                return 1;
-            }
-            """,
-            """
-            module lib.second;
+            module lib.second {
+                struct Gadget {}
 
-            struct Gadget {}
+                extension Gadget {
+                    fn extended() -> bool {
+                        return true;
+                    }
+                }
 
-            extension Gadget {
-                fn extended() -> bool {
+                fn Gadget.owned(self: Gadget*) -> bool {
                     return true;
                 }
-            }
-
-            fn Gadget.owned(self: Gadget*) -> bool {
-                return true;
             }
             """);
         var declarations = ProgramDeclarationIndex.Create(
@@ -712,40 +697,39 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
+            module lib.first {
+                enum State {
+                    First,
+                    Other
+                }
 
-            enum State {
-                First,
-                Other
-            }
-
-            union Result {
-                First: int;
-                Other: int;
-            }
-            """,
-            """
-            module lib.second;
-
-            enum State {
-                Second
-            }
-
-            union Result {
-                Second: int;
-            }
-
-            fn choose(state: State) -> int {
-                switch (state) {
-                    case State.Second:
-                        return 1;
+                union Result {
+                    First: int;
+                    Other: int;
                 }
             }
 
-            fn unwrap(result: Result) -> int {
-                match result {
-                    Second: value => {
-                        return value;
+            module lib.second {
+                enum State {
+                    Second
+                }
+
+                union Result {
+                    Second: int;
+                }
+
+                fn choose(state: State) -> int {
+                    switch (state) {
+                        case State.Second:
+                            return 1;
+                    }
+                }
+
+                fn unwrap(result: Result) -> int {
+                    match result {
+                        Second: value => {
+                            return value;
+                        }
                     }
                 }
             }
@@ -796,27 +780,26 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            enum State {
-                First,
-                Other
-            }
-            """,
-            """
-            module lib.second;
-
-            enum State {
-                Second
-            }
-
-            fn inspect(state: State) -> int {
-                let value: int;
-                switch (state) {
-                    case State.Second:
-                        value = 1;
+            module lib.first {
+                enum State {
+                    First,
+                    Other
                 }
-                return value;
+            }
+
+            module lib.second {
+                enum State {
+                    Second
+                }
+
+                fn inspect(state: State) -> int {
+                    let value: int;
+                    switch (state) {
+                        case State.Second:
+                            value = 1;
+                    }
+                    return value;
+                }
             }
             """);
         var diagnostics = new DiagnosticBag();
@@ -850,22 +833,21 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, _) = CreateProgram(
             """
-            module lib.first;
-
-            struct Box<A> {
-                first: A;
+            module lib.first {
+                struct Box<A> {
+                    first: A;
+                }
             }
-            """,
-            """
-            module lib.second;
 
-            struct Box<A, B> {
-                first: A;
-                second: B;
+            module lib.second {
+                struct Box<A, B> {
+                    first: A;
+                    second: B;
 
-                fn second_value() -> B {
-                    let result = self.second;
-                    return result;
+                    fn second_value() -> B {
+                        let result = self.second;
+                        return result;
+                    }
                 }
             }
             """);
@@ -904,16 +886,15 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
+            module lib.first {
+                struct First {}
+                type Selected = First;
+            }
 
-            struct First {}
-            type Selected = First;
-            """,
-            """
-            module lib.second;
-
-            struct Second {}
-            type Selected = Second;
+            module lib.second {
+                struct Second {}
+                type Selected = Second;
+            }
             """);
         var diagnostics = new DiagnosticBag();
         new TypeResolutionPass(diagnostics).Resolve(program);
@@ -939,20 +920,19 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            struct Model {
-                first: int;
-            }
-            """,
-            """
-            module lib.second;
-
-            struct Model {
-                second: bool;
+            module lib.first {
+                struct Model {
+                    first: int;
+                }
             }
 
-            type Selected = Model;
+            module lib.second {
+                struct Model {
+                    second: bool;
+                }
+
+                type Selected = Model;
+            }
             """);
         var declarations = ProgramDeclarationIndex.Create(
             program,
@@ -984,16 +964,15 @@ public sealed class IndexedSemanticAnalyzerTests
     {
         var (program, modules) = CreateProgram(
             """
-            module lib.first;
-
-            enum State {
-                Ready
+            module lib.first {
+                enum State {
+                    Ready
+                }
             }
-            """,
-            """
-            module lib.second;
 
-            struct State {}
+            module lib.second {
+                struct State {}
+            }
             """);
         var declarations = ProgramDeclarationIndex.Create(
             program,
@@ -1025,23 +1004,13 @@ public sealed class IndexedSemanticAnalyzerTests
     private static (
         ProgramNode Program,
         IReadOnlyDictionary<string, string> Modules) CreateProgram(
-        string firstSource,
-        string secondSource)
+        string source)
     {
-        var first = CompilerTestHelpers.Parse(firstSource, "first.cx");
-        var second = CompilerTestHelpers.Parse(secondSource, "second.cx");
-        var program = first with
-        {
-            Declarations = first.Declarations
-                .Concat(second.Declarations)
-                .ToList(),
-        };
-        var modules = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["first.cx"] = "lib.first",
-            ["second.cx"] = "lib.second",
-        };
-        ModuleProgramFacts.AnnotateModuleNames(program, modules);
-        return (program, modules);
+        var test = CompilerTestHelpers.VerifyProgram(source)
+            .MergeModuleContributions();
+        return (
+            test.Program,
+            test.ModuleNamesByPath);
     }
+
 }

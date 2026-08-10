@@ -5,7 +5,7 @@ public sealed class SemanticReturnTypeRefTests
     [Fact]
     public void Compile_AllowsReturningNullForAliasPointerReturnType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Bytes = char*;
 
@@ -16,15 +16,14 @@ public sealed class SemanticReturnTypeRefTests
             fn main() -> int {
                 return get_bytes() == null;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void Compile_ReportsReturningNullForAliasNonPointerReturnType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Count = int;
 
@@ -35,15 +34,16 @@ public sealed class SemanticReturnTypeRefTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Cannot return null", "non-pointer type 'Count'");
+            """)
+            .FailsWith(
+                "Cannot return null",
+                "non-pointer type 'Count'");
     }
 
     [Fact]
     public void Compile_ReportsReturnMismatchUsingAliasTypeRef()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Bytes = char*;
 
@@ -54,8 +54,9 @@ public sealed class SemanticReturnTypeRefTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Type mismatch for return value", "cannot assign 'int' to 'Bytes'");
+            """)
+            .FailsWith(
+                "Type mismatch for return value",
+                "cannot assign 'int' to 'Bytes'");
     }
 }

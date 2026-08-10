@@ -201,24 +201,22 @@ public sealed class ScopeCleanupLowererTests
     [Fact]
     public void CompileToC_ResolvesGeneratedCleanupCall()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 using buffer = ByteBuffer.with_capacity(1);
                 buffer.push_u8(65);
                 return (int)buffer.length;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("__cx_using_return_", result.Output);
-        Assert.Contains("Vec_dispose_u8(&buffer);", result.Output);
+            """)
+            .Succeeds()
+            .OutputContains("__cx_using_return_", "Vec_dispose_u8(&buffer);");
     }
 
     [Fact]
     public void CompileToC_SupportsUsingReturnTransferAndReassignment()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             fn create_buffer() -> ByteBuffer {
                 using buffer = ByteBuffer.with_capacity(1);
@@ -230,33 +228,33 @@ public sealed class ScopeCleanupLowererTests
                 buffer = ByteBuffer.with_capacity(2);
                 return (int)buffer.capacity;
             }
-            """);
+            """)
+            .Succeeds()
+            .OutputContains("__cx_using_replacement_");
 
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("__cx_using_replacement_", result.Output);
         Assert.Equal(
             2,
-            result.Output!.Split("Vec_dispose_u8(&buffer);", StringSplitOptions.None).Length - 1);
+            test.Result.Output!.Split("Vec_dispose_u8(&buffer);", StringSplitOptions.None).Length - 1);
     }
 
     [Fact]
     public void CompileToC_RejectsUsingWithoutInitializer()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 using resource: ByteBuffer;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Using declarations require an initializer");
+            """)
+            .Fails()
+            .HasDiagnostic("Using declarations require an initializer");
     }
 
     [Fact]
     public void CompileToC_RejectsResourceWithoutDisposeMethod()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Resource {
                 value: int;
@@ -266,9 +264,9 @@ public sealed class ScopeCleanupLowererTests
                 using resource = Resource { value: 1 };
                 return resource.value;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "dispose");
+            """)
+            .Fails()
+            .HasDiagnostic("dispose");
     }
 
     private static ProgramNode Lower(string source) =>

@@ -127,7 +127,7 @@ public sealed class MacroExpansionPassTests
     [Fact]
     public void CompileToC_SupportsEndToEndUserWrittenDebugMacro()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn printf(format: const char*, ...) -> int;
 
@@ -147,19 +147,15 @@ public sealed class MacroExpansionPassTests
                 use debug(User, user);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"id\"", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("user.id", result.Output, StringComparison.Ordinal);
-        Assert.Contains("\"age\"", result.Output, StringComparison.Ordinal);
-        Assert.Contains("user.age", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"id\"", "user.id", "\"age\"", "user.age");
     }
 
     [Fact]
     public void CompileToC_DeclarationMacroGeneratesTypedFunctionAst()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn printf(format: const char*, ...) -> int;
 
@@ -191,13 +187,10 @@ public sealed class MacroExpansionPassTests
                 let user: User = User { id: 7, age: 42, secret: 99 };
                 return debug_generated(user);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("debug_generated", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("value.id", result.Output, StringComparison.Ordinal);
-        Assert.Contains("value.age", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("value.secret", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("debug_generated", "value.id", "value.age")
+            .OutputOmits("value.secret");
     }
 
     [Fact]
@@ -271,18 +264,15 @@ public sealed class MacroExpansionPassTests
             .Replace("$INSIDE$", invokeInsideStruct ? "use Debug(Self);" : string.Empty, StringComparison.Ordinal)
             .Replace("$OUTSIDE$", invokeInsideStruct ? string.Empty : "use Debug(User);", StringComparison.Ordinal);
 
-        var result = CompilerTestHelpers.Compile(source);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("debug", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("self->id", result.Output, StringComparison.Ordinal);
-        Assert.Contains("self->age", result.Output, StringComparison.Ordinal);
+        CompilerTestHelpers.VerifyCompilation(source)
+            .Succeeds()
+            .OutputContains("debug", "self->id", "self->age");
     }
 
     [Fact]
     public void CompileToC_DebugWriterMacroSupportsPrimitiveAndNestedStructFields()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Debug {
                 fn write_debug(self: Self*, output: StringBuilder*) -> bool;
@@ -376,21 +366,21 @@ public sealed class MacroExpansionPassTests
                 builder.dispose();
                 return ok ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("self->id", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("self->active", result.Output, StringComparison.Ordinal);
-        Assert.Contains("self->score", result.Output, StringComparison.Ordinal);
-        Assert.Contains("self->address", result.Output, StringComparison.Ordinal);
-        Assert.Contains("self->number", result.Output, StringComparison.Ordinal);
-        Assert.Contains("append_int", result.Output!, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "self->id",
+                "self->active",
+                "self->score",
+                "self->address",
+                "self->number",
+                "append_int");
     }
 
     [Fact]
     public void CompileToC_DebugMacroRejectsUnsupportedFieldType()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Debug {
                 fn write_debug(self: Self*) -> bool;
@@ -427,17 +417,15 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Debug cannot generate 'User.count': unsupported field type 'usize'.");
+            """)
+            .Fails()
+            .HasDiagnostic("Debug cannot generate 'User.count': unsupported field type 'usize'.");
     }
 
     [Fact]
     public void CompileToC_RejectsUnfulfilledMacroProvidedRequirement()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             requires Debug {
                 fn write_debug(self: Self*) -> bool;
@@ -459,18 +447,17 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Macro 'BrokenDebug' claims that 'User' provides 'Debug'",
-            "Missing function 'write_debug'");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Macro 'BrokenDebug' claims that 'User' provides 'Debug'",
+                "Missing function 'write_debug'");
     }
 
     [Fact]
     public void CompileToC_DeclarationArgumentGeneratesTypedFunctionWrapper()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn add(left: int, right: int) -> int {
                 return left + right;
@@ -487,17 +474,15 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return wrap_add(2, 5) == 7 ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("wrap_add", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("add(left, right)", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("wrap_add", "add(left, right)");
     }
 
     [Fact]
     public void CompileToC_ParameterConstructorBuildsGeneratedFunctionSignature()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Parameter {
                 value: int;
@@ -517,16 +502,15 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return generated_add(2, 5) == 7 ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("generated_add(int left, int right)", result.Output!, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("generated_add(int left, int right)");
     }
 
     [Fact]
     public void CompileToC_DeclarationScriptBuildsAndMutatesParameterList()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn add(left: int, right: int) -> int {
                 return left + right;
@@ -549,17 +533,17 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return wrap_add(0, 2, 5) == 7 ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("wrap_add(int context, int left, int right)", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("add(left, right)", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "wrap_add(int context, int left, int right)",
+                "add(left, right)");
     }
 
     [Fact]
     public void CompileToC_DeclarationForeachAndIfGenerateOneFunctionPerMatchingMethod()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Source {
                 public static fn first() -> int {
@@ -590,18 +574,16 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return wrap_first() + wrap_second();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("wrap_first", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("wrap_second", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("wrap_hidden", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("wrap_first", "wrap_second")
+            .OutputOmits("wrap_hidden");
     }
 
     [Fact]
     public void CompileToC_ReportsDuplicateFunctionGeneratedByForeachAtInvocation()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             macro Generate() -> declarations {
                 @foreach name in ["same", "same"] {
@@ -616,12 +598,11 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return 0;
             }
-            """);
+            """)
+            .Fails()
+            .HasDiagnostic("Macro-generated function 'same()' conflicts with macro-generated function");
 
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Macro-generated function 'same()' conflicts with macro-generated function");
-        var diagnostic = Assert.Single(result.Diagnostics, diagnostic =>
+        var diagnostic = Assert.Single(test.Result.Diagnostics, diagnostic =>
             diagnostic.Message.Contains("Macro-generated function 'same()'", StringComparison.Ordinal));
         Assert.Equal(9, diagnostic.Location.Line);
     }
@@ -629,7 +610,7 @@ public sealed class MacroExpansionPassTests
     [Fact]
     public void CompileToC_AllowsGeneratedFunctionOverloadsWithDifferentParameterTypes()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             macro Generate(target: type) -> declarations {
                 fn generated(value: @{target}) -> int {
@@ -643,15 +624,14 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return generated(1);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void CompileToC_ReportsGeneratedFunctionCollidingWithExistingDeclaration()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn existing(value: int) -> int {
                 return value;
@@ -668,36 +648,33 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Macro-generated function 'existing(int)' conflicts with function declared at main.cx:1:1");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Macro-generated function 'existing(int)' conflicts with function declared at main.cx:1:1");
     }
 
     [Fact]
     public void ExpandProgram_AssignsInvocationModuleToGeneratedDeclaration()
     {
-        var program = CompilerTestHelpers.Parse(
+        var test = CompilerTestHelpers.VerifyProgram(
             """
-            macro Generate() -> declarations {
-                fn generated() -> int {
-                    return 1;
+            module lib.caller {
+                macro Generate() -> declarations {
+                    fn generated() -> int {
+                        return 1;
+                    }
                 }
-            }
 
-            use Generate();
-            """,
-            "shared.cx");
-        var invocation = Assert.Single(
-            program.Declarations
-                .OfType<MacroInvocationDeclarationNode>());
-        invocation.Semantic.ModuleName = "lib.caller";
+                use Generate();
+            }
+            """)
+            .MergeModuleContributions();
         var diagnostics = new DiagnosticBag();
 
         var expanded = new MacroExpansionPass(
             diagnostics,
-            program).RewriteProgram(program);
+            test.Program).RewriteProgram(test.Program);
 
         CompilerTestHelpers.AssertNoErrors(diagnostics);
         Assert.Equal(
@@ -709,21 +686,24 @@ public sealed class MacroExpansionPassTests
     [Fact]
     public void CollisionValidation_UsesDeclarationOwnershipWithinOneFile()
     {
-        var program = CompilerTestHelpers.Parse(
+        var test = CompilerTestHelpers.VerifyProgram(
             """
-            fn same() -> int {
-                return 1;
+            module lib.first {
+                fn same() -> int {
+                    return 1;
+                }
             }
 
-            fn same() -> int {
-                return 2;
+            module lib.second {
+                fn same() -> int {
+                    return 2;
+                }
             }
-            """,
-            "shared.cx");
-        var first = program.Functions[0];
-        var generated = program.Functions[1];
-        first.Semantic.ModuleName = "lib.first";
-        generated.Semantic.ModuleName = "lib.second";
+            """)
+            .MergeModuleContributions();
+        var generated = test.Function(
+            "same",
+            "lib.second");
         generated.GeneratedFrom =
             new GeneratedSyntaxOrigin(
                 generated.Span!,
@@ -732,7 +712,7 @@ public sealed class MacroExpansionPassTests
 
         new GeneratedDeclarationCollisionValidator(
             diagnostics,
-            program).Validate();
+            test.Program).Validate();
 
         CompilerTestHelpers.AssertNoErrors(diagnostics);
     }
@@ -740,7 +720,7 @@ public sealed class MacroExpansionPassTests
     [Fact]
     public void CompileToC_ReportsGeneratedExtensionMethodCollidingWithOwnedMethod()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct User {
                 fn debug() -> int {
@@ -761,17 +741,15 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Macro-generated function 'User.debug()' conflicts with function");
+            """)
+            .Fails()
+            .HasDiagnostic("Macro-generated function 'User.debug()' conflicts with function");
     }
 
     [Fact]
     public void CompileToC_ModuleReflectionEnumeratesOnlyPublicFunctionsAndTypes()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             module sample;
 
@@ -808,19 +786,16 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return wrap_exported() + bind_User();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("wrap_exported", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("bind_User", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("wrap_hidden", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("bind_Hidden", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("wrap_exported", "bind_User")
+            .OutputOmits("wrap_hidden", "bind_Hidden");
     }
 
     [Fact]
     public void CompileToC_RouteMacroUsesNullableAttributeAndDynamicFields()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             module api;
 
@@ -869,17 +844,16 @@ public sealed class MacroExpansionPassTests
                 register_routes();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("register_route(\"GET\", \"/users\",", result.Output!, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"/health\"", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("register_route(\"GET\", \"/users\",")
+            .OutputOmits("\"/health\"");
     }
 
     [Fact]
     public void CompileToC_RouteMacroGeneratesDispatcherBody()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             module api;
 
@@ -921,25 +895,22 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return dispatch(2);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("route_id == 1", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("route_id == 2", result.Output, StringComparison.Ordinal);
-        Assert.Contains("return users()", result.Output, StringComparison.Ordinal);
-        Assert.Contains("return health()", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("return helper()", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains(
+                "route_id == 1",
+                "route_id == 2",
+                "return users()",
+                "return health()")
+            .OutputOmits("return helper()");
     }
 
     [Fact]
     public void CompileToC_DispatchMacroUsesCrossModuleFunctionReferences()
     {
-        var result = CompilerTestHelpers.Compile(
-        [
-            CompilerTestHelpers.Source(
-                """
-                module app;
-
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app {
                 import api;
 
                 fn users() -> int {
@@ -966,11 +937,9 @@ public sealed class MacroExpansionPassTests
                 fn main() -> int {
                     return dispatch(1);
                 }
-                """),
-            CompilerTestHelpers.Source(
-                """
-                module api;
+            }
 
+            module api {
                 attribute route on fn {
                     id: int;
                 }
@@ -979,13 +948,11 @@ public sealed class MacroExpansionPassTests
                 public fn users() -> int {
                     return 10;
                 }
-                """,
-                "api.cx"),
-        ]);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return api_users()", result.Output!, StringComparison.Ordinal);
-        Assert.DoesNotContain("return app_users()", result.Output, StringComparison.Ordinal);
+            }
+            """)
+            .Succeeds()
+            .OutputContains("return api_users()")
+            .OutputOmits("return app_users()");
     }
 
     [Fact]
@@ -1058,7 +1025,7 @@ public sealed class MacroExpansionPassTests
     [Fact]
     public void CompileToC_ConstructedAttributeCanBeAppliedToConstructedParameter()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             attribute binding_name on parameter {
                 value: string;
@@ -1084,16 +1051,15 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return generated(0);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("generated(int context)", result.Output!, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("generated(int context)");
     }
 
     [Fact]
     public void CompileToC_ReflectedParametersCanBeRenamedAndRetypedImmutably()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn add(left: int, right: int) -> int {
                 return left + right;
@@ -1119,18 +1085,15 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return transformed(2, 5) == 7 ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("transformed", result.Output!, StringComparison.Ordinal);
-        Assert.Contains("wrapped_left", result.Output, StringComparison.Ordinal);
-        Assert.Contains("wrapped_right", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("transformed", "wrapped_left", "wrapped_right");
     }
 
     [Fact]
     public void CompileToC_ReflectedParameterAttributesCanBeExtendedImmutably()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             attribute source_parameter on parameter;
             attribute generated_parameter on parameter;
@@ -1159,10 +1122,9 @@ public sealed class MacroExpansionPassTests
             fn main() -> int {
                 return transformed(0);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("transformed(int value)", result.Output!, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("transformed(int value)");
     }
 
     [Fact]

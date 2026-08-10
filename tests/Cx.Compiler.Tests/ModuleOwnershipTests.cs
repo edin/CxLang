@@ -8,33 +8,28 @@ public sealed class ModuleOwnershipTests
     [Fact]
     public void GetModuleName_UsesContainingDeclarationOwnership()
     {
-        var first = CompilerTestHelpers.Parse(
+        var test = CompilerTestHelpers.VerifyProgram(
             """
-            fn first() -> int {
-                return 1;
+            module lib.first {
+                fn first() -> int {
+                    return 1;
+                }
             }
-            """,
-            "shared.cx");
-        var second = CompilerTestHelpers.Parse(
-            """
-            fn second() -> int {
-                return 2;
+
+            module lib.second {
+                fn second() -> int {
+                    return 2;
+                }
             }
-            """,
-            "shared.cx");
-        var firstFunction = Assert.Single(
-            first.Functions);
-        var secondFunction = Assert.Single(
-            second.Functions);
-        firstFunction.Semantic.ModuleName = "lib.first";
-        secondFunction.Semantic.ModuleName = "lib.second";
-        var program = first with
-        {
-            Declarations = first.Declarations
-                .Concat(second.Declarations)
-                .ToList(),
-        };
-        var ownership = ModuleOwnership.Create(program);
+            """)
+            .MergeModuleContributions();
+        var firstFunction = test.Function(
+            "first",
+            "lib.first");
+        var secondFunction = test.Function(
+            "second",
+            "lib.second");
+        var ownership = ModuleOwnership.Create(test.Program);
         var firstValue = Assert.IsType<ReturnStatement>(
             Assert.Single(firstFunction.Body)).Expression!;
         var secondValue = Assert.IsType<ReturnStatement>(

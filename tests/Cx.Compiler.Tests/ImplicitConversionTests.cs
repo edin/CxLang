@@ -5,7 +5,7 @@ public sealed class ImplicitConversionTests
     [Fact]
     public void Compile_ImplicitlyConvertsExplicitlyTypedLocal()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct TestStringView {
                 data: const char*;
@@ -19,18 +19,15 @@ public sealed class ImplicitConversionTests
                 let value: TestStringView = "Hello World";
                 return value.data[0] == 'H' ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains(
-            "TestStringView value = TestStringView_from(\"Hello World\");",
-            result.Output);
+            """)
+            .OutputContains(
+                "TestStringView value = TestStringView_from(\"Hello World\");");
     }
 
     [Fact]
     public void Compile_AppliesImplicitConversionsToArgumentsAssignmentsAndReturns()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Text {
                 data: const char*;
@@ -53,18 +50,17 @@ public sealed class ImplicitConversionTests
                 value = "second";
                 return accept("argument") + create().data[0] - 'a' - 'c';
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return Text_from(\"created\");", result.Output);
-        Assert.Contains("value = Text_from(\"second\");", result.Output);
-        Assert.Contains("accept(Text_from(\"argument\"))", result.Output);
+            """)
+            .OutputContains(
+                "return Text_from(\"created\");",
+                "value = Text_from(\"second\");",
+                "accept(Text_from(\"argument\"))");
     }
 
     [Fact]
     public void Compile_RequiresStaticImplicitDeclarationShape()
     {
-        var missingStatic = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Text {
                 data: const char*;
@@ -73,8 +69,10 @@ public sealed class ImplicitConversionTests
                 }
             }
             fn main() -> int { return 0; }
-            """);
-        var wrongArity = CompilerTestHelpers.Compile(
+            """)
+            .FailsWith(
+                "must be declared with 'static implicit fn'");
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Text {
                 static implicit fn from(first: const char*, second: int) -> Self {
@@ -83,20 +81,15 @@ public sealed class ImplicitConversionTests
                 data: const char*;
             }
             fn main() -> int { return 0; }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            missingStatic,
-            "must be declared with 'static implicit fn'");
-        CompilerTestHelpers.AssertDiagnosticContains(
-            wrongArity,
-            "must accept exactly one non-variadic parameter");
+            """)
+            .FailsWith(
+                "must accept exactly one non-variadic parameter");
     }
 
     [Fact]
     public void Compile_ReportsAmbiguousImplicitConversions()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Text {
                 data: const char*;
@@ -114,19 +107,17 @@ public sealed class ImplicitConversionTests
                 let value: Text = "ambiguous";
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Ambiguous implicit conversion",
-            "Text.from",
-            "Text.create");
+            """)
+            .FailsWith(
+                "Ambiguous implicit conversion",
+                "Text.from",
+                "Text.create");
     }
 
     [Fact]
     public void Compile_DoesNotChainImplicitConversions()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Intermediate {
                 value: int;
@@ -148,10 +139,8 @@ public sealed class ImplicitConversionTests
                 let value: Target = 42;
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "cannot assign 'int' to 'Target'");
+            """)
+            .FailsWith(
+                "cannot assign 'int' to 'Target'");
     }
 }

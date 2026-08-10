@@ -5,7 +5,7 @@ public sealed class EnumExtensionTests
     [Fact]
     public void CompileToC_SupportsEnumInstanceExtensionMethods()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum Color {
                 Red,
@@ -24,11 +24,10 @@ public sealed class EnumExtensionTests
                 let text = color.to_string();
                 return text[0] == 'H' ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Color_to_string", result.Output, StringComparison.Ordinal);
-        Assert.Contains("Color_to_string(&color)", result.Output, StringComparison.Ordinal);
+            """)
+            .OutputContains(
+                "Color_to_string",
+                "Color_to_string(&color)");
     }
 
     [Fact]
@@ -65,7 +64,7 @@ public sealed class EnumExtensionTests
     [Fact]
     public void CompileToC_DereferencesEnumExtensionReceiverForDataAccess()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             enum TokenKind(text: const char* = null) {
                 Identifier {},
@@ -83,10 +82,9 @@ public sealed class EnumExtensionTests
                 let text = kind.token_text();
                 return text[0] == '+' ? 0 : 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("return TokenKind_data[*self].text;", result.Output, StringComparison.Ordinal);
-        Assert.Contains("TokenKind_token_text(&kind)", result.Output, StringComparison.Ordinal);
+            """)
+            .OutputContains(
+                "return TokenKind_data[*self].text;",
+                "TokenKind_token_text(&kind)");
     }
 }

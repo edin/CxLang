@@ -5,7 +5,7 @@ public sealed class SemanticSpaceshipTypeRefTests
     [Fact]
     public void Compile_AllowsSpaceshipForAliasWithCompareRequirement()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Count = int;
 
@@ -14,15 +14,14 @@ public sealed class SemanticSpaceshipTypeRefTests
                 let right: Count = 2;
                 return left <=> right;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void Compile_ReportsMissingCompareRequirementForSpaceship()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Point {
                 x: int;
@@ -33,17 +32,15 @@ public sealed class SemanticSpaceshipTypeRefTests
                 let right: Point = Point { x: 2 };
                 return left <=> right;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '<=>' is not defined for operands 'Point' and 'Point'");
+            """)
+            .FailsWith(
+                "Operator '<=>' is not defined for operands 'Point' and 'Point'");
     }
 
     [Fact]
     public void Compile_ReportsSpaceshipTypeMismatchWithAliases()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             type Count = int;
 
@@ -52,23 +49,20 @@ public sealed class SemanticSpaceshipTypeRefTests
                 let right: char* = null;
                 return left <=> right;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Operator '<=>' is not defined for operands 'Count' and 'char*'");
+            """)
+            .FailsWith(
+                "Operator '<=>' is not defined for operands 'Count' and 'char*'");
     }
 
     [Fact]
     public void Compile_ReportsNullArithmeticFromExpressionAst()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 return (null) + 5;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(result, "Cannot use null in arithmetic expressions.");
+            """)
+            .FailsWith("Cannot use null in arithmetic expressions.");
     }
 }

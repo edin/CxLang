@@ -8,7 +8,7 @@ public sealed class CompileTimeDirectiveTests
     [Fact]
     public void Compile_ExpandsDirectivesAtModuleTopLevel()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             compile const enabled: bool = true;
             compile const names: list<string> = ["first", "second"];
@@ -24,19 +24,16 @@ public sealed class CompileTimeDirectiveTests
             fn main() -> int {
                 return first() + second();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("first(", result.Output, StringComparison.Ordinal);
-        Assert.Contains("second(", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("@foreach", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("first(", "second(")
+            .OutputOmits("@if", "@foreach");
     }
 
     [Fact]
     public void Compile_ExpandsSelectedTopLevelMacroInvocationOnly()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             macro Generate() -> declarations {
                 fn generated() -> int {
@@ -53,17 +50,16 @@ public sealed class CompileTimeDirectiveTests
             fn main() -> int {
                 return generated();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("generated(", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("MissingMacro", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("generated(")
+            .OutputOmits("MissingMacro");
     }
 
     [Fact]
     public void Compile_ExpandsGenericDependentDirectiveForEachSpecialization()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn selected<T>(value: T) -> int {
                 @if(T == int) {
@@ -76,16 +72,15 @@ public sealed class CompileTimeDirectiveTests
             fn main() -> int {
                 return selected<int>(0);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputOmits("@if");
     }
 
     [Fact]
     public void Compile_ExpandsGenericRequirementMatchAndResolvesGeneratedCalls()
     {
-        var result = CompilerTestHelpers.Compile(
+        var test = CompilerTestHelpers.VerifyCompilation(
             """
             struct Resource: Disposable<Resource> {
                 disposed: bool;
@@ -112,21 +107,21 @@ public sealed class CompileTimeDirectiveTests
                 dispose_value<int>(&number);
                 return resource.disposed ? 0 : 1;
             }
-            """);
+            """)
+            .Succeeds()
+            .OutputOmits("@if");
 
-        CompilerTestHelpers.AssertSuccess(result);
         Assert.Equal(
             1,
-            result.Output!.Split(
+            test.Result.Output!.Split(
                 "Resource_dispose(value);",
                 StringSplitOptions.None).Length - 1);
-        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Compile_PreservesDeferredCompileTimeMutationsUntilSpecialization()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -154,18 +149,15 @@ public sealed class CompileTimeDirectiveTests
             fn main() -> int {
                 return inspect<User>();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"id\"", result.Output, StringComparison.Ordinal);
-        Assert.Contains("\"extra\"", result.Output, StringComparison.Ordinal);
-        Assert.Contains("return 2;", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"id\"", "\"extra\"", "return 2;");
     }
 
     [Fact]
     public void Compile_ExpandsGenericDependentForeachForEachSpecialization()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -187,18 +179,16 @@ public sealed class CompileTimeDirectiveTests
                 let user = User { id: 1, age: 2 };
                 return inspect<User>(&user);
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"id\"", result.Output, StringComparison.Ordinal);
-        Assert.Contains("\"age\"", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("@foreach", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"id\"", "\"age\"")
+            .OutputOmits("@foreach");
     }
 
     [Fact]
     public void Compile_ExpandsCompileTimeDirectivesInsideStructBody()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Value {
                 data: int;
@@ -216,17 +206,16 @@ public sealed class CompileTimeDirectiveTests
                 let value = Value { data: 10, extra: 20 };
                 return value.total();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("extra", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("extra")
+            .OutputOmits("@if");
     }
 
     [Fact]
     public void Compile_ExpandsCompileTimeForeachInsideExtensionBody()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Value {
                 first: int;
@@ -245,18 +234,16 @@ public sealed class CompileTimeDirectiveTests
                 let value = Value { first: 10, second: 20 };
                 return value.get_first() + value.get_second();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("get_first", result.Output, StringComparison.Ordinal);
-        Assert.Contains("get_second", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("@foreach", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("get_first", "get_second")
+            .OutputOmits("@foreach");
     }
 
     [Fact]
     public void Compile_ExpandsMacroInvocationGeneratedInsideStructDirective()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             macro AddGenerated(target: type) -> declarations {
                 extension @{target} {
@@ -278,17 +265,16 @@ public sealed class CompileTimeDirectiveTests
                 let value = Value { data: 42 };
                 return value.generated();
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("generated", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("AddGenerated", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("generated")
+            .OutputOmits("AddGenerated");
     }
 
     [Fact]
     public void Compile_ExpandsCompileTimeDirectiveInsideTypeAdapterBody()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct Storage {
                 data: int;
@@ -308,17 +294,16 @@ public sealed class CompileTimeDirectiveTests
                 let value: View = View.create();
                 return value.data;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("Storage_create", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("@if", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("Storage_create")
+            .OutputOmits("@if");
     }
 
     [Fact]
     public void Compile_CompileTimeFunctionsSupportNullableValues()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -351,16 +336,15 @@ public sealed class CompileTimeDirectiveTests
                 use emit_name();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"missing\"", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"missing\"");
     }
 
     [Fact]
     public void Compile_CompileTimeFunctionsSupportListsOfNullableValues()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -389,17 +373,15 @@ public sealed class CompileTimeDirectiveTests
                 use emit_names();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"first\"", result.Output, StringComparison.Ordinal);
-        Assert.Contains("\"second\"", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"first\"", "\"second\"");
     }
 
     [Fact]
     public void Compile_RejectsNullForNonNullableCompileTimeReturn()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             compile fn invalid() -> string {
                 return null;
@@ -409,27 +391,24 @@ public sealed class CompileTimeDirectiveTests
                 @let value = invalid();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "declares return type 'string' but returned null");
+            """)
+            .Fails()
+            .HasDiagnostic("declares return type 'string' but returned null");
     }
 
     [Fact]
     public void Compile_RejectsNullableRuntimeTypesForNow()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main(value: string?) -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Nullable runtime type 'string?' is not supported yet",
-            "limited to compile-time functions");
+            """)
+            .Fails()
+            .HasDiagnostic(
+                "Nullable runtime type 'string?' is not supported yet",
+                "limited to compile-time functions");
     }
 
     [Fact]
@@ -450,7 +429,7 @@ public sealed class CompileTimeDirectiveTests
     [Fact]
     public void Compile_InvokesTypedCompileTimeFunctionWithReflectedField()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -479,18 +458,16 @@ public sealed class CompileTimeDirectiveTests
                 use inspect(User);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"field_id\"", result.Output, StringComparison.Ordinal);
-        Assert.Contains("\"field_name\"", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("generated_name", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"field_id\"", "\"field_name\"")
+            .OutputOmits("generated_name");
     }
 
     [Fact]
     public void Compile_ExecutesCompileTimeFunctionListMethodsAndEarlyReturn()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -515,17 +492,16 @@ public sealed class CompileTimeDirectiveTests
                 use emit_names();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"first\"", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"second\"", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"first\"")
+            .OutputOmits("\"second\"");
     }
 
     [Fact]
     public void Compile_ExecutesCompileTimeForeachOverReflectedFields()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -560,19 +536,16 @@ public sealed class CompileTimeDirectiveTests
                 use emit_fields(User);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"id\"", result.Output, StringComparison.Ordinal);
-        Assert.Contains("\"name\"", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"primitive_field\"", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("field_names", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"id\"", "\"name\"")
+            .OutputOmits("\"primitive_field\"", "field_names");
     }
 
     [Fact]
     public void Compile_CompileTimeForeachSupportsIndexBreakAndContinue()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             extern fn consume(value: const char*) -> void;
 
@@ -602,19 +575,16 @@ public sealed class CompileTimeDirectiveTests
                 use emit_selected();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.Contains("\"keep\"", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"skip\"", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"stop\"", result.Output, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"after\"", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputContains("\"keep\"")
+            .OutputOmits("\"skip\"", "\"stop\"", "\"after\"");
     }
 
     [Fact]
     public void Compile_ReportsNonListCompileTimeForeachIterable()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             compile fn invalid() -> int {
                 foreach value in 42 {
@@ -628,17 +598,15 @@ public sealed class CompileTimeDirectiveTests
                 @let value = invalid();
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Compile-time foreach requires a list value, but received integer");
+            """)
+            .Fails()
+            .HasDiagnostic("Compile-time foreach requires a list value, but received integer");
     }
 
     [Fact]
     public void Compile_RejectsRuntimeTypesInCompileTimeFunctions()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             struct File {
                 handle: int;
@@ -651,17 +619,15 @@ public sealed class CompileTimeDirectiveTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Compile-time function parameter 'file' uses unsupported type 'File'");
+            """)
+            .Fails()
+            .HasDiagnostic("Compile-time function parameter 'file' uses unsupported type 'File'");
     }
 
     [Fact]
     public void Compile_ReportsCompileTimeFunctionArgumentTypeMismatch()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             compile fn field_name(field: Field) -> string {
                 return field.name;
@@ -671,43 +637,37 @@ public sealed class CompileTimeDirectiveTests
                 @let invalid = field_name("not a field");
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "No compile-time function 'field_name' accepts (string)");
+            """)
+            .Fails()
+            .HasDiagnostic("No compile-time function 'field_name' accepts (string)");
     }
 
     [Fact]
     public void Compile_RejectsListExpressionOutsideCompileTimeEvaluation()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let values = [1, 2];
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "List expressions are only valid during compile-time evaluation");
+            """)
+            .Fails()
+            .HasDiagnostic("List expressions are only valid during compile-time evaluation");
     }
 
     [Fact]
     public void Compile_RejectsTypeLiteralOutsideCompileTimeEvaluation()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 let signature = Type.from(fn(int) -> int);
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertDiagnosticContains(
-            result,
-            "Type literals are only valid during compile-time evaluation");
+            """)
+            .Fails()
+            .HasDiagnostic("Type literals are only valid during compile-time evaluation");
     }
 
     [Fact]
@@ -829,7 +789,7 @@ public sealed class CompileTimeDirectiveTests
     [Fact]
     public void CompileToC_LowersCompileTimeStatementDirective()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 @if(true) {
@@ -840,15 +800,14 @@ public sealed class CompileTimeDirectiveTests
 
                 return 2;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     [Fact]
     public void CompileToC_RemovesCompileTimeLetBinding()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             fn main() -> int {
                 @let selected = true;
@@ -858,16 +817,15 @@ public sealed class CompileTimeDirectiveTests
 
                 return 1;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
-        Assert.DoesNotContain("selected", result.Output, StringComparison.Ordinal);
+            """)
+            .Succeeds()
+            .OutputOmits("selected");
     }
 
     [Fact]
     public void CompileToC_LowersCompileTimeCDeclarationDirective()
     {
-        var result = CompilerTestHelpers.Compile(
+        CompilerTestHelpers.VerifyCompilation(
             """
             declare "sample.h" {
                 @foreach library in ["first", "second"] {
@@ -880,9 +838,8 @@ public sealed class CompileTimeDirectiveTests
             fn main() -> int {
                 return 0;
             }
-            """);
-
-        CompilerTestHelpers.AssertSuccess(result);
+            """)
+            .Succeeds();
     }
 
     private sealed class RenameRewriter : AstRewriter

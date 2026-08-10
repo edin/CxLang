@@ -102,23 +102,28 @@ public sealed class CompileTimeSymbolResolverTests
     [Fact]
     public void ModuleContext_UsesDeclarationOwnershipWithinOneFile()
     {
-        var program = Parse(
+        var test = CompilerTestHelpers.VerifyProgram(
             """
-            fn first() -> int {
-                return 1;
+            module lib.first {
+                fn first() -> int {
+                    return 1;
+                }
             }
 
-            fn second() -> int {
-                return 2;
+            module lib.second {
+                fn second() -> int {
+                    return 2;
+                }
             }
-            """,
-            "shared.cx");
-        var first = program.Functions.Single(
-            function => function.Name == "first");
-        var second = program.Functions.Single(
-            function => function.Name == "second");
-        first.Semantic.ModuleName = "lib.first";
-        second.Semantic.ModuleName = "lib.second";
+            """)
+            .MergeModuleContributions();
+        var program = test.Program;
+        var first = test.Function(
+            "first",
+            "lib.first");
+        var second = test.Function(
+            "second",
+            "lib.second");
 
         var modules = CompileTimeModuleContext.Create(
             [program]);
@@ -154,26 +159,22 @@ public sealed class CompileTimeSymbolResolverTests
     [Fact]
     public void ModuleContext_KeepsOwnedImportsIndependentWithinOneFile()
     {
-        var program = Parse(
+        var test = CompilerTestHelpers.VerifyProgram(
             """
-            import lib.alpha as shared;
-            from lib.alpha import route as selected;
+            module app.first {
+                import lib.alpha as shared;
+                from lib.alpha import route as selected;
+            }
 
-            import lib.beta as shared;
-            from lib.beta import route as selected;
-            """,
-            "shared.cx");
-        var imports = program.Imports;
-        var symbolImports = program.SymbolImports;
-        imports[0].Semantic.ModuleName = "app.first";
-        symbolImports[0].Semantic.ModuleName =
-            "app.first";
-        imports[1].Semantic.ModuleName = "app.second";
-        symbolImports[1].Semantic.ModuleName =
-            "app.second";
+            module app.second {
+                import lib.beta as shared;
+                from lib.beta import route as selected;
+            }
+            """)
+            .MergeModuleContributions();
 
         var modules = CompileTimeModuleContext.Create(
-            [program]);
+            [test.Program]);
 
         var first = Assert.IsType<
             CompileTimeSymbolReference.Qualified>(
