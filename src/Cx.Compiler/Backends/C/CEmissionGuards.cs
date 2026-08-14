@@ -12,6 +12,11 @@ internal static class CEmissionGuards
             "Internal C emission error: C lowering requires a validated "
             + "Core CX program.");
 
+    public static InvalidOperationException UnprojectedCoreProgram() =>
+        new(
+            "Internal C emission error: C lowering requires a runtime-projected "
+            + "Core CX program.");
+
     public static InvalidOperationException UnsupportedStatement(StatementNode statement) =>
         new($"Internal C emission error: unsupported CX statement '{statement.GetType().Name}' at {statement.Location} reached C statement lowering.");
 

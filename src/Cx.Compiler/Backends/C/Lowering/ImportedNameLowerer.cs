@@ -138,33 +138,9 @@ internal sealed class ImportedNameLowerer : ICExpressionLoweringContext
         _backend.AbiNames.LowerTypeRef(type);
 
     CExpression? ICExpressionLoweringContext.TryLowerBinaryOperator(BinaryExpressionNode binary)
-    {
-        var call = _directCallLowerer.TryLowerOperator(
+        => _directCallLowerer.TryLowerOperator(
             binary.Semantic.CoreDirectCall,
             [binary.Left, binary.Right]);
-        if (call is null || binary.Semantic.OperatorDerivation is not { } derivation)
-        {
-            return call;
-        }
-
-        if (derivation == OperatorDerivationKind.NegateBoolean)
-        {
-            return new CUnaryExpression(
-                "!",
-                new CParenthesizedExpression(call));
-        }
-
-        return derivation.ZeroComparison() is { } comparison
-            ? CompareToZero(call, comparison.ToSourceText())
-            : throw new InvalidOperationException(
-                $"Unsupported operator derivation '{derivation}'.");
-    }
-
-    private static CExpression CompareToZero(CExpression expression, string comparisonOperator) =>
-        new CBinaryExpression(
-            new CParenthesizedExpression(expression),
-            comparisonOperator,
-            new CLiteralExpression("0"));
 
     CExpression? ICExpressionLoweringContext.TryLowerMemberExpression(MemberExpressionNode member) =>
         LowerMemberExpression(member);

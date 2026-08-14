@@ -33,8 +33,16 @@ $rules = @(
         Reason = "pre-Core call model"
     },
     [pscustomobject]@{
+        Pattern = "\bOperatorDerivationKind\b"
+        Reason = "pre-Core operator derivation"
+    },
+    [pscustomobject]@{
         Pattern = "\b(GenericSpecializationPass|GenericFunctionSpecializer|GenericStructSpecializer|GenericUseCollector|GenericCallRetargeter|GenericCallNormalizationPass)\b"
         Reason = "generic specialization machinery"
+    },
+    [pscustomobject]@{
+        Pattern = "\.(IsHeaderDeclaration|IsCompileTime|TypeParameters)\b"
+        Reason = "front-end runtime declaration selection"
     }
 )
 
@@ -63,6 +71,12 @@ if ($null -eq (Find-BoundaryViolation "FunctionCatalog catalog")) {
 }
 if ($null -eq (Find-BoundaryViolation "ResolvedCallInfo call")) {
     throw "C backend audit self-test failed to reject a pre-Core call model."
+}
+if ($null -eq (Find-BoundaryViolation "OperatorDerivationKind derivation")) {
+    throw "C backend audit self-test failed to reject pre-Core operator derivation."
+}
+if ($null -eq (Find-BoundaryViolation "function.TypeParameters")) {
+    throw "C backend audit self-test failed to reject runtime declaration selection."
 }
 if ($null -ne (Find-BoundaryViolation "using Cx.Compiler.Semantic;")) {
     throw "C backend audit self-test rejected the Core semantic facts namespace."

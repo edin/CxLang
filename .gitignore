@@ -16,3 +16,7 @@ editors/vscode/server/
 /examples/*.c
 
 /editors/vscode/cx-language-0.1.7.vsix
+/.idea/.idea.Cx/.idea/.gitignore
+/.idea/.idea.Cx/.idea/.name
+/.idea/.idea.Cx/.idea/indexLayout.xml
+/.idea/.idea.Cx/.idea/vcs.xml

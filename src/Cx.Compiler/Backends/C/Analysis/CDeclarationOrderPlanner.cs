@@ -8,17 +8,13 @@ internal static class CDeclarationOrderPlanner
 {
     public static CDeclarationOrderPlan Plan(
         CBackendContext backend,
-        ProgramNode program,
-        ProgramNode emitProgram,
-        IReadOnlyList<StructNode> structsToEmit)
+        ProgramNode program)
     {
-        var compositeTypeNames = structsToEmit
+        var compositeTypeNames = program.Structs
             .Select(structNode => structNode.Name)
-            .Concat(emitProgram.TaggedUnions.Where(union => !union.IsHeaderDeclaration).Select(taggedUnion => taggedUnion.Name))
+            .Concat(program.TaggedUnions.Select(taggedUnion => taggedUnion.Name))
             .ToHashSet(StringComparer.Ordinal);
-        var emittedTypeAliases = program.TypeAliases
-            .Where(typeAlias => !typeAlias.IsHeaderDeclaration)
-            .ToList();
+        var emittedTypeAliases = program.TypeAliases;
         var earlyTypeAliases = emittedTypeAliases
             .Where(typeAlias => !ReferencesCompositeType(backend, ResolveType(typeAlias), compositeTypeNames))
             .ToList();
@@ -26,13 +22,13 @@ internal static class CDeclarationOrderPlanner
             .Where(typeAlias => ReferencesCompositeType(backend, ResolveType(typeAlias), compositeTypeNames))
             .ToList();
 
-        var lateStructNames = GetLateStructNames(backend, emitProgram, structsToEmit);
+        var lateStructNames = GetLateStructNames(backend, program);
         var earlyStructs = CStructDependencyOrderer.OrderByFieldDependencies(
             backend,
-            structsToEmit.Where(structNode => !lateStructNames.Contains(structNode.Name)).ToList());
+            program.Structs.Where(structNode => !lateStructNames.Contains(structNode.Name)).ToList());
         var lateStructs = CStructDependencyOrderer.OrderByFieldDependencies(
             backend,
-            structsToEmit.Where(structNode => lateStructNames.Contains(structNode.Name)).ToList());
+            program.Structs.Where(structNode => lateStructNames.Contains(structNode.Name)).ToList());
 
         return new CDeclarationOrderPlan(
             earlyTypeAliases,
@@ -43,18 +39,17 @@ internal static class CDeclarationOrderPlanner
 
     private static HashSet<string> GetLateStructNames(
         CBackendContext backend,
-        ProgramNode emitProgram,
-        IReadOnlyList<StructNode> structsToEmit)
+        ProgramNode program)
     {
-        var lateDependencyTypeNames = emitProgram.TaggedUnions
+        var lateDependencyTypeNames = program.TaggedUnions
             .Where(union => !union.IsRaw)
             .Select(taggedUnion => taggedUnion.Name)
-            .Concat(emitProgram.Interfaces.Select(interfaceNode => interfaceNode.Name))
-            .Concat(emitProgram.Enums
-                .Where(enumNode => enumNode.IsDataEnum && !enumNode.IsHeaderDeclaration)
+            .Concat(program.Interfaces.Select(interfaceNode => interfaceNode.Name))
+            .Concat(program.Enums
+                .Where(enumNode => enumNode.IsDataEnum)
                 .Select(enumNode => enumNode.Name))
             .ToHashSet(StringComparer.Ordinal);
-        var lateStructNames = structsToEmit
+        var lateStructNames = program.Structs
             .Where(structNode => structNode.Fields.Any(field => ReferencesCompositeType(backend, ResolveType(field), lateDependencyTypeNames)))
             .Select(structNode => structNode.Name)
             .ToHashSet(StringComparer.Ordinal);
@@ -63,7 +58,7 @@ internal static class CDeclarationOrderPlanner
         while (changed)
         {
             changed = false;
-            foreach (var structNode in structsToEmit)
+            foreach (var structNode in program.Structs)
             {
                 if (lateStructNames.Contains(structNode.Name)
                     || !structNode.Fields.Any(field => ReferencesCompositeType(backend, ResolveType(field), lateStructNames)))

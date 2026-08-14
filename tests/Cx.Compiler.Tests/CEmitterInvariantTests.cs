@@ -25,6 +25,23 @@ public sealed class CEmitterInvariantTests
     }
 
     [Fact]
+    public void EmissionPipeline_RejectsValidatedProgramWithoutRuntimeProjection()
+    {
+        var program = new ProgramNode(
+            Location.Synthetic("<unprojected-core-cx-test>"),
+            []);
+        program.Semantic.IsCoreCxValidated = true;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new CEmissionPipeline(new CompilationProfiler())
+                .Emit(program, []));
+
+        Assert.Contains(
+            "requires a runtime-projected Core CX program",
+            exception.Message);
+    }
+
+    [Fact]
     public void Emit_ThrowsWhenErrorExpressionReachesCEmission()
     {
         var location = Location.Synthetic("<c-emitter-invariant-test>");

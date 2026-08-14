@@ -23,6 +23,7 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
     public void Validate(ProgramNode program)
     {
         program.Semantic.IsCoreCxValidated = false;
+        program.Semantic.IsCoreCxRuntimeProjected = false;
         _moduleOwnership =
             ModuleOwnership.Create(program);
         _declarations = ProgramDeclarationIndex.Create(
@@ -402,6 +403,14 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
                 diagnostics.Report(
                     binary.Location,
                     "Invalid Core CX: resolved operator has no canonical direct-call facts.");
+                break;
+            case BinaryExpressionNode
+            {
+                Semantic.OperatorDerivation: not null,
+            } binary:
+                diagnostics.Report(
+                    binary.Location,
+                    "Invalid Core CX: derived operator remains after lowering.");
                 break;
             case CallExpressionNode
             {

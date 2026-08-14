@@ -53,6 +53,8 @@ internal sealed class SemanticInfo
 
     public bool IsCoreCxValidated { get; set; }
 
+    public bool IsCoreCxRuntimeProjected { get; set; }
+
     public SemanticInfo Clone() =>
         new()
         {
@@ -80,5 +82,6 @@ internal sealed class SemanticInfo
             OperatorDerivation = OperatorDerivation,
             IsScopeCleanup = IsScopeCleanup,
             IsCoreCxValidated = IsCoreCxValidated,
+            IsCoreCxRuntimeProjected = IsCoreCxRuntimeProjected,
         };
 }

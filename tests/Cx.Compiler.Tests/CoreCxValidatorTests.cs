@@ -10,6 +10,30 @@ namespace Cx.Compiler.Tests;
 public sealed class CoreCxValidatorTests
 {
     [Fact]
+    public void Analyze_ReportsDerivedOperatorThatRemainsAfterLowering()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            fn compare(left: int, right: int) -> bool {
+                return left != right;
+            }
+            """);
+        var binary = Assert.IsType<BinaryExpressionNode>(
+            Assert.IsType<ReturnStatement>(
+                Assert.Single(Assert.Single(program.Functions).Body)).Expression);
+        binary.Semantic.OperatorDerivation =
+            OperatorDerivationKind.NegateBoolean;
+        var diagnostics = new DiagnosticBag();
+
+        new CoreCxValidator(diagnostics).Validate(program);
+
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(
+                "derived operator remains after lowering",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void CoreAnnotations_RecordReceiverAndMemberAccessFacts()
     {
         var program = CompilerTestHelpers.Parse(

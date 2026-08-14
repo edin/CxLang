@@ -9,10 +9,8 @@ internal sealed class CxToCTranslationUnitLowerer(
 {
     public CTranslationUnit Lower(ProgramNode program)
     {
-        var functionsToEmit = CEmitSelection.GetFunctionsToEmit(program);
-        var emitProgram = program with { Functions = functionsToEmit };
         var backend = CBackendContext.Create(
-            emitProgram,
+            program,
             program.TypeAdapters,
             nameManglerOptions);
         var items = new List<CTranslationUnitItem>
@@ -21,7 +19,7 @@ internal sealed class CxToCTranslationUnitLowerer(
             new CBlankLine(),
         };
 
-        var includes = CIncludeCollector.Collect(program, emitProgram);
+        var includes = CIncludeCollector.Collect(program);
         foreach (var include in includes)
         {
             items.Add(include);
@@ -32,18 +30,17 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(new CBlankLine());
         }
 
-        foreach (var externFunction in program.ExternFunctions.Where(function => !function.IsHeaderDeclaration))
+        foreach (var externFunction in program.ExternFunctions)
         {
             items.Add(CDeclarationBuilder.BuildFunctionDeclaration(backend, externFunction));
         }
 
-        if (program.ExternFunctions.Any(function => !function.IsHeaderDeclaration))
+        if (program.ExternFunctions.Count > 0)
         {
             items.Add(new CBlankLine());
         }
 
-        var structsToEmit = CEmitSelection.GetStructsToEmit(emitProgram);
-        var declarationOrder = CDeclarationOrderPlanner.Plan(backend, program, emitProgram, structsToEmit);
+        var declarationOrder = CDeclarationOrderPlanner.Plan(backend, program);
 
         foreach (var typeAlias in declarationOrder.EarlyTypeAliases)
         {
@@ -56,7 +53,7 @@ internal sealed class CxToCTranslationUnitLowerer(
         }
 
         var enumNameLowerer = new ImportedNameLowerer(backend);
-        foreach (var enumNode in emitProgram.Enums.Where(enumNode => !enumNode.IsHeaderDeclaration && !enumNode.IsDataEnum))
+        foreach (var enumNode in program.Enums.Where(enumNode => !enumNode.IsDataEnum))
         {
             items.Add(CDeclarationBuilder.BuildEnum(enumNode));
             items.Add(new CBlankLine());
@@ -68,8 +65,8 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(new CBlankLine());
         }
 
-        var dataEnumDeclarations = emitProgram.Enums
-            .Where(enumNode => !enumNode.IsHeaderDeclaration && enumNode.IsDataEnum)
+        var dataEnumDeclarations = program.Enums
+            .Where(enumNode => enumNode.IsDataEnum)
             .Select(enumNode => CDeclarationBuilder.BuildDataEnum(backend, enumNode, enumNameLowerer))
             .ToList();
         foreach (var dataEnum in dataEnumDeclarations)
@@ -78,7 +75,7 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(new CBlankLine());
         }
 
-        var interfaceImplementations = structsToEmit
+        var interfaceImplementations = program.Structs
             .SelectMany(structNode =>
                 structNode.Semantic.CoreInterfaceImplementations)
             .GroupBy(
@@ -87,13 +84,13 @@ internal sealed class CxToCTranslationUnitLowerer(
                     implementation.Interface.Name))
             .Select(group => group.First())
             .ToList();
-        if (emitProgram.Interfaces.Count > 0)
+        if (program.Interfaces.Count > 0)
         {
             items.Add(CInterfaceDeclarationBuilder.BuildTypeIdEnum(backend, interfaceImplementations));
             items.Add(new CBlankLine());
         }
 
-        foreach (var interfaceNode in emitProgram.Interfaces)
+        foreach (var interfaceNode in program.Interfaces)
         {
             items.Add(CInterfaceDeclarationBuilder.BuildVTableStruct(backend, interfaceNode));
             items.Add(new CBlankLine());
@@ -101,7 +98,7 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(new CBlankLine());
         }
 
-        foreach (var taggedUnion in emitProgram.TaggedUnions.Where(union => !union.IsHeaderDeclaration))
+        foreach (var taggedUnion in program.TaggedUnions)
         {
             items.Add(CTaggedUnionDeclarationBuilder.Build(backend, taggedUnion));
             items.Add(new CBlankLine());
@@ -135,17 +132,17 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(new CBlankLine());
         }
 
-        foreach (var global in emitProgram.GlobalVariables.Where(global => !global.IsHeaderDeclaration))
+        foreach (var global in program.GlobalVariables)
         {
             items.Add(CDeclarationBuilder.BuildGlobalDeclaration(backend, global, nameLowerer));
         }
 
-        if (emitProgram.GlobalVariables.Any(global => !global.IsHeaderDeclaration))
+        if (program.GlobalVariables.Count > 0)
         {
             items.Add(new CBlankLine());
         }
 
-        foreach (var function in functionsToEmit)
+        foreach (var function in program.Functions)
         {
             items.Add(CDeclarationBuilder.BuildFunctionDeclaration(backend, function));
         }
@@ -169,7 +166,7 @@ internal sealed class CxToCTranslationUnitLowerer(
             items.Add(new CBlankLine());
         }
 
-        foreach (var function in functionsToEmit)
+        foreach (var function in program.Functions)
         {
             items.Add(CDeclarationBuilder.BuildFunctionDefinition(function, nameLowerer.ForFunction(function)));
             items.Add(new CBlankLine());

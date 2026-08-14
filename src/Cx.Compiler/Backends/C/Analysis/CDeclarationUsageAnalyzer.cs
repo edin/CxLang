@@ -84,7 +84,7 @@ internal static class CDeclarationUsageAnalyzer
 
     private static IEnumerable<ExpressionNode> EnumerateExpressionNodes(ProgramNode program)
     {
-        foreach (var global in program.GlobalVariables.Where(global => !global.IsHeaderDeclaration))
+        foreach (var global in program.GlobalVariables)
         {
             if (global.Initializer is null)
             {
@@ -110,7 +110,7 @@ internal static class CDeclarationUsageAnalyzer
 
     private static IEnumerable<TypeRef> EnumerateTypeReferences(ProgramNode program)
     {
-        foreach (var global in program.GlobalVariables.Where(global => !global.IsHeaderDeclaration))
+        foreach (var global in program.GlobalVariables)
         {
             yield return ResolveDeclarationType(global.TypeNode, global.Name);
             foreach (var type in EnumerateNestedTypeReferences(global.Initializer))
@@ -119,7 +119,7 @@ internal static class CDeclarationUsageAnalyzer
             }
         }
 
-        foreach (var typeAlias in program.TypeAliases.Where(typeAlias => !typeAlias.IsHeaderDeclaration))
+        foreach (var typeAlias in program.TypeAliases)
         {
             yield return ResolveTypeAliasType(typeAlias);
         }
@@ -138,7 +138,7 @@ internal static class CDeclarationUsageAnalyzer
             }
         }
 
-        foreach (var structNode in program.Structs.Where(structNode => !structNode.IsHeaderDeclaration))
+        foreach (var structNode in program.Structs)
         {
             foreach (var field in structNode.Fields)
             {
@@ -146,7 +146,7 @@ internal static class CDeclarationUsageAnalyzer
             }
         }
 
-        foreach (var taggedUnion in program.TaggedUnions.Where(taggedUnion => !taggedUnion.IsHeaderDeclaration))
+        foreach (var taggedUnion in program.TaggedUnions)
         {
             foreach (var variant in taggedUnion.Variants)
             {

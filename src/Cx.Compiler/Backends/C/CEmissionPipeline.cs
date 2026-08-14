@@ -17,6 +17,11 @@ internal sealed class CEmissionPipeline(
             throw CEmissionGuards.UnvalidatedCoreProgram();
         }
 
+        if (!program.Semantic.IsCoreCxRuntimeProjected)
+        {
+            throw CEmissionGuards.UnprojectedCoreProgram();
+        }
+
         var translationUnit = profiler.Measure(
             "C AST lowering",
             () => new CxToCTranslationUnitLowerer(nameManglerOptions)

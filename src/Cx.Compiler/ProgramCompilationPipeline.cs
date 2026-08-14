@@ -186,6 +186,10 @@ internal sealed class ProgramCompilationPipeline(
             {
                 return (null, diagnostics);
             }
+
+            mergedProgram = profiler.Measure(
+                "Core CX runtime projection",
+                () => CoreCxRuntimeProgramProjector.Project(mergedProgram));
         }
 
         return (mergedProgram, diagnostics);
