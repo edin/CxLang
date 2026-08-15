@@ -401,7 +401,17 @@ internal abstract class AstRewriter
         };
 
     protected virtual IReadOnlyList<StatementNode> RewriteLetStatement(LetStatement let) =>
-        [let with { Initializer = RewriteExpression(let.Initializer), TypeNode = RewriteType(let.TypeNode) }];
+        [let with
+        {
+            ComputedName = let.ComputedName is null
+                ? null
+                : let.ComputedName with
+                {
+                    Expression = RewriteRequiredExpression(let.ComputedName.Expression),
+                },
+            Initializer = RewriteExpression(let.Initializer),
+            TypeNode = RewriteType(let.TypeNode),
+        }];
 
     protected virtual IReadOnlyList<StatementNode> RewriteUsingStatement(UsingStatement usingStatement) =>
         [usingStatement with

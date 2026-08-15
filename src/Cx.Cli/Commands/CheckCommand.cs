@@ -46,7 +46,7 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
             ? CliServices.AuditRawGenericUses(plan.Value.SourceFiles)
             : settings.AstAudit
                 ? CliServices.AuditAst(plan.Value.SourceFiles, settings.IncludeStandardLibrary)
-                : CliServices.Compile(plan.Value.SourceFiles);
+                : CliServices.Compile(plan.Value.SourceFiles, plan.Value.EntryPoints);
         if (!result.Success)
         {
             CliServices.PrintDiagnostics(result);

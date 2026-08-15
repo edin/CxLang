@@ -150,6 +150,23 @@ cx test
 `tests` directory. Build/run commands do not include `tests` unless listed
 explicitly.
 
+Shared-library projects declare their exported reachability roots explicitly.
+The CLI selects the platform extension and supplies the required GCC shared
+library flags, so `cc_args` only needs project-specific options:
+
+```toml
+name = "cx_demo"
+kind = "shared"
+sources = ["src"]
+entry_points = ["get_module"]
+c_output = "build/c/cx_demo.c"
+cc = "gcc"
+cc_args = ["-O2"]
+```
+
+`cx build` produces `build/lib/cx_demo.dll`, `.so`, or `.dylib` for the current
+platform. Shared projects cannot be launched with `cx run`.
+
 ## Standard Library
 
 Current useful pieces include:
@@ -199,6 +216,15 @@ Run individual build and test commands when iterating:
 ```powershell
 dotnet build Cx.sln
 dotnet test Cx.sln
+dotnet run --project src/Cx.Cli -- test --std
+```
+
+On Linux or WSL, use the cross-platform solution, which excludes the
+Windows-only Visual Studio extension project:
+
+```bash
+dotnet build Cx.Linux.sln
+dotnet test Cx.Linux.sln --no-build
 dotnet run --project src/Cx.Cli -- test --std
 ```
 

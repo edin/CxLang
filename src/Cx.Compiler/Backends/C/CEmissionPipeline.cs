@@ -22,17 +22,18 @@ internal sealed class CEmissionPipeline(
             throw CEmissionGuards.UnprojectedCoreProgram();
         }
 
-        var translationUnit = profiler.Measure(
+        var loweringResult = profiler.Measure(
             "C AST lowering",
             () => new CxToCTranslationUnitLowerer(nameManglerOptions)
-                .Lower(program));
+                .LowerForEmission(program, emissionOptions?.EntryPoints));
+        var translationUnit = loweringResult.TranslationUnit;
         if (emissionOptions?.StripUnused ?? true)
         {
             translationUnit = profiler.Measure(
                 "C declaration pruning",
                 () => CReachabilityPruner.Prune(
                     translationUnit,
-                    emissionOptions?.EntryPoints));
+                    loweringResult.EntryPoints));
         }
 
         var output = profiler.Measure(

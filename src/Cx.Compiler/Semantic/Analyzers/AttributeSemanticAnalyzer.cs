@@ -212,6 +212,7 @@ internal sealed class AttributeSemanticAnalyzer(
             (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Name }, CompileTimeValue.Name) => true,
             (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Type }, CompileTimeValue.Type) => true,
             (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Syntax }, CompileTimeValue.Syntax) => true,
+            (CompileTimeScalarTypeNode { Kind: CompileTimeScalarType.Value }, _) => true,
             (CompileTimeListTypeNode list, CompileTimeValue.List values) =>
                 values.Values.All(value => Matches(list.ElementType, value)),
             _ => false,

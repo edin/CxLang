@@ -6,6 +6,7 @@ using Cx.Compiler.Completion;
 using Cx.Compiler.Std;
 using Cx.Compiler.Syntax.Nodes;
 using CxParser = Cx.Compiler.Parser.Parser;
+using Cx.Compiler.Semantic;
 using Cx.Compiler.Semantic.Analyzers;
 using Cx.Compiler.Source;
 
@@ -66,11 +67,37 @@ public sealed class CxCompiler
             return CompilationResult.Failed(diagnostics.Diagnostics) with { Timings = profiler.Timings };
         }
 
+        foreach (var entryPoint in MissingEntryPoints(
+            program,
+            emissionOptions?.EntryPoints))
+        {
+            diagnostics.Report(
+                program.Location,
+                $"Configured entry point '{entryPoint}' does not name a free function.");
+        }
+        if (diagnostics.HasErrors)
+        {
+            return CompilationResult.Failed(diagnostics.Diagnostics) with { Timings = profiler.Timings };
+        }
+
         return new CEmissionPipeline(
             profiler,
             nameManglerOptions,
             emissionOptions)
             .Emit(program, diagnostics.Diagnostics);
+    }
+
+    private static IEnumerable<string> MissingEntryPoints(
+        ProgramNode program,
+        IReadOnlyList<string>? entryPoints)
+    {
+        if (entryPoints is null)
+        {
+            return [];
+        }
+
+        return entryPoints.Where(entryPoint => !program.Functions.Any(function =>
+            FunctionEntryPointFacts.Matches(function, entryPoint)));
     }
 
     public CompilationResult CompileTestsToC(IEnumerable<SourceFile> sources, string? moduleName = null)

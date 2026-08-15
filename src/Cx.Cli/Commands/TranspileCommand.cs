@@ -47,7 +47,7 @@ internal sealed class TranspileCommand : Command<TranspileCommand.Settings>
         }
 
         var compilerStarted = Stopwatch.GetTimestamp();
-        var result = CliServices.Compile(plan.Value.SourceFiles);
+        var result = CliServices.Compile(plan.Value.SourceFiles, plan.Value.EntryPoints);
         var compilerDuration = Stopwatch.GetElapsedTime(compilerStarted);
         if (!result.Success)
         {

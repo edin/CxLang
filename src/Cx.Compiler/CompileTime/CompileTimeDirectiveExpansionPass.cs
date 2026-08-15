@@ -342,6 +342,52 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
             _ => base.RewriteStatement(statement),
         };
 
+    protected override IReadOnlyList<StatementNode> RewriteLetStatement(LetStatement let)
+    {
+        if (let.ComputedName is null)
+        {
+            return base.RewriteLetStatement(let);
+        }
+
+        var outcome = _evaluator.EvaluateOutcome(
+            let.ComputedName.Expression,
+            _context);
+        if (outcome is not CompileTimeEvaluationOutcome.Value evaluated)
+        {
+            return base.RewriteLetStatement(let);
+        }
+
+        var name = evaluated.Result switch
+        {
+            CompileTimeValue.Name named => named.Value,
+            CompileTimeValue.String text => text.Value,
+            _ => null,
+        };
+        if (name is null)
+        {
+            _diagnostics.Report(
+                let.ComputedName.Location,
+                $"Computed variable name must evaluate to a name or string, but found {CompileTimeValueFacts.Describe(evaluated.Result)}.");
+            return [];
+        }
+        if (!IsIdentifier(name))
+        {
+            _diagnostics.Report(
+                let.ComputedName.Location,
+                $"Computed variable name '{name}' is not a valid identifier.");
+            return [];
+        }
+
+        var resolved = SyntaxNode.CloneMetadata(
+            let,
+            let with
+            {
+                Name = name,
+                ComputedName = null,
+            });
+        return base.RewriteLetStatement(resolved);
+    }
+
     private bool IsCompileTimeAssignment(AssignmentExpressionNode assignment) =>
         TryGetAssignedName(assignment.Target, out var name)
         && _context.TryGet(name, out _);
@@ -395,7 +441,7 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     private IReadOnlyList<StatementNode> EvaluateCompileTimeMethodCall(CStatement statement)
     {
         var outcome = _evaluator.EvaluateOutcome(statement.Expression, _context);
-        return outcome is CompileTimeEvaluationOutcome.Deferred
+        return (outcome is CompileTimeEvaluationOutcome.Deferred)
             ? [statement]
             : [];
     }

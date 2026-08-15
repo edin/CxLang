@@ -1299,7 +1299,7 @@ public sealed partial class Parser
         {
             _diagnostics.Report(
                 nameToken.Location,
-                $"Unsupported attribute metadata type '{nameToken.Value}'. Expected 'bool', 'int', 'string', 'name', 'type', 'syntax', or 'list<T>'.");
+                $"Unsupported attribute metadata type '{nameToken.Value}'. Expected 'bool', 'int', 'string', 'name', 'type', 'syntax', 'value', or 'list<T>'.");
             type = new CompileTimeErrorTypeNode(nameToken.Location);
         }
 
@@ -1319,9 +1319,10 @@ public sealed partial class Parser
             "name" => CompileTimeScalarType.Name,
             "type" => CompileTimeScalarType.Type,
             "syntax" => CompileTimeScalarType.Syntax,
+            "value" => CompileTimeScalarType.Value,
             _ => CompileTimeScalarType.Boolean,
         };
-        return value is "bool" or "int" or "string" or "name" or "type" or "syntax";
+        return value is "bool" or "int" or "string" or "name" or "type" or "syntax" or "value";
     }
 
     private TopLevelNode? ParseTypeDeclaration(

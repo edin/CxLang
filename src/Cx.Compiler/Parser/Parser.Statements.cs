@@ -169,6 +169,39 @@ public sealed partial class Parser
 
     private StatementNode ParseVariableStatement(Token keywordToken, bool isConst)
     {
+        if (Check(TokenType.At) && PeekType() == TokenType.LBrace)
+        {
+            var computedName = ParsePlaceholder(
+                "Expected compile-time expression inside computed variable name placeholder.",
+                "Expected '}' after computed variable name expression.");
+            var typeNode = ParseOptionalVariableTypeNode("variable", keywordToken.Location);
+            ExpressionNode? initializer = null;
+            if (ConsumeOptional(TokenType.Equals))
+            {
+                initializer = ReadExpressionUntil(keywordToken.Location, TokenType.Semicolon);
+            }
+
+            if (typeNode is null && initializer is null)
+            {
+                _diagnostics.Report(
+                    keywordToken.Location,
+                    "Expected ':' or '=' after computed variable name.");
+            }
+            if (isConst && initializer is null)
+            {
+                _diagnostics.Report(keywordToken.Location, "Const variables require an initializer.");
+            }
+
+            Expect(TokenType.Semicolon, "Expected ';' after variable declaration.");
+            return new LetStatement(
+                keywordToken.Location,
+                isConst,
+                Name: string.Empty,
+                initializer,
+                typeNode,
+                computedName);
+        }
+
         var declaration = ParseVariableDeclarationParts(
             keywordToken.Location,
             nameMessage: "Expected variable name.",

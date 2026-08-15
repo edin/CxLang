@@ -319,6 +319,12 @@ internal sealed class CompileTimeExpressionEvaluator
         }
 
         if (_reflection.IsAvailable
+            && _reflection.TryGetNamedType(name.Name, out var reflectedType))
+        {
+            return new CompileTimeValue.Type(reflectedType);
+        }
+
+        if (_reflection.IsAvailable
             && _reflection.TryGetEnumType(name.Name, out var enumType))
         {
             return new CompileTimeValue.Type(enumType);
@@ -432,6 +438,11 @@ internal sealed class CompileTimeExpressionEvaluator
 
         return binary.Operator switch
         {
+            BinaryOperator.Add => IntegerArithmetic(binary, left, right, (a, b) => checked(a + b)),
+            BinaryOperator.Subtract => IntegerArithmetic(binary, left, right, (a, b) => checked(a - b)),
+            BinaryOperator.Multiply => IntegerArithmetic(binary, left, right, (a, b) => checked(a * b)),
+            BinaryOperator.Divide => IntegerArithmetic(binary, left, right, (a, b) => checked(a / b)),
+            BinaryOperator.Modulo => IntegerArithmetic(binary, left, right, (a, b) => checked(a % b)),
             BinaryOperator.Equal => new CompileTimeValue.Boolean(AreEqual(left, right)),
             BinaryOperator.NotEqual => new CompileTimeValue.Boolean(!AreEqual(left, right)),
             BinaryOperator.LessThan => Compare(binary, left, right, comparison => comparison < 0),
@@ -440,6 +451,39 @@ internal sealed class CompileTimeExpressionEvaluator
             BinaryOperator.GreaterThanOrEqual => Compare(binary, left, right, comparison => comparison >= 0),
             _ => Unsupported(binary),
         };
+    }
+
+    private CompileTimeValue? IntegerArithmetic(
+        BinaryExpressionNode binary,
+        CompileTimeValue left,
+        CompileTimeValue right,
+        Func<long, long, long> operation)
+    {
+        if (left is not CompileTimeValue.Integer leftInteger
+            || right is not CompileTimeValue.Integer rightInteger)
+        {
+            return InvalidBinaryOperands(binary, left, right);
+        }
+
+        try
+        {
+            return new CompileTimeValue.Integer(
+                operation(leftInteger.Value, rightInteger.Value));
+        }
+        catch (DivideByZeroException)
+        {
+            _diagnostics.Report(
+                binary.Location,
+                "Compile-time integer division by zero.");
+            return null;
+        }
+        catch (OverflowException)
+        {
+            _diagnostics.Report(
+                binary.Location,
+                $"Compile-time integer operation '{binary.Operator.ToSourceText()}' overflowed.");
+            return null;
+        }
     }
 
     private CompileTimeValue? EvaluateLogical(
@@ -819,7 +863,8 @@ internal sealed class CompileTimeExpressionEvaluator
             (CompileTimeValue.Name a, CompileTimeValue.Name b) =>
                 string.Equals(a.Value, b.Value, StringComparison.Ordinal),
             (CompileTimeValue.Type a, CompileTimeValue.Type b) =>
-                TypeIdentity.ResolvedEquals(a.Value, b.Value),
+                TypeIdentity.SourceReferenceMatches(a.Value, b.Value)
+                || TypeIdentity.ResolvedEquals(a.Value, b.Value),
             (CompileTimeValue.Null, CompileTimeValue.Null) => true,
             _ => false,
         };

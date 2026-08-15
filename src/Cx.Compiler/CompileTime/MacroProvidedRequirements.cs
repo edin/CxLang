@@ -164,6 +164,9 @@ internal sealed class ProspectiveCompileTimeReflection(
     public bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods) =>
         inner.TryGetMethods(type, out methods);
 
+    public bool TryGetNamedType(string name, out TypeRef type) =>
+        inner.TryGetNamedType(name, out type);
+
     public bool TryGetEnumType(string name, out TypeRef type) =>
         inner.TryGetEnumType(name, out type);
 

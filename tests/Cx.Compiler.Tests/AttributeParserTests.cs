@@ -16,13 +16,14 @@ public sealed class AttributeParserTests
                 generated_name: name;
                 target: type;
                 node: syntax;
+                default_value: value;
                 groups: list<list<string>>;
             }
             """);
 
         var fields = Assert.Single(program.AttributeDeclarations).Fields;
         Assert.Equal(
-            ["bool", "int", "string", "name", "type", "syntax", "list<list<string>>"],
+            ["bool", "int", "string", "name", "type", "syntax", "value", "list<list<string>>"],
             fields.Select(field => field.TypeNode.ToSourceText()));
         Assert.IsType<CompileTimeListTypeNode>(fields[^1].TypeNode);
         Assert.All(fields, field => Assert.NotNull(field.TypeNode.Span));

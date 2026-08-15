@@ -137,7 +137,7 @@ internal static class AstChildren
             loop.IterableExpression,
             loop.Body),
 
-        LetStatement let => Children(let.Initializer, let.TypeNode),
+        LetStatement let => Children(let.ComputedName, let.Initializer, let.TypeNode),
         UsingStatement usingStatement => Children(
             usingStatement.Initializer,
             usingStatement.TypeNode),

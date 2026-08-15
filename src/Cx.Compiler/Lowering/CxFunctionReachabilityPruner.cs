@@ -1,5 +1,6 @@
 using Cx.Compiler.Syntax;
 using Cx.Compiler.Syntax.Nodes;
+using Cx.Compiler.Semantic;
 
 namespace Cx.Compiler.Lowering;
 
@@ -15,7 +16,7 @@ internal static class CxFunctionReachabilityPruner
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
         var requestedEntries = entryPoints is { Count: > 0 } ? entryPoints : ["main"];
         var roots = requestedEntries
-            .SelectMany(name => FunctionsNamed(functionsByName, name))
+            .SelectMany(name => EntryPointFunctions(functions, name))
             .Where(function => function.OwnerTypeNode is null)
             .Distinct((IEqualityComparer<FunctionNode>)ReferenceEqualityComparer.Instance)
             .ToList();
@@ -113,6 +114,13 @@ internal static class CxFunctionReachabilityPruner
     private static IReadOnlyList<FunctionNode> GetFunctions(ProgramNode program) =>
         ProgramFunctionFacts
             .GetDeclarations(program)
+            .ToList();
+
+    private static IReadOnlyList<FunctionNode> EntryPointFunctions(
+        IReadOnlyList<FunctionNode> functions,
+        string name) =>
+        functions
+            .Where(function => FunctionEntryPointFacts.Matches(function, name))
             .ToList();
 
     private static IReadOnlyList<FunctionNode> FunctionsNamed(

@@ -19,7 +19,8 @@ public sealed record LetStatement(
     bool IsConst,
     string Name,
     ExpressionNode? Initializer,
-    TypeNode? TypeNode = null) : LocalBindingStatement(Location, Name, TypeNode);
+    TypeNode? TypeNode = null,
+    PlaceholderExpressionNode? ComputedName = null) : LocalBindingStatement(Location, Name, TypeNode);
 
 public sealed record UsingStatement(
     Location Location,

@@ -1,0 +1,299 @@
+attribute php_export on fn {}
+attribute php_optional on parameter {
+    value: value;
+    display: string;
+}
+attribute php_i64_range on parameter {
+    minimum: int;
+    maximum: int;
+}
+
+public compile fn php_export_type_supported(value: type) -> bool {
+    return value == i64
+        || value == double
+        || value == bool
+        || value == StringView
+        || value == StringBuilder;
+}
+
+public compile fn php_export_type_mask(value: type) -> int {
+    if (value == i64) {
+        return 16;
+    }
+    if (value == double) {
+        return 32;
+    }
+    if (value == bool) {
+        return 12;
+    }
+    if (value == StringView) {
+        return 64;
+    }
+    if (value == StringBuilder) {
+        return 64;
+    }
+
+    return 0;
+}
+
+public macro PhpExport(function: declaration) -> declarations {
+    @if(!php_export_type_supported(function.return_type)) {
+        Diagnostic.error(
+            "PhpExport does not support return type {1} on '{0}'.",
+            function.name,
+            function.return_type.display_name
+        );
+    }
+
+    @let optional_parameters = [];
+    @foreach parameter in function.parameters {
+        @let optional = parameter.attribute("php_optional");
+        @if(optional == null && optional_parameters.count > 0) {
+            Diagnostic.error(
+                parameter,
+                "Required PHP parameter '{0}' on '{1}' cannot follow an optional parameter.",
+                parameter.name,
+                function.name
+            );
+        }
+        @if(optional != null) {
+            optional_parameters.add(parameter);
+        }
+        @if(!php_export_type_supported(parameter.type)) {
+            Diagnostic.error(
+                "PhpExport does not support parameter '{0}' of type {1}.",
+                parameter.name,
+                parameter.type.display_name
+            );
+        }
+        @if(parameter.attribute("php_i64_range") != null
+            && parameter.type != i64) {
+            Diagnostic.error(
+                "php_i64_range requires parameter '{0}' to have type i64, but it has type {1}.",
+                parameter.name,
+                parameter.type.display_name
+            );
+        }
+    }
+
+    fn @{as_name(concat("php_", function.name))}(
+        execute_data: void*,
+        return_value: ZendZval*
+    ) -> void {
+        let arguments: PhpArguments = PhpArguments.from(execute_data);
+
+        @foreach parameter in function.parameters {
+            @let optional = parameter.attribute("php_optional");
+            @if(parameter.type == i64) {
+                @if(optional == null) {
+                    let @{as_name(parameter.name)}: i64 = 0;
+                }
+                @if(optional != null) {
+                    let @{as_name(parameter.name)}: i64 = @{optional.value};
+                }
+            }
+            @if(parameter.type == double) {
+                @if(optional == null) {
+                    let @{as_name(parameter.name)}: double = 0.0;
+                }
+                @if(optional != null) {
+                    let @{as_name(parameter.name)}: double = @{optional.value};
+                }
+            }
+            @if(parameter.type == bool) {
+                @if(optional == null) {
+                    let @{as_name(parameter.name)}: bool = false;
+                }
+                @if(optional != null) {
+                    let @{as_name(parameter.name)}: bool = @{optional.value};
+                }
+            }
+            @if(parameter.type == StringView) {
+                let @{as_name(parameter.name)}: StringView = StringView.empty();
+            }
+        }
+
+        if (!arguments.expect_count(
+            @{function.parameters.count - optional_parameters.count},
+            @{function.parameters.count}
+        )) {
+            return;
+        }
+
+        @let parameter_index = 0;
+        @foreach parameter in function.parameters {
+            @let optional = parameter.attribute("php_optional");
+            @if(optional == null) {
+                if (!arguments.parse(
+                    @{parameter_index},
+                    &@{as_name(parameter.name)}
+                )) {
+                    return;
+                }
+            }
+            @if(optional != null) {
+                if (!arguments.parse_if_present(
+                    @{parameter_index},
+                    &@{as_name(parameter.name)}
+                )) {
+                    return;
+                }
+            }
+
+            @let range = parameter.attribute("php_i64_range");
+            @if(range != null) {
+                if (@{as_name(parameter.name)} < @{range.minimum}
+                    || @{as_name(parameter.name)} > @{range.maximum}) {
+                    PhpArguments.value_error(
+                        @{parameter_index + 1},
+                        "is outside the supported range"
+                    );
+                    return;
+                }
+            }
+            parameter_index = parameter_index + 1;
+        }
+
+        @if(function.return_type == i64) {
+            return_value.set_long(
+                @{as_name(function.name)}(@{function.parameters})
+            );
+        }
+        @if(function.return_type == double) {
+            return_value.set_double(
+                @{as_name(function.name)}(@{function.parameters})
+            );
+        }
+        @if(function.return_type == bool) {
+            return_value.set_bool(
+                @{as_name(function.name)}(@{function.parameters})
+            );
+        }
+        @if(function.return_type == StringView) {
+            let result: StringView =
+                @{as_name(function.name)}(@{function.parameters});
+            return_value.set_string_copy(result.data, result.length);
+        }
+        @if(function.return_type == StringBuilder) {
+            using result: StringBuilder =
+                @{as_name(function.name)}(@{function.parameters});
+            let view: StringView = result.as_view();
+            return_value.set_string_copy(view.data, view.length);
+        }
+    }
+}
+
+public macro PhpModule() -> declarations {
+    @let exports = [];
+    @let generated_arg_infos = [];
+
+    @foreach function in module.functions {
+        @if(function.attribute("php_export") != null) {
+            exports.add(function);
+            generated_arg_infos.add(function);
+            @foreach parameter in function.parameters {
+                generated_arg_infos.add(parameter);
+            }
+        }
+    }
+
+    @foreach function in exports {
+        use PhpExport(@{function.reference});
+    }
+
+    let cx_generated_arg_info:
+        @{Type.array(ZendInternalArgInfo, generated_arg_infos.count)} = {};
+    let cx_demo_functions:
+        @{Type.array(ZendFunctionEntry, exports.count + 1)} = {};
+
+    let cx_demo_module_entry: ZendModuleEntry = {
+        (u16)sizeof(ZendModuleEntry),
+        (u32)20250925,
+        (u8)0,
+        (u8)0,
+        null,
+        null,
+        "cx_demo",
+        &cx_demo_functions[0],
+        null,
+        null,
+        null,
+        null,
+        null,
+        "0.1.0",
+        (usize)0,
+        null,
+        null,
+        null,
+        null,
+        0,
+        (u8)0,
+        null,
+        0,
+        "API20250925,NTS"
+    };
+
+    fn get_module() -> ZendModuleEntry* {
+        @let function_index = 0;
+        @let arg_info_index = 0;
+        @foreach function in exports {
+            @let optional_parameters = [];
+            @foreach parameter in function.parameters {
+                @if(parameter.attribute("php_optional") != null) {
+                    optional_parameters.add(parameter);
+                }
+            }
+
+            php_set_arg_info(
+                &cx_generated_arg_info[0],
+                @{arg_info_index},
+                (const char*)@{
+                    function.parameters.count - optional_parameters.count
+                },
+                (u32)@{php_export_type_mask(function.return_type)},
+                null
+            );
+
+            @let parameter_index = 0;
+            @foreach parameter in function.parameters {
+                @let optional = parameter.attribute("php_optional");
+                @if(optional == null) {
+                    php_set_arg_info(
+                        &cx_generated_arg_info[0],
+                        @{arg_info_index + parameter_index + 1},
+                        @{parameter.name},
+                        (u32)@{php_export_type_mask(parameter.type)},
+                        null
+                    );
+                }
+                @if(optional != null) {
+                    php_set_arg_info(
+                        &cx_generated_arg_info[0],
+                        @{arg_info_index + parameter_index + 1},
+                        @{parameter.name},
+                        (u32)@{php_export_type_mask(parameter.type)},
+                        @{optional.display}
+                    );
+                }
+                parameter_index = parameter_index + 1;
+            }
+
+            php_set_generated_function_entry(
+                &cx_demo_functions[0],
+                @{function_index},
+                @{function.name},
+                @{as_name(concat("php_", function.name))},
+                &cx_generated_arg_info[0],
+                @{arg_info_index},
+                (u32)@{function.parameters.count}
+            );
+
+            arg_info_index = arg_info_index + function.parameters.count + 1;
+            function_index = function_index + 1;
+        }
+
+        return &cx_demo_module_entry;
+    }
+}
+
+use PhpModule();

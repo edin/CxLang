@@ -1,0 +1,318 @@
+// Minimal, header-free PHP 8.5 NTS ABI surface for Linux x86-64.
+// These layouts and constants intentionally target module API 20250925.
+
+import c.string;
+
+struct ZendZval {
+    lval: i64;
+    type_info: u32;
+    extra: u32;
+}
+
+struct ZendExecuteData {
+    opline: const void*;
+    call: void*;
+    return_value: ZendZval*;
+    function: void*;
+    this_value: ZendZval;
+    previous: void*;
+    symbol_table: void*;
+    run_time_cache: void*;
+    extra_named_parameters: void*;
+}
+
+struct ZendString {
+    refcount: u32;
+    type_info: u32;
+    hash: usize;
+    length: usize;
+    value: char[1];
+}
+
+extern fn _emalloc(size: long) -> void*;
+extern fn zend_parse_parameter(
+    flags: int,
+    argument_number: int,
+    argument: void*,
+    type_spec: const char*,
+    ...) -> int;
+extern fn zend_wrong_parameters_count_error(minimum: int, maximum: int) -> void;
+extern fn zend_argument_value_error(arg_num: int, format: const char*, ...) -> void;
+
+struct ZendFunctionEntry {
+    fname: const char*;
+    handler: fn (void*, ZendZval*) -> void;
+    arg_info: const void*;
+    num_args: u32;
+    flags: u32;
+    frameless_function_infos: const void*;
+    doc_comment: const char*;
+}
+
+struct ZendType {
+    ptr: void*;
+    type_mask: u32;
+}
+
+struct ZendInternalArgInfo {
+    name: const char*;
+    type: ZendType;
+    default_value: const char*;
+}
+
+fn php_set_arg_info(
+    entries: ZendInternalArgInfo*,
+    index: int,
+    name: const char*,
+    type_mask: u32,
+    default_value: const char*
+) -> void {
+    entries[index].name = name;
+    entries[index].type.ptr = null;
+    entries[index].type.type_mask = type_mask;
+    entries[index].default_value = default_value;
+}
+
+fn php_set_function_entry(
+    entries: ZendFunctionEntry*,
+    index: int,
+    name: const char*,
+    handler: fn (void*, ZendZval*) -> void,
+    arg_info: const void*,
+    argument_count: u32
+) -> void {
+    entries[index].fname = name;
+    entries[index].handler = handler;
+    entries[index].arg_info = arg_info;
+    entries[index].num_args = argument_count;
+    entries[index].flags = (u32)0;
+    entries[index].frameless_function_infos = null;
+    entries[index].doc_comment = null;
+}
+
+fn php_set_generated_function_entry(
+    entries: ZendFunctionEntry*,
+    index: int,
+    name: const char*,
+    handler: fn (void*, ZendZval*) -> void,
+    arg_info: ZendInternalArgInfo*,
+    arg_info_index: int,
+    argument_count: u32
+) -> void {
+    php_set_function_entry(
+        entries,
+        index,
+        name,
+        handler,
+        &arg_info[arg_info_index],
+        argument_count
+    );
+}
+
+struct ZendModuleEntry {
+    size: u16;
+    zend_api: u32;
+    zend_debug: u8;
+    zts: u8;
+    ini_entry: const void*;
+    deps: const void*;
+    name: const char*;
+    functions: const ZendFunctionEntry*;
+    module_startup_func: fn (int, int) -> int;
+    module_shutdown_func: fn (int, int) -> int;
+    request_startup_func: fn (int, int) -> int;
+    request_shutdown_func: fn (int, int) -> int;
+    info_func: fn (void*) -> void;
+    version: const char*;
+    globals_size: usize;
+    globals_ptr: void*;
+    globals_ctor: fn (void*) -> void;
+    globals_dtor: fn (void*) -> void;
+    post_deactivate_func: fn () -> int;
+    module_started: int;
+    type: u8;
+    handle: void*;
+    module_number: int;
+    build_id: const char*;
+}
+
+struct PhpArguments {
+    frame: ZendExecuteData*;
+}
+
+extension PhpArguments {
+    static fn from(execute_data: void*) -> PhpArguments {
+        return PhpArguments { frame: (ZendExecuteData*)execute_data };
+    }
+
+    fn count() -> int {
+        return (int)self.frame.this_value.extra;
+    }
+
+    fn has(index: int) -> bool {
+        return index >= 0 && index < self.count();
+    }
+
+    fn expect_count(expected: int) -> bool {
+        return self.expect_count(expected, expected);
+    }
+
+    fn expect_count(minimum: int, maximum: int) -> bool {
+        let count: int = self.count();
+        if (count >= minimum && count <= maximum) {
+            return true;
+        }
+
+        zend_wrong_parameters_count_error(minimum, maximum);
+        return false;
+    }
+
+    fn argument(index: int) -> ZendZval* {
+        if (!self.has(index)) {
+            return null;
+        }
+
+        let values: ZendZval* = (ZendZval*)self.frame;
+        let frame_slots: usize = sizeof(ZendExecuteData) / sizeof(ZendZval);
+        return &values[frame_slots + (usize)index];
+    }
+
+    fn required_argument(index: int) -> ZendZval* {
+        let argument: ZendZval* = self.argument(index);
+        if (argument != null) {
+            return argument;
+        }
+
+        let required: int = index + 1;
+        zend_wrong_parameters_count_error(required, required);
+        return null;
+    }
+
+    fn parse(index: int, value: i64*) -> bool {
+        let argument: ZendZval* = self.required_argument(index);
+        return argument != null
+            && zend_parse_parameter(0, index + 1, argument, "l", value) == 0;
+    }
+
+    fn parse(index: int, value: double*) -> bool {
+        let argument: ZendZval* = self.required_argument(index);
+        return argument != null
+            && zend_parse_parameter(0, index + 1, argument, "d", value) == 0;
+    }
+
+    fn parse(index: int, value: bool*) -> bool {
+        let argument: ZendZval* = self.required_argument(index);
+        let parsed: u8 = (u8)0;
+        if (argument == null
+            || zend_parse_parameter(0, index + 1, argument, "b", &parsed) != 0) {
+            return false;
+        }
+
+        value[0] = parsed != (u8)0;
+        return true;
+    }
+
+    fn parse(index: int, value: StringView*) -> bool {
+        let argument: ZendZval* = self.required_argument(index);
+        let data: char* = null;
+        let length: usize = (usize)0;
+        if (argument == null
+            || zend_parse_parameter(
+                0,
+                index + 1,
+                argument,
+                "s",
+                &data,
+                &length) != 0) {
+            return false;
+        }
+
+        value[0] = StringView.from_parts(data, length);
+        return true;
+    }
+
+    fn parse(index: int, value: ZendString**) -> bool {
+        let argument: ZendZval* = self.required_argument(index);
+        return argument != null
+            && zend_parse_parameter(0, index + 1, argument, "S", value) == 0;
+    }
+
+    fn parse(index: int, value: ZendZval**) -> bool {
+        let argument: ZendZval* = self.required_argument(index);
+        return argument != null
+            && zend_parse_parameter(0, index + 1, argument, "z", value) == 0;
+    }
+
+    fn parse_if_present(index: int, value: i64*) -> bool {
+        return !self.has(index) || self.parse(index, value);
+    }
+
+    fn parse_if_present(index: int, value: double*) -> bool {
+        return !self.has(index) || self.parse(index, value);
+    }
+
+    fn parse_if_present(index: int, value: bool*) -> bool {
+        return !self.has(index) || self.parse(index, value);
+    }
+
+    fn parse_if_present(index: int, value: StringView*) -> bool {
+        return !self.has(index) || self.parse(index, value);
+    }
+
+    fn parse_if_present(index: int, value: ZendString**) -> bool {
+        return !self.has(index) || self.parse(index, value);
+    }
+
+    fn parse_if_present(index: int, value: ZendZval**) -> bool {
+        return !self.has(index) || self.parse(index, value);
+    }
+
+    static fn value_error(argument: int, message: const char*) -> void {
+        zend_argument_value_error(argument, "%s", message);
+    }
+}
+
+extension ZendString {
+    static fn allocate(length: usize) -> ZendString* {
+        let result: ZendString* =
+            (ZendString*)_emalloc((long)(sizeof(ZendString) + length));
+        result.refcount = (u32)1;
+        result.type_info = (u32)22;
+        result.hash = (usize)0;
+        result.length = length;
+        result.value[length] = (char)0;
+        return result;
+    }
+
+    static fn copy(value: const char*, length: usize) -> ZendString* {
+        let result: ZendString* = ZendString.allocate(length);
+        memcpy(&result.value[0], value, length);
+        return result;
+    }
+}
+
+extension ZendZval {
+    fn set_long(value: i64) -> void {
+        self.lval = value;
+        self.type_info = (u32)4;
+    }
+
+    fn set_double(value: double) -> void {
+        memcpy(&self.lval, &value, sizeof(double));
+        self.type_info = (u32)5;
+    }
+
+    fn set_bool(value: bool) -> void {
+        self.lval = value ? (i64)1 : (i64)0;
+        self.type_info = value ? (u32)3 : (u32)2;
+    }
+
+    fn set_string(value: ZendString*) -> void {
+        self.lval = (i64)value;
+        self.type_info = (u32)262;
+    }
+
+    fn set_string_copy(value: const char*, length: usize) -> void {
+        self.set_string(ZendString.copy(value, length));
+    }
+}

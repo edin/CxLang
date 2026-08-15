@@ -5,8 +5,9 @@ internal sealed record ProjectConfig(
     string Path,
     string BaseDirectory,
     string? Name,
-    string? Kind,
+    ProjectKind Kind,
     IReadOnlyList<string> Sources,
+    IReadOnlyList<string> EntryPoints,
     string? Output,
     string? COutput,
     string? Compiler,
@@ -45,13 +46,34 @@ internal sealed record ProjectConfig(
             return ProjectConfigResult.Failed($"Failed to parse '{path}': {ex.Message}");
         }
 
+        var kindText = GetString(model, "kind") ?? "exe";
+        var kind = kindText switch
+        {
+            "exe" => ProjectKind.Executable,
+            "shared" => ProjectKind.Shared,
+            _ => (ProjectKind?)null,
+        };
+        if (kind is null)
+        {
+            return ProjectConfigResult.Failed(
+                $"Unsupported project kind '{kindText}'. Expected 'exe' or 'shared'.");
+        }
+
+        var entryPoints = GetStringArray(model, "entry_points");
+        if (kind == ProjectKind.Shared && entryPoints.Count == 0)
+        {
+            return ProjectConfigResult.Failed(
+                "Shared projects must declare at least one entry point using entry_points.");
+        }
+
         var baseDirectory = System.IO.Path.GetDirectoryName(path) ?? Environment.CurrentDirectory;
         return ProjectConfigResult.Succeeded(new ProjectConfig(
             path,
             baseDirectory,
             GetString(model, "name"),
-            GetString(model, "kind"),
+            kind.Value,
             GetStringArray(model, "sources"),
+            entryPoints,
             GetString(model, "output"),
             GetString(model, "c_output"),
             GetString(model, "cc") ?? GetString(model, "compiler"),

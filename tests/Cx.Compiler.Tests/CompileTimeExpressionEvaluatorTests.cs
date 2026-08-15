@@ -39,6 +39,32 @@ public sealed class CompileTimeExpressionEvaluatorTests
     }
 
     [Theory]
+    [InlineData("1 + 2", 3L)]
+    [InlineData("7 - 3", 4L)]
+    [InlineData("6 * 7", 42L)]
+    [InlineData("17 / 5", 3L)]
+    [InlineData("17 % 5", 2L)]
+    public void Evaluate_PerformsIntegerArithmetic(string source, long expected)
+    {
+        var (value, diagnostics) = Evaluate(source);
+
+        Assert.Equal(expected, Assert.IsType<CompileTimeValue.Integer>(value).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Theory]
+    [InlineData("1 / 0", "division by zero")]
+    [InlineData("9223372036854775807 + 1", "overflowed")]
+    public void Evaluate_ReportsInvalidIntegerArithmetic(string source, string expectedMessage)
+    {
+        var (value, diagnostics) = Evaluate(source);
+
+        Assert.Null(value);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(expectedMessage, StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData("int", "int")]
     [InlineData("bool", "bool")]
     [InlineData("double", "double")]

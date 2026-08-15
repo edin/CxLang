@@ -122,6 +122,7 @@ internal sealed class MacroExpansionPass : AstRewriter
                     _reflection,
                     environment: _environment)
                 .ExpandProgram(templateProgram, context, generatedFrom);
+            ResetGeneratedSemantics(expanded.Declarations);
             foreach (var declaration in expanded.Declarations)
             {
                 declaration.GeneratedFrom = new GeneratedSyntaxOrigin(
@@ -175,6 +176,7 @@ internal sealed class MacroExpansionPass : AstRewriter
                 macro.Template.Statements,
                 context,
                 generatedFrom);
+            ResetGeneratedSemantics(expanded);
             foreach (var expandedStatement in expanded)
             {
                 expandedStatement.GeneratedFrom = new GeneratedSyntaxOrigin(
@@ -188,6 +190,15 @@ internal sealed class MacroExpansionPass : AstRewriter
         finally
         {
             _expansionDepth--;
+        }
+    }
+
+    private static void ResetGeneratedSemantics(
+        IEnumerable<SyntaxNode> roots)
+    {
+        foreach (var node in AstTraversal.DescendantsAndSelf(roots))
+        {
+            node.Semantic = new SemanticInfo();
         }
     }
 

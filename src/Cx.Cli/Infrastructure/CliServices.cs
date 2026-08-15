@@ -25,7 +25,9 @@ internal static class CliServices
 
         return ResolvedBuildPlanResult.Succeeded(new ResolvedBuildPlan(
             "std",
+            ProjectKind.Executable,
             SourceFiles: [],
+            EntryPoints: [],
             cOutputPath,
             nativeOutputPath,
             compiler,
@@ -80,7 +82,9 @@ internal static class CliServices
 
         return ResolvedBuildPlanResult.Succeeded(new ResolvedBuildPlan(
             name,
+            ProjectKind.Executable,
             sources,
+            EntryPoints: [],
             cOutputPath,
             nativeOutputPath,
             compiler,
@@ -123,20 +127,24 @@ internal static class CliServices
             project?.COutput,
             defaultCOutput,
             baseDirectory);
+        var kind = project?.Kind ?? ProjectKind.Executable;
         var nativeOutputPath = ResolveOutputPath(
             request.NativeOutputPath,
             project?.Output,
-            Path.Combine("build", "bin", name + (OperatingSystem.IsWindows() ? ".exe" : "")),
+            DefaultNativeOutput(kind, name),
             baseDirectory);
         var compiler = request.Compiler ?? project?.Compiler ?? "gcc";
         var compilerArgs = new List<string>();
+        compilerArgs.AddRange(DefaultCompilerArgs(kind));
         compilerArgs.AddRange(project?.CompilerArgs ?? []);
         compilerArgs.AddRange(request.CompilerArgs);
         var envPath = project?.EnvPath ?? [];
 
         return ResolvedBuildPlanResult.Succeeded(new ResolvedBuildPlan(
             name,
+            kind,
             sources,
+            project?.EntryPoints ?? [],
             cOutputPath,
             nativeOutputPath,
             compiler,
@@ -144,8 +152,13 @@ internal static class CliServices
             envPath));
     }
 
-    public static CompilationResult Compile(IReadOnlyList<SourceFile> sourceFiles) =>
-        new CxCompiler().CompileToC(sourceFiles);
+    public static CompilationResult Compile(
+        IReadOnlyList<SourceFile> sourceFiles,
+        IReadOnlyList<string>? entryPoints = null) =>
+        new CxCompiler().CompileToC(
+            sourceFiles,
+            new CEmissionOptions(EntryPoints:
+                entryPoints is { Count: > 0 } ? entryPoints : null));
 
     public static CompilationResult CompileTests(IReadOnlyList<SourceFile> sourceFiles, string? moduleName = null) =>
         new CxCompiler().CompileTestsToC(sourceFiles, moduleName);
@@ -163,7 +176,15 @@ internal static class CliServices
         bool buildTests = false,
         string? testModuleName = null)
     {
-        var result = buildTests ? CompileTests(plan.SourceFiles, testModuleName) : Compile(plan.SourceFiles);
+        if (runAfterBuild && plan.Kind == ProjectKind.Shared)
+        {
+            AnsiConsole.MarkupLine("[red]error:[/] Shared projects can be built but not run directly.");
+            return 2;
+        }
+
+        var result = buildTests
+            ? CompileTests(plan.SourceFiles, testModuleName)
+            : Compile(plan.SourceFiles, plan.EntryPoints);
         if (!result.Success)
         {
             PrintDiagnostics(result);
@@ -297,6 +318,35 @@ internal static class CliServices
             return 0;
         }
         """;
+
+    private static string DefaultNativeOutput(ProjectKind kind, string name) =>
+        kind == ProjectKind.Shared
+            ? Path.Combine("build", "lib", name + SharedLibraryExtension())
+            : Path.Combine("build", "bin", name + (OperatingSystem.IsWindows() ? ".exe" : ""));
+
+    private static IReadOnlyList<string> DefaultCompilerArgs(ProjectKind kind)
+    {
+        if (kind != ProjectKind.Shared)
+        {
+            return [];
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return ["-fPIC", "-dynamiclib"];
+        }
+
+        return OperatingSystem.IsWindows()
+            ? ["-shared"]
+            : ["-fPIC", "-shared"];
+    }
+
+    private static string SharedLibraryExtension() =>
+        OperatingSystem.IsWindows()
+            ? ".dll"
+            : OperatingSystem.IsMacOS()
+                ? ".dylib"
+                : ".so";
 
     private static IReadOnlyList<string> GetTestSourceEntries(ProjectConfig? project, string baseDirectory)
     {

@@ -62,6 +62,33 @@ public sealed class AttributeSemanticTests
     }
 
     [Fact]
+    public void Compile_ValueMetadataAcceptsAnyEvaluatorValue()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            attribute defaults on fn {
+                integer_value: value;
+                string_value: value;
+                type_value: value;
+                list_value: value;
+            }
+
+            @defaults(
+                integer_value: 1,
+                string_value: "fallback",
+                type_value: int,
+                list_value: [1, 2, 3]
+            )
+            fn configured() -> void {}
+
+            fn main() -> int {
+                return 0;
+            }
+            """)
+            .Succeeds();
+    }
+
+    [Fact]
     public void Compile_AcceptsDifferentListLengthsPerAttributeApplication()
     {
         CompilerTestHelpers.VerifyCompilation(

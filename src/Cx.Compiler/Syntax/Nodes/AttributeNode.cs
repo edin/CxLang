@@ -23,6 +23,7 @@ public enum CompileTimeScalarType
     Name,
     Type,
     Syntax,
+    Value,
 }
 
 public sealed record CompileTimeScalarTypeNode(
@@ -47,6 +48,7 @@ public static class CompileTimeTypeNodeExtensions
             CompileTimeScalarType.Name => "name",
             CompileTimeScalarType.Type => "type",
             CompileTimeScalarType.Syntax => "syntax",
+            CompileTimeScalarType.Value => "value",
             _ => "<unknown>",
         },
         CompileTimeListTypeNode list => $"list<{list.ElementType.ToSourceText()}>",

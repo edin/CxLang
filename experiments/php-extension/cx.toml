@@ -1,0 +1,14 @@
+name = "cx_demo"
+kind = "shared"
+sources = [
+    "src/php85_abi.cx",
+    "src/php_binding.cx",
+    "src/main.cx",
+]
+entry_points = ["get_module"]
+
+c_output = "build/c/cx_demo.c"
+output = "build/lib/cx_demo.so"
+
+cc = "gcc"
+cc_args = ["-std=c11", "-O2"]

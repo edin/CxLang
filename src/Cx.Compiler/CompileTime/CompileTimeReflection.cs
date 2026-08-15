@@ -14,6 +14,8 @@ internal interface ICompileTimeReflection
 
     bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods);
 
+    bool TryGetNamedType(string name, out TypeRef type);
+
     bool TryGetEnumType(string name, out TypeRef type);
 
     bool TryGetEnumMembers(TypeRef type, out IReadOnlyList<ReflectedEnumMember> members);
@@ -99,6 +101,12 @@ internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
     public bool TryGetMethods(TypeRef type, out IReadOnlyList<ResolvedMethod> methods)
     {
         methods = [];
+        return false;
+    }
+
+    public bool TryGetNamedType(string name, out TypeRef type)
+    {
+        type = new TypeRef.Unknown();
         return false;
     }
 
@@ -267,6 +275,28 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         }
 
         methods = _typeSystem.GetMethods(resolved);
+        return true;
+    }
+
+    public bool TryGetNamedType(string name, out TypeRef type)
+    {
+        var parsed = _typeRefParser.Parse(name);
+        if (parsed is TypeRef.Alias)
+        {
+            type = parsed;
+            return true;
+        }
+
+        var lookup = _declarations.LookupTypeFromModule(
+            _program.Module?.Name ?? string.Empty,
+            new TypeRef.Named(name, []));
+        if (lookup is not ProgramTypeDeclarationLookup.Found found)
+        {
+            type = new TypeRef.Unknown();
+            return false;
+        }
+
+        type = new TypeRef.Named(name, [], found.ModuleName);
         return true;
     }
 
