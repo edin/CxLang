@@ -115,10 +115,19 @@ internal sealed class TypeInferencePass(
 
     private IReadOnlyList<GlobalVariableNode> InferGlobalVariables(IReadOnlyList<GlobalVariableNode> globals)
     {
-        var typeEnvironment = BuildGlobalTypeEnvironment(globals);
+        var globalsWithInferredArrayLengths = globals
+            .Select(global => global with
+            {
+                TypeNode = ResolveInferredArrayLength(
+                    global.TypeNode,
+                    global.Initializer,
+                    global.Location),
+            })
+            .ToList();
+        var typeEnvironment = BuildGlobalTypeEnvironment(globalsWithInferredArrayLengths);
         var inferred = new List<GlobalVariableNode>();
 
-        foreach (var global in globals)
+        foreach (var global in globalsWithInferredArrayLengths)
         {
             var declaredTypeRef = TypeRefOrNull(global.TypeNode);
             var initializer = InferExpression(
@@ -255,7 +264,11 @@ internal sealed class TypeInferencePass(
         LetStatement let,
         TypeEnvironment typeEnvironment)
     {
-        var declaredTypeRef = TypeRefOrNull(let.TypeNode);
+        var resolvedTypeNode = ResolveInferredArrayLength(
+            let.TypeNode,
+            let.Initializer,
+            let.Location);
+        var declaredTypeRef = TypeRefOrNull(resolvedTypeNode);
         var initializer = InferExpression(
             let.Initializer,
             typeEnvironment,
@@ -310,7 +323,11 @@ internal sealed class TypeInferencePass(
         ForDeclarationInitializerNode declaration,
         TypeEnvironment typeEnvironment)
     {
-        var declaredTypeRef = TypeRefOrNull(declaration.TypeNode);
+        var resolvedTypeNode = ResolveInferredArrayLength(
+            declaration.TypeNode,
+            declaration.Initializer,
+            declaration.Location);
+        var declaredTypeRef = TypeRefOrNull(resolvedTypeNode);
         var initializer = InferExpression(
             declaration.Initializer,
             typeEnvironment,
@@ -332,6 +349,30 @@ internal sealed class TypeInferencePass(
             TypeNode = CreateInferredTypeNode(declaration.Location, type),
             Initializer = initializer,
         };
+    }
+
+    private TypeNode? ResolveInferredArrayLength(
+        TypeNode? typeNode,
+        ExpressionNode? initializer,
+        Location location)
+    {
+        if (typeNode?.Syntax is not FixedArrayTypeSyntaxNode
+            {
+                Length: ArrayLengthNode.Inferred,
+            } array
+            || initializer is not InitializerExpressionNode
+            {
+                Fields.Count: 0,
+                Values.Count: > 0,
+            } aggregate)
+        {
+            return typeNode;
+        }
+
+        return new TypeRef.FixedArray(
+                array.Element.ToUnresolvedTypeRef(),
+                new ArrayLengthNode.Integer((ulong)aggregate.Values.Count))
+            .ToTypeNode(location);
     }
 
     private ForDeclarationInitializerNode? InferOptionalForDeclarationInitializer(

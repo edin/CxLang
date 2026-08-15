@@ -12,6 +12,16 @@ namespace Cx.Compiler.Tests;
 public sealed class TypeNodeParsingTests
 {
     [Fact]
+    public void ParseType_RepresentsInferredArrayLengthStructurally()
+    {
+        var type = TypeNode.CreateFromText(Location.Synthetic("<array-type>"), "u8[]");
+
+        var array = Assert.IsType<FixedArrayTypeSyntaxNode>(type.Syntax);
+        Assert.IsType<ArrayLengthNode.Inferred>(array.Length);
+        Assert.Equal("u8[]", type.ToSourceText());
+    }
+
+    [Fact]
     public void ParseType_RepresentsSymbolicArrayLengthStructurally()
     {
         var type = TypeNode.CreateFromText(Location.Synthetic("<array-type>"), "u8[Capacity]");

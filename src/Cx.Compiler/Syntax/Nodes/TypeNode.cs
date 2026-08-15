@@ -47,6 +47,8 @@ public abstract record ArrayLengthNode
 
     public sealed record Symbol(string Name) : ArrayLengthNode;
 
+    public sealed record Inferred : ArrayLengthNode;
+
     public sealed record Invalid : ArrayLengthNode;
 
     public static ArrayLengthNode Parse(string? text)
@@ -54,7 +56,7 @@ public abstract record ArrayLengthNode
         text = text?.Trim();
         if (string.IsNullOrEmpty(text))
         {
-            return new Invalid();
+            return new Inferred();
         }
 
         var digits = text.Replace("_", string.Empty, StringComparison.Ordinal);
@@ -77,6 +79,7 @@ public static class ArrayLengthFormatter
     {
         ArrayLengthNode.Integer integer => integer.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
         ArrayLengthNode.Symbol symbol => symbol.Name,
+        ArrayLengthNode.Inferred => string.Empty,
         _ => "<invalid-array-length>",
     };
 }

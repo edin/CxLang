@@ -27,6 +27,13 @@ internal sealed class TypeUsageAnalyzer(
             return;
         }
 
+        if (ContainsInferredArrayLength(typeNode.Syntax))
+        {
+            diagnostics.Report(
+                location,
+                "Array length inference requires a positional initializer with at least one element.");
+        }
+
         Analyze(
             typeNode.Syntax,
             typeNode.ToTypeRef(_typeRefParser),
@@ -218,6 +225,22 @@ internal sealed class TypeUsageAnalyzer(
         type = BuiltinTypes.Normalize(type);
         return BuiltinTypes.IsBuiltin(type) ? string.Empty : type;
     }
+
+    private static bool ContainsInferredArrayLength(TypeSyntaxNode syntax) => syntax switch
+    {
+        FixedArrayTypeSyntaxNode { Length: ArrayLengthNode.Inferred } => true,
+        FixedArrayTypeSyntaxNode array => ContainsInferredArrayLength(array.Element),
+        PointerTypeSyntaxNode pointer => ContainsInferredArrayLength(pointer.Element),
+        ConstTypeSyntaxNode constType => ContainsInferredArrayLength(constType.Element),
+        NullableTypeSyntaxNode nullable => ContainsInferredArrayLength(nullable.Element),
+        GenericTypeSyntaxNode generic =>
+            ContainsInferredArrayLength(generic.Target)
+            || generic.Arguments.Any(ContainsInferredArrayLength),
+        FunctionTypeSyntaxNode function =>
+            function.Parameters.Any(ContainsInferredArrayLength)
+            || ContainsInferredArrayLength(function.ReturnType),
+        _ => false,
+    };
 
     private static bool IsInScopeTypeParameter(
         TypeRef type,
