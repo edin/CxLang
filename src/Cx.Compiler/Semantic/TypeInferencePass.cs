@@ -549,7 +549,11 @@ internal sealed class TypeInferencePass(
             return declaredType;
         }
 
-        if (initializer is InitializerExpressionNode { TypeNameNode: null })
+        if (initializer is InitializerExpressionNode
+            {
+                TypeNameNode: null,
+                Semantic.Type: null or TypeRef.Unknown,
+            })
         {
             diagnostics.Report(location, $"Cannot infer type for {subject} '{name}' from an untyped initializer; write an explicit type.");
             return declaredType;
@@ -819,7 +823,23 @@ internal sealed class TypeInferencePass(
             _ => expression,
         };
 
-        inferred.Semantic.Type = _resolver?.ResolveTypeRef(inferred, typeEnvironment) ?? expectedType;
+        var resolvedType = _resolver?.ResolveTypeRef(inferred, typeEnvironment) ?? expectedType;
+        if (inferred.Semantic.MacroResultExpectedType is { } macroResultType)
+        {
+            if (resolvedType is not null and not TypeRef.Unknown
+                && !_typeCompatibility!.CanAssign(macroResultType, resolvedType, out var reason))
+            {
+                diagnostics.Report(
+                    inferred.Location,
+                    $"Macro '{inferred.Semantic.MacroResultName}' result type mismatch: {reason}.");
+            }
+
+            resolvedType = macroResultType;
+            inferred.Semantic.MacroResultExpectedType = null;
+            inferred.Semantic.MacroResultName = null;
+        }
+
+        inferred.Semantic.Type = resolvedType;
         return ApplyImplicitConversion(inferred, expectedType);
     }
 

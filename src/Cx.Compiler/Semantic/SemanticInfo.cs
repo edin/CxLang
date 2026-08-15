@@ -6,6 +6,10 @@ internal sealed class SemanticInfo
 {
     public TypeRef? Type { get; set; }
 
+    public TypeRef? MacroResultExpectedType { get; set; }
+
+    public string? MacroResultName { get; set; }
+
     public Symbol? Symbol { get; set; }
 
     public SyntaxNode? Origin { get; set; }
@@ -59,6 +63,8 @@ internal sealed class SemanticInfo
         new()
         {
             Type = Type,
+            MacroResultExpectedType = MacroResultExpectedType,
+            MacroResultName = MacroResultName,
             Symbol = Symbol,
             Origin = Origin,
             ModuleName = ModuleName,

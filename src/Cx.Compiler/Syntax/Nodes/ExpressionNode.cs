@@ -225,6 +225,8 @@ public static class ExpressionNodeExtensions
             $"{range.Start.ToSourceText()}{(range.IsInclusive ? "..." : "..")}{range.End.ToSourceText()}",
         ListExpressionNode list => $"[{FormatArguments(list.Elements)}]",
         TypeLiteralExpressionNode typeLiteral => typeLiteral.TypeNode.ToSourceText(),
+        MacroInvocationExpressionNode invocation =>
+            $"use {invocation.MacroName}({FormatMacroArguments(invocation.Arguments)})",
         InitializerExpressionNode initializer => FormatInitializer(initializer),
         FunctionExpressionNode function => FormatFunctionExpression(function),
         AssignmentExpressionNode assignment =>
@@ -284,4 +286,10 @@ public static class ExpressionNodeExtensions
 
     private static string FormatArguments(IEnumerable<ExpressionNode> arguments) =>
         string.Join(", ", arguments.Select(argument => argument.ToSourceText()));
+
+    private static string FormatMacroArguments(IEnumerable<MacroArgumentNode> arguments) =>
+        string.Join(", ", arguments.Select(argument =>
+            argument.ExpressionCandidate?.ToSourceText()
+            ?? argument.TypeCandidate?.ToSourceText()
+            ?? "<invalid>"));
 }

@@ -357,7 +357,7 @@ public sealed partial class Parser
         var nameToken = Expect(TokenType.Identifier, "Expected macro name.");
         var parameters = ParseMacroParameterList();
         Expect(TokenType.Arrow, "Expected '->' before macro expansion kind.");
-        var expansionKind = ParseMacroExpansionKind();
+        var (expansionKind, resultTypeNode) = ParseMacroExpansionKind();
         var providedRequirements = ParseMacroProvidedRequirements();
         var template = ParseMacroTemplateBlock(expansionKind);
 
@@ -369,7 +369,8 @@ public sealed partial class Parser
                 parameters,
                 expansionKind,
                 template,
-                providedRequirements);
+                providedRequirements,
+                resultTypeNode);
     }
 
     private IReadOnlyList<MacroProvidedRequirementNode> ParseMacroProvidedRequirements()
@@ -433,29 +434,43 @@ public sealed partial class Parser
         return parameters;
     }
 
-    private MacroExpansionKind ParseMacroExpansionKind()
+    private (MacroExpansionKind Kind, TypeNode? ResultTypeNode) ParseMacroExpansionKind()
     {
-        var kindToken = Expect(TokenType.Identifier, "Expected macro expansion kind.");
+        var kindToken = Current.Type == TokenType.Identifier ? Current : null;
         if (kindToken is not null
             && string.Equals(kindToken.Value, "statements", StringComparison.Ordinal))
         {
-            return MacroExpansionKind.Statements;
+            Advance();
+            return (MacroExpansionKind.Statements, null);
         }
 
         if (kindToken is not null
             && string.Equals(kindToken.Value, "declarations", StringComparison.Ordinal))
         {
-            return MacroExpansionKind.Declarations;
+            Advance();
+            return (MacroExpansionKind.Declarations, null);
         }
 
-        if (kindToken is not null)
+        var resultTypeNode = ParseTypeNode();
+        if (resultTypeNode.Syntax is GenericTypeSyntaxNode
         {
-            _diagnostics.Report(
-                kindToken.Location,
-                $"Unsupported macro expansion kind '{kindToken.Value}'. Expected 'statements' or 'declarations'.");
+            Target: NamedTypeSyntaxNode { Name: "elements" },
+        } elements)
+        {
+            if (elements.Arguments.Count != 1)
+            {
+                _diagnostics.Report(
+                    resultTypeNode.Location,
+                    "Macro result type 'elements<T>' requires exactly one element type.");
+                return (MacroExpansionKind.Elements, TypeNode.Named(resultTypeNode.Location, "unknown"));
+            }
+
+            return (
+                MacroExpansionKind.Elements,
+                TypeNode.Create(resultTypeNode.Location, elements.Arguments[0]));
         }
 
-        return MacroExpansionKind.Statements;
+        return (MacroExpansionKind.Expression, resultTypeNode);
     }
 
     private MacroTemplateBlockNode ParseMacroTemplateBlock(MacroExpansionKind expansionKind)

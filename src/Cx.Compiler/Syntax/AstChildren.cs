@@ -99,7 +99,8 @@ internal static class AstChildren
         MacroDeclarationNode macro => Children(
             macro.Parameters,
             macro.Template,
-            macro.ProvidedRequirements),
+            macro.ProvidedRequirements,
+            macro.ResultTypeNode),
         MacroTemplateBlockNode template => Children(
             template.Statements,
             template.Declarations),
@@ -107,6 +108,8 @@ internal static class AstChildren
             argument.ExpressionCandidate,
             argument.TypeCandidate),
         MacroInvocationDeclarationNode invocation => Children(
+            invocation.Arguments),
+        MacroInvocationExpressionNode invocation => Children(
             invocation.Arguments),
         MacroInvocationStatementNode invocation => Children(
             invocation.Arguments),

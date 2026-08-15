@@ -15,6 +15,8 @@ public enum MacroExpansionKind
 {
     Statements,
     Declarations,
+    Expression,
+    Elements,
 }
 
 public sealed record MacroParameterNode(
@@ -40,6 +42,11 @@ public sealed record MacroInvocationDeclarationNode(
     string MacroName,
     IReadOnlyList<MacroArgumentNode> Arguments) : TopLevelNode(Location);
 
+public sealed record MacroInvocationExpressionNode(
+    Location Location,
+    string MacroName,
+    IReadOnlyList<MacroArgumentNode> Arguments) : ExpressionNode(Location);
+
 public sealed record MacroProvidedRequirementNode(
     Location Location,
     string TargetParameter,
@@ -51,7 +58,8 @@ public sealed record MacroDeclarationNode(
     IReadOnlyList<MacroParameterNode> Parameters,
     MacroExpansionKind ExpansionKind,
     MacroTemplateBlockNode Template,
-    IReadOnlyList<MacroProvidedRequirementNode>? ProvidedRequirements = null) : TopLevelNode(Location)
+    IReadOnlyList<MacroProvidedRequirementNode>? ProvidedRequirements = null,
+    TypeNode? ResultTypeNode = null) : TopLevelNode(Location)
 {
     public IReadOnlyList<MacroProvidedRequirementNode> ProvidedRequirementNodes => ProvidedRequirements ?? [];
 }

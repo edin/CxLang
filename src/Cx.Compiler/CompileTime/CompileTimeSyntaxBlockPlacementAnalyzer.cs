@@ -25,7 +25,7 @@ internal sealed class CompileTimeSyntaxBlockPlacementAnalyzer(DiagnosticBag diag
             case CompileTimeForeachTopLevelNode foreachNode:
                 AnalyzeBlock(foreachNode.Body, SyntaxBlockPlacement.TopLevel);
                 break;
-            case MacroDeclarationNode { ExpansionKind: MacroExpansionKind.Statements } macro:
+            case MacroDeclarationNode { ExpansionKind: not MacroExpansionKind.Declarations } macro:
                 AnalyzeStatements(macro.Template.Statements);
                 break;
             case MacroDeclarationNode macro:

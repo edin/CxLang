@@ -133,6 +133,7 @@ internal abstract class AstRewriter
     protected virtual MacroDeclarationNode RewriteMacroDeclaration(MacroDeclarationNode macro) =>
         macro with
         {
+            ResultTypeNode = RewriteType(macro.ResultTypeNode),
             ProvidedRequirements = macro.ProvidedRequirementNodes.Select(provided => provided with
             {
                 Requirement = RewriteStructRequirement(provided.Requirement),
@@ -500,6 +501,7 @@ internal abstract class AstRewriter
             ScalarRangeExpressionNode range => RewriteScalarRangeExpression(range),
             ListExpressionNode list => RewriteListExpression(list),
             TypeLiteralExpressionNode typeLiteral => RewriteTypeLiteralExpression(typeLiteral),
+            MacroInvocationExpressionNode invocation => RewriteMacroInvocationExpression(invocation),
             InitializerExpressionNode initializer => RewriteInitializerExpression(initializer),
             FunctionExpressionNode function => RewriteFunctionExpression(function),
             AssignmentExpressionNode assignment => RewriteAssignmentExpression(assignment),
@@ -580,6 +582,16 @@ internal abstract class AstRewriter
 
     protected virtual ExpressionNode RewriteTypeLiteralExpression(TypeLiteralExpressionNode typeLiteral) =>
         typeLiteral with { TypeNode = RewriteType(typeLiteral.TypeNode) ?? typeLiteral.TypeNode };
+
+    protected virtual ExpressionNode RewriteMacroInvocationExpression(MacroInvocationExpressionNode invocation) =>
+        invocation with
+        {
+            Arguments = invocation.Arguments.Select(argument => argument with
+            {
+                ExpressionCandidate = RewriteExpression(argument.ExpressionCandidate),
+                TypeCandidate = RewriteType(argument.TypeCandidate),
+            }).ToList(),
+        };
 
     protected virtual ExpressionNode RewriteInitializerExpression(InitializerExpressionNode initializer) =>
         initializer with

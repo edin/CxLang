@@ -287,6 +287,11 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
                     invocation.Location,
                     $"Internal lowering error: macro invocation '{invocation.MacroName}' remains after lowering.");
                 break;
+            case MacroInvocationExpressionNode invocation:
+                diagnostics.Report(
+                    invocation.Location,
+                    $"Internal lowering error: expression macro invocation '{invocation.MacroName}' remains after lowering.");
+                break;
             case CompileTimeIfStatementNode conditional:
                 diagnostics.Report(
                     conditional.Location,

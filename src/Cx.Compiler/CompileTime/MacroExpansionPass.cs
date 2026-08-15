@@ -193,6 +193,202 @@ internal sealed class MacroExpansionPass : AstRewriter
         }
     }
 
+    protected override ExpressionNode RewriteMacroInvocationExpression(
+        MacroInvocationExpressionNode invocation)
+    {
+        if (!_macros.TryGetValue(invocation.MacroName, out var macro))
+        {
+            _diagnostics.Report(invocation.Location, $"Unknown macro '{invocation.MacroName}'.");
+            return new ErrorExpressionNode(invocation.Location);
+        }
+
+        if (macro.ExpansionKind is not (MacroExpansionKind.Expression or MacroExpansionKind.Elements))
+        {
+            _diagnostics.Report(
+                invocation.Location,
+                $"Macro '{macro.Name}' cannot expand in expression position.");
+            return new ErrorExpressionNode(invocation.Location);
+        }
+
+        return ExpandResultInvocation(invocation, macro);
+    }
+
+    protected override ExpressionNode RewriteInitializerExpression(
+        InitializerExpressionNode initializer)
+    {
+        var fields = initializer.Fields
+            .Select(field => field with
+            {
+                Value = RewriteExpression(field.Value)!,
+            })
+            .ToList();
+        var values = new List<ExpressionNode>();
+        foreach (var value in initializer.Values)
+        {
+            if (value is MacroInvocationExpressionNode invocation
+                && _macros.TryGetValue(invocation.MacroName, out var macro)
+                && macro.ExpansionKind == MacroExpansionKind.Elements)
+            {
+                var expanded = ExpandResultInvocation(
+                    invocation,
+                    macro,
+                    typeElementsAsArray: false);
+                if (expanded is InitializerExpressionNode
+                    {
+                        Fields.Count: 0,
+                    } elements)
+                {
+                    values.AddRange(elements.Values.Select(value => RewriteExpression(value)!));
+                }
+                else if (expanded is not ErrorExpressionNode)
+                {
+                    _diagnostics.Report(
+                        invocation.Location,
+                        $"Elements macro '{macro.Name}' must return a positional initializer.");
+                }
+                continue;
+            }
+
+            values.Add(RewriteExpression(value)!);
+        }
+
+        return initializer with
+        {
+            Fields = fields,
+            Values = values,
+            TypeNameNode = RewriteType(initializer.TypeNameNode),
+        };
+    }
+
+    private ExpressionNode ExpandResultInvocation(
+        MacroInvocationExpressionNode invocation,
+        MacroDeclarationNode macro,
+        bool typeElementsAsArray = true)
+    {
+        if (!TryPrepareExpansion(
+                invocation.MacroName,
+                invocation.Arguments,
+                invocation,
+                macro.ExpansionKind,
+                out _,
+                out var context))
+        {
+            return new ErrorExpressionNode(invocation.Location);
+        }
+
+        _expansionDepth++;
+        try
+        {
+            var invocationSpan = invocation.Span
+                ?? new Cx.Compiler.Source.SourceSpan(invocation.Location, 0);
+            var generatedFrom = new GeneratedSyntaxOrigin(
+                invocationSpan,
+                macro.Template.Span,
+                invocation.GeneratedFrom);
+            var expanded = new CompileTimeDirectiveExpansionPass(
+                    _diagnostics,
+                    _reflection,
+                    environment: _environment)
+                .ExpandStatementList(
+                    macro.Template.Statements,
+                    context,
+                    generatedFrom);
+            if (expanded.Count != 1
+                || expanded[0] is not ReturnStatement { Expression: { } result })
+            {
+                _diagnostics.Report(
+                    invocation.Location,
+                    $"Macro '{macro.Name}' must expand to exactly one return statement with a value.");
+                return new ErrorExpressionNode(invocation.Location);
+            }
+
+            if (macro.ExpansionKind == MacroExpansionKind.Elements
+                && result is not InitializerExpressionNode { Fields.Count: 0 })
+            {
+                _diagnostics.Report(
+                    result.Location,
+                    $"Elements macro '{macro.Name}' must return a positional initializer.");
+                return new ErrorExpressionNode(invocation.Location);
+            }
+
+            if (macro.ExpansionKind == MacroExpansionKind.Expression
+                && result is InitializerExpressionNode { TypeNameNode: null } aggregate
+                && macro.ResultTypeNode is not null)
+            {
+                result = aggregate with
+                {
+                    TypeNameNode = SyntaxNode.CloneMetadata(
+                        macro.ResultTypeNode,
+                        macro.ResultTypeNode with { }),
+                };
+            }
+
+            else if (macro.ExpansionKind == MacroExpansionKind.Elements
+                && result is InitializerExpressionNode elements
+                && macro.ResultTypeNode is not null)
+            {
+                result = elements with
+                {
+                    Values = elements.Values.Select(value =>
+                        value is InitializerExpressionNode { TypeNameNode: null } aggregateValue
+                            ? aggregateValue with
+                            {
+                                TypeNameNode = SyntaxNode.CloneMetadata(
+                                    macro.ResultTypeNode,
+                                    macro.ResultTypeNode with { }),
+                            }
+                            : value).ToList(),
+                };
+            }
+
+            if (typeElementsAsArray
+                && macro.ExpansionKind == MacroExpansionKind.Elements
+                && result is InitializerExpressionNode { Values.Count: 0 })
+            {
+                _diagnostics.Report(
+                    invocation.Location,
+                    $"Elements macro '{macro.Name}' cannot provide an empty inferred array initializer.");
+                return new ErrorExpressionNode(invocation.Location);
+            }
+
+            ResetGeneratedSemantics([result]);
+            if (macro.ResultTypeNode is not null)
+            {
+                var resultType = _typeRefParser.Parse(macro.ResultTypeNode);
+                if (macro.ExpansionKind == MacroExpansionKind.Expression)
+                {
+                    result.Semantic.MacroResultExpectedType = resultType;
+                    result.Semantic.MacroResultName = macro.Name;
+                }
+                else if (result is InitializerExpressionNode typedElements)
+                {
+                    foreach (var value in typedElements.Values)
+                    {
+                        value.Semantic.MacroResultExpectedType = resultType;
+                        value.Semantic.MacroResultName = macro.Name;
+                    }
+
+                    if (typeElementsAsArray)
+                    {
+                        result.Semantic.Type = new TypeRef.FixedArray(
+                            resultType,
+                            new ArrayLengthNode.Integer(
+                                (ulong)typedElements.Values.Count));
+                    }
+                }
+            }
+            result.GeneratedFrom = new GeneratedSyntaxOrigin(
+                invocationSpan,
+                result.Span,
+                invocation.GeneratedFrom);
+            return RewriteExpression(result)!;
+        }
+        finally
+        {
+            _expansionDepth--;
+        }
+    }
+
     private static void ResetGeneratedSemantics(
         IEnumerable<SyntaxNode> roots)
     {
@@ -220,7 +416,13 @@ internal sealed class MacroExpansionPass : AstRewriter
 
         if (macro.ExpansionKind != expectedKind)
         {
-            var position = expectedKind == MacroExpansionKind.Statements ? "statement" : "declaration";
+            var position = expectedKind switch
+            {
+                MacroExpansionKind.Statements => "statement",
+                MacroExpansionKind.Declarations => "declaration",
+                MacroExpansionKind.Elements => "initializer element",
+                _ => "expression",
+            };
             _diagnostics.Report(location, $"Macro '{macro.Name}' cannot expand in {position} position.");
             return false;
         }

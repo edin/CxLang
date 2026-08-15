@@ -509,6 +509,11 @@ internal sealed class ExpressionTokenParser
 
     private ExpressionNode? ParsePrimary()
     {
+        if (TryParseMacroInvocationExpression(out var macroInvocationExpression))
+        {
+            return macroInvocationExpression;
+        }
+
         if (TryParsePlaceholderExpression(out var placeholderExpression))
         {
             return placeholderExpression;
@@ -578,6 +583,119 @@ internal sealed class ExpressionTokenParser
         }
 
         return null;
+    }
+
+    private bool TryParseMacroInvocationExpression(out ExpressionNode expression)
+    {
+        expression = null!;
+        if (!Check(TokenType.Use))
+        {
+            return false;
+        }
+
+        var position = Save();
+        var useToken = Advance();
+        if (Match(TokenType.Identifier) is not { } name
+            || Match(TokenType.LParen) is null)
+        {
+            Restore(position);
+            return false;
+        }
+
+        var arguments = new List<MacroArgumentNode>();
+        if (!Check(TokenType.RParen))
+        {
+            do
+            {
+                var argumentTokens = ReadMacroArgumentTokens();
+                if (argumentTokens.Count == 0)
+                {
+                    Restore(position);
+                    return false;
+                }
+
+                var slice = new TokenSlice(argumentTokens[0].Location, argumentTokens);
+                var expressionCandidate = TryParse(slice);
+                var typeCandidate = TypeTokenParser.TryParse(argumentTokens);
+                if (expressionCandidate is null && typeCandidate is null)
+                {
+                    Restore(position);
+                    return false;
+                }
+
+                var argument = new MacroArgumentNode(
+                    argumentTokens[0].Location,
+                    expressionCandidate,
+                    typeCandidate)
+                {
+                    Span = slice.Span,
+                };
+                arguments.Add(argument);
+            }
+            while (Match(TokenType.Comma) is not null);
+        }
+
+        if (Match(TokenType.RParen) is null)
+        {
+            Restore(position);
+            return false;
+        }
+
+        expression = new MacroInvocationExpressionNode(
+            useToken.Location,
+            name.Value,
+            arguments);
+        return true;
+    }
+
+    private IReadOnlyList<Token> ReadMacroArgumentTokens()
+    {
+        var tokens = new List<Token>();
+        var parenDepth = 0;
+        var bracketDepth = 0;
+        var braceDepth = 0;
+
+        while (!IsAtEnd)
+        {
+            if (parenDepth == 0
+                && bracketDepth == 0
+                && braceDepth == 0
+                && Current.Type is TokenType.Comma or TokenType.RParen)
+            {
+                break;
+            }
+
+            switch (Current.Type)
+            {
+                case TokenType.LParen:
+                    parenDepth++;
+                    break;
+                case TokenType.RParen:
+                    parenDepth--;
+                    break;
+                case TokenType.LBracket:
+                    bracketDepth++;
+                    break;
+                case TokenType.RBracket:
+                    bracketDepth--;
+                    break;
+                case TokenType.LBrace:
+                    braceDepth++;
+                    break;
+                case TokenType.RBrace:
+                    braceDepth--;
+                    break;
+            }
+
+            if (parenDepth < 0 || bracketDepth < 0 || braceDepth < 0)
+            {
+                break;
+            }
+
+            tokens.Add(Advance());
+        }
+
+        return tokens;
     }
 
     private bool TryParsePlaceholderExpression(out ExpressionNode expression)

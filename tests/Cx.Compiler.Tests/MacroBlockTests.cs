@@ -78,12 +78,14 @@ public sealed class MacroBlockTests
     }
 
     [Fact]
-    public void Parse_ReportsUnsupportedExpansionKind()
+    public void Parse_ParsesNamedExpressionResultType()
     {
-        CompilerTestHelpers.VerifyProgram(
-                "macro sample(value: expression) -> expression { return @{value}; }")
-            .HasDiagnostic(
-                "Unsupported macro expansion kind 'expression'. Expected 'statements' or 'declarations'.");
+        var program = CompilerTestHelpers.Parse(
+            "macro sample(value: expression) -> expression { return @{value}; }");
+
+        var macro = Assert.Single(program.Macros);
+        Assert.Equal(MacroExpansionKind.Expression, macro.ExpansionKind);
+        Assert.Equal("expression", macro.ResultTypeNode?.ToSourceText());
     }
 
     [Fact]
