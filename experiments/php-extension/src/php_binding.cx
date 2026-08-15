@@ -183,17 +183,58 @@ public macro PhpExport(function: declaration) -> declarations {
     }
 }
 
+public macro PhpArgInfos(
+    function: declaration
+) -> elements<ZendInternalArgInfo> {
+    @let optional_parameters = [];
+    @foreach parameter in function.parameters {
+        @if(parameter.attribute("php_optional") != null) {
+            optional_parameters.add(parameter);
+        }
+    }
+
+    return {
+        {
+            (const char*)@{
+                function.parameters.count - optional_parameters.count
+            },
+            {
+                null,
+                (u32)@{php_export_type_mask(function.return_type)}
+            },
+            null
+        },
+        @foreach parameter in function.parameters {
+            @if(parameter.attribute("php_optional") == null) {
+                {
+                    @{parameter.name},
+                    {
+                        null,
+                        (u32)@{php_export_type_mask(parameter.type)}
+                    },
+                    null
+                },
+            }
+            @if(parameter.attribute("php_optional") != null) {
+                {
+                    @{parameter.name},
+                    {
+                        null,
+                        (u32)@{php_export_type_mask(parameter.type)}
+                    },
+                    @{parameter.attribute("php_optional").display}
+                },
+            }
+        }
+    };
+}
+
 public macro PhpModule() -> declarations {
     @let exports = [];
-    @let generated_arg_infos = [];
 
     @foreach function in module.functions {
         @if(function.attribute("php_export") != null) {
             exports.add(function);
-            generated_arg_infos.add(function);
-            @foreach parameter in function.parameters {
-                generated_arg_infos.add(parameter);
-            }
         }
     }
 
@@ -201,8 +242,12 @@ public macro PhpModule() -> declarations {
         use PhpExport(@{function.reference});
     }
 
-    let cx_generated_arg_info:
-        @{Type.array(ZendInternalArgInfo, generated_arg_infos.count)} = {};
+    const cx_generated_arg_info: ZendInternalArgInfo[] = {
+        @foreach function in exports {
+            use PhpArgInfos(@{function.reference}),
+        }
+    };
+
     let cx_demo_functions:
         @{Type.array(ZendFunctionEntry, exports.count + 1)} = {};
 
@@ -237,47 +282,6 @@ public macro PhpModule() -> declarations {
         @let function_index = 0;
         @let arg_info_index = 0;
         @foreach function in exports {
-            @let optional_parameters = [];
-            @foreach parameter in function.parameters {
-                @if(parameter.attribute("php_optional") != null) {
-                    optional_parameters.add(parameter);
-                }
-            }
-
-            php_set_arg_info(
-                &cx_generated_arg_info[0],
-                @{arg_info_index},
-                (const char*)@{
-                    function.parameters.count - optional_parameters.count
-                },
-                (u32)@{php_export_type_mask(function.return_type)},
-                null
-            );
-
-            @let parameter_index = 0;
-            @foreach parameter in function.parameters {
-                @let optional = parameter.attribute("php_optional");
-                @if(optional == null) {
-                    php_set_arg_info(
-                        &cx_generated_arg_info[0],
-                        @{arg_info_index + parameter_index + 1},
-                        @{parameter.name},
-                        (u32)@{php_export_type_mask(parameter.type)},
-                        null
-                    );
-                }
-                @if(optional != null) {
-                    php_set_arg_info(
-                        &cx_generated_arg_info[0],
-                        @{arg_info_index + parameter_index + 1},
-                        @{parameter.name},
-                        (u32)@{php_export_type_mask(parameter.type)},
-                        @{optional.display}
-                    );
-                }
-                parameter_index = parameter_index + 1;
-            }
-
             php_set_generated_function_entry(
                 &cx_demo_functions[0],
                 @{function_index},

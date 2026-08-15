@@ -139,6 +139,13 @@ internal static class AstChildren
         CompileTimeForeachStatementNode loop => Children(
             loop.IterableExpression,
             loop.Body),
+        CompileTimeIfInitializerNode conditional => Children(
+            conditional.Condition,
+            conditional.ThenInitializer,
+            conditional.ElseInitializer),
+        CompileTimeForeachInitializerNode loop => Children(
+            loop.IterableExpression,
+            loop.BodyInitializer),
 
         LetStatement let => Children(let.ComputedName, let.Initializer, let.TypeNode),
         UsingStatement usingStatement => Children(
@@ -206,6 +213,7 @@ internal static class AstChildren
         InitializerExpressionNode initializer => Children(
             initializer.Fields.Select(field => field.Value),
             initializer.Values,
+            initializer.Directives,
             initializer.TypeNameNode),
         FunctionExpressionNode function => Children(
             function.ExpressionBody,

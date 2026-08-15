@@ -302,6 +302,16 @@ internal sealed class CoreCxValidator(DiagnosticBag diagnostics)
                     loop.Location,
                     "Internal lowering error: compile-time @foreach statement remains after lowering.");
                 break;
+            case CompileTimeIfInitializerNode conditional:
+                diagnostics.Report(
+                    conditional.Location,
+                    "Internal lowering error: compile-time @if initializer remains after lowering.");
+                break;
+            case CompileTimeForeachInitializerNode loop:
+                diagnostics.Report(
+                    loop.Location,
+                    "Internal lowering error: compile-time @foreach initializer remains after lowering.");
+                break;
             case ForeachStatement loop:
                 diagnostics.Report(
                     loop.Location,

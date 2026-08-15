@@ -1246,22 +1246,28 @@ internal sealed class ExpressionTokenParser
 
         var fields = new List<InitializerFieldNode>();
         var values = new List<ExpressionNode>();
-        if (!Check(TokenType.RBrace))
+        var directives = new List<CompileTimeInitializerDirectiveNode>();
+        while (!Check(TokenType.RBrace))
         {
-            do
+            var directiveCount = directives.Count;
+            if (!TryParseInitializerItem(fields, values, directives))
             {
-                if (Check(TokenType.RBrace))
-                {
-                    break;
-                }
-
-                if (!TryParseInitializerItem(fields, values))
-                {
-                    Restore(position);
-                    return false;
-                }
+                Restore(position);
+                return false;
             }
-            while (Match(TokenType.Comma) is not null);
+
+            if (Match(TokenType.Comma) is not null || Check(TokenType.RBrace))
+            {
+                continue;
+            }
+
+            // Directives own an initializer block and do not require a second
+            // separator before the following outer initializer item.
+            if (directives.Count == directiveCount)
+            {
+                Restore(position);
+                return false;
+            }
         }
 
         if (Match(TokenType.RBrace) is null)
@@ -1277,7 +1283,8 @@ internal sealed class ExpressionTokenParser
             typeNode?.Location ?? openBrace.Location,
             fields,
             values,
-            typeNode);
+            typeNode,
+            directives);
         return true;
     }
 
@@ -1357,8 +1364,19 @@ internal sealed class ExpressionTokenParser
 
     private bool TryParseInitializerItem(
         List<InitializerFieldNode> fields,
-        List<ExpressionNode> values)
+        List<ExpressionNode> values,
+        List<CompileTimeInitializerDirectiveNode> directives)
     {
+        if (Check(TokenType.At) && PeekType() == TokenType.If)
+        {
+            return TryParseInitializerIf(values.Count, directives);
+        }
+
+        if (Check(TokenType.At) && PeekType() == TokenType.Foreach)
+        {
+            return TryParseInitializerForeach(values.Count, directives);
+        }
+
         if (Current.Type == TokenType.Identifier && PeekType() == TokenType.Colon)
         {
             var name = Advance();
@@ -1393,6 +1411,108 @@ internal sealed class ExpressionTokenParser
 
         values.Add(expression);
         return true;
+    }
+
+    private bool TryParseInitializerIf(
+        int valueIndex,
+        List<CompileTimeInitializerDirectiveNode> directives)
+    {
+        var at = Advance();
+        Advance(); // 'if'
+        if (Match(TokenType.LParen) is null)
+        {
+            return false;
+        }
+
+        var condition = ParseExpression();
+        if (condition is null || Match(TokenType.RParen) is null
+            || !TryParseInitializerExpression(out var thenExpression)
+            || thenExpression is not InitializerExpressionNode thenInitializer)
+        {
+            return false;
+        }
+
+        var elseInitializer = new InitializerExpressionNode(at.Location, [], []);
+        if (Match(TokenType.Else) is not null)
+        {
+            if (!TryParseInitializerExpression(out var elseExpression)
+                || elseExpression is not InitializerExpressionNode parsedElse)
+            {
+                return false;
+            }
+
+            elseInitializer = parsedElse;
+        }
+
+        directives.Add(new CompileTimeIfInitializerNode(
+            at.Location,
+            valueIndex,
+            condition,
+            thenInitializer,
+            elseInitializer));
+        return true;
+    }
+
+    private bool TryParseInitializerForeach(
+        int valueIndex,
+        List<CompileTimeInitializerDirectiveNode> directives)
+    {
+        var at = Advance();
+        Advance(); // 'foreach'
+        if (Match(TokenType.Identifier) is not { } binding
+            || Match(TokenType.In) is null)
+        {
+            return false;
+        }
+
+        var iterableTokens = ReadInitializerDirectiveIterableTokens();
+        if (iterableTokens.Count == 0)
+        {
+            return false;
+        }
+
+        var iterable = new ExpressionTokenParser(
+            new TokenSlice(iterableTokens[0].Location, iterableTokens)).ParseExpression();
+        if (iterable is null
+            || !TryParseInitializerExpression(out var bodyExpression)
+            || bodyExpression is not InitializerExpressionNode bodyInitializer)
+        {
+            return false;
+        }
+
+        directives.Add(new CompileTimeForeachInitializerNode(
+            at.Location,
+            valueIndex,
+            binding.Value,
+            iterable,
+            bodyInitializer));
+        return true;
+    }
+
+    private IReadOnlyList<Token> ReadInitializerDirectiveIterableTokens()
+    {
+        var tokens = new List<Token>();
+        var parenDepth = 0;
+        var bracketDepth = 0;
+
+        while (!IsAtEnd)
+        {
+            if (parenDepth == 0 && bracketDepth == 0 && Current.Type == TokenType.LBrace)
+            {
+                break;
+            }
+
+            parenDepth += Current.Type == TokenType.LParen ? 1 : Current.Type == TokenType.RParen ? -1 : 0;
+            bracketDepth += Current.Type == TokenType.LBracket ? 1 : Current.Type == TokenType.RBracket ? -1 : 0;
+            if (parenDepth < 0 || bracketDepth < 0)
+            {
+                break;
+            }
+
+            tokens.Add(Advance());
+        }
+
+        return tokens;
     }
 
     private IReadOnlyList<Token> ReadInitializerItemValueTokens()

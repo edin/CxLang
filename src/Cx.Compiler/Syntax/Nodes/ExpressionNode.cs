@@ -148,7 +148,8 @@ public sealed record InitializerExpressionNode(
     Location Location,
     IReadOnlyList<InitializerFieldNode> Fields,
     IReadOnlyList<ExpressionNode> Values,
-    TypeNode? TypeNameNode = null) : ExpressionNode(Location);
+    TypeNode? TypeNameNode = null,
+    IReadOnlyList<CompileTimeInitializerDirectiveNode>? Directives = null) : ExpressionNode(Location);
 
 public sealed record InitializerFieldNode(
     string Name,
@@ -255,10 +256,35 @@ public static class ExpressionNodeExtensions
     private static string FormatInitializer(InitializerExpressionNode initializer)
     {
         var fields = initializer.Fields.Select(field => $"{field.Name}: {field.Value.ToSourceText()}");
-        var values = initializer.Values.Select(value => value.ToSourceText());
+        var values = new List<string>();
+        for (var index = 0; index <= initializer.Values.Count; index++)
+        {
+            values.AddRange((initializer.Directives ?? [])
+                .Where(directive => directive.ValueIndex == index)
+                .Select(FormatInitializerDirective));
+            if (index < initializer.Values.Count)
+            {
+                values.Add(initializer.Values[index].ToSourceText());
+            }
+        }
+
         var prefix = initializer.TypeNameNode.ToSourceText();
         return prefix + "{" + string.Join(", ", fields.Concat(values)) + "}";
     }
+
+    private static string FormatInitializerDirective(CompileTimeInitializerDirectiveNode directive) =>
+        directive switch
+        {
+            CompileTimeIfInitializerNode conditional =>
+                $"@if ({conditional.Condition.ToSourceText()}) {FormatInitializer(conditional.ThenInitializer)}"
+                + (conditional.ElseInitializer.Values.Count == 0
+                    && conditional.ElseInitializer.Directives is not { Count: > 0 }
+                    ? string.Empty
+                    : $" else {FormatInitializer(conditional.ElseInitializer)}"),
+            CompileTimeForeachInitializerNode loop =>
+                $"@foreach {loop.BindingName} in {loop.IterableExpression.ToSourceText()} {FormatInitializer(loop.BodyInitializer)}",
+            _ => "<compile-time initializer directive>",
+        };
 
     private static string FormatFunctionExpression(FunctionExpressionNode function)
     {

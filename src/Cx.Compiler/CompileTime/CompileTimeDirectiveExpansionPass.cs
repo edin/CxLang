@@ -55,6 +55,117 @@ internal sealed class CompileTimeDirectiveExpansionPass : AstRewriter
     protected override MacroDeclarationNode RewriteMacroDeclaration(MacroDeclarationNode macro) =>
         macro;
 
+    protected override ExpressionNode RewriteInitializerExpression(InitializerExpressionNode initializer)
+    {
+        if (initializer.Directives is not { Count: > 0 })
+        {
+            return base.RewriteInitializerExpression(initializer);
+        }
+
+        if (initializer.Fields.Count > 0)
+        {
+            _diagnostics.Report(
+                initializer.Location,
+                "Compile-time initializer directives are only supported in positional initializers.");
+        }
+
+        var values = new List<ExpressionNode>();
+        var deferred = new List<CompileTimeInitializerDirectiveNode>();
+        for (var index = 0; index <= initializer.Values.Count; index++)
+        {
+            foreach (var directive in initializer.Directives.Where(item => item.ValueIndex == index))
+            {
+                ExpandInitializerDirective(directive, values, deferred);
+            }
+
+            if (index < initializer.Values.Count)
+            {
+                values.Add(RewriteExpression(initializer.Values[index])!);
+            }
+        }
+
+        return initializer with
+        {
+            Fields = initializer.Fields
+                .Select(field => field with { Value = RewriteExpression(field.Value)! })
+                .ToList(),
+            Values = values,
+            TypeNameNode = RewriteType(initializer.TypeNameNode),
+            Directives = deferred,
+        };
+    }
+
+    private void ExpandInitializerDirective(
+        CompileTimeInitializerDirectiveNode directive,
+        List<ExpressionNode> values,
+        List<CompileTimeInitializerDirectiveNode> deferred)
+    {
+        switch (directive)
+        {
+            case CompileTimeIfInitializerNode conditional:
+                var outcome = _evaluator.EvaluateOutcome(conditional.Condition, _context);
+                if (outcome is CompileTimeEvaluationOutcome.Value
+                    { Result: CompileTimeValue.Boolean boolean })
+                {
+                    AppendInitializerValues(
+                        boolean.Value ? conditional.ThenInitializer : conditional.ElseInitializer,
+                        values);
+                }
+                else if (outcome is CompileTimeEvaluationOutcome.Deferred)
+                {
+                    deferred.Add(conditional with { ValueIndex = values.Count });
+                }
+                else if (outcome is CompileTimeEvaluationOutcome.Value)
+                {
+                    _diagnostics.Report(
+                        conditional.Condition.Location,
+                        "Compile-time @if condition must evaluate to a boolean value.");
+                }
+                break;
+
+            case CompileTimeForeachInitializerNode loop:
+                var evaluation = EvaluateForeach(loop.IterableExpression, out var items);
+                if (evaluation == CompileTimeExpansionDecision.Deferred)
+                {
+                    deferred.Add(loop with { ValueIndex = values.Count });
+                    break;
+                }
+
+                if (evaluation == CompileTimeExpansionDecision.Failed)
+                {
+                    break;
+                }
+
+                foreach (var item in items)
+                {
+                    var iterationContext = _context.CreateChild();
+                    iterationContext.Define(loop.BindingName, item);
+                    WithContext(iterationContext, () =>
+                    {
+                        AppendInitializerValues(loop.BodyInitializer, values);
+                        return true;
+                    });
+                }
+                break;
+        }
+    }
+
+    private void AppendInitializerValues(
+        InitializerExpressionNode template,
+        List<ExpressionNode> destination)
+    {
+        var expanded = (InitializerExpressionNode)RewriteInitializerExpression(template);
+        if (expanded.TypeNameNode is not null || expanded.Fields.Count > 0)
+        {
+            _diagnostics.Report(
+                template.Location,
+                "Compile-time initializer directive bodies must contain positional elements.");
+            return;
+        }
+
+        destination.AddRange(expanded.Values);
+    }
+
     protected override IReadOnlyList<TopLevelNode> RewriteTopLevelNode(TopLevelNode node) =>
         node switch
         {

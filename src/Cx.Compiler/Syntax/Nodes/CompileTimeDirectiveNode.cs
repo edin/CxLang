@@ -50,3 +50,21 @@ public sealed record CompileTimeForeachDeclarationNode(
     string BindingName,
     ExpressionNode IterableExpression,
     SyntaxBlockNode Body) : SyntaxNode(Location);
+
+public abstract record CompileTimeInitializerDirectiveNode(
+    Location Location,
+    int ValueIndex) : SyntaxNode(Location);
+
+public sealed record CompileTimeIfInitializerNode(
+    Location Location,
+    int ValueIndex,
+    ExpressionNode Condition,
+    InitializerExpressionNode ThenInitializer,
+    InitializerExpressionNode ElseInitializer) : CompileTimeInitializerDirectiveNode(Location, ValueIndex);
+
+public sealed record CompileTimeForeachInitializerNode(
+    Location Location,
+    int ValueIndex,
+    string BindingName,
+    ExpressionNode IterableExpression,
+    InitializerExpressionNode BodyInitializer) : CompileTimeInitializerDirectiveNode(Location, ValueIndex);

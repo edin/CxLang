@@ -5,6 +5,79 @@ namespace Cx.Compiler.Tests;
 public sealed class MacroResultTests
 {
     [Fact]
+    public void ElementsMacro_ExpandsInitializerForeachAndInfersLength()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            compile fn generated_values() -> list<int> {
+                return [10, 20, 30];
+            }
+
+            macro Values() -> elements<int> {
+                return {
+                    @foreach value in generated_values() {
+                        @{value},
+                    }
+                };
+            }
+
+            fn main() -> int {
+                const values = use Values();
+                return values[2];
+            }
+            """)
+            .OutputContains("const int values[3] = { 10, 20, 30 };");
+    }
+
+    [Fact]
+    public void ElementsMacro_ExpandsNestedInitializerConditionals()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            macro Values() -> elements<int> {
+                return {
+                    0,
+                    @if (true) {
+                        10,
+                        @if (false) { 11, } else { 20, }
+                    }
+                    30,
+                };
+            }
+
+            fn main() -> int {
+                const values = use Values();
+                return values[3];
+            }
+            """)
+            .OutputContains("const int values[4] = { 0, 10, 20, 30 };")
+            .OutputOmits("11");
+    }
+
+    [Fact]
+    public void ElementsMacro_AllowsInitializerForeachToProduceNoElements()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            compile fn no_values() -> list<int> {
+                return [];
+            }
+
+            macro Middle() -> elements<int> {
+                return {
+                    @foreach value in no_values() { @{value}, }
+                };
+            }
+
+            fn main() -> int {
+                const values: int[] = { 10, use Middle(), 20 };
+                return values[1];
+            }
+            """)
+            .OutputContains("const int values[2] = { 10, 20 };");
+    }
+
+    [Fact]
     public void Parse_RepresentsTypedExpressionMacroResult()
     {
         var program = CompilerTestHelpers.Parse(

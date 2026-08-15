@@ -599,6 +599,25 @@ internal abstract class AstRewriter
             Fields = initializer.Fields.Select(field => field with { Value = RewriteRequiredExpression(field.Value) }).ToList(),
             Values = initializer.Values.Select(RewriteRequiredExpression).ToList(),
             TypeNameNode = RewriteType(initializer.TypeNameNode),
+            Directives = initializer.Directives?.Select(RewriteInitializerDirective).ToList(),
+        };
+
+    protected virtual CompileTimeInitializerDirectiveNode RewriteInitializerDirective(
+        CompileTimeInitializerDirectiveNode directive) =>
+        directive switch
+        {
+            CompileTimeIfInitializerNode conditional => conditional with
+            {
+                Condition = RewriteRequiredExpression(conditional.Condition),
+                ThenInitializer = (InitializerExpressionNode)RewriteInitializerExpression(conditional.ThenInitializer),
+                ElseInitializer = (InitializerExpressionNode)RewriteInitializerExpression(conditional.ElseInitializer),
+            },
+            CompileTimeForeachInitializerNode loop => loop with
+            {
+                IterableExpression = RewriteRequiredExpression(loop.IterableExpression),
+                BodyInitializer = (InitializerExpressionNode)RewriteInitializerExpression(loop.BodyInitializer),
+            },
+            _ => directive,
         };
 
     protected virtual ExpressionNode RewriteFunctionExpression(FunctionExpressionNode function) =>

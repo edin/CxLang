@@ -95,7 +95,7 @@ fn php_set_generated_function_entry(
     index: int,
     name: const char*,
     handler: fn (void*, ZendZval*) -> void,
-    arg_info: ZendInternalArgInfo*,
+    arg_info: const ZendInternalArgInfo*,
     arg_info_index: int,
     argument_count: u32
 ) -> void {
