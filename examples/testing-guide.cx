@@ -1,0 +1,9 @@
+test "addition works" {
+    let answer = 40 + 2;
+    expect(answer == 42);
+}
+
+test "boolean logic works" {
+    let enabled = true;
+    expect(enabled && !false);
+}

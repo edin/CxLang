@@ -27,10 +27,14 @@ system:
 16. [Attributes and reflection](16-attributes-and-reflection.md)
 17. [Compile-time programming](17-compile-time-programming.md)
 18. [Macros](18-macros.md)
+19. [C interoperability](19-c-interop.md)
+20. [Projects, building, and testing](20-projects-building-and-testing.md)
+21. [Current limitations](21-current-limitations.md)
 
-The remaining chapters below form the documentation roadmap. They will be
-written from compiler tests and working examples rather than inferred from
-surface syntax alone.
+The main feature-guide round is now complete. Each chapter was written from
+compiler tests and working examples rather than inferred from surface syntax
+alone. A dedicated getting-started tutorial can be added separately; the root
+README and the projects chapter currently provide that workflow.
 
 ## Implemented feature inventory
 
@@ -48,15 +52,15 @@ surface syntax alone.
 | Generics | Generic functions and types, specialization, `where` constraints, structural requirements | [Documented](12-generics-and-requirements.md) |
 | Interfaces and adapters | C-friendly interface values, function-pointer tables, implementation matching, storage adapters, exposed and retargeted methods | [Documented](13-interfaces-and-adapters.md) |
 | Resources | `using`, deterministic reverse-order cleanup, early-exit cleanup, reassignment cleanup, return transfer, `try` integration | [Documented](14-resource-management.md) |
-| Iteration | Arrays, ranges, contiguous values, iterators, indexed iteration, key/value iteration, const/reference bindings | Planned |
+| Iteration | Arrays, ranges, contiguous values, iterators, indexed iteration, key/value iteration, const/reference bindings | [Documented](10-arrays-slices-and-iteration.md) |
 | Modules | Imports and aliases, module blocks, file modules, public API validation, module-aware semantics and generated names | [Documented](15-modules-and-visibility.md) |
 | Attributes | Typed attributes on declarations and parameters, metadata lookup, constructed attributes | [Documented](16-attributes-and-reflection.md) |
 | Compile time | Compile functions/constants, lists, reflection objects, intrinsics, diagnostics, `@let`, `@if`, and `@foreach` | [Documented](17-compile-time-programming.md) |
 | Macros | Statement/declaration macros, typed expression results, `elements<T>`, initializer directives and splicing | [Documented](18-macros.md) |
-| C interop | `extern`, `declare c`, includes, links, aliases, pointers, function pointers, header-free ABI declarations | Planned |
-| Projects and tools | Executable/shared projects, configured entry points, build/run/test, generated C, language server | Planned |
+| C interop | `extern`, typed `declare` blocks, includes, links, aliases, pointers, function pointers, header-free ABI declarations | [Documented](19-c-interop.md) |
+| Projects and tools | Executable/shared projects, configured entry points, build/run/test, generated C, language server | [Documented](20-projects-building-and-testing.md) |
 
-## Planned chapter map
+## Chapter map
 
 ```text
 01-getting-started.md
@@ -82,9 +86,10 @@ surface syntax alone.
 21-current-limitations.md
 ```
 
-Until the dedicated initializer and macro chapters are split out, the existing
-[combined feature guide](../features/initializers-and-typed-macros.md) is the
-authoritative description of those implemented features.
+The [combined initializer guide](../features/initializers-and-typed-macros.md)
+remains the detailed account of inferred arrays and typed initializer macros;
+the dedicated [macro chapter](18-macros.md) places those contracts in the full
+macro system.
 
 ## Documentation policy
 
@@ -97,6 +102,6 @@ Every completed chapter should include:
 5. current limitations and non-goals;
 6. links to related chapters and regression tests.
 
-Features marked **Planned** above are implemented in the compiler but do not
-yet have a dedicated language-guide chapter. Features that are only proposed
-belong under [`docs/ideas`](../ideas/README.md), not in this inventory.
+Features that are only proposed belong under
+[`docs/ideas`](../ideas/README.md), not in this inventory. The limitations
+chapter explicitly labels unsettled syntax separately from implemented CX.
