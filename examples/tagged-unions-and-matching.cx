@@ -1,0 +1,35 @@
+struct Point {
+    x: int;
+    y: int;
+}
+
+union Value {
+    Number: int;
+    Position: Point;
+    Message: const char*;
+}
+
+fn score(value: Value*) -> int {
+    match value {
+        Number: number => {
+            return number;
+        }
+        Position: point => {
+            return point.x + point.y;
+        }
+        Message: text => {
+            return text[0] == 'C' ? 42 : 0;
+        }
+    }
+}
+
+fn main() -> int {
+    let number: Value = 40;
+    let position: Value = Value.Position(20, 22);
+    let message: Value = Value.Message("CX");
+
+    return score(&number)
+        + score(&position)
+        + score(&message)
+        - 124;
+}

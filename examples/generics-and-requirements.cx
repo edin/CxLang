@@ -1,0 +1,50 @@
+requires Add<T> {
+    fn operator +(other: T) -> T;
+}
+
+requires Compare<T> {
+    fn operator <=>(other: T) -> int;
+}
+
+struct Score {
+    value: int;
+
+    fn operator +(other: Score) -> Score {
+        return Score { value: self.value + other.value };
+    }
+
+    fn operator <=>(other: Score) -> int {
+        return self.value <=> other.value;
+    }
+}
+
+struct Box<T> {
+    value: T;
+}
+
+extension Box<T>
+where T: Add<T> {
+    fn add(other: T) -> T {
+        return self.value + other;
+    }
+}
+
+fn combine<T>(left: T, right: T) -> T
+where T: Add<T> + Compare<T> {
+    return left + right;
+}
+
+fn identity<T>(value: T) -> T {
+    return value;
+}
+
+fn main() -> int {
+    let left = Score { value: 20 };
+    let right = Score { value: 22 };
+    let result = combine(left, right);
+
+    let box: Box<int> = Box<int> { value: 40 };
+    let answer = box.add(identity(2));
+
+    return result.value + answer - 84;
+}

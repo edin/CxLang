@@ -1,0 +1,33 @@
+type BinaryOp = fn(int, int) -> int;
+
+fn choose(value: int) -> int {
+    return 1;
+}
+
+fn choose(value: char) -> int {
+    return 2;
+}
+
+fn identity<T>(value: T) -> T {
+    return value;
+}
+
+fn add(left: int, right: int) -> int {
+    return left + right;
+}
+
+fn apply(operation: BinaryOp, left: int, right: int) -> int {
+    return operation(left, right);
+}
+
+fn main() -> int {
+    let operation: BinaryOp = add;
+    let compare: BinaryOp = fn(left: int, right: int) -> int => left <=> right;
+
+    return choose(10)
+        + choose('x')
+        + identity(20)
+        + apply(operation, 5, 7)
+        + (compare(1, 2) < 0 ? 1 : 0)
+        - 36;
+}

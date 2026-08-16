@@ -1,0 +1,60 @@
+interface Reader {
+    fn read() -> int;
+}
+
+struct CounterReader: Reader {
+    value: int;
+
+    fn read() -> int {
+        return self.value;
+    }
+}
+
+fn consume(reader: Reader) -> int {
+    return reader.read();
+}
+
+fn classify(reader: Reader) -> int {
+    match reader {
+        CounterReader: counter => {
+            return counter.value;
+        }
+        _ => return 0;
+    }
+}
+
+struct CounterStorage {
+    value: int;
+
+    static fn create(value: int) -> CounterStorage {
+        return CounterStorage { value: value };
+    }
+
+    fn increment(amount: int) -> int {
+        self.value += amount;
+        return self.value;
+    }
+}
+
+type Counter using CounterStorage {
+    expose static create -> Self;
+    expose increment as add;
+
+    fn current() -> int {
+        return self.value;
+    }
+}
+
+fn main() -> int {
+    let concrete = CounterReader { value: 21 };
+    let reader: Reader = concrete;
+
+    let counter: Counter = Counter.create(40);
+    let added = counter.add(2);
+
+    return consume(reader)
+        + classify(reader)
+        + added
+        + counter.current()
+        - 126;
+}

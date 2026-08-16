@@ -1,0 +1,60 @@
+fn read_value(success: bool) -> Result<int, Error> {
+    if (success) {
+        return Result.ok<int, Error>(41);
+    }
+
+    return Result.err<int, Error>(Error.create("guide", 1, "read failed"));
+}
+
+fn increment(success: bool) -> Result<int, Error> {
+    let value: int = try read_value(success);
+    return Result.ok<int, Error>(value + 1);
+}
+
+fn value_or_default(success: bool) -> int {
+    return try read_value(success) ?? 7;
+}
+
+fn main() -> int {
+    let total = 0;
+
+    for (let i = 0; i < 5; i += 1) {
+        if (i == 1) {
+            continue;
+        }
+
+        total += i;
+        if (total > 5) {
+            break;
+        }
+    }
+
+    while (total > 6) {
+        total -= 1;
+    }
+
+    foreach value in 0..3 {
+        total += value;
+    }
+
+    foreach value in 0...2 {
+        total += value;
+    }
+
+    switch (total) {
+        case 12: {
+            total = value_or_default(false);
+            break;
+        }
+        default: {
+            return 1;
+        }
+    }
+
+    let result = increment(true);
+    if (!result.is_ok() || result.unwrap_or(0) != 42) {
+        return 2;
+    }
+
+    return total - 7;
+}

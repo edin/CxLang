@@ -1,0 +1,60 @@
+enum Color {
+    Red,
+    Green = 5,
+    Blue,
+}
+
+fn color_weight(color: Color) -> int {
+    switch (color) {
+        case Color.Red: {
+            return 10;
+        }
+        case Color.Green: {
+            return 20;
+        }
+        default: {
+            return 30;
+        }
+    }
+}
+
+extension Color {
+    fn is_green() -> bool {
+        return *self == Color.Green;
+    }
+}
+
+enum TokenKind(
+    name: const char* = member.name,
+    index: int = member.index,
+    text: const char* = null,
+    precedence: int = 0
+) {
+    Identifier {},
+    Plus { text: "+", precedence: 90 },
+}
+
+extension TokenKind {
+    fn token_text() -> const char* {
+        return self.text;
+    }
+}
+
+fn main() -> int {
+    let color = Color.Green;
+    if (!color.is_green() || color_weight(color) != 20) {
+        return 1;
+    }
+
+    let kind = TokenKind.Plus;
+    if (kind.name[0] != 'P' || kind.token_text()[0] != '+') {
+        return 2;
+    }
+
+    let total = 0;
+    foreach loop_index, current in TokenKind {
+        total = total + (int)loop_index + current.index + current.precedence;
+    }
+
+    return total - 92;
+}

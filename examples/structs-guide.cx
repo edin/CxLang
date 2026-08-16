@@ -1,0 +1,63 @@
+requires Resettable {
+    fn reset() -> void;
+}
+
+struct Point {
+    x: int;
+    y: int;
+
+    fn translate(dx: int, dy: int) -> void {
+        self.x += dx;
+        self.y += dy;
+    }
+}
+
+struct Counter: Resettable {
+    value: int;
+
+    fn reset() -> void {
+        self.value = 0;
+    }
+}
+
+struct Pair<T> {
+    first: T;
+    second: T;
+
+    static fn create(first: T, second: T) -> Pair<T> {
+        let pair: Pair<T>;
+        pair.first = first;
+        pair.second = second;
+        return pair;
+    }
+}
+
+struct Line {
+    start: Point;
+    end: Point;
+}
+
+fn move_point(point: Point*) -> void {
+    point.translate(2, 3);
+}
+
+fn main() -> int {
+    let point: Point = Point(10, 20);
+    move_point(&point);
+
+    let line: Line = {
+        start: { x: 1, y: 2 },
+        end: { x: 3, y: 4 }
+    };
+
+    let pair: Pair<int> = Pair<int>.create(5, 6);
+    let counter = Counter { value: 42 };
+    counter.reset();
+
+    return point.x + point.y
+        + line.start.x + line.start.y
+        + line.end.x + line.end.y
+        + pair.first + pair.second
+        + counter.value
+        - 56;
+}

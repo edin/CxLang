@@ -1,0 +1,18 @@
+module app.main {
+    import lib.math;
+    from lib.values import offset as adjustment;
+
+    fn main() -> int {
+        return answer() + adjustment - 42;
+    }
+}
+
+module lib.math {
+    public fn answer() -> int {
+        return 40;
+    }
+}
+
+module lib.values {
+    public const offset: int = 2;
+}

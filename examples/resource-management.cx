@@ -1,0 +1,54 @@
+let cleanup_code = 0;
+
+struct Resource: Disposable<Resource> {
+    id: int;
+
+    fn dispose() -> void {
+        cleanup_code = cleanup_code * 10 + self.id;
+    }
+}
+
+fn resource(id: int) -> Resource {
+    return Resource { id: id };
+}
+
+fn clean_in_reverse_order() -> void {
+    using first = resource(1);
+    using second = resource(2);
+}
+
+fn replace_resource() -> void {
+    using value = resource(3);
+    value = resource(4);
+}
+
+fn create_resource() -> Resource {
+    using result = resource(5);
+    return result;
+}
+
+fn consume_transferred_resource() -> int {
+    using resource = create_resource();
+    return resource.id;
+}
+
+fn main() -> int {
+    clean_in_reverse_order();
+    if (cleanup_code != 21) {
+        return 1;
+    }
+
+    cleanup_code = 0;
+    replace_resource();
+    if (cleanup_code != 34) {
+        return 2;
+    }
+
+    cleanup_code = 0;
+    let id = consume_transferred_resource();
+    if (id != 5 || cleanup_code != 5) {
+        return 3;
+    }
+
+    return 0;
+}

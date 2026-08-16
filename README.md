@@ -28,6 +28,10 @@ See the full feature catalog: [cxlang.dev/features](https://cxlang.dev/features)
 
 See current project status: [cxlang.dev/status](https://cxlang.dev/status)
 
+Read the [CX Language Guide](docs/language/README.md) or browse the focused
+implementation notes in [`docs/features`](docs/features/README.md), including
+[initializers and typed AST macros](docs/features/initializers-and-typed-macros.md).
+
 ## Tiny Example
 
 ```cx

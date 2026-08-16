@@ -1,0 +1,58 @@
+fn main() -> int {
+    let values: int[] = { 2, 4, 6, 8 };
+
+    let array_total = 0;
+    foreach value in values {
+        array_total += value;
+    }
+
+    let slice: Slice<int> = {
+        data: &values[0],
+        length: 4
+    };
+
+    let slice_total = 0;
+    foreach index, value in slice {
+        slice_total += (int)index + value;
+    }
+
+    let range: Range<int> = {
+        start: &values[1],
+        end: &values[3]
+    };
+
+    let range_total = 0;
+    foreach value in range {
+        range_total += value;
+    }
+
+    let dynamic = Vec<int>.create();
+    dynamic.add(10);
+    dynamic.add(20);
+
+    let dynamic_total = 0;
+    foreach value in dynamic {
+        dynamic_total += value;
+    }
+    dynamic.dispose();
+
+    let exclusive_total = 0;
+    foreach value in 0..3 {
+        exclusive_total += value;
+    }
+
+    let inclusive_total = 0;
+    foreach value in 0...3 {
+        inclusive_total += value;
+    }
+
+    let count = sizeof(values) / sizeof(int);
+    return array_total
+        + slice_total
+        + range_total
+        + dynamic_total
+        + exclusive_total
+        + inclusive_total
+        + (int)count
+        - 99;
+}

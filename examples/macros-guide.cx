@@ -1,0 +1,34 @@
+import c.stdio;
+
+macro Trace(label: expression, value: expression) -> statements {
+    printf("%s=%d\n", @{label}, @{value});
+}
+
+macro GenerateDouble() -> declarations {
+    fn generated_double(value: int) -> int {
+        return value * 2;
+    }
+}
+
+macro Answer() -> int {
+    return 42;
+}
+
+macro Values() -> elements<int> {
+    return {
+        10,
+        20,
+        30
+    };
+}
+
+use GenerateDouble();
+
+fn main() -> int {
+    const values = use Values();
+    let answer = use Answer();
+
+    use Trace("answer", answer);
+
+    return answer == 42 && generated_double(values[1]) == 40 ? 0 : 1;
+}

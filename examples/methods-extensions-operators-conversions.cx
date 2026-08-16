@@ -1,0 +1,68 @@
+struct Counter {
+    value: int;
+
+    static fn create(value: int) -> Counter {
+        return Counter { value: value };
+    }
+
+    fn add(amount: int) -> void {
+        self.value = self.value + amount;
+    }
+}
+
+fn Counter.take(amount: int) -> void {
+    self.value = self.value - amount;
+}
+
+extension Counter {
+    fn reset() -> void {
+        self.value = 0;
+    }
+}
+
+struct Score {
+    value: int;
+
+    fn operator +(other: Score) -> Score {
+        return Score { value: self.value + other.value };
+    }
+
+    fn operator <=>(other: Score) -> int {
+        return self.value <=> other.value;
+    }
+
+    fn operator ==(other: Score) -> bool {
+        return self.value == other.value;
+    }
+}
+
+struct Text {
+    data: const char*;
+
+    static implicit fn from(value: const char*) -> Self {
+        return Text { data: value };
+    }
+}
+
+fn first(value: Text) -> char {
+    return value.data[0];
+}
+
+fn main() -> int {
+    let counter = Counter.create(10);
+    counter.add(5);
+    counter.take(3);
+    counter.reset();
+
+    let left = Score { value: 20 };
+    let right = Score { value: 22 };
+    let total = left + right;
+    let text: Text = "CX";
+
+    return counter.value
+        + (left < right ? 0 : 1)
+        + (left != right ? 0 : 1)
+        + total.value
+        + first(text)
+        - 109;
+}

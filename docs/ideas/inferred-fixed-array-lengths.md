@@ -103,11 +103,11 @@ result is stored as the canonical fixed-array `TypeRef` used by indexing,
 If inference cannot resolve the length, semantic analysis reports a diagnostic
 before C lowering. No unresolved inferred length is encoded as C text.
 
-## Future applications
+## Typed initializer generation
 
-The feature is intentionally useful without macros, but it also establishes a
-foundation for typed initializer-generation primitives. A future
-initializer-producing macro could support declarations such as:
+Fixed-array inference now composes with implemented typed
+initializer-generating macros. An `elements<T>` macro can support declarations
+such as:
 
 ```cx
 const optional_sum_arg_info: ZendInternalArgInfo[] =
@@ -115,8 +115,12 @@ const optional_sum_arg_info: ZendInternalArgInfo[] =
 ```
 
 After macro expansion supplies the initializer elements, the same array-length
-inference can resolve the final fixed size. Initializer-producing macros remain
-future work and are not part of this completed feature.
+inference resolves the final fixed size. Element sequences can also splice
+into containing positional initializers, and initializer-level `@if` and
+`@foreach` directives can generate zero or more elements.
+
+See [Initializers and typed AST macros](../features/initializers-and-typed-macros.md)
+for the completed design and the reflection-driven PHP extension example.
 
 ## Implementation status
 
@@ -134,5 +138,6 @@ The regression coverage lives in
 [`InferredArrayLengthTests.cs`](../../tests/Cx.Compiler.Tests/InferredArrayLengthTests.cs)
 and [`TypeNodeParsingTests.cs`](../../tests/Cx.Compiler.Tests/TypeNodeParsingTests.cs).
 
-The complete repository verification gate passes with 880 compiler tests and
-49 embedded standard-library tests.
+The feature was originally completed with 880 compiler tests and 49 embedded
+standard-library tests. Subsequent typed macro and initializer-generation
+coverage is documented in the feature guide linked above.
