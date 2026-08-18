@@ -164,15 +164,69 @@ Compile-time code can inspect the program through typed objects:
 ```
 
 Functions expose parameters, return types, signatures, attributes, visibility,
-ownership, and callable references. Modules expose their name, public and local
-functions, public and local types, and named type lookup:
+ownership, and callable references. Modules expose categorized declaration
+inventories in declaration order:
 
 ```cx
 @let api = module("api");
 @foreach handler in api.public_functions {
     // Inspect or generate code for the handler.
 }
+
+@foreach constant in api.public_constants {
+    // Interpret library-specific metadata or generate declarations.
+}
 ```
+
+The module reflection surface currently includes:
+
+| Inventory | Public view | Named lookup |
+| --- | --- | --- |
+| `functions` | `public_functions` | — |
+| `types` | `public_types` | `type(name)`, `public_type(name)` |
+| `globals` | `public_globals` | `global(name)` |
+| `constants` | `public_constants` | `constant(name)` |
+| `interfaces` | `public_interfaces` | `interface(name)` |
+| `requirements` | `public_requirements` | `requirement(name)` |
+| `attribute_declarations` | `public_attribute_declarations` | `attribute_declaration(name)` |
+
+Reserved words are accepted after member access, so `interface(name)` remains
+the shortest natural lookup spelling. `find_interface(name)` is retained as a
+compatibility alias. A missing named declaration produces a compile-time
+diagnostic that identifies both its expected category and name.
+
+Categorized entries are reflection objects rather than strings. Globals and
+compile-time constants expose `name`, `type`, `is_public`, `attributes`, and
+their initializer syntax. Globals additionally expose `is_const`. Interfaces
+expose `methods`; requirements expose `members`. This lets generators retain
+typed syntax and metadata throughout expansion.
+
+Attribute declarations expose `name`, `is_public`, `targets`, and `fields`.
+Each field exposes its `name` and metadata `type` spelling, such as `string`,
+`type`, or `list<syntax>`.
+
+The implicit `program` object is the root of compile-time reflection:
+
+```cx
+@foreach candidate in program.modules {
+    @let namespace = candidate.attribute("namespace");
+
+    @if(namespace != null) {
+        // Generate an artifact for this annotated module.
+    }
+}
+```
+
+`program.modules` contains the modules projected into the current compilation
+through its module/import graph. `program.module("api")` performs named lookup
+within that same set and reports a compile-time diagnostic when the module is
+not visible. The existing `module("api")` intrinsic remains a shorthand for
+named module reflection.
+
+This root object gives libraries a domain-neutral discovery surface.
+Documentation generators, serializers, registries, foreign-function tooling,
+and other compile-time libraries can interpret their own attributes without
+adding domain-specific behavior to the compiler.
 
 Reflection observes semantic program objects, not arbitrary source text. The
 [attributes chapter](16-attributes-and-reflection.md) covers metadata lookup in
@@ -254,6 +308,10 @@ use executable traversal when they must ignore template-only expressions.
 - Evaluation is intentionally bounded by call-depth and step limits.
 - Reflection exposes compiler-supported semantic objects, not unrestricted
   mutation of the program AST.
+- `program.modules` reflects the projected module/import graph; it does not
+  expose modules excluded from the compilation's visibility graph.
+- Compile-time constants remain visible to macro reflection even though their
+  declarations are removed from the runtime program before macro expansion.
 - Generated syntax is validated by the normal semantic pipeline after
   expansion; successful evaluation does not make invalid generated CX valid.
 

@@ -71,6 +71,33 @@ public sealed class LexerTests
             tokens.Select(token => token.Type));
     }
 
+    [Fact]
+    public void Tokenize_PreservesMultilineRawStringAsOneToken()
+    {
+        const string text = "\"\"\"first\\n\nsecond \"quoted\" end\"\"\"";
+
+        var tokens = Tokenize(text);
+
+        var token = Assert.Single(tokens, token => token.Type == TokenType.String);
+        Assert.Equal(text, token.Value);
+        Assert.Equal(TokenType.Eof, tokens[^1].Type);
+    }
+
+    [Fact]
+    public void Tokenize_ReportsUnterminatedRawString()
+    {
+        var diagnostics = new DiagnosticBag();
+        var lexer = new Cx.Compiler.Lexer.Lexer(
+            new SourceFile("test.cx", "\"\"\"unfinished"),
+            diagnostics);
+
+        var tokens = lexer.Tokenize();
+
+        Assert.Equal(TokenType.String, tokens[0].Type);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message == "Unterminated raw string.");
+    }
+
     [Theory]
     [InlineData("0..10", new[] { TokenType.Number, TokenType.DotDot, TokenType.Number, TokenType.Eof })]
     [InlineData("0...10", new[] { TokenType.Number, TokenType.Ellipsis, TokenType.Number, TokenType.Eof })]

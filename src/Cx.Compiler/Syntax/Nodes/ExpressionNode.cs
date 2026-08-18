@@ -16,6 +16,7 @@ public enum LiteralKind
     Integer,
     FloatingPoint,
     String,
+    RawString,
     Character,
     Boolean,
     Null,
@@ -47,6 +48,7 @@ internal static class LiteralKindFacts
         {
             "true" or "false" => LiteralKind.Boolean,
             "null" => LiteralKind.Null,
+            _ when text.StartsWith("\"\"\"", StringComparison.Ordinal) => LiteralKind.RawString,
             _ when text.StartsWith('"') => LiteralKind.String,
             _ when text.StartsWith('\'') => LiteralKind.Character,
             _ when IsNumber(text) => Number(text),

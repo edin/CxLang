@@ -59,7 +59,8 @@ internal sealed record ModuleUnit(
                 block,
                 new ModuleDeclarationNode(
                     block.Location,
-                    block.Name));
+                    block.Name,
+                    block.Attributes));
             var projectedProgram = SyntaxNode.CloneMetadata(
                 block,
                 new ProgramNode(

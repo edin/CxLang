@@ -29,7 +29,7 @@ internal sealed class CExpressionLowerer(ICExpressionLoweringContext context)
 
     public CExpression LowerSimple(ExpressionNode expression) => expression switch
     {
-        LiteralExpressionNode literal => new CLiteralExpression(LowerLiteral(literal.LiteralText)),
+        LiteralExpressionNode literal => new CLiteralExpression(LowerLiteral(literal)),
         NameExpressionNode name => context.LowerNameExpression(name),
         ParenthesizedExpressionNode parenthesized => new CParenthesizedExpression(context.LowerExpression(parenthesized.Expression)),
         CastExpressionNode cast => _typeExpressionLowerer.LowerCast(cast),
@@ -48,12 +48,41 @@ internal sealed class CExpressionLowerer(ICExpressionLoweringContext context)
     public CExpression LowerInitializer(InitializerExpressionNode initializer) =>
         _initializerExpressionLowerer.LowerInitializer(initializer);
 
-    private static string LowerLiteral(string text) => text switch
+    private static string LowerLiteral(LiteralExpressionNode literal)
     {
-        "true" => "1",
-        "false" => "0",
-        "null" => "NULL",
-        _ => text,
-    };
+        if (literal.Kind == LiteralKind.RawString)
+        {
+            return QuoteRawString(literal.LiteralText[3..^3]);
+        }
+
+        return literal.LiteralText switch
+        {
+            "true" => "1",
+            "false" => "0",
+            "null" => "NULL",
+            _ => literal.LiteralText,
+        };
+    }
+
+    private static string QuoteRawString(string value)
+    {
+        var result = new System.Text.StringBuilder(value.Length + 2).Append('"');
+        foreach (var ch in value)
+        {
+            result.Append(ch switch
+            {
+                '\n' => "\\n",
+                '\r' => "\\r",
+                '\t' => "\\t",
+                '\\' => "\\\\",
+                '"' => "\\\"",
+                _ when ch < ' ' || ch == '\u007f' =>
+                    "\\" + Convert.ToString(ch, 8).PadLeft(3, '0'),
+                _ => ch.ToString(),
+            });
+        }
+
+        return result.Append('"').ToString();
+    }
 
 }

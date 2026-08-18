@@ -549,6 +549,9 @@ internal sealed class ExpressionTokenParser
             var kind = literal.Type switch
             {
                 TokenType.Number => LiteralKindFacts.Number(literal.Value),
+                TokenType.String when literal.Value.StartsWith(
+                    "\"\"\"",
+                    StringComparison.Ordinal) => LiteralKind.RawString,
                 TokenType.String => LiteralKind.String,
                 TokenType.Character => LiteralKind.Character,
                 TokenType.True or TokenType.False => LiteralKind.Boolean,
@@ -1757,6 +1760,7 @@ internal sealed class ExpressionTokenParser
             or TokenType.Default
             or TokenType.Match
             or TokenType.Module
+            or TokenType.Interface
             or TokenType.Attribute
             or TokenType.From)
         {

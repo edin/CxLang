@@ -30,6 +30,16 @@ internal sealed class AttributeSemanticAnalyzer(
             }
         }
 
+        foreach (var module in program.Declarations
+            .OfType<ModuleDeclarationNode>()
+            .GroupBy(module => module.Name, StringComparer.Ordinal))
+        {
+            AnalyzeAttributeApplications(
+                module.SelectMany(contribution => contribution.Attributes).ToList(),
+                "module",
+                declarations);
+        }
+
         foreach (var typeAlias in program.TypeAliases)
         {
             AnalyzeAttributeApplications(typeAlias.Attributes, "type_alias", declarations);

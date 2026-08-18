@@ -27,9 +27,9 @@ attribute generated on struct, union, enum;
 A fieldless attribute ends with `;`. An attribute with metadata fields uses a
 body, and every application must supply every declared field.
 
-Supported targets include `type_alias`, `extern`, `global`, `enum`, `variant`,
-`struct`, `field`, `union`, `fn`, and `parameter`. The target is checked
-semantically:
+Supported targets include `module`, `type_alias`, `extern`, `global`, `enum`,
+`variant`, `struct`, `field`, `union`, `fn`, and `parameter`. The target is
+checked semantically:
 
 ```cx
 attribute range on field {
@@ -189,6 +189,51 @@ Attribute objects also expose their name and argument syntax. The lower-level
 macro needs to process metadata generically rather than knowing its schema in
 advance.
 
+Reflected modules expose the same lookup shape directly:
+
+```cx
+@let api = module("demo");
+@let namespace = api.attribute("namespace");
+@let all_module_metadata = api.attributes;
+```
+
+When a module spans several files, these properties contain the merged
+applications from every contribution to that logical module.
+
+Module declaration inventories preserve their declaration objects, so metadata
+can be queried directly from reflected globals, constants, and interfaces:
+
+```cx
+@let api = program.module("api");
+
+@foreach constant in api.public_constants {
+    @let marker = constant.attribute("document");
+    @if(marker != null) {
+        // Consume the annotation using typed compile-time code.
+    }
+}
+```
+
+Attribute schemas themselves are reflected as typed declarations:
+
+```cx
+@foreach schema in api.public_attribute_declarations {
+    @foreach target in schema.targets {
+        // target is a declaration-target name such as "function".
+    }
+
+    @foreach field in schema.fields {
+        // field.name and field.type describe the metadata contract.
+    }
+}
+
+@let export_schema = api.attribute_declaration("export");
+```
+
+Schema fields expose their compile-time metadata type spelling, including
+scalar forms such as `string`, `type`, and `syntax`, and list forms such as
+`list<syntax>`.
+
 ## Constructing and transforming attributes
 
 Macros can construct metadata with `Attribute.create` and attach it while
@@ -240,8 +285,8 @@ the C output.
 - Attributes do not generate behavior by themselves; a macro or compile-time
   consumer must interpret them.
 - There is no built-in `derive` attribute.
-- Applying attributes to imports, module declarations, C declaration blocks,
-  requirements, and macro declarations is currently rejected by the parser.
+- Applying attributes to imports, C declaration blocks, requirements, and
+  macro declarations is currently rejected by the parser.
 
 ## Related chapters
 

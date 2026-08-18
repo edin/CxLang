@@ -47,6 +47,20 @@ A runtime string literal has type `char*` and lowers to a C string literal:
 let message: const char* = "hello";
 ```
 
+Raw triple-quoted strings preserve their contents exactly. They do not process
+escape sequences, interpolation, or indentation:
+
+```cx
+let template: const char* = """
+Quotes: "hello"
+Backslash text: \n
+""";
+```
+
+The opening and closing delimiters are not part of the value. A raw string
+cannot directly contain the closing `"""` sequence; use an ordinary string or
+concatenation when that delimiter is required.
+
 `StringView` and `StringBuilder` are standard-library types rather than
 language primitives:
 

@@ -63,7 +63,12 @@ public sealed record ProgramNode(
 
     public ModuleDeclarationNode? Module
     {
-        get => Declarations.OfType<ModuleDeclarationNode>().FirstOrDefault();
+        get => Declarations
+            .OfType<ModuleDeclarationNode>()
+            .FirstOrDefault(module => string.Equals(
+                module.Location.File.Path,
+                Location.File.Path,
+                StringComparison.Ordinal));
         init => Declarations = ReplaceSingle(Declarations, value);
     }
 

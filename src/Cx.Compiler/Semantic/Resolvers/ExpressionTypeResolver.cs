@@ -89,7 +89,8 @@ internal sealed class ExpressionTypeResolver(
     {
         LiteralKind.Boolean => ResolveKnownType(TypeRef.Bool),
         LiteralKind.Null => new TypeRef.Null(),
-        LiteralKind.String => new TypeRef.Pointer(ResolveKnownType(TypeRef.Char)),
+        LiteralKind.String or LiteralKind.RawString =>
+            new TypeRef.Pointer(ResolveKnownType(TypeRef.Char)),
         LiteralKind.Character => ResolveKnownType(TypeRef.Char),
         LiteralKind.Integer => ResolveKnownType(TypeRef.Int),
         LiteralKind.FloatingPoint => ResolveKnownType(TypeRef.Double),

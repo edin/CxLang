@@ -42,6 +42,7 @@ internal sealed class CompileTimeExpansionPipeline(
             diagnostics,
             new ProgramCompileTimeReflection(program, moduleNamesByPath),
             environment: environment);
+        var reflectedConstants = program.CompileTimeConstants;
         program = profiler.Measure(
             "Compile-time directive expansion",
             () => directiveExpansion.ExpandProgram(program));
@@ -53,7 +54,10 @@ internal sealed class CompileTimeExpansionPipeline(
         var macroExpansion = new MacroExpansionPass(
             diagnostics,
             program,
-            new ProgramCompileTimeReflection(program, moduleNamesByPath),
+            new ProgramCompileTimeReflection(
+                program,
+                moduleNamesByPath,
+                reflectedConstants),
             moduleNamesByPath,
             environment: environment);
         program = profiler.Measure(

@@ -116,7 +116,7 @@ public sealed class AstRewriterTests
         ]).Functions);
         var program = new ProgramNode(
             location,
-            [new ModuleBlockNode(location, "sample", [function])]);
+            [new ModuleBlockNode(location, "sample", [function], [])]);
 
         var rewritten = new RenameExpressionRewriter("value", "renamed")
             .RewriteProgram(program);

@@ -1,0 +1,21 @@
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+
+[*.{csproj,sln,props,targets,ps1}]
+end_of_line = crlf
+
+[*.{cx,cplus,astro,css,js,mjs,json,toml,yml,yaml}]
+end_of_line = lf
+
+[*.md]
+end_of_line = lf
+trim_trailing_whitespace = false

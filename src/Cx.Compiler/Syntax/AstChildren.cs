@@ -7,7 +7,8 @@ internal static class AstChildren
     public static IEnumerable<SyntaxNode> Get(SyntaxNode node) => node switch
     {
         ProgramNode program => program.Declarations,
-        ModuleBlockNode module => module.Declarations,
+        ModuleDeclarationNode module => Children(module.Attributes),
+        ModuleBlockNode module => Children(module.Attributes, module.Declarations),
         SyntaxBlockNode block => block.Items,
         CDeclareNode declaration => declaration.Members,
         SymbolImportNode import => import.Symbols,

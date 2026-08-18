@@ -1,9 +1,59 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.Source;
 
 namespace Cx.Compiler.Tests;
 
 public sealed class AnalysisTests
 {
+    [Fact]
+    public void GetMemberCompletions_ReturnsProgramReflectionMembersInsideMacro()
+    {
+        const string marker = "program.";
+        const string source = """
+            macro Inspect() -> declarations {
+                @let reflected = program.;
+            }
+            """;
+
+        var completions = new CxCompiler().GetMemberCompletions(
+            [new SourceFile("main.cx", source)],
+            "main.cx",
+            source.IndexOf(marker, StringComparison.Ordinal) + marker.Length);
+
+        Assert.Contains(completions, completion =>
+            completion.Label == "modules"
+            && completion.Kind == MemberCompletionKind.Field);
+        Assert.Contains(completions, completion =>
+            completion.Label == "module"
+            && completion.Kind == MemberCompletionKind.Method);
+    }
+
+    [Fact]
+    public void GetMemberCompletions_ReturnsModuleReflectionMembersInsideMacro()
+    {
+        const string marker = "program.module(\"api\").";
+        const string source = """
+            macro Inspect() -> declarations {
+                @let reflected = program.module("api").;
+            }
+            """;
+
+        var completions = new CxCompiler().GetMemberCompletions(
+            [new SourceFile("main.cx", source)],
+            "main.cx",
+            source.IndexOf(marker, StringComparison.Ordinal) + marker.Length);
+
+        Assert.Contains(completions, completion =>
+            completion.Label == "public_functions"
+            && completion.Kind == MemberCompletionKind.Field);
+        Assert.Contains(completions, completion =>
+            completion.Label == "attribute_declaration"
+            && completion.Kind == MemberCompletionKind.Method);
+        Assert.Contains(completions, completion =>
+            completion.Label == "interface"
+            && completion.Kind == MemberCompletionKind.Method);
+    }
+
     [Fact]
     public void Analyze_RunsSemanticFrontEndWithoutCEmission()
     {

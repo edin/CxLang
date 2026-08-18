@@ -9,6 +9,7 @@ public sealed class LiteralExpressionTests
     [InlineData("42", LiteralKind.Integer)]
     [InlineData("3.14", LiteralKind.FloatingPoint)]
     [InlineData("\"text\"", LiteralKind.String)]
+    [InlineData("\"\"\"raw\\ntext\"\"\"", LiteralKind.RawString)]
     [InlineData("'x'", LiteralKind.Character)]
     [InlineData("true", LiteralKind.Boolean)]
     [InlineData("null", LiteralKind.Null)]

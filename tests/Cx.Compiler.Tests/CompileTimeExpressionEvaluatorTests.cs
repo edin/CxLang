@@ -112,6 +112,17 @@ public sealed class CompileTimeExpressionEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_PreservesRawStringExactly()
+    {
+        var (value, diagnostics) = Evaluate("\"\"\"line\\n\"quoted\" end\"\"\"");
+
+        Assert.Equal(
+            "line\\n\"quoted\" end",
+            Assert.IsType<CompileTimeValue.String>(value).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
     public void Evaluate_ReturnsVariableLengthCompileTimeList()
     {
         var (value, diagnostics) = Evaluate("[1, 2, 3]");
@@ -120,6 +131,31 @@ public sealed class CompileTimeExpressionEvaluatorTests
         Assert.Equal([1L, 2L, 3L], values.Select(item =>
             Assert.IsType<CompileTimeValue.Integer>(item).Value));
         CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Fact]
+    public void Evaluate_IndexesCompileTimeList()
+    {
+        var (value, diagnostics) = Evaluate("[10, 20, 30][1]");
+
+        Assert.Equal(20, Assert.IsType<CompileTimeValue.Integer>(value).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Theory]
+    [InlineData("[10][-1]", "index -1 is out of range for a list with 1 element(s)")]
+    [InlineData("[10][1]", "index 1 is out of range for a list with 1 element(s)")]
+    [InlineData("[10][\"first\"]", "list index must be an integer, but received string")]
+    [InlineData("42[0]", "integer value cannot be indexed")]
+    public void Evaluate_ReportsInvalidCompileTimeListIndex(
+        string source,
+        string expectedMessage)
+    {
+        var (value, diagnostics) = Evaluate(source);
+
+        Assert.Null(value);
+        Assert.Contains(diagnostics.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(expectedMessage, StringComparison.Ordinal));
     }
 
     [Fact]

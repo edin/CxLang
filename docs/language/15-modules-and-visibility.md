@@ -75,6 +75,69 @@ A file cannot mix a file-scoped `module name;` declaration with module blocks.
 When module-block form is used, declarations cannot remain outside the blocks,
 and modules cannot be nested inside other modules.
 
+## Module attributes
+
+Attributes may be applied to file-scoped modules and module blocks:
+
+```cx
+attribute namespace on module {
+    value: string;
+}
+
+@namespace("Demo")
+module demo;
+```
+
+A logical module may span several files. Its attributes are aggregated across
+those contributions, so metadata can live in one module file while declarations
+live in others:
+
+```cx
+// module.cx
+@namespace("Demo")
+module demo;
+```
+
+```cx
+// functions.cx
+module demo;
+
+public fn answer() -> int {
+    return 42;
+}
+```
+
+The same attribute may appear only once across all files contributing to the
+logical module. A second `@namespace` is diagnosed even if it uses the same
+value.
+
+Compile-time module reflection exposes `module.attributes` and
+`module.attribute("name")`. Named lookup returns the application object or
+compile-time `null` when absent:
+
+```cx
+@let php_namespace = module("demo").attribute("namespace");
+@if(php_namespace != null) {
+    @let exported_name = php_namespace.value;
+}
+```
+
+Modules can be discovered from the compile-time program root:
+
+```cx
+@foreach candidate in program.modules {
+    @if(candidate.attribute("namespace") != null) {
+        // Process this visible annotated module.
+    }
+}
+
+@let demo = program.module("demo");
+```
+
+Only modules projected through the current compilation's import graph appear
+in this view. A module present in the source set but outside that graph is not
+available through `program.module(...)`.
+
 ## Plain imports
 
 Import a module by its full name:
@@ -351,6 +414,8 @@ building, and testing chapter.
 - Only public declarations cross module boundaries.
 - A public API cannot expose a private type.
 - Qualified import aliases do not create unqualified symbol aliases.
+- Module attributes merge across all files in one logical module and cannot be
+  repeated.
 - Some qualified calls to CX-defined module functions still require a backend
   lowering fix; plain and selective imports avoid the dotted-name residue.
 - C names are module-qualified when disambiguation requires it, not necessarily

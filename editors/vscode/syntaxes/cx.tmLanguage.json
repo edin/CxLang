@@ -27,6 +27,11 @@
     "strings": {
       "patterns": [
         {
+          "name": "string.quoted.triple.cx",
+          "begin": "\"\"\"",
+          "end": "\"\"\""
+        },
+        {
           "name": "string.quoted.double.cx",
           "begin": "\"",
           "end": "\"",

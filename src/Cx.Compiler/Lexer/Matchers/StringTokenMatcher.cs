@@ -11,6 +11,23 @@ public sealed class StringTokenMatcher : ITokenMatcher
 
         var location = lexer.Location;
         var start = lexer.Position;
+        if (lexer.IsAt("\"\"\""))
+        {
+            lexer.TryTake("\"\"\"");
+            while (!lexer.IsAtEnd)
+            {
+                if (lexer.TryTake("\"\"\""))
+                {
+                    return new Token(TokenType.String, location, lexer.Position - start);
+                }
+
+                lexer.Advance();
+            }
+
+            lexer.Diagnostics.Report(location, "Unterminated raw string.");
+            return new Token(TokenType.String, location, lexer.Position - start);
+        }
+
         lexer.Advance();
 
         while (!lexer.IsAtEnd)

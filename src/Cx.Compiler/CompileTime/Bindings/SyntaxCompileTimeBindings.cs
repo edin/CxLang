@@ -91,6 +91,14 @@ internal sealed class SyntaxCompileTimeBinding : CompileTimeTypeBinding
         EnumDataFieldNode enumDataField => enumDataField.Name,
         TaggedUnionNode union => union.Name,
         TaggedUnionVariantNode variant => variant.Name,
+        GlobalVariableNode global => global.Name,
+        CompileTimeConstantNode constant => constant.Name,
+        InterfaceNode interfaceNode => interfaceNode.Name,
+        InterfaceMethodNode method => method.Name,
+        RequirementFieldNode field => field.Name,
+        RequirementFunctionNode function => function.Name,
+        AttributeDeclarationNode attribute => attribute.Name,
+        AttributeFieldNode field => field.Name,
         AttributeApplicationNode attribute => attribute.Name,
         AttributeArgumentNode { Name: not null } argument => argument.Name,
         RequirementNode requirement => requirement.Name,
@@ -332,6 +340,115 @@ internal sealed class StructCompileTimeBinding : CompileTimeTypeBinding
     private IReadOnlyList<FunctionNode> Methods(
         CompileTimePropertyContext context,
         StructNode structNode) => structNode.Methods;
+}
+
+internal sealed class GlobalCompileTimeBinding : CompileTimeTypeBinding
+{
+    public override string ScriptTypeName => "Global";
+
+    public override Type ReceiverType => typeof(GlobalVariableNode);
+
+    [CompileTimeProperty("is_public")]
+    private bool IsPublic(
+        CompileTimePropertyContext context,
+        GlobalVariableNode global) => global.IsPublic;
+
+    [CompileTimeProperty("is_const")]
+    private bool IsConst(
+        CompileTimePropertyContext context,
+        GlobalVariableNode global) => global.IsConst;
+
+    [CompileTimeProperty("initializer")]
+    private CompileTimePropertyResult Initializer(
+        CompileTimePropertyContext context,
+        GlobalVariableNode global) => global.Initializer is { } initializer
+            ? CompileTimePropertyResult.From(new CompileTimeValue.Syntax(initializer))
+            : CompileTimePropertyResult.From(new CompileTimeValue.Null());
+}
+
+internal sealed class ConstantCompileTimeBinding : CompileTimeTypeBinding
+{
+    public override string ScriptTypeName => "Constant";
+
+    public override Type ReceiverType => typeof(CompileTimeConstantNode);
+
+    [CompileTimeProperty("is_public")]
+    private bool IsPublic(
+        CompileTimePropertyContext context,
+        CompileTimeConstantNode constant) => constant.IsPublic;
+
+    [CompileTimeProperty("initializer")]
+    private ExpressionNode Initializer(
+        CompileTimePropertyContext context,
+        CompileTimeConstantNode constant) => constant.Initializer;
+}
+
+internal sealed class InterfaceCompileTimeBinding : CompileTimeTypeBinding
+{
+    public override string ScriptTypeName => "Interface";
+
+    public override Type ReceiverType => typeof(InterfaceNode);
+
+    [CompileTimeProperty("is_public")]
+    private bool IsPublic(
+        CompileTimePropertyContext context,
+        InterfaceNode interfaceNode) => interfaceNode.IsPublic;
+
+    [CompileTimeProperty("methods")]
+    private IReadOnlyList<InterfaceMethodNode> Methods(
+        CompileTimePropertyContext context,
+        InterfaceNode interfaceNode) => interfaceNode.Methods;
+}
+
+internal sealed class RequirementCompileTimeBinding : CompileTimeTypeBinding
+{
+    public override string ScriptTypeName => "Requirement";
+
+    public override Type ReceiverType => typeof(RequirementNode);
+
+    [CompileTimeProperty("is_public")]
+    private bool IsPublic(
+        CompileTimePropertyContext context,
+        RequirementNode requirement) => requirement.IsPublic;
+
+    [CompileTimeProperty("members")]
+    private IReadOnlyList<RequirementMemberNode> Members(
+        CompileTimePropertyContext context,
+        RequirementNode requirement) => requirement.Members;
+}
+
+internal sealed class AttributeDeclarationCompileTimeBinding : CompileTimeTypeBinding
+{
+    public override string ScriptTypeName => "AttributeDeclaration";
+
+    public override Type ReceiverType => typeof(AttributeDeclarationNode);
+
+    [CompileTimeProperty("is_public")]
+    private bool IsPublic(
+        CompileTimePropertyContext context,
+        AttributeDeclarationNode attribute) => attribute.IsPublic;
+
+    [CompileTimeProperty("targets")]
+    private IReadOnlyList<string> Targets(
+        CompileTimePropertyContext context,
+        AttributeDeclarationNode attribute) => attribute.Targets;
+
+    [CompileTimeProperty("fields")]
+    private IReadOnlyList<AttributeFieldNode> Fields(
+        CompileTimePropertyContext context,
+        AttributeDeclarationNode attribute) => attribute.Fields;
+}
+
+internal sealed class AttributeFieldCompileTimeBinding : CompileTimeTypeBinding
+{
+    public override string ScriptTypeName => "AttributeField";
+
+    public override Type ReceiverType => typeof(AttributeFieldNode);
+
+    [CompileTimeProperty("type")]
+    private string Type(
+        CompileTimePropertyContext context,
+        AttributeFieldNode field) => field.TypeNode.ToSourceText();
 }
 
 internal sealed class RequirementMatchCompileTimeBinding : CompileTimeTypeBinding

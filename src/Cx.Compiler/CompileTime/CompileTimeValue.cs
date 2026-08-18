@@ -26,6 +26,11 @@ internal abstract record CompileTimeValue
         public override string DisplayType => "module";
     }
 
+    public sealed record Program(ReflectedProgram Value) : CompileTimeObjectValue
+    {
+        public override string DisplayType => "program";
+    }
+
     public sealed record Syntax(SyntaxNode Value) : CompileTimeObjectValue
     {
         public override string DisplayType => Value is FunctionNode or ExternFunctionNode

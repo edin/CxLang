@@ -179,6 +179,9 @@ internal sealed class ProspectiveCompileTimeReflection(
     public bool TryGetModule(string name, out ReflectedModule module) =>
         inner.TryGetModule(name, out module);
 
+    public bool TryGetProgram(out ReflectedProgram program) =>
+        inner.TryGetProgram(out program);
+
     public bool TryGetModuleForSyntax(
         SyntaxNode syntax,
         out ReflectedModule module) =>

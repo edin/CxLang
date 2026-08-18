@@ -1,4 +1,5 @@
 using Cx.Compiler.Diagnostics;
+using Cx.Compiler.CompileTime;
 using Cx.Compiler.Lexer;
 using Cx.Compiler.Parser;
 using Cx.Compiler.Semantic;
@@ -47,7 +48,7 @@ internal sealed class MemberCompletionProvider(
             return [];
         }
 
-        var hole = ExecutableAstTraversal
+        var hole = AstTraversal
             .DescendantsAndSelf<IncompleteMemberExpressionNode>(program)
             .LastOrDefault(member =>
                 SourcePathsEqual(member.DotSpan.File.Path, path)
@@ -55,6 +56,13 @@ internal sealed class MemberCompletionProvider(
         if (hole is null)
         {
             return [];
+        }
+
+        if (TryGetCompileTimeReceiverType(hole.Target) is { } compileTimeReceiver)
+        {
+            return CollectCompileTimeCompletions(
+                compileTimeReceiver,
+                hole.Prefix);
         }
 
         if (hole.Target.Semantic.Type is { } receiverType)
@@ -78,6 +86,50 @@ internal sealed class MemberCompletionProvider(
             program,
             hole.Target,
             hole.Prefix);
+    }
+
+    private static Type? TryGetCompileTimeReceiverType(ExpressionNode expression) => expression switch
+    {
+        NameExpressionNode { Name: "program" } => typeof(CompileTimeValue.Program),
+        CallExpressionNode
+        {
+            Callee: NameExpressionNode { Name: "module" },
+        } => typeof(CompileTimeValue.Module),
+        CallExpressionNode
+        {
+            Callee: MemberExpressionNode
+            {
+                Target: NameExpressionNode { Name: "program" },
+                MemberName: "module",
+            },
+        } => typeof(CompileTimeValue.Module),
+        _ => null,
+    };
+
+    private static IReadOnlyList<MemberCompletion> CollectCompileTimeCompletions(
+        Type receiverType,
+        string prefix)
+    {
+        var properties = CompileTimePropertyRegistry.Default
+            .GetPropertyNames(receiverType)
+            .Select(name => new MemberCompletion(
+                name,
+                MemberCompletionKind.Field,
+                "compile-time property"));
+        var methods = CompileTimeMethodRegistry.Default
+            .GetReceiverMethodNames(receiverType)
+            .Select(name => new MemberCompletion(
+                name,
+                MemberCompletionKind.Method,
+                "compile-time method"));
+        return properties
+            .Concat(methods)
+            .Where(completion => completion.Label.StartsWith(
+                prefix,
+                StringComparison.Ordinal))
+            .OrderBy(completion => completion.Kind)
+            .ThenBy(completion => completion.Label, StringComparer.Ordinal)
+            .ToList();
     }
 
     private static void PrepareIncompleteExpression(

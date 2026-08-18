@@ -75,6 +75,7 @@ internal sealed class CompileTimeExpressionEvaluator
             BinaryExpressionNode binary => EvaluateBinary(binary, context),
             ConditionalExpressionNode conditional => EvaluateConditional(conditional, context),
             ListExpressionNode list => EvaluateList(list, context),
+            IndexExpressionNode index => EvaluateIndex(index, context),
             TypeLiteralExpressionNode typeLiteral => EvaluateTypeLiteral(typeLiteral),
             InitializerExpressionNode initializer => EvaluateInitializer(initializer, context),
             CallExpressionNode call => EvaluateCall(call, context),
@@ -82,6 +83,44 @@ internal sealed class CompileTimeExpressionEvaluator
             ComputedMemberExpressionNode member => EvaluateComputedMember(member, context),
             _ => Unsupported(expression),
         };
+    }
+
+    private CompileTimeValue? EvaluateIndex(
+        IndexExpressionNode index,
+        CompileTimeEvaluationContext context)
+    {
+        var target = Evaluate(index.Target, context);
+        var indexValue = Evaluate(index.Index, context);
+        if (target is null || indexValue is null)
+        {
+            return null;
+        }
+
+        if (target is not CompileTimeValue.List list)
+        {
+            _diagnostics.Report(
+                index.Target.Location,
+                $"Compile-time {CompileTimeValueFacts.Describe(target)} value cannot be indexed.");
+            return null;
+        }
+
+        if (indexValue is not CompileTimeValue.Integer integer)
+        {
+            _diagnostics.Report(
+                index.Index.Location,
+                $"Compile-time list index must be an integer, but received {CompileTimeValueFacts.Describe(indexValue)}.");
+            return null;
+        }
+
+        if (integer.Value < 0 || integer.Value >= list.Values.Count)
+        {
+            _diagnostics.Report(
+                index.Index.Location,
+                $"Compile-time list index {integer.Value} is out of range for a list with {list.Values.Count} element(s).");
+            return null;
+        }
+
+        return list.Values[(int)integer.Value];
     }
 
     public CompileTimeEvaluationOutcome EvaluateOutcome(
@@ -222,6 +261,7 @@ internal sealed class CompileTimeExpressionEvaluator
                 string.Equals(literal.LiteralText, "true", StringComparison.Ordinal)),
             LiteralKind.Integer => ParseInteger(literal),
             LiteralKind.String => ParseString(literal),
+            LiteralKind.RawString => ParseRawString(literal),
             LiteralKind.Null => new CompileTimeValue.Null(),
             _ => Unsupported(literal),
         };
@@ -288,6 +328,20 @@ internal sealed class CompileTimeExpressionEvaluator
         return new CompileTimeValue.String(result.ToString());
     }
 
+    private CompileTimeValue? ParseRawString(LiteralExpressionNode literal)
+    {
+        var text = literal.LiteralText;
+        if (text.Length < 6
+            || !text.StartsWith("\"\"\"", StringComparison.Ordinal)
+            || !text.EndsWith("\"\"\"", StringComparison.Ordinal))
+        {
+            _diagnostics.Report(literal.Location, "Invalid compile-time raw string literal.");
+            return null;
+        }
+
+        return new CompileTimeValue.String(text[3..^3]);
+    }
+
     private CompileTimeValue? EvaluateName(
         NameExpressionNode name,
         CompileTimeEvaluationContext context)
@@ -306,6 +360,12 @@ internal sealed class CompileTimeExpressionEvaluator
         if (TryEvaluateConstant(name, out var constantValue))
         {
             return constantValue;
+        }
+
+        if (string.Equals(name.Name, "program", StringComparison.Ordinal)
+            && _reflection.TryGetProgram(out var reflectedProgram))
+        {
+            return new CompileTimeValue.Program(reflectedProgram);
         }
 
         if (_objects.TryGet(name.Name, out var compileTimeObject))

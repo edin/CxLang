@@ -507,6 +507,7 @@ internal sealed class MacroExpansionPass : AstRewriter
         {
             NameExpressionNode identifier => identifier.Name,
             LiteralExpressionNode { Kind: LiteralKind.String } literal => literal.LiteralText.Trim('"'),
+            LiteralExpressionNode { Kind: LiteralKind.RawString } literal => literal.LiteralText[3..^3],
             _ => null,
         };
         if (name is not null)

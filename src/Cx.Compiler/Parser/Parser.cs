@@ -97,8 +97,7 @@ public sealed partial class Parser
 
             if (Check(TokenType.Module))
             {
-                ReportUnexpectedAttributes(attributes, "module declarations");
-                if (ParseModuleDeclarationOrBlock() is { } module)
+                if (ParseModuleDeclarationOrBlock(attributes) is { } module)
                 {
                     RegisterModuleSyntax(module, ref moduleSyntaxMode);
                     AddSpannedNode(declarations, module, declarationStart, visibility);
@@ -783,7 +782,8 @@ public sealed partial class Parser
             : new TestNode(testToken.Location, nameToken?.Value.Trim('"') ?? string.Empty, body, attributes);
     }
 
-    private TopLevelNode? ParseModuleDeclarationOrBlock()
+    private TopLevelNode? ParseModuleDeclarationOrBlock(
+        IReadOnlyList<AttributeApplicationNode> attributes)
     {
         var moduleToken = Expect(TokenType.Module, "Expected 'module'.");
         var name = ParseModulePath();
@@ -794,12 +794,12 @@ public sealed partial class Parser
 
         if (ConsumeOptional(TokenType.Semicolon))
         {
-            return new ModuleDeclarationNode(moduleToken.Location, name);
+            return new ModuleDeclarationNode(moduleToken.Location, name, attributes);
         }
 
         if (Expect(TokenType.LBrace, "Expected ';' or '{' after module name.") is null)
         {
-            return new ModuleDeclarationNode(moduleToken.Location, name);
+            return new ModuleDeclarationNode(moduleToken.Location, name, attributes);
         }
 
         var bodyTokens = Tokens.ReadBalancedUntil(TokenType.RBrace).ToList();
@@ -824,7 +824,7 @@ public sealed partial class Parser
             declarations.Add(declaration);
         }
 
-        return new ModuleBlockNode(moduleToken.Location, name, declarations);
+        return new ModuleBlockNode(moduleToken.Location, name, declarations, attributes);
     }
 
     private void RegisterModuleSyntax(

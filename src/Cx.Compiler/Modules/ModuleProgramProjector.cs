@@ -37,8 +37,9 @@ internal static class ModuleProgramProjector
 
     private static ProgramNode Merge(
         ProgramNode rootProgram,
-        IReadOnlyList<ProgramNode> programs) =>
-        rootProgram with
+        IReadOnlyList<ProgramNode> programs)
+    {
+        var merged = rootProgram with
         {
             Includes = programs.SelectMany(program => program.Includes).ToList(),
             CDeclarations = programs.SelectMany(program => program.CDeclarations).ToList(),
@@ -84,4 +85,16 @@ internal static class ModuleProgramProjector
                 .ToList(),
             Macros = programs.SelectMany(program => program.Macros).ToList(),
         };
+
+        var rootModule = rootProgram.Module;
+        var additionalModules = programs
+            .Select(program => program.Module)
+            .OfType<ModuleDeclarationNode>()
+            .Where(module => !ReferenceEquals(module, rootModule))
+            .ToList();
+        return merged with
+        {
+            Declarations = [.. merged.Declarations, .. additionalModules],
+        };
+    }
 }

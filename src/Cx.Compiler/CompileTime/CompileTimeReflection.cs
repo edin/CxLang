@@ -24,6 +24,8 @@ internal interface ICompileTimeReflection
 
     bool TryGetModule(string name, out ReflectedModule module);
 
+    bool TryGetProgram(out ReflectedProgram program);
+
     bool TryGetModuleForSyntax(
         SyntaxNode syntax,
         out ReflectedModule module);
@@ -56,7 +58,16 @@ internal interface ICompileTimeReflection
 internal sealed record ReflectedModule(
     string Name,
     IReadOnlyList<SyntaxNode> Functions,
-    IReadOnlyList<ReflectedModuleType> Types);
+    IReadOnlyList<ReflectedModuleType> Types,
+    IReadOnlyList<GlobalVariableNode> Globals,
+    IReadOnlyList<CompileTimeConstantNode> Constants,
+    IReadOnlyList<InterfaceNode> Interfaces,
+    IReadOnlyList<RequirementNode> Requirements,
+    IReadOnlyList<AttributeDeclarationNode> AttributeDeclarations,
+    IReadOnlyList<AttributeApplicationNode> Attributes);
+
+internal sealed record ReflectedProgram(
+    IReadOnlyList<ReflectedModule> Modules);
 
 internal sealed record ReflectedModuleType(
     TypeRef Type,
@@ -134,6 +145,12 @@ internal sealed class UnavailableCompileTimeReflection : ICompileTimeReflection
         return false;
     }
 
+    public bool TryGetProgram(out ReflectedProgram program)
+    {
+        program = null!;
+        return false;
+    }
+
     public bool TryGetModuleForSyntax(
         SyntaxNode syntax,
         out ReflectedModule module)
@@ -202,15 +219,18 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
     private readonly RequirementMatcher _requirementMatcher;
     private readonly TypeSystem _typeSystem;
     private readonly IReadOnlyDictionary<string, string> _moduleNamesByPath;
-    private readonly IReadOnlySet<string> _moduleNames;
+    private readonly IReadOnlyList<string> _moduleNames;
     private readonly ModuleOwnership _moduleOwnership;
     private readonly ProgramDeclarationIndex _declarations;
+    private readonly IReadOnlyList<CompileTimeConstantNode> _compileTimeConstants;
 
     public ProgramCompileTimeReflection(
         ProgramNode program,
-        IReadOnlyDictionary<string, string>? moduleNamesByPath = null)
+        IReadOnlyDictionary<string, string>? moduleNamesByPath = null,
+        IReadOnlyList<CompileTimeConstantNode>? compileTimeConstants = null)
     {
         _program = program;
+        _compileTimeConstants = compileTimeConstants ?? program.CompileTimeConstants;
         _typeRefParser = new TypeRefParser(program);
         _moduleNamesByPath = moduleNamesByPath
             ?? BuildFallbackModuleMap(program);
@@ -220,8 +240,8 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         _moduleNames = program.Declarations
             .Select(_moduleOwnership
                 .GetDeclarationModuleName)
-            .Concat(_moduleNamesByPath.Values)
-            .ToHashSet(StringComparer.Ordinal);
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
         _declarations = ProgramDeclarationIndex.Create(
             program,
             _moduleOwnership);
@@ -240,6 +260,13 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
         }
 
         module = BuildModule(name);
+        return true;
+    }
+
+    public bool TryGetProgram(out ReflectedProgram program)
+    {
+        program = new ReflectedProgram(
+            _moduleNames.Select(BuildModule).ToList());
         return true;
     }
 
@@ -417,6 +444,7 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             TaggedUnionVariantNode variant => variant.TypeNode,
             ParameterNode parameter => parameter.TypeNode,
             GlobalVariableNode global => global.TypeNode,
+            CompileTimeConstantNode constant => constant.TypeNode,
             TypeAliasNode alias => alias.TargetTypeNode,
             FunctionNode function => function.ReturnTypeNode,
             ExternFunctionNode function => function.ReturnTypeNode,
@@ -441,6 +469,7 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             TypeAliasNode alias => alias.Attributes,
             ExternFunctionNode function => function.Attributes,
             GlobalVariableNode global => global.Attributes,
+            CompileTimeConstantNode constant => constant.Attributes,
             EnumNode enumNode => enumNode.Attributes,
             EnumMemberNode member => member.Attributes,
             StructNode structNode => structNode.Attributes,
@@ -453,12 +482,15 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             ExtensionNode extension => extension.Attributes,
             TypeAdapterNode adapter => adapter.Attributes,
             TestNode test => test.Attributes,
+            ModuleDeclarationNode module => module.Attributes,
+            ModuleBlockNode module => module.Attributes,
             _ => [],
         };
 
         return syntax is TypeAliasNode
             or ExternFunctionNode
             or GlobalVariableNode
+            or CompileTimeConstantNode
             or EnumNode
             or EnumMemberNode
             or StructNode
@@ -470,7 +502,9 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             or InterfaceNode
             or ExtensionNode
             or TypeAdapterNode
-            or TestNode;
+            or TestNode
+            or ModuleDeclarationNode
+            or ModuleBlockNode;
     }
 
     public bool TryGetAttributeDeclaration(
@@ -618,7 +652,36 @@ internal sealed class ProgramCompileTimeReflection : ICompileTimeReflection
             .Select(declaration => ToReflectedType(declaration, name))
             .OfType<ReflectedModuleType>()
             .ToList();
-        return new ReflectedModule(name, functions, types);
+        var globals = _program.GlobalVariables
+            .Where(global => IsInModule(global, name))
+            .ToList();
+        var constants = _compileTimeConstants
+            .Where(constant => IsInModule(constant, name))
+            .ToList();
+        var interfaces = _program.Interfaces
+            .Where(interfaceNode => IsInModule(interfaceNode, name))
+            .ToList();
+        var requirements = _program.Requirements
+            .Where(requirement => IsInModule(requirement, name))
+            .ToList();
+        var attributeDeclarations = _program.AttributeDeclarations
+            .Where(attribute => IsInModule(attribute, name))
+            .ToList();
+        var attributes = _program.Declarations
+            .OfType<ModuleDeclarationNode>()
+            .Where(module => string.Equals(module.Name, name, StringComparison.Ordinal))
+            .SelectMany(module => module.Attributes)
+            .ToList();
+        return new ReflectedModule(
+            name,
+            functions,
+            types,
+            globals,
+            constants,
+            interfaces,
+            requirements,
+            attributeDeclarations,
+            attributes);
     }
 
     private bool IsInModule(SyntaxNode syntax, string moduleName) =>

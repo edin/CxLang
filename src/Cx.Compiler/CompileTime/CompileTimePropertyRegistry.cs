@@ -26,6 +26,20 @@ internal sealed class CompileTimePropertyRegistry
 
     public static CompileTimePropertyRegistry Default => DefaultRegistry.Value;
 
+    public IReadOnlyList<string> GetPropertyNames(Type receiverType)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        for (var type = receiverType; type is not null; type = type.BaseType)
+        {
+            foreach (var key in _properties.Keys.Where(key => key.ReceiverType == type))
+            {
+                names.Add(key.PropertyName);
+            }
+        }
+
+        return names.OrderBy(name => name, StringComparer.Ordinal).ToList();
+    }
+
     internal static CompileTimePropertyRegistry CreateFromBindings(
         params CompileTimeTypeBinding[] bindings) =>
         CreateFromBindings((IEnumerable<CompileTimeTypeBinding>)bindings);

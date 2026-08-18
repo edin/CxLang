@@ -165,8 +165,15 @@ fixed array.
 
 ## Modules and names
 
-Modules provide semantic ownership and visibility, but current source syntax
-uses dots for both module qualification and member access:
+Modules provide semantic ownership and visibility. Module declarations can
+carry attributes that merge across all files contributing to the same logical
+module, and compile-time code can inspect them through `module.attributes` and
+`module.attribute("name")`. The `program` reflection root exposes projected
+modules through `program.modules` and `program.module(name)`; modules outside
+the compilation's import graph are intentionally absent.
+
+Current source syntax uses dots for both module qualification and member
+access:
 
 ```cx
 geometry.core.Point.origin()
@@ -180,7 +187,7 @@ Geometry.Core::Point.origin()
 Geometry.Core::CreatePoint()
 ```
 
-That form is a design proposal, not implemented CX syntax. Casing is likewise
+The `::` form is a design proposal, not implemented CX syntax. Casing is likewise
 a project convention rather than grammar; lowercase, PascalCase, and mixed
 module styles should not change name resolution.
 
