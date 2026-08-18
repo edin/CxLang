@@ -9,12 +9,12 @@ public sealed class SyntaxSpanTests
     [Fact]
     public void Parse_AssignsSignificantSourceSpansWithoutLeadingTrivia()
     {
-        const string source = """
+        var source = """
             // entry point
             fn main() -> int {
                 return 1 + 2;
             }
-            """;
+            """.ReplaceLineEndings("\n");
 
         var program = CompilerTestHelpers.Parse(source);
         var function = Assert.Single(program.Functions);

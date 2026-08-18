@@ -1,0 +1,35 @@
+module Dino;
+
+struct Dino {
+    name: String;
+    age: Int;
+}
+
+const dino = Dino { name: "Rex", age: 5 };
+
+macro SomeStuff() {
+    printf("This is Macro Stuff");
+}
+
+fn main() {
+
+    use SomeStuff();
+    use SomeStuff();
+    use SomeStuff();
+    use SomeStuff();
+    use SomeStuff();
+    
+
+
+    let dino: Dino = Dino { name: "Rex", age: 5 };
+
+    let dinos: Dino[] = { 
+        { name: "Rex", age: 5 },
+        { name: "Triceratops", age: 3 },
+        { name: "Velociraptor", age: 2 }
+    };
+
+    for dino in dinos {
+        printf("Dino: {%s}, Age: {%d}", dino.name, dino.age);
+    }
+}

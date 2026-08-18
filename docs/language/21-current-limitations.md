@@ -249,20 +249,6 @@ Current workaround: keep the macro invocation in the binding file. The likely
 fault area is cross-source macro expansion, declaration ownership, or module
 visibility.
 
-### Aggregate reassignment lowering
-
-A named struct initializer is reliable in a declaration. A direct assignment
-of a named aggregate initializer has produced invalid C grouping in current
-experiments:
-
-```cx
-resource = Resource { value: 2 };
-```
-
-Current workaround: return the value from a factory expression and assign that
-result, or initialize a temporary and assign it. This path needs a focused
-end-to-end regression test before being presented as fully supported.
-
 ### Mutable reference iteration warnings
 
 Mutable reference `foreach` is implemented, but some lowered contiguous loops
@@ -279,7 +265,7 @@ limitations or confirmed defects:
   free functions, without making casing semantic;
 - evaluate simplifying `Disposable<T>` to `Disposable` with implicit `Self`;
 - strengthen generic static-factory and `Self` specialization coverage;
-- expand aggregate-assignment and mutable-reference-iteration native tests;
+- expand mutable-reference-iteration native tests;
 - move PHP binding composition into an application or dedicated composition
   module after cross-source generation is fixed; and
 - stabilize compile-time reflection names before treating them as a public

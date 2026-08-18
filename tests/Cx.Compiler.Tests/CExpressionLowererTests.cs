@@ -97,6 +97,29 @@ public sealed class CExpressionLowererTests
     }
 
     [Fact]
+    public void LowerSimple_UsesAssignmentTargetTypeForContextualInitializer()
+    {
+        var location = TestLocation();
+        var target = new NameExpressionNode(location, "point");
+        target.Semantic.Type = new TypeRef.Named("Point", []);
+        var assignment = new AssignmentExpressionNode(
+            location,
+            target,
+            AssignmentOperator.Assign,
+            new InitializerExpressionNode(
+                location,
+                [],
+                [new LiteralExpressionNode(location, "1"), new LiteralExpressionNode(location, "2")]));
+
+        var lowered = Assert.IsType<CAssignmentExpression>(
+            new CExpressionLowerer(new TestContext()).LowerSimple(assignment));
+
+        var initializer = Assert.IsType<CInitializerExpression>(lowered.Value);
+        Assert.Equal("Point", AssertNamedType(initializer.Type));
+        Assert.Equal(2, initializer.Values.Count);
+    }
+
+    [Fact]
     public void LowerSimple_LowersMemberExpressionWithFallbackOrContextOverride()
     {
         var location = TestLocation();

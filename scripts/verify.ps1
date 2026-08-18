@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$CoreOnly
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -28,14 +30,22 @@ function Invoke-NativeStep {
 
 Push-Location $repositoryRoot
 try {
-    Invoke-NativeStep "Build solution" "dotnet" @(
-        "build", "Cx.sln",
+    $verificationTarget = if ($CoreOnly) {
+        "tests/Cx.Compiler.Tests/Cx.Compiler.Tests.csproj"
+    }
+    else {
+        "Cx.sln"
+    }
+    $buildName = if ($CoreOnly) { "Build compiler, CLI, and tests" } else { "Build solution" }
+
+    Invoke-NativeStep $buildName "dotnet" @(
+        "build", $verificationTarget,
         "--configuration", "Release",
         "--verbosity", "minimal"
     )
 
     Invoke-NativeStep "Run compiler tests" "dotnet" @(
-        "test", "Cx.sln",
+        "test", $verificationTarget,
         "--configuration", "Release",
         "--no-build",
         "--verbosity", "minimal"
@@ -69,7 +79,9 @@ try {
         "check", "--generic-raw-audit"
     )
 
-    Invoke-NativeStep "Audit C backend dependencies" "powershell" @(
+    $currentPowerShell = (Get-Process -Id $PID).Path
+    Invoke-NativeStep "Audit C backend dependencies" $currentPowerShell @(
+        "-NoProfile",
         "-ExecutionPolicy", "Bypass",
         "-File", "scripts/audit-c-backend.ps1"
     )

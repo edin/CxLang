@@ -5,7 +5,7 @@ public sealed class RawStringTests
     [Fact]
     public void Compile_LowersRawStringToEscapedCStringWithoutInterpretingContent()
     {
-        CompilerTestHelpers.VerifyCompilation(
+        var source =
             """"
             fn text() -> const char* {
                 return """line\n "quoted"
@@ -15,7 +15,9 @@ public sealed class RawStringTests
             fn main() -> int {
                 return text()[0] == 'l' ? 0 : 1;
             }
-            """")
+            """".ReplaceLineEndings("\n");
+
+        CompilerTestHelpers.VerifyCompilation(source)
             .Succeeds()
             .OutputContains("return \"line\\\\n \\\"quoted\\\"\\nnext\";");
     }

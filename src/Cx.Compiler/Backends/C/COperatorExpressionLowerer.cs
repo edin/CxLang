@@ -37,6 +37,14 @@ internal sealed class COperatorExpressionLowerer(ICExpressionLoweringContext con
         var value = context.LowerExpression(assignment.Value);
         var target = context.LowerExpression(assignment.Target);
 
+        if (assignment.Operator == AssignmentOperator.Assign
+            && value is CInitializerExpression { Type: null } initializer)
+        {
+            var targetType = assignment.Target.Semantic.Type
+                ?? throw CEmissionGuards.UnresolvedExpressionType(assignment.Target);
+            value = initializer with { Type = context.LowerTypeRef(targetType) };
+        }
+
         return new CAssignmentExpression(target, assignment.Operator.ToSourceText(), value);
     }
 

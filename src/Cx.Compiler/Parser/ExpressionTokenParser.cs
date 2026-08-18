@@ -1240,6 +1240,17 @@ internal sealed class ExpressionTokenParser
             return false;
         }
 
+        TypeNode? typeNode = null;
+        if (typeTokens.Count > 0)
+        {
+            typeNode = TypeTokenParser.TryParse(typeTokens);
+            if (typeNode is null)
+            {
+                Restore(position);
+                return false;
+            }
+        }
+
         var openBrace = Match(TokenType.LBrace);
         if (openBrace is null)
         {
@@ -1279,9 +1290,6 @@ internal sealed class ExpressionTokenParser
             return false;
         }
 
-        TypeNode? typeNode = typeTokens.Count == 0
-            ? null
-            : TypeTokenParser.Parse(typeTokens);
         expression = new InitializerExpressionNode(
             typeNode?.Location ?? openBrace.Location,
             fields,

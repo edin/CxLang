@@ -324,6 +324,18 @@ public sealed class ExpressionTokenParserTests
     }
 
     [Fact]
+    public void ParseExpression_ParsesTypedInitializerAsAssignmentValue()
+    {
+        var expression = ParseReturnedExpression("point = Point { x: 10, y: 20 }");
+
+        var assignment = Assert.IsType<AssignmentExpressionNode>(expression);
+        Assert.Equal("point", Assert.IsType<NameExpressionNode>(assignment.Target).Name);
+        var initializer = Assert.IsType<InitializerExpressionNode>(assignment.Value);
+        Assert.Equal("Point", initializer.TypeNameNode?.ToSourceText());
+        Assert.Equal(["x", "y"], initializer.Fields.Select(field => field.Name).ToList());
+    }
+
+    [Fact]
     public void ParseExpression_ParsesUntypedInitializerValues()
     {
         var expression = ParseReturnedExpression("{ 1, 2, 3 }");
