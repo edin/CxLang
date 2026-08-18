@@ -7,6 +7,7 @@ internal sealed record CNameManglerOptions(bool UseModulePrefixes = false);
 
 internal sealed class CNameMangler(
     Func<TypeRef, string> lowerSpecializationType,
+    Func<TypeRef, string> lowerOwnerType,
     Func<string, string> sanitizeTypeName,
     CNameManglerOptions? options = null,
     IReadOnlySet<string>? moduleCollisionKeys = null,
@@ -22,7 +23,9 @@ internal sealed class CNameMangler(
 
     public string FunctionName(FunctionNode function) =>
         ModulePrefix(function) +
-        (TypeTextOrNull(function.OwnerTypeNode) is { } ownerType ? $"{ownerType}_{function.Name}" : function.Name) +
+        (LowerOwnerTypeOrNull(function.OwnerTypeNode) is { } ownerType
+            ? $"{ownerType}_{DeclaredName(function)}"
+            : DeclaredName(function)) +
         OverloadSuffix(function) +
         TypeArgumentSuffix(function.TypeArgumentNodes);
 
@@ -63,6 +66,9 @@ internal sealed class CNameMangler(
     private string LowerTypeArgument(TypeNode typeNode) =>
         lowerSpecializationType(RequireType(typeNode));
 
+    private string? LowerOwnerTypeOrNull(TypeNode? typeNode) =>
+        typeNode is null ? null : lowerOwnerType(RequireType(typeNode));
+
     private string OverloadSuffix(FunctionNode function) =>
         !_overloadKeys.Contains(OverloadIdentity(function))
             ? string.Empty
@@ -89,7 +95,7 @@ internal sealed class CNameMangler(
     private string ModulePrefix(FunctionNode function)
     {
         if ((!_options.UseModulePrefixes && !_moduleCollisionKeys.Contains(FunctionIdentity(function)))
-            || function.Name == "main"
+            || DeclaredName(function) == "main"
             || string.IsNullOrWhiteSpace(function.Semantic.ModuleName))
         {
             return string.Empty;
@@ -106,7 +112,7 @@ internal sealed class CNameMangler(
         var owner = TypeTextOrNull(function.OwnerTypeNode) ?? string.Empty;
         var arguments = string.Join(",", function.TypeArgumentNodes.Select(TypeNodeIdentity));
         var parameters = string.Join(",", function.Parameters.Select(parameter => TypeNodeIdentity(parameter.TypeNode)));
-        return $"{owner}.{function.Name}<{arguments}>({parameters})";
+        return $"{owner}.{DeclaredName(function)}<{arguments}>({parameters})";
     }
 
     private static string OverloadIdentity(FunctionNode function)
@@ -116,7 +122,7 @@ internal sealed class CNameMangler(
         var arguments = string.Join(
             ",",
             function.TypeArgumentNodes.Select(TypeNodeIdentity));
-        return $"{module}:{owner}.{function.Name}<{arguments}>";
+        return $"{module}:{owner}.{DeclaredName(function)}<{arguments}>";
     }
 
     private static string ParameterIdentity(FunctionNode function) =>
@@ -132,6 +138,9 @@ internal sealed class CNameMangler(
         typeNode is null
             ? string.Empty
             : TypeIdentity.SpecializationKey(RequireType(typeNode));
+
+    private static string DeclaredName(FunctionNode function) =>
+        function.Semantic.DeclaredName ?? function.Name;
 
     private static TypeRef RequireType(TypeNode typeNode) =>
         typeNode.Semantic.Type is { } type

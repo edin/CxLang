@@ -29,6 +29,7 @@ internal sealed class CBackendContext
         var abiNames = new CAbiNameService(typeAdapters);
         var nameMangler = new CNameMangler(
             abiNames.SpecializationTypeName,
+            type => abiNames.SanitizeTypeName(abiNames.LowerType(type)),
             abiNames.SanitizeTypeName,
             nameManglerOptions,
             nameManglerOptions is null

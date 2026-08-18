@@ -17,6 +17,16 @@ public sealed class CNameManglerTests
     }
 
     [Fact]
+    public void FunctionName_UsesDeclaredNameForQualifiedImportedFunction()
+    {
+        var mangler = CreateMangler();
+        var function = Function(ownerType: null, name: "math.answer");
+        function.Semantic.DeclaredName = "answer";
+
+        Assert.Equal("answer", mangler.FunctionName(function));
+    }
+
+    [Fact]
     public void FunctionName_PreservesCurrentMethodFunctionName()
     {
         var mangler = CreateMangler();
@@ -122,12 +132,16 @@ public sealed class CNameManglerTests
 
     private static CNameMangler CreateMangler(
         CNameManglerOptions? options = null,
-        IReadOnlySet<string>? overloadKeys = null) =>
-        new(
-            type => new CAbiNameService([]).SpecializationTypeName(type),
+        IReadOnlySet<string>? overloadKeys = null)
+    {
+        var abiNames = new CAbiNameService([]);
+        return new(
+            abiNames.SpecializationTypeName,
+            type => abiNames.SanitizeTypeName(abiNames.LowerType(type)),
             type => type.Replace("*", "_ptr"),
             options,
             overloadKeys: overloadKeys);
+    }
 
     private static FunctionNode Function(
         string? ownerType,

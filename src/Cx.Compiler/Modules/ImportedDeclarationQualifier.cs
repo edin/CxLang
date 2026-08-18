@@ -44,6 +44,12 @@ internal static class ImportedDeclarationQualifier
                             alias,
                             typeNames),
                     })
+                    .ToList()).WithMethods(structNode.Methods
+                    .Select(method => QualifyOwnedFunction(
+                        method,
+                        method.OwnerTypeNode ?? TypeNode.Named(method.Location, structNode.Name),
+                        alias,
+                        typeNames))
                     .ToList())).ToList(),
             TypeAdapters = program.TypeAdapters.Select(adapter => (adapter with
                 {
@@ -80,6 +86,11 @@ internal static class ImportedDeclarationQualifier
             {
                 Name = ImportedTypeRewriter.QualifyName(alias, union.Name),
                 Variants = union.Variants.Select(variant => variant with { TypeNode = ImportedTypeRewriter.Qualify(variant.TypeNode, alias, typeNames) }).ToList(),
+                Methods = union.Methods.Select(method => QualifyOwnedFunction(
+                    method,
+                    method.OwnerTypeNode ?? TypeNode.Named(method.Location, union.Name),
+                    alias,
+                    typeNames)).ToList(),
             }).ToList(),
             GlobalVariables = program.GlobalVariables.Select(global => global with
             {
@@ -160,6 +171,19 @@ internal static class ImportedDeclarationQualifier
         {
             ReturnTypeNode = ImportedTypeRewriter.Qualify(function.ReturnTypeNode, alias, typeNames),
             Parameters = function.Parameters.Select(parameter => QualifyParameter(parameter, alias, typeNames)).ToList(),
+        };
+
+    private static FunctionNode QualifyOwnedFunction(
+        FunctionNode function,
+        TypeNode ownerType,
+        string alias,
+        IReadOnlySet<string> typeNames) =>
+        QualifyFunction(function, alias, typeNames) with
+        {
+            OwnerTypeNode = ImportedTypeRewriter.Qualify(
+                ownerType,
+                alias,
+                typeNames),
         };
 
     private static ParameterNode QualifyParameter(

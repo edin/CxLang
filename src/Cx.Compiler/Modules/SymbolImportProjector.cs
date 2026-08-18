@@ -58,6 +58,12 @@ internal static class SymbolImportProjector
                                 symbols,
                                 typeNames),
                         })
+                        .ToList()).WithMethods(structNode.Methods
+                        .Select(method => RenameOwnedFunction(
+                            method,
+                            symbols[structNode.Name],
+                            symbols,
+                            typeNames))
                         .ToList()))
                 .ToList(),
             TypeAdapters = program.TypeAdapters
@@ -96,6 +102,11 @@ internal static class SymbolImportProjector
                 {
                     Name = symbols[union.Name],
                     Variants = union.Variants.Select(variant => variant with { TypeNode = ImportedTypeRewriter.Project(variant.TypeNode, symbols, typeNames) }).ToList(),
+                    Methods = union.Methods.Select(method => RenameOwnedFunction(
+                        method,
+                        symbols[union.Name],
+                        symbols,
+                        typeNames)).ToList(),
                 })
                 .ToList(),
             GlobalVariables = program.GlobalVariables
@@ -216,6 +227,18 @@ internal static class SymbolImportProjector
             Name = visibleName,
             ReturnTypeNode = ImportedTypeRewriter.Project(function.ReturnTypeNode, symbols, typeNames),
             Parameters = function.Parameters.Select(parameter => RenameParameter(parameter, symbols, typeNames)).ToList(),
+        };
+
+    private static FunctionNode RenameOwnedFunction(
+        FunctionNode function,
+        string ownerName,
+        IReadOnlyDictionary<string, string> symbols,
+        IReadOnlySet<string> typeNames) =>
+        RenameFunction(function, function.Name, symbols, typeNames) with
+        {
+            OwnerTypeNode = ImportedTypeRewriter.Rename(
+                function.OwnerTypeNode,
+                ownerName),
         };
 
     private static ParameterNode RenameParameter(

@@ -174,11 +174,11 @@ The alias applies to types, functions, globals, compile-time symbols, and other
 public declarations from that module. A qualified import does not also leak
 those names unqualified into the importing scope.
 
-Semantic resolution supports these qualified identities. The current C backend
-still has a known gap for some calls to CX-defined functions through a module
-alias: the dotted source name can survive into emitted C. Qualified imports of
-C extern modules lower through their ABI identities, while CX-defined calls
-should use a plain or selective import until that backend gap is closed.
+Semantic resolution carries these qualified identities through overload
+selection and then lowers calls through the declaration's canonical identity.
+The generated C therefore uses valid C symbols rather than preserving the
+dotted source spelling. This applies to CX functions, static methods, and C
+extern declarations.
 
 Import aliases are local to their containing module. Two modules in one source
 file may use the same alias for different targets without sharing state.
@@ -416,8 +416,6 @@ building, and testing chapter.
 - Qualified import aliases do not create unqualified symbol aliases.
 - Module attributes merge across all files in one logical module and cannot be
   repeated.
-- Some qualified calls to CX-defined module functions still require a backend
-  lowering fix; plain and selective imports avoid the dotted-name residue.
 - C names are module-qualified when disambiguation requires it, not necessarily
   for every declaration.
 

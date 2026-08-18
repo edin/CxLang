@@ -172,24 +172,16 @@ module, and compile-time code can inspect them through `module.attributes` and
 modules through `program.modules` and `program.module(name)`; modules outside
 the compilation's import graph are intentionally absent.
 
-Current source syntax uses dots for both module qualification and member
-access:
+Source syntax uses dots for both module qualification and member access:
 
 ```cx
 geometry.core.Point.origin()
 ```
 
-A possible future design would reserve `::` for the module-to-declaration
-boundary while retaining `.` for type and value members:
-
-```cx
-Geometry.Core::Point.origin()
-Geometry.Core::CreatePoint()
-```
-
-The `::` form is a design proposal, not implemented CX syntax. Casing is likewise
-a project convention rather than grammar; lowercase, PascalCase, and mixed
-module styles should not change name resolution.
+Resolution consumes the module, type, and member chain semantically, so no
+separate module separator is required. Casing is a project convention rather
+than grammar; lowercase, PascalCase, and mixed module styles do not change name
+resolution.
 
 Other current module boundaries are:
 
@@ -230,16 +222,6 @@ formatting, or documentation-generation toolchain.
 
 The following are implementation defects or incomplete lowering paths rather
 than intended language restrictions.
-
-### Qualified CX module calls
-
-Semantic lookup understands qualified module identities, but some calls to
-CX-defined functions through a module alias can retain their dotted source name
-in generated C. GCC then sees an invalid C expression.
-
-Current workaround: use a plain or selective import for CX functions. Qualified
-imports of C extern modules use their ABI identity and do not have the same
-renaming problem.
 
 ### StringView in a generated test runner
 
@@ -293,8 +275,6 @@ polish for warning-clean native builds.
 These items are not yet specified strongly enough to call them permanent
 limitations or confirmed defects:
 
-- decide whether module qualification remains dotted or adopts
-  `module.path::Declaration`;
 - decide whether the standard style uses lowercase or PascalCase modules and
   free functions, without making casing semantic;
 - evaluate simplifying `Disposable<T>` to `Disposable` with implicit `Self`;

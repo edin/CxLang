@@ -39,7 +39,9 @@ public sealed class PublicVisibilityTests
                 }
             }
             """)
-            .Succeeds();
+            .Succeeds()
+            .OutputContains("return answer();")
+            .OutputOmits("math.answer");
     }
 
     [Fact]
@@ -62,6 +64,60 @@ public sealed class PublicVisibilityTests
             .Succeeds()
             .OutputContains("return write(10);")
             .OutputOmits("native.write");
+    }
+
+    [Fact]
+    public void CompileToC_LowersQualifiedOverloadedFunctionFromSemanticIdentity()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
+                import lib.math as math;
+
+                fn main() -> int {
+                    return math.answer(10);
+                }
+            }
+
+            module lib.math {
+                public fn answer(value: int) -> int {
+                    return value;
+                }
+
+                public fn answer(value: double) -> int {
+                    return 2;
+                }
+            }
+            """)
+            .Succeeds()
+            .OutputContains("return answer_int(10);")
+            .OutputOmits("math.answer");
+    }
+
+    [Fact]
+    public void CompileToC_LowersQualifiedStaticMethodFromSemanticIdentity()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            module app.main {
+                import lib.math as math;
+
+                fn main() -> int {
+                    return math.Calculator.answer();
+                }
+            }
+
+            module lib.math {
+                public struct Calculator {
+                    public static fn answer() -> int {
+                        return 42;
+                    }
+                }
+            }
+            """)
+            .Succeeds()
+            .OutputContains("return Calculator_answer();")
+            .OutputOmits("math.Calculator");
     }
 
     [Fact]

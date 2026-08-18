@@ -16,6 +16,8 @@ internal sealed class SemanticInfo
 
     public string? ModuleName { get; set; }
 
+    public string? DeclaredName { get; set; }
+
     public ResolvedCallInfo? ResolvedCall { get; set; }
 
     public ResolvedExternCallInfo? ResolvedExternCall { get; set; }
@@ -68,6 +70,7 @@ internal sealed class SemanticInfo
             Symbol = Symbol,
             Origin = Origin,
             ModuleName = ModuleName,
+            DeclaredName = DeclaredName,
             ResolvedCall = ResolvedCall,
             ResolvedExternCall = ResolvedExternCall,
             CoreExternCall = CoreExternCall,

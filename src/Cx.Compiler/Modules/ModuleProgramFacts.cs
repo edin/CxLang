@@ -122,6 +122,10 @@ internal static class ModuleProgramFacts
         string moduleName)
     {
         node.Semantic.ModuleName = moduleName;
+        if (node is FunctionNode function)
+        {
+            node.Semantic.DeclaredName ??= function.Name;
+        }
 
         if (node is not TopLevelNode declaration)
         {
