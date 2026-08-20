@@ -21,7 +21,7 @@ public sealed class OperatorOverloadTests
         var function = Assert.Single(Assert.Single(program.Structs).Methods);
         Assert.Equal(OperatorKind.Add, function.OperatorKind);
         Assert.Equal("operator_add", function.Name);
-        Assert.Equal("Self", function.Parameters[0].TypeNode!.ToSourceText());
+        Assert.Equal("Self*", function.Parameters[0].TypeNode!.ToSourceText());
         Assert.Equal("Vec2", function.Parameters[1].TypeNode!.ToSourceText());
     }
 
@@ -40,7 +40,7 @@ public sealed class OperatorOverloadTests
         Assert.Equal(OperatorKind.Add, function.OperatorKind);
         Assert.Equal("operator_add", function.Name);
         Assert.Equal(["self", "other"], function.Parameters.Select(parameter => parameter.Name));
-        Assert.Equal("Self", function.Parameters[0].TypeNode!.ToSourceText());
+        Assert.Equal("Self*", function.Parameters[0].TypeNode!.ToSourceText());
     }
 
     [Fact]
@@ -103,11 +103,11 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("Vec2_operator_add(left, right)");
+            .OutputContains("Vec2_operator_add(&left, right)");
 
         Assert.Equal(
             2,
-            CountOccurrences(test.Result.Output!, "Vec2_operator_add(left, right)"));
+            CountOccurrences(test.Result.Output!, "Vec2_operator_add(&left, right)"));
     }
 
     [Fact]
@@ -136,7 +136,32 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("operator_add", "(left, right)");
+            .OutputContains("operator_add", "(&left, right)");
+    }
+
+    [Fact]
+    public void CompileGenericStructMethod_RetargetsConcreteOperatorReceiver()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            struct Pair<T>
+            where T: Compare<T> {
+                left: T;
+                right: T;
+
+                fn compare() -> int {
+                    return self.left <=> self.right;
+                }
+            }
+
+            fn main() -> int {
+                let pair = Pair<int> { left: 10, right: 20 };
+                return pair.compare();
+            }
+            """)
+            .Succeeds()
+            .OutputContains(
+                "int_operator_compare(&self->left, self->right)");
     }
 
     [Fact]
@@ -169,7 +194,7 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("Vec2_operator_add(left, right)");
+            .OutputContains("Vec2_operator_add(&left, right)");
     }
 
     [Fact]
@@ -201,7 +226,7 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("Score_operator_compare(left, right)");
+            .OutputContains("Score_operator_compare(&left, right)");
     }
 
     [Fact]
@@ -275,7 +300,7 @@ public sealed class OperatorOverloadTests
         {
             Assert.Equal(
                 2,
-                CountOccurrences(test.Result.Output!, $"Number_operator_{name}(left, right)"));
+                CountOccurrences(test.Result.Output!, $"Number_operator_{name}(&left, right)"));
         }
     }
 
@@ -292,7 +317,7 @@ public sealed class OperatorOverloadTests
     }
 
     [Fact]
-    public void ParseOperatorFunction_RejectsPointerReceiver()
+    public void ParseOperatorFunction_AllowsExplicitPointerReceiver()
     {
         CompilerTestHelpers.VerifyProgram(
             """
@@ -302,7 +327,21 @@ public sealed class OperatorOverloadTests
                 }
             }
             """)
-            .HasDiagnostic("receivers must be passed by value");
+            .Parses();
+    }
+
+    [Fact]
+    public void ParseOperatorFunction_RejectsValueReceiver()
+    {
+        CompilerTestHelpers.VerifyProgram(
+            """
+            struct Vec2 {
+                fn operator +(self: Self, right: Vec2) -> Vec2 {
+                    return right;
+                }
+            }
+            """)
+            .HasDiagnostic("pointer to Self");
     }
 
     [Fact]
@@ -336,11 +375,11 @@ public sealed class OperatorOverloadTests
                 value: int;
 
                 fn operator +(other: char) -> Number {
-                    return self;
+                    return *self;
                 }
 
                 fn operator +(other: long) -> Number {
-                    return self;
+                    return *self;
                 }
             }
 
@@ -450,7 +489,7 @@ public sealed class OperatorOverloadTests
             """
             extension int {
                 fn operator +(other: float) -> int {
-                    return self;
+                    return *self;
                 }
             }
 
@@ -475,7 +514,7 @@ public sealed class OperatorOverloadTests
 
             extension int {
                 fn operator +(other: Offset) -> int {
-                    return self + other.value;
+                    return *self + other.value;
                 }
             }
 
@@ -485,7 +524,9 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("int_operator_add(1, offset)");
+            .OutputContains(
+                "int __cx_receiver_0 = 1;",
+                "int_operator_add(&__cx_receiver_0, offset)");
     }
 
     [Fact]
@@ -508,7 +549,7 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("Score_operator_compare(left, right)");
+            .OutputContains("Score_operator_compare(&left, right)");
     }
 
     [Fact]
@@ -564,12 +605,12 @@ public sealed class OperatorOverloadTests
             """)
             .Succeeds()
             .OutputContains(
-                "Value_operator_equal(left, right)",
-                "Value_operator_not_equal(left, right)",
-                "Value_operator_less_than(left, right)",
-                "Value_operator_less_than_or_equal(left, right)",
-                "Value_operator_greater_than(left, right)",
-                "Value_operator_greater_than_or_equal(left, right)");
+                "Value_operator_equal(&left, right)",
+                "Value_operator_not_equal(&left, right)",
+                "Value_operator_less_than(&left, right)",
+                "Value_operator_less_than_or_equal(&left, right)",
+                "Value_operator_greater_than(&left, right)",
+                "Value_operator_greater_than_or_equal(&left, right)");
     }
 
     [Fact]
@@ -643,12 +684,12 @@ public sealed class OperatorOverloadTests
             """)
             .Succeeds()
             .OutputContains(
-                "(Value_operator_compare(left, right)) == 0",
-                "(Value_operator_compare(left, right)) != 0",
-                "(Value_operator_compare(left, right)) < 0",
-                "(Value_operator_compare(left, right)) <= 0",
-                "(Value_operator_compare(left, right)) > 0",
-                "(Value_operator_compare(left, right)) >= 0");
+                "(Value_operator_compare(&left, right)) == 0",
+                "(Value_operator_compare(&left, right)) != 0",
+                "(Value_operator_compare(&left, right)) < 0",
+                "(Value_operator_compare(&left, right)) <= 0",
+                "(Value_operator_compare(&left, right)) > 0",
+                "(Value_operator_compare(&left, right)) >= 0");
     }
 
     [Fact]
@@ -676,10 +717,10 @@ public sealed class OperatorOverloadTests
             """)
             .Succeeds()
             .OutputContains(
-                "Value_operator_equal(left, right)",
-                "!(Value_operator_equal(left, right))",
-                "Value_operator_less_than(left, right)",
-                "(Value_operator_compare(left, right)) <= 0");
+                "Value_operator_equal(&left, right)",
+                "!(Value_operator_equal(&left, right))",
+                "Value_operator_less_than(&left, right)",
+                "(Value_operator_compare(&left, right)) <= 0");
     }
 
     [Fact]
@@ -711,7 +752,7 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("(Score_operator_compare(left, right)) < 0");
+            .OutputContains("(Score_operator_compare(&left, right)) < 0");
     }
 
     [Fact]
@@ -758,13 +799,83 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("(Value_operator_compare(make_left(), make_right())) < 0");
+            .OutputContains(
+                "Value __cx_receiver_0 = make_left();",
+                "(Value_operator_compare(&__cx_receiver_0, make_right())) < 0");
 
         Assert.Equal(
             1,
             CountOccurrences(
                 test.Result.Output!,
-                "Value_operator_compare(make_left(), make_right())"));
+                "Value_operator_compare(&__cx_receiver_0, make_right())"));
+    }
+
+    [Fact]
+    public void CompileTemporaryOperatorReceiver_DisposesOwnedTemporary()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            struct Resource {
+                value: int;
+
+                fn dispose() -> void {}
+
+                fn operator ==(other: Resource) -> bool {
+                    return self.value == other.value;
+                }
+            }
+
+            fn create_resource() -> Resource {
+                return Resource { value: 10 };
+            }
+
+            fn are_equal(other: Resource) -> bool {
+                return create_resource() == other;
+            }
+
+            fn main() -> int {
+                let other = Resource { value: 10 };
+                return are_equal(other);
+            }
+            """)
+            .Succeeds()
+            .OutputContains(
+                "Resource __cx_receiver_0 = create_resource();",
+                "Resource_operator_equal(&__cx_receiver_0, other)",
+                "Resource_dispose(&__cx_receiver_0);",
+                "return __cx_using_return_0;");
+    }
+
+    [Fact]
+    public void CompileTemporaryOperatorReceiver_InWhileConditionRunsEachIteration()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            struct Value {
+                data: int;
+
+                fn operator <(other: Value) -> bool {
+                    return self.data < other.data;
+                }
+            }
+
+            fn next_value() -> Value {
+                return Value { data: 10 };
+            }
+
+            fn main() -> int {
+                let limit = Value { data: 20 };
+                while (next_value() < limit) {
+                    return 1;
+                }
+                return 0;
+            }
+            """)
+            .Succeeds()
+            .OutputContains(
+                "while (1)",
+                "Value __cx_receiver_0 = next_value();",
+                "if (!Value_operator_less_than(&__cx_receiver_0, limit))");
     }
 
     [Theory]
@@ -877,7 +988,7 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("(Score_operator_compare(left, right)) == 0");
+            .OutputContains("(Score_operator_compare(&left, right)) == 0");
     }
 
     [Fact]
@@ -899,7 +1010,7 @@ public sealed class OperatorOverloadTests
             .Succeeds()
             .OutputContains(
                 "return left == right;",
-                "StringView_operator_equal(left, right)");
+                "StringView_operator_equal(&left, right)");
     }
 
     [Fact]
@@ -917,7 +1028,7 @@ public sealed class OperatorOverloadTests
             }
             """)
             .Succeeds()
-            .OutputContains("return int_operator_compare(left, right);");
+            .OutputContains("return int_operator_compare(&left, right);");
     }
 
     private static int CountOccurrences(string text, string value)

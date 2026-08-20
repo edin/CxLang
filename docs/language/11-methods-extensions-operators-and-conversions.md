@@ -122,9 +122,18 @@ let infix = left + right;
 let explicit = left.operator +(right);
 ```
 
-Operator methods can live on their type or in an extension. The receiver is
-passed by value, and an identical intrinsic operator signature on a primitive
-type cannot be replaced by an extension.
+Operator methods can live on their type or in an extension. Like ordinary
+instance methods, they receive an implicit `self: Self*` pointer. CX takes the
+address of an addressable left operand automatically:
+
+```cx
+let total = left + right; // calls the operator with &left
+```
+
+When the left operand is a temporary, CX materializes it once before taking
+its address. If the temporary provides `dispose() -> void`, the generated
+binding participates in normal scoped cleanup. An identical intrinsic
+operator signature on a primitive type cannot be replaced by an extension.
 
 CX currently supports declarations for these binary operators:
 

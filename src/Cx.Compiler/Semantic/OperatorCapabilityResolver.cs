@@ -36,7 +36,7 @@ internal sealed class OperatorCapabilityResolver(
             return
             [
                 new OperatorCapability(
-                    receiverType,
+                    new TypeRef.Pointer(receiverType),
                     rightType,
                     intrinsicResult),
             ];

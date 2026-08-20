@@ -110,7 +110,7 @@ internal static class CoreCxCallAnnotationPass
                     AnnotateDirectCall(
                         binary.Semantic,
                         binary.Semantic.ResolvedCall,
-                        receiver: null);
+                        binary.Left);
                     break;
                 case MemberExpressionNode member:
                     AnnotateDirectCall(
@@ -136,10 +136,13 @@ internal static class CoreCxCallAnnotationPass
         if (resolved.IsInstance && receiver is not null)
         {
             var receiverType = receiver.Semantic.Type
-                ?? receiver.Semantic.Symbol?.TypeRef;
-            var selfType = resolved.Function.Parameters
+                ?? receiver.Semantic.Symbol?.TypeRef
+                ?? ResolvedOwnerType(resolved.Function);
+            var selfTypeNode = resolved.Function.Parameters
                 .FirstOrDefault(parameter => !parameter.IsVariadic)
-                ?.TypeNode?.Semantic.Type;
+                ?.TypeNode;
+            var selfType = selfTypeNode?.Semantic.Type
+                ?? selfTypeNode?.Syntax.ToUnresolvedTypeRef();
             if (receiverType is not null && selfType is not null)
             {
                 adaptation = ReceiverAdaptation(receiverType, selfType);
@@ -167,6 +170,11 @@ internal static class CoreCxCallAnnotationPass
             _ => CoreReceiverAdaptation.Identity,
         };
     }
+
+    private static TypeRef? ResolvedOwnerType(FunctionNode function) =>
+        function.Semantic.CoreFunction?.OwnerType
+        ?? function.OwnerTypeNode?.Semantic.Type
+        ?? function.OwnerTypeNode?.Syntax.ToUnresolvedTypeRef();
 
     private static void AnnotateConstructorCall(
         CallExpressionNode call,

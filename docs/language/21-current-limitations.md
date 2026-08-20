@@ -223,21 +223,6 @@ formatting, or documentation-generation toolchain.
 The following are implementation defects or incomplete lowering paths rather
 than intended language restrictions.
 
-### StringView in a generated test runner
-
-In the current checkout, this command reaches GCC with an invalid generated
-call in `StringView_is_equal`:
-
-```powershell
-cx test examples/test-syntax.cx
-```
-
-The generated function passes `StringView*` where
-`StringView_operator_equal` expects a `StringView` value. The minimal
-[`testing-guide.cx`](../../examples/testing-guide.cx) test runner compiles and
-runs correctly, so this is a specific lowering/reachability interaction rather
-than a general failure of `cx test`.
-
 ### Cross-source module-generation placement
 
 The PHP extension currently keeps its file-level `use PhpModule();` in

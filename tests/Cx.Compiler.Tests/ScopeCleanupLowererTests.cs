@@ -269,6 +269,38 @@ public sealed class ScopeCleanupLowererTests
             .HasDiagnostic("dispose");
     }
 
+    [Fact]
+    public void CompileToC_ExplicitDisposeOnTemporaryRunsOnce()
+    {
+        var test = CompilerTestHelpers.VerifyCompilation(
+            """
+            struct Resource {
+                value: int;
+
+                fn dispose() -> void {}
+            }
+
+            fn create_resource() -> Resource {
+                return Resource { value: 1 };
+            }
+
+            fn main() -> int {
+                create_resource().dispose();
+                return 0;
+            }
+            """)
+            .Succeeds()
+            .OutputContains(
+                "Resource __cx_receiver_0 = create_resource();",
+                "Resource_dispose(&__cx_receiver_0);");
+
+        Assert.Equal(
+            1,
+            test.Result.Output!.Split(
+                "Resource_dispose(&__cx_receiver_0);",
+                StringSplitOptions.None).Length - 1);
+    }
+
     private static ProgramNode Lower(string source) =>
         ScopeCleanupLowerer.Lower(CompilerTestHelpers.Parse(source));
 

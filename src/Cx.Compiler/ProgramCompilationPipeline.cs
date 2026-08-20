@@ -160,6 +160,35 @@ internal sealed class ProgramCompilationPipeline(
             semanticModel = semanticResolution.SemanticModel;
         }
 
+        var receiverMaterialization = profiler.Measure(
+            "Receiver materialization",
+            () => ReceiverMaterializationPass.Apply(
+                mergedProgram,
+                diagnostics,
+                semanticModel.GetOrCreateFunctionCatalog(mergedProgram)));
+        if (diagnostics.HasErrors)
+        {
+            return (null, diagnostics);
+        }
+
+        if (receiverMaterialization.Changed)
+        {
+            mergedProgram = profiler.Measure(
+                "Receiver cleanup lowering",
+                () => ScopeCleanupLowerer.Lower(
+                    receiverMaterialization.Program));
+            semanticResolution = semanticResolutionPipeline.Resolve(
+                mergedProgram,
+                "Receiver materialization");
+            if (semanticResolution is null)
+            {
+                return (null, diagnostics);
+            }
+
+            mergedProgram = semanticResolution.Program;
+            semanticModel = semanticResolution.SemanticModel;
+        }
+
         profiler.Measure(
             "Semantic analysis",
             () => new SemanticAnalyzer(diagnostics, inputPrograms)

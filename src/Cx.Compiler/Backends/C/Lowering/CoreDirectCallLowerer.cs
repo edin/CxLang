@@ -32,15 +32,23 @@ internal sealed class CoreDirectCallLowerer(
             {
                 IsInstance: true,
                 Function.OperatorKind: not null,
-            })
+                ReceiverAdaptation: { } adaptation,
+            }
+            || operands.Count == 0
+            || TryBuildReceiver(operands[0], adaptation) is not { } receiver)
         {
             return null;
         }
 
         var functionReference = ResolveFunctionReference(directCall);
-        return functionReference is null
-            ? null
-            : new CCallExpression(functionReference, operands.Select(lowerExpression).ToList());
+        if (functionReference is null)
+        {
+            return null;
+        }
+
+        var loweredOperands = operands.Skip(1).Select(lowerExpression).ToList();
+        loweredOperands.Insert(0, receiver);
+        return new CCallExpression(functionReference, loweredOperands);
     }
 
     public CExpression? TryLowerInstance(

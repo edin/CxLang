@@ -26,11 +26,11 @@ static fn int.hash(value: int) -> u64 {
 
 extension int {
     fn operator <=>(other: int) -> int {
-        if (self < other) {
+        if (*self < other) {
             return -1;
         }
 
-        if (self > other) {
+        if (*self > other) {
             return 1;
         }
 

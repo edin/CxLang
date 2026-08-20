@@ -1600,11 +1600,11 @@ public sealed partial class Parser
                 $"Binary operator '{function.OperatorKind.Value.ToSourceText()}' expects exactly one explicit right-hand operand.");
         }
 
-        if (function.Parameters.FirstOrDefault()?.TypeNode?.Syntax is PointerTypeSyntaxNode)
+        if (function.Parameters.FirstOrDefault()?.TypeNode?.Syntax is not PointerTypeSyntaxNode)
         {
             _diagnostics.Report(
                 function.Location,
-                "Operator receivers must be passed by value.");
+                "Operator receivers must use a pointer to Self.");
         }
     }
 
@@ -1647,9 +1647,9 @@ public sealed partial class Parser
             && computedParameters is null
             && !HasExplicitReceiverParameter(ownerType, parameters.FirstOrDefault()))
         {
-            var selfTypeNode = operatorKind is null
-                ? TypeNode.Pointer(fnLocation, new NamedTypeSyntaxNode("Self"))
-                : TypeNode.Named(fnLocation, "Self");
+            var selfTypeNode = TypeNode.Pointer(
+                fnLocation,
+                new NamedTypeSyntaxNode("Self"));
             parameters.Insert(0, new ParameterNode(fnLocation, "self", [], IsVariadic: false, TypeNode: selfTypeNode));
         }
 
@@ -2401,13 +2401,9 @@ public sealed partial class Parser
         if (!modifiers.IsStatic
             && parameters.FirstOrDefault()?.Name != "self")
         {
-            var selfTypeNode = operatorKind is null
-                ? TypeNode.Pointer(
-                    fnToken?.Location ?? Current.Location,
-                    new NamedTypeSyntaxNode("Self"))
-                : TypeNode.Named(
-                    fnToken?.Location ?? Current.Location,
-                    "Self");
+            var selfTypeNode = TypeNode.Pointer(
+                fnToken?.Location ?? Current.Location,
+                new NamedTypeSyntaxNode("Self"));
             parameters.Insert(0, new ParameterNode(
                 fnToken?.Location ?? Current.Location,
                 "self",
