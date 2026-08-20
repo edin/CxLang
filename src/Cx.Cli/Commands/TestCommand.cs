@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -37,10 +38,16 @@ internal sealed class TestCommand : Command<TestCommand.Settings>
         [CommandOption("--std")]
         [Description("Run embedded std.core tests without requiring an input file or project.")]
         public bool StandardLibrary { get; init; }
+
+        [CommandOption("--timings")]
+        [Description("Print compiler, native build, and test execution timings.")]
+        public bool Timings { get; init; }
     }
 
     protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        using var timings = new CliTimings(settings.Timings);
+        var planStarted = Stopwatch.GetTimestamp();
         var plan = settings.StandardLibrary
             ? CliServices.ResolveStandardTestPlan(new StandardTestPlanRequest(
                 settings.COutputPath,
@@ -54,6 +61,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings>
                 settings.OutputPath,
                 settings.Compiler,
                 settings.CompilerArgs));
+        timings.RecordProjectResolution(Stopwatch.GetElapsedTime(planStarted));
         if (!plan.Success)
         {
             AnsiConsole.MarkupLineInterpolated($"[red]error:[/] {plan.Error}");
@@ -81,6 +89,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings>
             runAfterBuild: true,
             programArgs: [],
             buildTests: true,
-            testModuleName: testModuleName);
+            testModuleName: testModuleName,
+            timings: timings);
     }
 }

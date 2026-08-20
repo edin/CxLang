@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -30,10 +31,15 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings>
         [Description("Project config path. Defaults to cx.toml in the current directory.")]
         public string? ConfigPath { get; init; }
 
+        [CommandOption("--timings")]
+        [Description("Print compiler and native build timings.")]
+        public bool Timings { get; init; }
     }
 
     protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        using var timings = new CliTimings(settings.Timings);
+        var planStarted = Stopwatch.GetTimestamp();
         var plan = CliServices.ResolveBuildPlan(new BuildPlanRequest(
             settings.InputPath,
             settings.ConfigPath,
@@ -41,12 +47,17 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings>
             settings.OutputPath,
             settings.Compiler,
             settings.CompilerArgs));
+        timings.RecordProjectResolution(Stopwatch.GetElapsedTime(planStarted));
         if (!plan.Success)
         {
             AnsiConsole.MarkupLineInterpolated($"[red]error:[/] {plan.Error}");
             return 2;
         }
 
-        return CliServices.BuildNative(plan.Value, runAfterBuild: false, programArgs: []);
+        return CliServices.BuildNative(
+            plan.Value,
+            runAfterBuild: false,
+            programArgs: [],
+            timings: timings);
     }
 }

@@ -155,15 +155,21 @@ build systems, or checked into experimental output comparisons. It contains
 ordinary C declarations, structs, functions, explicit cleanup, and native
 calls rather than a hidden runtime bytecode format.
 
-Measure compiler phases with:
+All commands that execute the compiler pipeline accept `--timings`:
 
 ```powershell
+cx check --timings
 cx transpile --timings
+cx build --timings
+cx run --timings
+cx test --timings
 ```
 
 The report separates project resolution, compile-time expansion, semantic and
 lowering phases, C declaration pruning, emission, output writing, and total
-command time as applicable.
+command time as applicable. Native commands additionally report C compilation
+and program or test execution. Timing reports use standard error, keeping
+ordinary command, generated-program, and test output on standard output.
 
 ## Building native output
 
@@ -386,8 +392,6 @@ git diff --check
 - A shared project requires explicit entry points and cannot be run directly.
 - Source directory discovery is recursive and does not yet expose include or
   exclude glob rules.
-- `transpile --timings` is the timing-reporting surface; build and run do not
-  currently expose the same flag.
 - The language server is experimental and currently focuses on diagnostics and
   completion rather than a complete IDE feature set.
 

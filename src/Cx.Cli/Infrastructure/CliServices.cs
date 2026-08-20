@@ -174,7 +174,8 @@ internal static class CliServices
         bool runAfterBuild,
         IReadOnlyList<string> programArgs,
         bool buildTests = false,
-        string? testModuleName = null)
+        string? testModuleName = null,
+        CliTimings? timings = null)
     {
         if (runAfterBuild && plan.Kind == ProjectKind.Shared)
         {
@@ -182,9 +183,11 @@ internal static class CliServices
             return 2;
         }
 
+        var compilerStarted = Stopwatch.GetTimestamp();
         var result = buildTests
             ? CompileTests(plan.SourceFiles, testModuleName)
             : Compile(plan.SourceFiles, plan.EntryPoints);
+        timings?.RecordCompilation(result, Stopwatch.GetElapsedTime(compilerStarted));
         if (!result.Success)
         {
             PrintDiagnostics(result);
@@ -192,14 +195,20 @@ internal static class CliServices
         }
 
         PrintDiagnostics(result);
+        var writeStarted = Stopwatch.GetTimestamp();
         EnsureParentDirectory(plan.COutputPath);
         EnsureParentDirectory(plan.NativeOutputPath);
         File.WriteAllText(plan.COutputPath, result.Output);
+        timings?.Record("Output writing", Stopwatch.GetElapsedTime(writeStarted));
 
         var compileArgs = new List<string> { plan.COutputPath, "-o", plan.NativeOutputPath };
         compileArgs.AddRange(plan.CompilerArgs);
         compileArgs.AddRange(result.LinkerArguments);
+        var nativeCompilationStarted = Stopwatch.GetTimestamp();
         var compileExitCode = RunProcess(plan.Compiler, compileArgs, plan.EnvPath);
+        timings?.Record(
+            "Native compilation",
+            Stopwatch.GetElapsedTime(nativeCompilationStarted));
         if (compileExitCode != 0)
         {
             AnsiConsole.MarkupLineInterpolated($"[red]{plan.Compiler} failed[/] with exit code {compileExitCode}");
@@ -208,9 +217,17 @@ internal static class CliServices
         }
 
         AnsiConsole.MarkupLineInterpolated($"[green]built[/] {plan.NativeOutputPath}");
-        return runAfterBuild
-            ? RunProcess(plan.NativeOutputPath, programArgs, plan.EnvPath)
-            : 0;
+        if (!runAfterBuild)
+        {
+            return 0;
+        }
+
+        var executionStarted = Stopwatch.GetTimestamp();
+        var executionExitCode = RunProcess(plan.NativeOutputPath, programArgs, plan.EnvPath);
+        timings?.Record(
+            buildTests ? "Test execution" : "Program execution",
+            Stopwatch.GetElapsedTime(executionStarted));
+        return executionExitCode;
     }
 
     public static int RunProcess(

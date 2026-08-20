@@ -213,10 +213,10 @@ The CLI uses the fixed `cx.toml` default project name. Source directories are
 recursive and do not yet have include/exclude glob configuration. Shared
 projects require explicit entry points and cannot be launched directly.
 
-Only `transpile` currently exposes compiler phase timings. The VS Code
-extension focuses on syntax highlighting, diagnostics, and member completion;
-CX does not yet offer a complete refactoring, debugging, package-management,
-formatting, or documentation-generation toolchain.
+Compiler commands expose shared phase timing reports through `--timings`. The
+VS Code extension focuses on syntax highlighting, diagnostics, and member
+completion; CX does not yet offer a complete refactoring, debugging,
+package-management, formatting, or documentation-generation toolchain.
 
 ## Known implementation issues
 

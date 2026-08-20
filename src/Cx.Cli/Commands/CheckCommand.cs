@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -25,10 +26,16 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
         [CommandOption("--include-std")]
         [Description("Include embedded standard library files in --ast-audit.")]
         public bool IncludeStandardLibrary { get; init; }
+
+        [CommandOption("--timings")]
+        [Description("Print compiler phase timings.")]
+        public bool Timings { get; init; }
     }
 
     protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        using var timings = new CliTimings(settings.Timings);
+        var planStarted = Stopwatch.GetTimestamp();
         var plan = CliServices.ResolveBuildPlan(new BuildPlanRequest(
             settings.InputPath,
             settings.ConfigPath,
@@ -36,17 +43,20 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
             NativeOutputPath: null,
             Compiler: null,
             CompilerArgs: []));
+        timings.RecordProjectResolution(Stopwatch.GetElapsedTime(planStarted));
         if (!plan.Success)
         {
             AnsiConsole.MarkupLineInterpolated($"[red]error:[/] {plan.Error}");
             return 2;
         }
 
+        var compilerStarted = Stopwatch.GetTimestamp();
         var result = settings.GenericRawAudit
             ? CliServices.AuditRawGenericUses(plan.Value.SourceFiles)
             : settings.AstAudit
                 ? CliServices.AuditAst(plan.Value.SourceFiles, settings.IncludeStandardLibrary)
                 : CliServices.Compile(plan.Value.SourceFiles, plan.Value.EntryPoints);
+        timings.RecordCompilation(result, Stopwatch.GetElapsedTime(compilerStarted));
         if (!result.Success)
         {
             CliServices.PrintDiagnostics(result);
