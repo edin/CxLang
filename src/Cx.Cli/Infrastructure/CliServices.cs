@@ -260,7 +260,9 @@ internal static class CliServices
         foreach (var diagnostic in result.Diagnostics)
         {
             var color = diagnostic.Severity == DiagnosticSeverity.Warning ? "yellow" : "red";
-            AnsiConsole.MarkupLineInterpolated($"[{color}]{Markup.Escape(diagnostic.ToString())}[/]");
+            // A string interpolation is escaped by Spectre; formatting the object directly is not.
+            var message = diagnostic.ToString();
+            AnsiConsole.MarkupLineInterpolated($"[{color}]{message}[/]");
         }
     }
 
@@ -275,7 +277,7 @@ internal static class CliServices
         var configPath = Path.Combine(directory, "cx.toml");
         if (File.Exists(configPath) && !force)
         {
-            AnsiConsole.MarkupLineInterpolated($"[red]error:[/] {Markup.Escape(configPath)} already exists. Use --force to overwrite it.");
+            AnsiConsole.MarkupLineInterpolated($"[red]error:[/] {configPath} already exists. Use --force to overwrite it.");
             return 2;
         }
 
@@ -287,8 +289,8 @@ internal static class CliServices
             File.WriteAllText(mainPath, CreateMainSource());
         }
 
-        AnsiConsole.MarkupLineInterpolated($"[green]created[/] {Markup.Escape(configPath)}");
-        AnsiConsole.MarkupLineInterpolated($"[green]created[/] {Markup.Escape(mainPath)}");
+        AnsiConsole.MarkupLineInterpolated($"[green]created[/] {configPath}");
+        AnsiConsole.MarkupLineInterpolated($"[green]created[/] {mainPath}");
         AnsiConsole.MarkupLine("outputs: build/c/<name>.c and build/bin/<name>.exe");
         return 0;
     }

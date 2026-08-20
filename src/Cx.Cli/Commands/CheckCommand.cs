@@ -38,7 +38,7 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
             CompilerArgs: []));
         if (!plan.Success)
         {
-            AnsiConsole.MarkupLineInterpolated($"[red]error:[/] {Markup.Escape(plan.Error)}");
+            AnsiConsole.MarkupLineInterpolated($"[red]error:[/] {plan.Error}");
             return 2;
         }
 
@@ -61,7 +61,7 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings>
         }
 
         var verb = settings.AstAudit ? "audited AST for" : "checked";
-        AnsiConsole.MarkupLineInterpolated($"[green]{verb}[/] {Markup.Escape(plan.Value.Name)} ({plan.Value.SourceFiles.Count} source file(s))");
+        AnsiConsole.MarkupLineInterpolated($"[green]{verb}[/] {plan.Value.Name} ({plan.Value.SourceFiles.Count} source file(s))");
         return 0;
     }
 }
