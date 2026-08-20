@@ -142,6 +142,45 @@ public sealed class CTranslationUnitEmitterTests
     }
 
     [Fact]
+    public void Emit_PlacesBindingConstOnPointerDeclarators()
+    {
+        var callbackType = new CFunctionTypeRef(
+            new CNamedTypeRef("bool"),
+            [new CParameterDeclaration(new CNamedTypeRef("int"), string.Empty)]);
+        var unit = new CTranslationUnit([
+            new CFunctionDefinition(
+                new CFunctionSignature(new CNamedTypeRef("void"), "main", []),
+                [
+                    new CLocalDeclarationStatement(
+                        new CVariableDeclaration(
+                            new CPointerTypeRef(new CNamedTypeRef("int")),
+                            "data",
+                            IsConst: true),
+                        new CNameExpression("source")),
+                    new CLocalDeclarationStatement(
+                        new CVariableDeclaration(
+                            new CPointerTypeRef(
+                                new CConstTypeRef(new CNamedTypeRef("char"))),
+                            "text",
+                            IsConst: true),
+                        new CNameExpression("source_text")),
+                    new CLocalDeclarationStatement(
+                        new CVariableDeclaration(
+                            callbackType,
+                            "predicate",
+                            IsConst: true),
+                        new CNameExpression("is_valid")),
+                ]),
+        ]);
+
+        var output = new CTranslationUnitEmitter().Emit(unit);
+
+        Assert.Contains("int* const data = source;", output);
+        Assert.Contains("const char* const text = source_text;", output);
+        Assert.Contains("bool (* const predicate)(int) = is_valid;", output);
+    }
+
+    [Fact]
     public void Emit_PrintsStructuredExternGlobalDeclarations()
     {
         var unit = new CTranslationUnit([

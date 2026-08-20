@@ -112,6 +112,17 @@ foreach &value in values {
 }
 ```
 
+The generated loop caches the element pointer without making the elements
+const. A mutable reference therefore remains writable. Add `const` before the
+reference binding when neither the reference nor the referenced element should
+be mutated:
+
+```cx
+foreach const &value in values {
+    inspect(*value);
+}
+```
+
 Use `const` when the loop-local binding must not be reassigned:
 
 ```cx

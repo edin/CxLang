@@ -234,13 +234,6 @@ Current workaround: keep the macro invocation in the binding file. The likely
 fault area is cross-source macro expansion, declaration ownership, or module
 visibility.
 
-### Mutable reference iteration warnings
-
-Mutable reference `foreach` is implemented, but some lowered contiguous loops
-can make GCC warn about qualifiers on an internally cached pointer. The loop's
-semantic behavior is available; the generated C qualifier shape still needs
-polish for warning-clean native builds.
-
 ## Areas needing focused design or regression work
 
 These items are not yet specified strongly enough to call them permanent
@@ -250,7 +243,6 @@ limitations or confirmed defects:
   free functions, without making casing semantic;
 - evaluate simplifying `Disposable<T>` to `Disposable` with implicit `Self`;
 - strengthen generic static-factory and `Self` specialization coverage;
-- expand mutable-reference-iteration native tests;
 - move PHP binding composition into an application or dedicated composition
   module after cross-source generation is fixed; and
 - stabilize compile-time reflection names before treating them as a public

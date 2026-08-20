@@ -174,15 +174,30 @@ internal static class ContiguousForeachLowerer
                 binding.IsConst,
                 binding.Name,
                 binding.IsReference ? AddressOf(indexExpression) : indexExpression,
-                binding.IsReference ? PointerType(binding.Location, bindingType) : bindingType);
+                binding.IsReference
+                    ? PointerType(
+                        binding.Location,
+                        bindingType,
+                        isPointeeConst: binding.IsConst)
+                    : bindingType);
         }
 
-        private TypeNode PointerType(Location location, TypeNode typeNode)
+        private TypeNode PointerType(
+            Location location,
+            TypeNode typeNode,
+            bool isPointeeConst)
         {
             var type = typeNode.Semantic.Type ?? _typeRefParser.Parse(typeNode);
-            return type is TypeRef.Pointer
-                ? CreateTypeNode(location, type)
-                : CreateTypeNode(location, new TypeRef.Pointer(type));
+            var pointer = type is TypeRef.Pointer existing
+                ? existing
+                : new TypeRef.Pointer(type);
+            if (isPointeeConst
+                && TypeRefFacts.UnwrapAlias(pointer.Element) is not TypeRef.Const)
+            {
+                pointer = new TypeRef.Pointer(new TypeRef.Const(pointer.Element));
+            }
+
+            return CreateTypeNode(location, pointer);
         }
 
         private static TypeNode CreateTypeNode(Location location, TypeRef type)

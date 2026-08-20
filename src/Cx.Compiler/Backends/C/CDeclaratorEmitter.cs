@@ -4,8 +4,23 @@ internal static class CDeclaratorEmitter
 {
     public static string Emit(CTypeRef type, string name, bool isConst = false)
     {
-        var declaration = EmitDeclarator(type, name);
-        return isConst ? "const " + declaration : declaration;
+        if (!isConst)
+        {
+            return EmitDeclarator(type, name);
+        }
+
+        return type switch
+        {
+            CPointerTypeRef pointer => EmitPointerDeclarator(
+                pointer,
+                name,
+                isConst: true),
+            CFunctionTypeRef function => EmitFunctionDeclarator(
+                function,
+                name,
+                isConst: true),
+            _ => "const " + EmitDeclarator(type, name),
+        };
     }
 
     private static string EmitDeclarator(CTypeRef type, string name) => type switch
@@ -19,16 +34,22 @@ internal static class CDeclaratorEmitter
         _ => throw new InvalidOperationException($"Unexpected C type node {type.GetType().Name}."),
     };
 
-    private static string EmitPointerDeclarator(CPointerTypeRef pointer, string name)
+    private static string EmitPointerDeclarator(
+        CPointerTypeRef pointer,
+        string name,
+        bool isConst = false)
     {
         if (TryEmitPointerType(pointer, out var pointerType))
         {
-            return AppendName(pointerType, name);
+            return AppendName(
+                pointerType + (isConst ? " const" : string.Empty),
+                name);
         }
 
+        var pointerPrefix = isConst ? "* const " : "*";
         var pointerName = pointer.Element is CFunctionTypeRef or CFixedArrayTypeRef
-            ? "(*" + name + ")"
-            : "*" + name;
+            ? "(" + pointerPrefix + name + ")"
+            : pointerPrefix + name;
         return EmitDeclarator(pointer.Element, pointerName);
     }
 
@@ -60,10 +81,14 @@ internal static class CDeclaratorEmitter
         }
     }
 
-    private static string EmitFunctionDeclarator(CFunctionTypeRef function, string name)
+    private static string EmitFunctionDeclarator(
+        CFunctionTypeRef function,
+        string name,
+        bool isConst = false)
     {
         var parameters = string.Join(", ", function.Parameters.Select(EmitParameter));
-        return $"{CTypeRefEmitter.Emit(function.ReturnType)} (*{name})({parameters})";
+        var pointer = isConst ? "* const " : "*";
+        return $"{CTypeRefEmitter.Emit(function.ReturnType)} ({pointer}{name})({parameters})";
     }
 
     private static string EmitParameter(CParameterDeclaration parameter) =>
