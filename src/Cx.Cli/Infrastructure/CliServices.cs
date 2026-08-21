@@ -55,10 +55,19 @@ internal static class CliServices
             return ResolvedBuildPlanResult.Failed("Provide an input path, create cx.toml with sources, or add tests under a tests directory.");
         }
 
-        var sources = ResolveSourceFiles(sourceEntries, baseDirectory);
+        var discovery = SourceDiscovery.Discover(
+            sourceEntries,
+            project?.Excludes ?? [],
+            baseDirectory);
+        if (!discovery.Success)
+        {
+            return ResolvedBuildPlanResult.Failed(discovery.Error);
+        }
+
+        var sources = discovery.Sources;
         if (sources.Count == 0)
         {
-            return ResolvedBuildPlanResult.Failed("No .cx source files were found.");
+            return ResolvedBuildPlanResult.Failed("No CX source files were found.");
         }
 
         var name = project?.Name
@@ -112,10 +121,19 @@ internal static class CliServices
             return ResolvedBuildPlanResult.Failed("Provide an input path or create cx.toml with a sources array.");
         }
 
-        var sources = ResolveSourceFiles(sourceEntries, baseDirectory);
+        var discovery = SourceDiscovery.Discover(
+            sourceEntries,
+            project?.Excludes ?? [],
+            baseDirectory);
+        if (!discovery.Success)
+        {
+            return ResolvedBuildPlanResult.Failed(discovery.Error);
+        }
+
+        var sources = discovery.Sources;
         if (sources.Count == 0)
         {
-            return ResolvedBuildPlanResult.Failed("No .cx source files were found.");
+            return ResolvedBuildPlanResult.Failed("No CX source files were found.");
         }
 
         var name = project?.Name
@@ -389,34 +407,6 @@ internal static class CliServices
         {
             Directory.CreateDirectory(directory);
         }
-    }
-
-    private static IReadOnlyList<SourceFile> ResolveSourceFiles(
-        IReadOnlyList<string> entries,
-        string baseDirectory)
-    {
-        var files = new List<string>();
-        foreach (var entry in entries)
-        {
-            var path = Path.GetFullPath(entry, baseDirectory);
-            if (Directory.Exists(path))
-            {
-                files.AddRange(Directory.EnumerateFiles(path, "*.cx", SearchOption.AllDirectories));
-                files.AddRange(Directory.EnumerateFiles(path, "*.cplus", SearchOption.AllDirectories));
-                continue;
-            }
-
-            if (File.Exists(path))
-            {
-                files.Add(path);
-            }
-        }
-
-        return files
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(path => path, StringComparer.Ordinal)
-            .Select(path => new SourceFile(path, File.ReadAllText(path)))
-            .ToList();
     }
 
     private static string ResolveOutputPath(

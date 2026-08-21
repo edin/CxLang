@@ -271,7 +271,7 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
         return null;
     }
 
-    private static IReadOnlyList<SourceFile> LoadWorkspaceSources(string rootPath)
+    internal static IReadOnlyList<SourceFile> LoadWorkspaceSources(string rootPath)
     {
         var configPath = Path.Combine(rootPath, "cx.toml");
         if (File.Exists(configPath))
@@ -287,6 +287,8 @@ internal sealed class CxLanguageServer(Stream input, Stream output)
             {
                 return plan.Value.SourceFiles;
             }
+
+            return [];
         }
 
         var conventionalSourceRoot = Path.Combine(rootPath, "src");

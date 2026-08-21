@@ -72,6 +72,7 @@ directory:
 name = "hello-cx"
 kind = "exe"
 sources = ["src"]
+exclude = ["src/generated/**"]
 
 c_output = "build/c/hello-cx.c"
 output = "build/bin/hello-cx.exe"
@@ -86,7 +87,8 @@ Supported fields are:
 | --- | --- |
 | `name` | Project and default output base name |
 | `kind` | `"exe"` or `"shared"` |
-| `sources` | Source files or directories |
+| `sources` | Required source files, directories, or glob patterns |
+| `exclude` | Files, directories, or glob patterns removed from discovery |
 | `entry_points` | Qualified reachability roots, required for shared projects |
 | `c_output` | Generated C path |
 | `output` | Native executable or shared-library path |
@@ -98,9 +100,21 @@ The compatibility names `compiler` and `compiler_args` are also accepted, but
 `cc` and `cc_args` are the canonical scaffold spelling.
 
 Relative source and output paths are resolved from the directory containing
-the selected configuration file. A source entry may be one `.cx`/`.cplus`
-file or a directory; directories are searched recursively and the final file
-set is deduplicated and ordered deterministically.
+the selected configuration file. A legacy source entry may be one file or a
+directory; directories are searched recursively for `.cx` and `.cplus` files.
+Configured discovery also supports `*` within one path segment and recursive
+`**` across zero or more directories:
+
+```toml
+sources = ["src/**/*.cx", "bindings/*.cplus"]
+exclude = ["src/generated/**", "src/experimental/**"]
+```
+
+Exclude rules take precedence over includes. Duplicate matches compile each
+physical source file once, and the final set is ordered deterministically.
+Every include entry is required to match an existing file or directory;
+malformed and unmatched patterns produce a project-resolution error. Both `/`
+and `\` are accepted as configuration path separators.
 
 Pass a different configuration explicitly when needed:
 
@@ -390,8 +404,6 @@ git diff --check
 - Native compilation requires an available external C compiler; `gcc` is the
   default.
 - A shared project requires explicit entry points and cannot be run directly.
-- Source directory discovery is recursive and does not yet expose include or
-  exclude glob rules.
 - The language server is experimental and currently focuses on diagnostics and
   completion rather than a complete IDE feature set.
 

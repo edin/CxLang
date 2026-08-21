@@ -136,6 +136,7 @@ The CLI reads `cx.toml` when no input path is provided:
 name = "raytracer"
 kind = "exe"
 sources = ["examples/raytracer.cx"]
+exclude = ["examples/generated/**"]
 output = "build/bin/raytracer.exe"
 c_output = "build/c/raytracer.c"
 cc = "gcc"
@@ -152,7 +153,8 @@ cx test
 
 `cx test` uses configured sources and also discovers test files under a top-level
 `tests` directory. Build/run commands do not include `tests` unless listed
-explicitly.
+explicitly. Source entries accept files, legacy recursive directories, and
+`*`/`**` glob patterns; `exclude` rules take precedence over all matches.
 
 Shared-library projects declare their exported reachability roots explicitly.
 The CLI selects the platform extension and supplies the required GCC shared

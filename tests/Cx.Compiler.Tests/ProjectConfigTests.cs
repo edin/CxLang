@@ -56,6 +56,105 @@ public sealed class ProjectConfigTests
     }
 
     [Fact]
+    public void Load_SourceExcludes_ArePreserved()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = directory.WriteConfig(
+            """
+            name = "sample"
+            sources = ["src/**/*.cx"]
+            exclude = ["src/generated/**", "src/experimental/**"]
+            """);
+
+        var result = ProjectConfig.Load(path, useDefaultConfig: false);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(["src/**/*.cx"], result.Value!.Sources);
+        Assert.Equal(
+            ["src/generated/**", "src/experimental/**"],
+            result.Value.Excludes);
+    }
+
+    [Fact]
+    public void ResolveBuildPlan_GlobsAreRelativeToConfigDirectory()
+    {
+        using var directory = new TemporaryDirectory();
+        directory.WriteFile("src/main.cx", "fn main() -> int { return 0; }");
+        directory.WriteFile("src/generated/ignored.cx", "fn ignored() -> int { return 0; }");
+        var path = directory.WriteConfig(
+            """
+            name = "sample"
+            sources = ["src/**/*.cx"]
+            exclude = ["src/generated/**"]
+            """);
+
+        var result = CliServices.ResolveBuildPlan(new BuildPlanRequest(
+            InputPath: null,
+            ConfigPath: path,
+            COutputPath: null,
+            NativeOutputPath: null,
+            Compiler: null,
+            CompilerArgs: []));
+
+        Assert.True(result.Success, result.Error);
+        var source = Assert.Single(result.Value!.SourceFiles);
+        Assert.Equal("main.cx", System.IO.Path.GetFileName(source.Path));
+    }
+
+    [Fact]
+    public void ResolveTestPlan_AppliesExcludesToDiscoveredTests()
+    {
+        using var directory = new TemporaryDirectory();
+        directory.WriteFile("src/main.cx", "fn main() -> int { return 0; }");
+        directory.WriteFile("tests/keep.cx", "test \"keep\" {}");
+        directory.WriteFile("tests/generated/ignored.cx", "test \"ignore\" {}");
+        var path = directory.WriteConfig(
+            """
+            name = "sample"
+            sources = ["src"]
+            exclude = ["tests/generated/**"]
+            """);
+
+        var result = CliServices.ResolveTestPlan(new BuildPlanRequest(
+            InputPath: null,
+            ConfigPath: path,
+            COutputPath: null,
+            NativeOutputPath: null,
+            Compiler: null,
+            CompilerArgs: []));
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(
+            ["main.cx", "keep.cx"],
+            result.Value!.SourceFiles
+                .Select(source => System.IO.Path.GetFileName(source.Path))
+                .ToList());
+    }
+
+    [Fact]
+    public void ResolveBuildPlan_UnmatchedGlobReportsConfigEntry()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = directory.WriteConfig(
+            """
+            name = "sample"
+            sources = ["src/**/*.cx"]
+            """);
+
+        var result = CliServices.ResolveBuildPlan(new BuildPlanRequest(
+            InputPath: null,
+            ConfigPath: path,
+            COutputPath: null,
+            NativeOutputPath: null,
+            Compiler: null,
+            CompilerArgs: []));
+
+        Assert.False(result.Success);
+        Assert.Contains("src/**/*.cx", result.Error);
+        Assert.Contains("matched no files", result.Error);
+    }
+
+    [Fact]
     public void ResolveBuildPlan_SharedProject_AddsPlatformDefaults()
     {
         using var directory = new TemporaryDirectory();

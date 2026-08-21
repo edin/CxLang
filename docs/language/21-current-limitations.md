@@ -209,9 +209,8 @@ recognizes `windows`, `linux`, and `macos` for conditional link declarations.
 
 ## Tooling boundaries
 
-The CLI uses the fixed `cx.toml` default project name. Source directories are
-recursive and do not yet have include/exclude glob configuration. Shared
-projects require explicit entry points and cannot be launched directly.
+The CLI uses the fixed `cx.toml` default project name. Shared projects require
+explicit entry points and cannot be launched directly.
 
 Compiler commands expose shared phase timing reports through `--timings`. The
 VS Code extension focuses on syntax highlighting, diagnostics, and member
