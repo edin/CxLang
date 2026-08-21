@@ -312,7 +312,12 @@ internal abstract class AstRewriter
         };
 
     protected virtual AttributeDeclarationNode RewriteAttributeDeclaration(AttributeDeclarationNode attribute) =>
-        attribute;
+        attribute with
+        {
+            Fields = attribute.Fields
+                .Select(field => field with { DefaultValue = RewriteExpression(field.DefaultValue) })
+                .ToList(),
+        };
 
     protected virtual TypeAliasNode RewriteTypeAlias(TypeAliasNode alias) =>
         alias with

@@ -1261,6 +1261,13 @@ public sealed partial class Parser
             var fieldToken = Expect(TokenType.Identifier, "Expected attribute field name.");
             Expect(TokenType.Colon, "Expected ':' after attribute field name.");
             var typeNode = ParseCompileTimeTypeNode();
+            ExpressionNode? defaultValue = null;
+            if (ConsumeOptional(TokenType.Equals))
+            {
+                defaultValue = ParseExpression(
+                    ReadBalancedSliceUntilAny(fieldToken?.Location ?? Current.Location, TokenType.Semicolon));
+            }
+
             if (Expect(TokenType.Semicolon, "Expected ';' after attribute field.") is null)
             {
                 while (!IsAtEnd && !Check(TokenType.Semicolon) && !Check(TokenType.RBrace))
@@ -1273,7 +1280,7 @@ public sealed partial class Parser
 
             if (fieldToken is not null)
             {
-                fields.Add(new AttributeFieldNode(fieldToken.Location, fieldToken.Value, typeNode));
+                fields.Add(new AttributeFieldNode(fieldToken.Location, fieldToken.Value, typeNode, defaultValue));
             }
         }
 

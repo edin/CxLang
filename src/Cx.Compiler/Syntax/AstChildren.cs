@@ -14,7 +14,7 @@ internal static class AstChildren
         SymbolImportNode import => import.Symbols,
 
         AttributeDeclarationNode attribute => Children(attribute.Fields),
-        AttributeFieldNode field => Children(field.TypeNode),
+        AttributeFieldNode field => Children(field.TypeNode, field.DefaultValue),
         CompileTimeListTypeNode list => Children(list.ElementType),
         AttributeApplicationNode attribute => Children(attribute.Arguments),
         AttributeArgumentNode argument => Children(argument.Value),

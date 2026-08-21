@@ -17,15 +17,40 @@ An attribute names one or more targets after `on`:
 attribute json_skip on field;
 
 attribute route on fn {
-    method: string;
     path: string;
+    method: string = "GET";
+    authenticated: bool = true;
 }
 
 attribute generated on struct, union, enum;
 ```
 
 A fieldless attribute ends with `;`. An attribute with metadata fields uses a
-body, and every application must supply every declared field.
+body. Fields without defaults are required; fields with defaults may be
+omitted from an application.
+
+Defaults are ordinary compile-time expressions and are checked against the
+field's metadata type:
+
+```cx
+attribute route on fn {
+    path: string;
+    method: string = "GET";
+    authenticated: bool = true;
+    retries: int = 3;
+    groups: list<string> = ["public", "api"];
+}
+
+@route(path: "/users")
+fn list_users() -> void {}
+
+@route(path: "/users", method: "POST", authenticated: false)
+fn create_user() -> void {}
+```
+
+Explicit arguments override defaults. Positional arguments still bind in
+declaration order, so named arguments are the clearest way to skip a defaulted
+field while supplying a later field.
 
 Supported targets include `module`, `type_alias`, `extern`, `global`, `enum`,
 `variant`, `struct`, `field`, `union`, `fn`, and `parameter`. The target is
@@ -161,8 +186,8 @@ An attribute object's declared metadata fields are available as properties:
 
 ```cx
 attribute route on fn {
-    method: string;
     path: string;
+    method: string = "GET";
 }
 
 macro RegisterRoutes(target: module) -> declarations {
@@ -188,6 +213,11 @@ Attribute objects also expose their name and argument syntax. The lower-level
 `attributes(node)` and argument reflection intrinsics remain useful when a
 macro needs to process metadata generically rather than knowing its schema in
 advance.
+
+Field property lookup always returns the resolved metadata value: an explicit
+argument when one was supplied, otherwise the schema default. The
+`arguments` property remains the source-written argument list, which lets
+generic macros distinguish explicit configuration from inherited defaults.
 
 Reflected modules expose the same lookup shape directly:
 
@@ -223,7 +253,8 @@ Attribute schemas themselves are reflected as typed declarations:
     }
 
     @foreach field in schema.fields {
-        // field.name and field.type describe the metadata contract.
+        // field.name, field.type, field.has_default, and field.default_value
+        // describe the metadata contract.
     }
 }
 
@@ -232,7 +263,9 @@ Attribute schemas themselves are reflected as typed declarations:
 
 Schema fields expose their compile-time metadata type spelling, including
 scalar forms such as `string`, `type`, and `syntax`, and list forms such as
-`list<syntax>`.
+`list<syntax>`. `has_default` reports whether a default was declared, while
+`default_value` evaluates it and returns compile-time `null` for a required
+field.
 
 ## Constructing and transforming attributes
 
@@ -277,8 +310,8 @@ the C output.
 
 - Attribute schemas contain compile-time metadata types, not arbitrary runtime
   CX types.
-- Every declared metadata field is required; schema-level default values are
-  not currently part of attribute declarations.
+- Attribute defaults must be evaluable at compile time and must match their
+  declared metadata type.
 - The same attribute cannot be applied more than once to one declaration.
 - Attribute lookup is compile-time-only and produces no automatic runtime
   metadata.

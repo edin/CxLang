@@ -933,6 +933,55 @@ public sealed class CompileTimeIntrinsicTests
     }
 
     [Fact]
+    public void AttributeLookup_ResolvesSchemaDefaultsAndExplicitOverrides()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            attribute route on fn {
+                method: string = "GET";
+                authenticated: bool = true;
+            }
+
+            @route(authenticated: false)
+            public fn users() -> int {
+                return 0;
+            }
+            """);
+        var reflection = new ProgramCompileTimeReflection(program);
+        var context = new CompileTimeEvaluationContext();
+        context.Define("handler", new CompileTimeValue.Syntax(Assert.Single(program.Functions)));
+        context.Define(
+            "method_field",
+            new CompileTimeValue.Syntax(Assert.Single(program.AttributeDeclarations).Fields[0]));
+
+        var (method, methodDiagnostics) = Evaluate(
+            "handler.attribute(\"route\").method",
+            context,
+            reflection);
+        var (authenticated, authenticatedDiagnostics) = Evaluate(
+            "handler.attributes[0].authenticated",
+            context,
+            reflection);
+        var (hasDefault, hasDefaultDiagnostics) = Evaluate(
+            "method_field.has_default",
+            context,
+            reflection);
+        var (defaultValue, defaultValueDiagnostics) = Evaluate(
+            "method_field.default_value",
+            context,
+            reflection);
+
+        Assert.Equal("GET", Assert.IsType<CompileTimeValue.String>(method).Value);
+        Assert.False(Assert.IsType<CompileTimeValue.Boolean>(authenticated).Value);
+        Assert.True(Assert.IsType<CompileTimeValue.Boolean>(hasDefault).Value);
+        Assert.Equal("GET", Assert.IsType<CompileTimeValue.String>(defaultValue).Value);
+        CompilerTestHelpers.AssertNoErrors(methodDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(authenticatedDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(hasDefaultDiagnostics);
+        CompilerTestHelpers.AssertNoErrors(defaultValueDiagnostics);
+    }
+
+    [Fact]
     public void NullPropertyAccess_ReportsObjectLikeDiagnostic()
     {
         var program = CompilerTestHelpers.Parse(

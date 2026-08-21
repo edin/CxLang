@@ -154,8 +154,8 @@ Compile-time execution is intentionally constrained:
 
 Attributes are typed metadata, not behavior. They produce no automatic runtime
 table and no built-in derive operation. A macro or compile-time consumer must
-interpret them. Attribute schema fields are all required; schema-level defaults
-are not currently supported.
+interpret them. Attribute schema defaults are compile-time expressions; they
+cannot depend on runtime state.
 
 Macro result contracts are intentionally distinct. `-> T` returns exactly one
 expression, while `elements<T>` returns a sequence for a positional

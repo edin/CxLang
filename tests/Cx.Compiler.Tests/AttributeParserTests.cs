@@ -30,6 +30,35 @@ public sealed class AttributeParserTests
     }
 
     [Fact]
+    public void ParseAttributeDeclaration_PreservesStructuredDefaultExpressions()
+    {
+        var program = CompilerTestHelpers.Parse(
+            """
+            attribute route on fn {
+                method: string = "GET";
+                authenticated: bool = true;
+                retries: int = 3;
+                groups: list<string> = ["public", "api"];
+                required: string;
+            }
+            """);
+
+        var fields = Assert.Single(program.AttributeDeclarations).Fields;
+        Assert.Collection(
+            fields,
+            field => Assert.Equal("\"GET\"", field.DefaultValue!.ToSourceText()),
+            field => Assert.Equal("true", field.DefaultValue!.ToSourceText()),
+            field => Assert.Equal("3", field.DefaultValue!.ToSourceText()),
+            field =>
+            {
+                var list = Assert.IsType<ListExpressionNode>(field.DefaultValue);
+                Assert.Equal(["\"public\"", "\"api\""], list.Elements.Select(element => element.ToSourceText()));
+            },
+            field => Assert.Null(field.DefaultValue));
+        Assert.All(fields.Take(fields.Count - 1), field => Assert.NotNull(field.DefaultValue!.Span));
+    }
+
+    [Fact]
     public void ParseAttributeApplication_ParsesPositionalAndNamedArguments()
     {
         var program = CompilerTestHelpers.Parse(

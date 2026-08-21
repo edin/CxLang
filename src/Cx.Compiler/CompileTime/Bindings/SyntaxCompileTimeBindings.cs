@@ -449,6 +449,19 @@ internal sealed class AttributeFieldCompileTimeBinding : CompileTimeTypeBinding
     private string Type(
         CompileTimePropertyContext context,
         AttributeFieldNode field) => field.TypeNode.ToSourceText();
+
+    [CompileTimeProperty("has_default")]
+    private bool HasDefault(
+        CompileTimePropertyContext context,
+        AttributeFieldNode field) => field.DefaultValue is not null;
+
+    [CompileTimeProperty("default_value")]
+    private CompileTimePropertyResult DefaultValue(
+        CompileTimePropertyContext context,
+        AttributeFieldNode field) =>
+        field.DefaultValue is null
+            ? CompileTimePropertyResult.From(new CompileTimeValue.Null())
+            : context.Evaluate(field.DefaultValue);
 }
 
 internal sealed class RequirementMatchCompileTimeBinding : CompileTimeTypeBinding

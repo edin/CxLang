@@ -3,6 +3,93 @@ namespace Cx.Compiler.Tests;
 public sealed class AttributeSemanticTests
 {
     [Fact]
+    public void Compile_AppliesAttributeDefaultsAndAllowsExplicitOverrides()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            attribute route on fn {
+                path: string;
+                method: string = "GET";
+                authenticated: bool = true;
+                retries: int = 3;
+                groups: list<string> = ["public", "api"];
+            }
+
+            @route("/users")
+            fn list_users() -> void {}
+
+            @route(
+                path: "/users",
+                method: "POST",
+                authenticated: false,
+                retries: 0,
+                groups: ["write"]
+            )
+            fn create_user() -> void {}
+
+            fn main() -> int {
+                return 0;
+            }
+            """)
+            .Succeeds();
+    }
+
+    [Fact]
+    public void Compile_RejectsMissingRequiredArgumentAmongDefaultedFields()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            attribute route on fn {
+                method: string = "GET";
+                path: string;
+                authenticated: bool = true;
+            }
+
+            @route()
+            fn users() -> void {}
+
+            fn main() -> int {
+                return 0;
+            }
+            """)
+            .FailsWith("Attribute 'route' requires argument 'path'.");
+    }
+
+    [Fact]
+    public void Compile_RejectsAttributeDefaultWithWrongMetadataType()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            attribute route on fn {
+                method: string = 42;
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """)
+            .FailsWith(
+                "Attribute 'route' field 'method' default expects metadata type 'string'",
+                "received integer");
+    }
+
+    [Fact]
+    public void Compile_RejectsAttributeDefaultThatCannotBeEvaluated()
+    {
+        CompilerTestHelpers.VerifyCompilation(
+            """
+            attribute route on fn {
+                method: string = missing_default();
+            }
+
+            fn main() -> int {
+                return 0;
+            }
+            """)
+            .FailsWith("missing_default");
+    }
+
+    [Fact]
     public void Compile_AllowsCompileTimeFunctionsInAttributeArguments()
     {
         CompilerTestHelpers.VerifyCompilation(

@@ -30,6 +30,14 @@ internal sealed class AttributeSemanticAnalyzer(
             }
         }
 
+        foreach (var declaration in program.AttributeDeclarations)
+        {
+            foreach (var field in declaration.Fields)
+            {
+                ValidateDefaultValue(declaration, field);
+            }
+        }
+
         foreach (var module in program.Declarations
             .OfType<ModuleDeclarationNode>()
             .GroupBy(module => module.Name, StringComparer.Ordinal))
@@ -128,21 +136,6 @@ internal sealed class AttributeSemanticAnalyzer(
                 diagnostics.Report(application.Location, $"Attribute '{application.Name}' cannot be applied to {target}.");
             }
 
-            if (application.Arguments.All(argument => argument.Name is null))
-            {
-                if (application.Arguments.Count != declaration.Fields.Count)
-                {
-                    diagnostics.Report(application.Location, $"Attribute '{application.Name}' expects {declaration.Fields.Count} argument(s).");
-                }
-
-                foreach (var pair in application.Arguments.Zip(declaration.Fields))
-                {
-                    ValidateArgumentValue(application, pair.First, pair.Second);
-                }
-
-                continue;
-            }
-
             AnalyzeNamedAttributeArguments(application, declaration);
         }
     }
@@ -187,9 +180,34 @@ internal sealed class AttributeSemanticAnalyzer(
             ValidateArgumentValue(application, argument, field);
         }
 
-        foreach (var field in declaration.Fields.Where(field => !assignedFields.Contains(field.Name)))
+        foreach (var field in declaration.Fields.Where(
+            field => field.DefaultValue is null && !assignedFields.Contains(field.Name)))
         {
             diagnostics.Report(application.Location, $"Attribute '{application.Name}' requires argument '{field.Name}'.");
+        }
+    }
+
+    private void ValidateDefaultValue(
+        AttributeDeclarationNode declaration,
+        AttributeFieldNode field)
+    {
+        if (field.DefaultValue is null)
+        {
+            return;
+        }
+
+        var evaluator = _evaluator ?? throw new InvalidOperationException("Attribute evaluator is not initialized.");
+        var value = evaluator.Evaluate(field.DefaultValue, new CompileTimeEvaluationContext());
+        if (value is null || field.TypeNode is CompileTimeErrorTypeNode)
+        {
+            return;
+        }
+
+        if (!Matches(field.TypeNode, value))
+        {
+            diagnostics.Report(
+                field.DefaultValue.Location,
+                $"Attribute '{declaration.Name}' field '{field.Name}' default expects metadata type '{field.TypeNode.ToSourceText()}', but received {CompileTimeValueFacts.Describe(value)}.");
         }
     }
 

@@ -100,6 +100,13 @@ internal sealed class AttributeCompileTimeBinding : CompileTimeTypeBinding
             return context.Evaluate(argument.Value);
         }
 
+        var field = declaration.Fields.FirstOrDefault(
+            candidate => string.Equals(candidate.Name, propertyName, StringComparison.Ordinal));
+        if (field?.DefaultValue is not null)
+        {
+            return context.Evaluate(field.DefaultValue);
+        }
+
         return new CompileTimePropertyResult.Missing();
     }
 

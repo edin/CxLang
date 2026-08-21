@@ -11,7 +11,8 @@ public sealed record AttributeDeclarationNode(
 public sealed record AttributeFieldNode(
     Location Location,
     string Name,
-    CompileTimeTypeNode TypeNode) : SyntaxNode(Location);
+    CompileTimeTypeNode TypeNode,
+    ExpressionNode? DefaultValue) : SyntaxNode(Location);
 
 public abstract record CompileTimeTypeNode(Location Location) : SyntaxNode(Location);
 
