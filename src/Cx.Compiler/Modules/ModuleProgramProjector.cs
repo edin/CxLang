@@ -92,9 +92,26 @@ internal static class ModuleProgramProjector
             .OfType<ModuleDeclarationNode>()
             .Where(module => !ReferenceEquals(module, rootModule))
             .ToList();
+        var expansionDeclarations = programs
+            .SelectMany(program => program.Declarations)
+            .Where(IsCompileTimeExpansionDeclaration)
+            .ToList();
         return merged with
         {
-            Declarations = [.. merged.Declarations, .. additionalModules],
+            Declarations =
+            [
+                .. merged.Declarations.Where(declaration =>
+                    !IsCompileTimeExpansionDeclaration(declaration)),
+                .. expansionDeclarations,
+                .. additionalModules,
+            ],
         };
     }
+
+    private static bool IsCompileTimeExpansionDeclaration(
+        TopLevelNode declaration) =>
+        declaration is MacroInvocationDeclarationNode
+            or CompileTimeScriptDeclarationNode
+            or CompileTimeIfTopLevelNode
+            or CompileTimeForeachTopLevelNode;
 }

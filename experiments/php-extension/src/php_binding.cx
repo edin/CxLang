@@ -299,5 +299,3 @@ public macro PhpModule() -> declarations {
         return &cx_demo_module_entry;
     }
 }
-
-use PhpModule();

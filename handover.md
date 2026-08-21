@@ -1,6 +1,6 @@
 # CX Session Handover
 
-Last updated: 2026-08-15
+Last updated: 2026-08-21
 
 ## Start Here
 
@@ -34,8 +34,9 @@ The experiment is split into three CX files:
 - `src/php85_abi.cx` — PHP/Zend ABI declarations, `PhpArguments`, argument
   parsing, zval setters, PHP-managed allocation, and function/module helpers.
 - `src/php_binding.cx` — reusable binding attributes, type policies,
-  `PhpExport`, `PhpModule`, and currently the file-level `use PhpModule();`.
-- `src/main.cx` — ordinary application functions marked with `@php_export`.
+  `PhpExport`, and `PhpModule`.
+- `src/main.cx` — ordinary application functions marked with `@php_export`
+  and the application-level `use PhpModule();` composition site.
 
 `cx.toml` declares a first-class shared project with `get_module` as its entry
 point. CX reachability starts there; no synthetic `main` is required.
@@ -139,21 +140,18 @@ The WSL distro is `Ubuntu`. CX is installed under `/opt/cx` and exposed as
 operations may alter shared `obj` state; restore/build the Windows solution
 again before Windows tests if necessary.
 
-## Known Issue
+## Most Recent Compiler Fix: Cross-Source Macro Composition
 
-Moving `use PhpModule();` from `php_binding.cx` into `main.cx` caused the
-configured build to report:
+Module projection previously dropped top-level `use`, `@if`, `@foreach`, and
+compile-time script declarations from non-root physical source files. A macro
+invocation could therefore disappear before expansion, making its generated
+declarations and configured entry points appear to have incorrect ownership.
 
-```text
-Configured entry point 'get_module' does not name a free function.
-```
-
-This happened even with explicit source ordering and public macros/helpers.
-Keeping the invocation in `php_binding.cx` works. This likely reveals a
-cross-source macro expansion, declaration ownership, or module visibility
-problem. It is not blocking the experiment, but it is a good compiler-polish
-candidate because application composition ideally belongs outside the reusable
-binding implementation.
+Projection now preserves those canonical compile-time declarations from every
+visible module contribution. Generated declarations retain the logical module
+of the invocation for both file-scoped modules and module blocks. The PHP
+experiment now keeps `use PhpModule();` in `main.cx`; its configured build,
+smoke test, module-info query, and 100,000-call memory stress test pass.
 
 ## Recommended Next Work
 
@@ -166,11 +164,9 @@ order is:
    `@php_i64_range`, while keeping them typed and attribute-driven.
 3. Make module name/version configurable instead of hardcoded as `cx_demo` and
    `0.1.0`.
-4. Investigate the cross-source `use PhpModule()` issue and move composition
-   into `main.cx` or a small dedicated module file when fixed.
-5. Extract `php85_abi.cx` and `php_binding.cx` into a reusable CX library only
+4. Extract `php85_abi.cx` and `php_binding.cx` into a reusable CX library only
    after their API stabilizes.
-6. Add further PHP types and structured error/result handling based on actual
+5. Add further PHP types and structured error/result handling based on actual
    wrapper needs.
 
 Avoid introducing language-level default-argument semantics merely for PHP
@@ -187,4 +183,3 @@ ordinary CX call semantics, which is intentional.
 - Keep compile-time-only nodes out of C lowering and retain explicit residue
   diagnostics.
 - Do not stage or commit unless explicitly requested.
-

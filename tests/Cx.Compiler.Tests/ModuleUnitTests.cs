@@ -1,11 +1,50 @@
 using Cx.Compiler.Diagnostics;
 using Cx.Compiler.Modules;
 using Cx.Compiler.Semantic.Analyzers;
+using Cx.Compiler.Syntax.Nodes;
 
 namespace Cx.Compiler.Tests;
 
 public sealed class ModuleUnitTests
 {
+    [Fact]
+    public void Projection_PreservesCompileTimeDeclarationsFromEveryContribution()
+    {
+        var invocationProgram = CompilerTestHelpers.Parse(
+            """
+            module demo;
+
+            use Generate();
+
+            @if(true) {
+                fn selected() -> int {
+                    return 1;
+                }
+            }
+            """,
+            "main.cx");
+        var macroProgram = CompilerTestHelpers.Parse(
+            """
+            module demo;
+
+            macro Generate() -> declarations {
+                fn generated() -> int {
+                    return 42;
+                }
+            }
+            """,
+            "binding.cx");
+        var invocationUnit = ModuleUnit.FromProgram(invocationProgram);
+        var rootUnit = ModuleUnit.FromProgram(macroProgram);
+
+        var projected = ModuleProgramProjector.Project(
+            [invocationUnit, rootUnit],
+            rootUnit);
+
+        Assert.Single(projected.Declarations.OfType<MacroInvocationDeclarationNode>());
+        Assert.Single(projected.Declarations.OfType<CompileTimeIfTopLevelNode>());
+    }
+
     [Fact]
     public void VisibilityAndProjection_UseUnitIdentity()
     {
