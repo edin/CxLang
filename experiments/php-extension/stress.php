@@ -22,6 +22,14 @@ for ($index = 0; $index < 100_000; $index++) {
     if (cx_not(($index % 2) === 0) !== (($index % 2) !== 0)) {
         throw new RuntimeException("Unexpected boolean at iteration {$index}");
     }
+
+    if (cx_checked_increment($index) !== $index + 1) {
+        throw new RuntimeException("Unexpected checked increment at iteration {$index}");
+    }
+
+    if (cx_checked_repeat('CX', 3) !== 'CXCXCX') {
+        throw new RuntimeException("Unexpected checked repeat at iteration {$index}");
+    }
 }
 
 gc_collect_cycles();

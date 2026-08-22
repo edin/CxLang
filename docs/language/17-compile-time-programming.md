@@ -57,6 +57,20 @@ compile fn optional_name(enabled: bool) -> string? {
 Compile functions are not emitted into the executable. Public compile
 functions can cross module boundaries through ordinary imports.
 
+The generic `value` type can hold any compile-time value. Values expose `kind`
+for typed inspection, while scalar values expose `display`, which returns a
+deterministic source-style string representation:
+
+```cx
+compile fn describe(value: value) -> string {
+    return concat(value.kind, ": ", value.display);
+}
+```
+
+Integers, Booleans, `null`, names, and escaped string literals have stable
+representations. Reflection objects and other structured values must use their
+typed properties instead of relying on a generic display format.
+
 ## Compile-time directives
 
 Directives begin with `@` and control which AST nodes enter the runtime

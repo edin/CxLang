@@ -111,7 +111,7 @@ internal static class CompileTimeConstructorFacts
         return new ListExpressionNode(context.Location, elements);
     }
 
-    private static string QuoteString(string value)
+    internal static string QuoteString(string value)
     {
         var result = new StringBuilder(value.Length + 2).Append('"');
         foreach (var ch in value)

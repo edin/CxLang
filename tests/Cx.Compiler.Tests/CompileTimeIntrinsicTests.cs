@@ -7,6 +7,48 @@ namespace Cx.Compiler.Tests;
 
 public sealed class CompileTimeIntrinsicTests
 {
+    [Theory]
+    [InlineData("null", "null")]
+    [InlineData("enabled", "true")]
+    [InlineData("count", "42")]
+    [InlineData("text", "\"line\\n\\\"quoted\\\"\"")]
+    [InlineData("identifier", "generated_name")]
+    public void ValueDisplayFormatsScalarValues(string variableName, string expected)
+    {
+        var context = new CompileTimeEvaluationContext();
+        context.Define("null", new CompileTimeValue.Null());
+        context.Define("enabled", new CompileTimeValue.Boolean(true));
+        context.Define("count", new CompileTimeValue.Integer(42));
+        context.Define("text", new CompileTimeValue.String("line\n\"quoted\""));
+        context.Define("identifier", new CompileTimeValue.Name("generated_name"));
+
+        var (value, diagnostics) = Evaluate($"{variableName}.display", context);
+
+        Assert.Equal(expected, Assert.IsType<CompileTimeValue.String>(value).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
+    [Theory]
+    [InlineData("null", "null")]
+    [InlineData("enabled", "boolean")]
+    [InlineData("count", "integer")]
+    [InlineData("text", "string")]
+    [InlineData("identifier", "name")]
+    public void ValueKindIdentifiesScalarValues(string variableName, string expected)
+    {
+        var context = new CompileTimeEvaluationContext();
+        context.Define("null", new CompileTimeValue.Null());
+        context.Define("enabled", new CompileTimeValue.Boolean(true));
+        context.Define("count", new CompileTimeValue.Integer(42));
+        context.Define("text", new CompileTimeValue.String("text"));
+        context.Define("identifier", new CompileTimeValue.Name("generated_name"));
+
+        var (value, diagnostics) = Evaluate($"{variableName}.kind", context);
+
+        Assert.Equal(expected, Assert.IsType<CompileTimeValue.String>(value).Value);
+        CompilerTestHelpers.AssertNoErrors(diagnostics);
+    }
+
     [Fact]
     public void Concat_CombinesStringsBindingsAndNestedCalls()
     {

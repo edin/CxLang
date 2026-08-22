@@ -142,4 +142,40 @@ try {
 } catch (TypeError) {
 }
 
+if (cx_checked_increment(41) !== 42) {
+    throw new RuntimeException('Unexpected cx_checked_increment() result');
+}
+
+$checkedReflection = new ReflectionFunction('cx_checked_increment');
+if ((string) $checkedReflection->getReturnType() !== 'int') {
+    throw new RuntimeException('Expected cx_checked_increment() to declare an int return type');
+}
+
+try {
+    cx_checked_increment(-1);
+    throw new RuntimeException('cx_checked_increment() accepted a negative value');
+} catch (Error $error) {
+    if ($error->getMessage() !== 'value must be non-negative') {
+        throw $error;
+    }
+}
+
+if (cx_checked_repeat('CX', 3) !== 'CXCXCX') {
+    throw new RuntimeException('Unexpected cx_checked_repeat() result');
+}
+
+$checkedRepeatReflection = new ReflectionFunction('cx_checked_repeat');
+if ((string) $checkedRepeatReflection->getReturnType() !== 'string') {
+    throw new RuntimeException('Expected cx_checked_repeat() to declare a string return type');
+}
+
+try {
+    cx_checked_repeat('CX', -1);
+    throw new RuntimeException('cx_checked_repeat() accepted a negative count');
+} catch (Error $error) {
+    if ($error->getMessage() !== 'count must be non-negative') {
+        throw $error;
+    }
+}
+
 echo "cx_demo smoke test passed\n";

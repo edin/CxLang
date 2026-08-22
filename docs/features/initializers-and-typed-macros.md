@@ -332,7 +332,7 @@ results back into the returned AST.
 ## Real example: PHP argument information
 
 The PHP extension experiment uses these features to generate Zend argument
-metadata from ordinary functions marked with `@php_export`.
+metadata from ordinary functions marked with `@export`.
 
 The reusable macro has a typed element contract. In abbreviated form, its
 structure is:
@@ -343,7 +343,7 @@ macro PhpArgInfos(
 ) -> elements<ZendInternalArgInfo> {
     @let optional_parameters = [];
     @foreach parameter in function.parameters {
-        @if (parameter.attribute("php_optional") != null) {
+        @if (parameter.attribute("optional") != null) {
             optional_parameters.add(parameter);
         }
     }
@@ -358,7 +358,7 @@ macro PhpArgInfos(
         },
 
         @foreach parameter in function.parameters {
-            @if (parameter.attribute("php_optional") == null) {
+            @if (parameter.attribute("optional") == null) {
                 {
                     @{parameter.name},
                     { null, (u32)@{php_export_type_mask(parameter.type)} },

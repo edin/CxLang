@@ -222,21 +222,13 @@ internal sealed class CompileTimeExpressionEvaluator
         CompileTimeEvaluationContext context)
     {
 
-        if (target is not CompileTimeObjectValue objectValue)
-        {
-            _diagnostics.Report(
-                location,
-                $"Compile-time {CompileTimeValueFacts.Describe(target)} value is not object-like and does not have property '{propertyName}'.");
-            return null;
-        }
-
         var propertyContext = new CompileTimePropertyContext(
             location,
             _reflection,
             _diagnostics,
             expression => EvaluateOutcome(expression, context));
         var property = _properties.Get(
-            objectValue,
+            target,
             propertyName,
             propertyContext);
         if (property is CompileTimePropertyResult.Found found)
@@ -246,9 +238,12 @@ internal sealed class CompileTimeExpressionEvaluator
 
         if (property is CompileTimePropertyResult.Missing)
         {
+            var targetDescription = target is CompileTimeObjectValue
+                ? $"Compile-time {CompileTimeValueFacts.Describe(target)} value"
+                : $"Compile-time {CompileTimeValueFacts.Describe(target)} value is not object-like and";
             _diagnostics.Report(
                 location,
-                $"Compile-time {objectValue.DisplayType} value does not have property '{propertyName}'.");
+                $"{targetDescription} does not have property '{propertyName}'.");
         }
 
         return null;

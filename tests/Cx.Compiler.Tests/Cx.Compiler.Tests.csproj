@@ -23,4 +23,13 @@
     <ProjectReference Include="..\..\src\Cx.Cli\Cx.Cli.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\experiments\php-extension\src\php85_abi.cx"
+             Link="PhpExtension\php85_abi.cx"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\experiments\php-extension\src\php_binding.cx"
+             Link="PhpExtension\php_binding.cx"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -13,19 +13,21 @@ It currently exposes:
 - `cx_multiply(float $left, float $right): float`
 - `cx_not(bool $value): bool`
 - `cx_weighted(int $count, float $factor, bool $enabled): float`
+- `cx_checked_increment(int $value): int`, throwing PHP `Error` for negatives
+- `cx_checked_repeat(string $value, int $count): string`, returning an owned result
 
 The CX source is split into three layers:
 
 - `src/php85_abi.cx` contains the targeted Zend layouts, runtime declarations,
   argument parsing, `zval` setters, and PHP-managed string allocation.
 - `src/php_binding.cx` is the reusable binding layer. It contains only the
-  `@php_export` marker, type policies, and the `PhpExport`/`PhpModule` macros.
+  `@export` marker, type policies, and the `PhpExport`/`PhpModule` macros.
   `PhpExport` reflects an ordinary typed CX function and generates its
-  Zend-compatible wrapper, while `PhpModule` discovers `@php_export`
+  Zend-compatible wrapper, while `PhpModule` discovers `@export`
   functions and generates wrappers, exact-sized arginfo storage, function-table
   entries, and module registration.
 - `src/main.cx` contains only the extension's application functions. Every PHP
-  function uses `@php_export`; no application function receives Zend execution
+  function uses `@export`; no application function receives Zend execution
   data or writes a `zval` directly.
 
 The initial ABI description intentionally targets one environment:
@@ -61,25 +63,26 @@ the return type selects the appropriate `ZendZval` setter.
 A scalar function now needs only the marker attribute:
 
 ```cx
-@php_export
+@export
 fn cx_weighted(count: i64, factor: double, enabled: bool) -> double {
     return enabled ? (double)count * factor : 0.0;
 }
 ```
 
-The file-level `use PhpModule();` discovers it. Parameter names, PHP type masks,
+The file-level `use PhpModule("cx_demo", "0.1.0");` configures the PHP-visible
+module identity and discovers its exports. Parameter names, PHP type masks,
 argument counts, wrapper references, and the function-table entry all come from
-the reflected declaration.
+the reflected declarations.
 
-Optional parameters carry a typed compile-time default and the PHP reflection
-text for that default:
+Optional parameters carry a typed compile-time default. The binding derives
+the PHP reflection text from the value's compile-time `display` property:
 
 ```cx
-@php_export
+@export
 fn cx_repeat(
     value: StringView,
-    @php_optional(value: 1, display: "1")
-    @php_i64_range(minimum: 0, maximum: 1000000)
+    @optional(value: 1)
+    @range(minimum: 0, maximum: 1000000)
     count: i64
 ) -> StringBuilder {
     // ...
@@ -91,3 +94,12 @@ uses `parse_if_present`, reports the PHP default through arginfo, validates the
 range, copies the returned builder into a PHP string, and disposes the builder.
 Exported optional parameters must be trailing; the binding reports a
 compile-time diagnostic on any required parameter that follows one.
+Defaults are type-checked by the binding: `i64` and `double` use compile-time
+integers, `bool` uses a Boolean, and `StringView` uses a string. Optional string
+views are initialized from that string before parsing a supplied PHP argument.
+
+Exported functions may return `Result<i64, Error>` or
+`Result<StringBuilder, Error>`. The generated wrapper returns the successful
+value or throws a PHP `Error` containing the CX error message. Owned string
+builders are copied into PHP memory and disposed on both normal and early-return
+paths.

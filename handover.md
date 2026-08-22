@@ -35,8 +35,9 @@ The experiment is split into three CX files:
   parsing, zval setters, PHP-managed allocation, and function/module helpers.
 - `src/php_binding.cx` — reusable binding attributes, type policies,
   `PhpExport`, and `PhpModule`.
-- `src/main.cx` — ordinary application functions marked with `@php_export`
-  and the application-level `use PhpModule();` composition site.
+- `src/main.cx` — ordinary application functions marked with `@export`
+  and the application-level `use PhpModule("cx_demo", "0.1.0");` composition
+  site.
 
 `cx.toml` declares a first-class shared project with `get_module` as its entry
 point. CX reachability starts there; no synthetic `main` is required.
@@ -49,7 +50,7 @@ The binding layer currently supports parameters/returns involving:
 - `StringView`
 - `StringBuilder` return values with copy-to-PHP and deterministic disposal
 
-`PhpModule` reflects all `@php_export` functions and generates wrappers,
+`PhpModule` reflects all `@export` functions and generates wrappers,
 exact-sized arginfo storage, the function table, module entry, and
 `get_module`.
 
@@ -58,11 +59,11 @@ exact-sized arginfo storage, the function table, module entry, and
 Optional parameters are now represented with binding metadata:
 
 ```cx
-@php_export
+@export
 fn cx_repeat(
     value: StringView,
-    @php_optional(value: 1, display: "1")
-    @php_i64_range(minimum: 0, maximum: 1000000)
+    @optional(value: 1)
+    @range(minimum: 0, maximum: 1000000)
     count: i64
 ) -> StringBuilder {
     // ...
@@ -150,7 +151,7 @@ declarations and configured entry points appear to have incorrect ownership.
 Projection now preserves those canonical compile-time declarations from every
 visible module contribution. Generated declarations retain the logical module
 of the invocation for both file-scoped modules and module blocks. The PHP
-experiment now keeps `use PhpModule();` in `main.cx`; its configured build,
+experiment now keeps `use PhpModule("cx_demo", "0.1.0");` in `main.cx`; its configured build,
 smoke test, module-info query, and 100,000-call memory stress test pass.
 
 ## Recommended Next Work
@@ -161,12 +162,10 @@ order is:
 1. Add a clear diagnostic requiring optional exported parameters to be
    trailing. Cover required-after-optional and multiple optional parameters.
 2. Generalize wrapper validation policies beyond the current
-   `@php_i64_range`, while keeping them typed and attribute-driven.
-3. Make module name/version configurable instead of hardcoded as `cx_demo` and
-   `0.1.0`.
-4. Extract `php85_abi.cx` and `php_binding.cx` into a reusable CX library only
+   `@range`, while keeping them typed and attribute-driven.
+3. Extract `php85_abi.cx` and `php_binding.cx` into a reusable CX library only
    after their API stabilizes.
-5. Add further PHP types and structured error/result handling based on actual
+4. Add further PHP types and structured error/result handling based on actual
    wrapper needs.
 
 Avoid introducing language-level default-argument semantics merely for PHP

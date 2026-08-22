@@ -1,9 +1,8 @@
-attribute php_export on fn {}
-attribute php_optional on parameter {
+attribute export on fn {}
+attribute optional on parameter {
     value: value;
-    display: string;
 }
-attribute php_i64_range on parameter {
+attribute range on parameter {
     minimum: int;
     maximum: int;
 }
@@ -16,7 +15,24 @@ public compile fn php_export_type_supported(value: type) -> bool {
         || value == StringBuilder;
 }
 
+public compile fn php_export_result_supported(value: type) -> bool {
+    return value.is_named
+        && value.name == "Result"
+        && value.type_arguments.count == 2
+        && (value.type_arguments[0] == i64
+            || value.type_arguments[0] == StringBuilder)
+        && value.type_arguments[1] == Error;
+}
+
+public compile fn php_export_return_supported(value: type) -> bool {
+    return php_export_type_supported(value)
+        || php_export_result_supported(value);
+}
+
 public compile fn php_export_type_mask(value: type) -> int {
+    if (php_export_result_supported(value)) {
+        return php_export_type_mask(value.type_arguments[0]);
+    }
     if (value == i64) {
         return 16;
     }
@@ -36,8 +52,22 @@ public compile fn php_export_type_mask(value: type) -> int {
     return 0;
 }
 
+public compile fn php_optional_default_kind(value: type) -> string {
+    if (value == i64 || value == double) {
+        return "integer";
+    }
+    if (value == bool) {
+        return "boolean";
+    }
+    if (value == StringView) {
+        return "string";
+    }
+
+    return "unsupported";
+}
+
 public macro PhpExport(function: declaration) -> declarations {
-    @if(!php_export_type_supported(function.return_type)) {
+    @if(!php_export_return_supported(function.return_type)) {
         Diagnostic.error(
             "PhpExport does not support return type {1} on '{0}'.",
             function.name,
@@ -47,7 +77,7 @@ public macro PhpExport(function: declaration) -> declarations {
 
     @let optional_parameters = [];
     @foreach parameter in function.parameters {
-        @let optional = parameter.attribute("php_optional");
+        @let optional = parameter.attribute("optional");
         @if(optional == null && optional_parameters.count > 0) {
             Diagnostic.error(
                 parameter,
@@ -58,6 +88,28 @@ public macro PhpExport(function: declaration) -> declarations {
         }
         @if(optional != null) {
             optional_parameters.add(parameter);
+
+            @let expected_default_kind =
+                php_optional_default_kind(parameter.type);
+            @if(expected_default_kind == "unsupported") {
+                Diagnostic.error(
+                    parameter,
+                    "optional does not support defaults for parameter '{0}' of type {1}.",
+                    parameter.name,
+                    parameter.type.display_name
+                );
+            }
+            @if(expected_default_kind != "unsupported"
+                && optional.value.kind != expected_default_kind) {
+                Diagnostic.error(
+                    parameter,
+                    "optional on parameter '{0}' of type {1} requires a {2} default, but received {3}.",
+                    parameter.name,
+                    parameter.type.display_name,
+                    expected_default_kind,
+                    optional.value.kind
+                );
+            }
         }
         @if(!php_export_type_supported(parameter.type)) {
             Diagnostic.error(
@@ -66,10 +118,10 @@ public macro PhpExport(function: declaration) -> declarations {
                 parameter.type.display_name
             );
         }
-        @if(parameter.attribute("php_i64_range") != null
+        @if(parameter.attribute("range") != null
             && parameter.type != i64) {
             Diagnostic.error(
-                "php_i64_range requires parameter '{0}' to have type i64, but it has type {1}.",
+                "range requires parameter '{0}' to have type i64, but it has type {1}.",
                 parameter.name,
                 parameter.type.display_name
             );
@@ -83,7 +135,7 @@ public macro PhpExport(function: declaration) -> declarations {
         let arguments: PhpArguments = PhpArguments.from(execute_data);
 
         @foreach parameter in function.parameters {
-            @let optional = parameter.attribute("php_optional");
+            @let optional = parameter.attribute("optional");
             @if(parameter.type == i64) {
                 @if(optional == null) {
                     let @{as_name(parameter.name)}: i64 = 0;
@@ -109,7 +161,13 @@ public macro PhpExport(function: declaration) -> declarations {
                 }
             }
             @if(parameter.type == StringView) {
-                let @{as_name(parameter.name)}: StringView = StringView.empty();
+                @if(optional == null) {
+                    let @{as_name(parameter.name)}: StringView = StringView.empty();
+                }
+                @if(optional != null) {
+                    let @{as_name(parameter.name)}: StringView =
+                        StringView.from_cstr(@{optional.value});
+                }
             }
         }
 
@@ -122,7 +180,7 @@ public macro PhpExport(function: declaration) -> declarations {
 
         @let parameter_index = 0;
         @foreach parameter in function.parameters {
-            @let optional = parameter.attribute("php_optional");
+            @let optional = parameter.attribute("optional");
             @if(optional == null) {
                 if (!arguments.parse(
                     @{parameter_index},
@@ -140,7 +198,7 @@ public macro PhpExport(function: declaration) -> declarations {
                 }
             }
 
-            @let range = parameter.attribute("php_i64_range");
+            @let range = parameter.attribute("range");
             @if(range != null) {
                 if (@{as_name(parameter.name)} < @{range.minimum}
                     || @{as_name(parameter.name)} > @{range.maximum}) {
@@ -180,6 +238,29 @@ public macro PhpExport(function: declaration) -> declarations {
             let view: StringView = result.as_view();
             return_value.set_string_copy(view.data, view.length);
         }
+        @if(php_export_result_supported(function.return_type)
+            && function.return_type.type_arguments[0] == i64) {
+            let result: @{function.return_type} =
+                @{as_name(function.name)}(@{function.parameters});
+            if (result.is_error()) {
+                PhpArguments.error(result.error.message);
+                return;
+            }
+
+            return_value.set_long(result.value);
+        }
+        @if(php_export_result_supported(function.return_type)
+            && function.return_type.type_arguments[0] == StringBuilder) {
+            using result: @{function.return_type} =
+                @{as_name(function.name)}(@{function.parameters});
+            if (result.is_error()) {
+                PhpArguments.error(result.error.message);
+                return;
+            }
+
+            let view: StringView = result.value.as_view();
+            return_value.set_string_copy(view.data, view.length);
+        }
     }
 }
 
@@ -188,7 +269,7 @@ public macro PhpArgInfos(
 ) -> elements<ZendInternalArgInfo> {
     @let optional_parameters = [];
     @foreach parameter in function.parameters {
-        @if(parameter.attribute("php_optional") != null) {
+        @if(parameter.attribute("optional") != null) {
             optional_parameters.add(parameter);
         }
     }
@@ -205,7 +286,7 @@ public macro PhpArgInfos(
             null
         },
         @foreach parameter in function.parameters {
-            @if(parameter.attribute("php_optional") == null) {
+            @if(parameter.attribute("optional") == null) {
                 {
                     @{parameter.name},
                     {
@@ -215,25 +296,28 @@ public macro PhpArgInfos(
                     null
                 },
             }
-            @if(parameter.attribute("php_optional") != null) {
+            @if(parameter.attribute("optional") != null) {
                 {
                     @{parameter.name},
                     {
                         null,
                         (u32)@{php_export_type_mask(parameter.type)}
                     },
-                    @{parameter.attribute("php_optional").display}
+                    @{parameter.attribute("optional").value.display}
                 },
             }
         }
     };
 }
 
-public macro PhpModule() -> declarations {
+public macro PhpModule(
+    module_name: expression,
+    module_version: expression
+) -> declarations {
     @let exports = [];
 
     @foreach function in module.functions {
-        @if(function.attribute("php_export") != null) {
+        @if(function.attribute("export") != null) {
             exports.add(function);
         }
     }
@@ -248,24 +332,24 @@ public macro PhpModule() -> declarations {
         }
     };
 
-    let cx_demo_functions:
+    let cx_generated_functions:
         @{Type.array(ZendFunctionEntry, exports.count + 1)} = {};
 
-    let cx_demo_module_entry: ZendModuleEntry = {
+    let cx_generated_module_entry: ZendModuleEntry = {
         (u16)sizeof(ZendModuleEntry),
         (u32)20250925,
         (u8)0,
         (u8)0,
         null,
         null,
-        "cx_demo",
-        &cx_demo_functions[0],
+        @{module_name},
+        &cx_generated_functions[0],
         null,
         null,
         null,
         null,
         null,
-        "0.1.0",
+        @{module_version},
         (usize)0,
         null,
         null,
@@ -283,7 +367,7 @@ public macro PhpModule() -> declarations {
         @let arg_info_index = 0;
         @foreach function in exports {
             php_set_generated_function_entry(
-                &cx_demo_functions[0],
+                &cx_generated_functions[0],
                 @{function_index},
                 @{function.name},
                 @{as_name(concat("php_", function.name))},
@@ -296,6 +380,6 @@ public macro PhpModule() -> declarations {
             function_index = function_index + 1;
         }
 
-        return &cx_demo_module_entry;
+        return &cx_generated_module_entry;
     }
 }

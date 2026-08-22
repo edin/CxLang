@@ -4,6 +4,7 @@ internal static class BuiltInCompileTimeBindings
 {
     public static IReadOnlyList<CompileTimeTypeBinding> Bindings { get; } =
     [
+        new ValueCompileTimeBinding(),
         new AttributeArgumentCompileTimeBinding(),
         new AttributeCompileTimeBinding(),
         new DiagnosticCompileTimeBinding(),

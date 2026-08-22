@@ -38,6 +38,7 @@ extern fn zend_parse_parameter(
     ...) -> int;
 extern fn zend_wrong_parameters_count_error(minimum: int, maximum: int) -> void;
 extern fn zend_argument_value_error(arg_num: int, format: const char*, ...) -> void;
+extern fn zend_throw_error(exception_class: void*, format: const char*, ...) -> void;
 
 struct ZendFunctionEntry {
     fname: const char*;
@@ -269,6 +270,10 @@ extension PhpArguments {
 
     static fn value_error(argument: int, message: const char*) -> void {
         zend_argument_value_error(argument, "%s", message);
+    }
+
+    static fn error(message: const char*) -> void {
+        zend_throw_error(null, "%s", message);
     }
 }
 

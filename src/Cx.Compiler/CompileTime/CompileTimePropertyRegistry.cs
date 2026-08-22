@@ -83,23 +83,32 @@ internal sealed class CompileTimePropertyRegistry
     }
 
     public CompileTimePropertyResult Get(
-        CompileTimeObjectValue receiver,
+        CompileTimeValue receiver,
         string propertyName,
         CompileTimePropertyContext context)
     {
         object target = receiver is CompileTimeValue.Syntax syntax ? syntax.Value : receiver;
         var property = FindProperty(target.GetType(), propertyName);
+        if (property is null && !ReferenceEquals(target, receiver))
+        {
+            property = FindProperty(receiver.GetType(), propertyName);
+        }
+
         if (property is null)
         {
             return FindBinding(target.GetType())?.GetDynamicProperty(target, propertyName, context)
+                ?? FindBinding(receiver.GetType())?.GetDynamicProperty(receiver, propertyName, context)
                 ?? new CompileTimePropertyResult.Missing();
         }
 
         try
         {
+            var invocationTarget = property.Target.ReceiverType.IsInstanceOfType(target)
+                ? target
+                : receiver;
             var invocationArguments = property.IsLegacy
-                ? new object?[] { target, context }
-                : [context, target];
+                ? new object?[] { invocationTarget, context }
+                : [context, invocationTarget];
             var result = property.Method.Invoke(property.Target, invocationArguments);
             if (result is CompileTimePropertyResult explicitResult)
             {
